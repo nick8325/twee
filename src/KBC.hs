@@ -37,10 +37,10 @@ traceM (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
 traceM (NewAxiom axiom) = traceIf True (hang (text "New axiom") 2 (pPrint axiom))
 traceM (ExtraRule rule) = traceIf True (hang (text "Extra rule") 2 (pPrint rule))
 traceM (NewCP cps) = traceIf False (hang (text "Critical pair") 2 (pPrint cps))
-traceM (Consider eq ctx) = traceIf True (sep [text "Considering", nest 2 (pPrint eq), text "under", nest 2 (pPrint ctx)])
+traceM (Consider eq ctx) = traceIf False (sep [text "Considering", nest 2 (pPrint eq), text "under", nest 2 (pPrint ctx)])
 traceM (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
 traceIf :: Monad m => Bool -> Doc -> m ()
-traceIf True x | False = Debug.Trace.traceM (show x)
+traceIf True x = Debug.Trace.traceM (show x)
 traceIf _ _ = return ()
 
 data KBC f v =
@@ -142,8 +142,8 @@ complete = do
 
 newEquation ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) =>
-  Constrained (Equation f v) -> StateT (KBC f v) IO ()
-newEquation (Constrained _ (t :==: u)) =
+  Equation f v -> StateT (KBC f v) IO ()
+newEquation (t :==: u) =
   queueCPs noLabel (map unlabelled (split (Constrained (toContext FTrue) (t :==: u))))
 
 queueCPs ::
@@ -266,7 +266,7 @@ interreduce new = do
   let reductions = catMaybes (map (moveLabel . fmap (reduceWith new)) rules)
   sequence_ [ traceM (Reduce red new) | red <- map peel reductions ]
   sequence_ [ simplifyRule l rule | Labelled l (Simplify rule) <- reductions ]
-  sequence_ [ newEquation (Constrained (toContext FTrue) (unorient (constrained rule))) | Reorient rule <- map peel reductions ]
+  sequence_ [ newEquation (unorient (constrained rule)) | Reorient rule <- map peel reductions ]
   sequence_ [ deleteRule l rule | Labelled l (Reorient rule) <- reductions ]
 
 reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) => Constrained (Rule f v) -> Constrained (Rule f v) -> Maybe (Reduction f v)

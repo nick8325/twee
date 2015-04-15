@@ -46,7 +46,7 @@ orient (l :==: r) =
         -- Replace f x = g y with f x = g k, g y = g k where k is the minimal element
         r' = substf (\x -> if x `elem` vs then Fun minimal [] else Var x) r
 
-bothSides :: (Tm f v -> Tm f v) -> Equation f v -> Equation f v
+bothSides :: (Tm f v -> Tm f' v') -> Equation f v -> Equation f' v'
 bothSides f (t :==: u) = f t :==: f u
 
 trivial :: (Ord f, Ord v) => Equation f v -> Bool
