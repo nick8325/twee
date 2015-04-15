@@ -74,7 +74,7 @@ instance Symbolic a => Symbolic (Labelled a) where
   type VariableOf (Labelled a) = VariableOf a
   termsDL = termsDL . peel
   substf sub (Labelled l x) = Labelled l (substf sub x)
-instance Pretty a => Pretty (Labelled a) where pretty = pretty . peel
+instance Pretty a => Pretty (Labelled a) where pPrint = pPrint . peel
 
 moveLabel :: Functor f => Labelled (f a) -> f (Labelled a)
 moveLabel (Labelled l x) = fmap (Labelled l) x

@@ -19,7 +19,7 @@ instance Symbolic (Equation f v) where
   substf sub (t :==: u) = substf sub t :==: substf sub u
 
 instance (PrettyTerm f, Pretty v) => Pretty (Equation f v) where
-  pretty (x :==: y) = hang (pretty x <+> text "=") 2 (pretty y)
+  pPrint (x :==: y) = hang (pPrint x <+> text "=") 2 (pPrint y)
 
 order :: (Sized f, Ord f, Ord v) => Equation f v -> Equation f v
 order (l :==: r)

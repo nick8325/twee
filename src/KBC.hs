@@ -36,12 +36,12 @@ data Event f v =
   | Reduce (Reduction f v) (Constrained (Rule f v))
 
 traceM :: (Monad m, PrettyTerm f, Pretty v) => Event f v -> m ()
-traceM (NewRule rule) = traceIf True (hang (text "New rule") 2 (pretty rule))
-traceM (NewAxiom axiom) = traceIf True (hang (text "New axiom") 2 (pretty axiom))
-traceM (ExtraRule rule) = traceIf True (hang (text "Extra rule") 2 (pretty rule))
-traceM (NewCP cps) = traceIf False (hang (text "Critical pair") 2 (pretty cps))
-traceM (Consider eq ctx) = traceIf True (sep [text "Considering", nest 2 (pretty eq), text "under", nest 2 (pretty ctx)])
-traceM (Reduce red rule) = traceIf True (sep [pretty red, nest 2 (text "using"), nest 2 (pretty rule)])
+traceM (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
+traceM (NewAxiom axiom) = traceIf True (hang (text "New axiom") 2 (pPrint axiom))
+traceM (ExtraRule rule) = traceIf True (hang (text "Extra rule") 2 (pPrint rule))
+traceM (NewCP cps) = traceIf False (hang (text "Critical pair") 2 (pPrint cps))
+traceM (Consider eq ctx) = traceIf True (sep [text "Considering", nest 2 (pPrint eq), text "under", nest 2 (pPrint ctx)])
+traceM (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
 traceIf :: Monad m => Bool -> Doc -> m ()
 --traceIf True x = Debug.Trace.traceM (show x)
 traceIf _ s = return ()
@@ -65,7 +65,7 @@ instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
       (measure l, measure r, size)
 
 instance (PrettyTerm f, Pretty v) => Pretty (CP f v) where
-  pretty = pretty . cpEquation
+  pPrint = pPrint . cpEquation
 
 report :: KBC f v -> String
 report s = show r ++ " rewrite rules, " ++ show e ++ " extra rewrite rules."
@@ -261,8 +261,8 @@ deleteRule l rule =
 data Reduction f v = Simplify (Constrained (Rule f v)) | Reorient (Constrained (Rule f v)) deriving Show
 
 instance (PrettyTerm f, Pretty v) => Pretty (Reduction f v) where
-  pretty (Simplify rule) = text "Simplify" <+> pretty rule
-  pretty (Reorient rule) = text "Reorient" <+> pretty rule
+  pPrint (Simplify rule) = text "Simplify" <+> pPrint rule
+  pPrint (Reorient rule) = text "Reorient" <+> pPrint rule
 
 interreduce :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered v, Pretty v) => Constrained (Rule f v) -> StateT (KBC f v) IO ()
 interreduce new = do

@@ -25,9 +25,9 @@ data Constrained a =
     constrained :: a }
 
 instance (PrettyTerm (ConstantOf a), Pretty (VariableOf a), Pretty a) => Pretty (Constrained a) where
-  pretty (Constrained (Context { formula = FTrue }) x) = pretty x
-  pretty (Constrained ctx x) =
-    hang (pretty x) 2 (text "when" <+> pretty ctx)
+  pPrint (Constrained (Context { formula = FTrue }) x) = pPrint x
+  pPrint (Constrained ctx x) =
+    hang (pPrint x) 2 (text "when" <+> pPrint ctx)
 
 deriving instance (Eq a, Eq (ConstantOf a), Eq (VariableOf a)) => Eq (Constrained a)
 deriving instance (Ord a, Ord (ConstantOf a), Ord (VariableOf a)) => Ord (Constrained a)
@@ -112,7 +112,7 @@ instance (Eq f, Eq v) => Eq (Context f v) where
 instance (Ord f, Ord v) => Ord (Context f v) where
   compare = comparing formula
 instance (PrettyTerm f, Pretty v) => Pretty (Context f v) where
-  pretty = pretty . formula
+  pPrint = pPrint . formula
 instance (Minimal f, Sized f, Ord f, Ord v) => Symbolic (Context f v) where
   type ConstantOf (Context f v) = f
   type VariableOf (Context f v) = v
@@ -141,25 +141,25 @@ data Formula f v =
 
 data Sense = Lesser | Greater deriving (Eq, Ord, Show)
 instance Pretty Sense where
-  pretty Lesser = text "<"
-  pretty Greater = text ">"
+  pPrint Lesser = text "<"
+  pPrint Greater = text ">"
 
 instance (PrettyTerm f, Pretty v) => Pretty (Formula f v) where
-  prettyPrec _ FTrue = text "true"
-  prettyPrec _ FFalse = text "false"
-  prettyPrec p (x :&: y) =
-    prettyParen (p > 10)
-      (hang (prettyPrec 11 x <+> text "&") 2 (prettyPrec 11 y))
-  prettyPrec p (x :|: y) =
-    prettyParen (p > 10)
-      (hang (prettyPrec 11 x <+> text "|") 2 (prettyPrec 11 y))
-  prettyPrec p (Size t) = pretty t
-  prettyPrec p (HeadIs sense t x) = text "hd(" <> pretty t <> text ")" <+> pretty sense <+> pretty x
-  prettyPrec p (Less t u) = pretty t <+> text "<" <+> pretty u
-  prettyPrec p (Equal t u FTrue FFalse) =
-    pretty t <+> text "=" <+> pretty u
-  prettyPrec p (Equal t u x y) =
-    prettyPrec p ((Equal t u FTrue FFalse :&: x) :|: y)
+  pPrintPrec _ _ FTrue = text "true"
+  pPrintPrec _ _ FFalse = text "false"
+  pPrintPrec l p (x :&: y) =
+    pPrintParen (p > 10)
+      (hang (pPrintPrec l 11 x <+> text "&") 2 (pPrintPrec l 11 y))
+  pPrintPrec l p (x :|: y) =
+    pPrintParen (p > 10)
+      (hang (pPrintPrec l 11 x <+> text "|") 2 (pPrintPrec l 11 y))
+  pPrintPrec l p (Size t) = pPrintPrec l p t
+  pPrintPrec l p (HeadIs sense t x) = text "hd(" <> pPrintPrec l 0 t <> text ")" <+> pPrintPrec l 0 sense <+> pPrintPrec l 0 x
+  pPrintPrec l p (Less t u) = pPrintPrec l 0 t <+> text "<" <+> pPrintPrec l 0 u
+  pPrintPrec l p (Equal t u FTrue FFalse) =
+    pPrintPrec l 0 t <+> text "=" <+> pPrintPrec l 0 u
+  pPrintPrec l p (Equal t u x y) =
+    pPrintPrec l p ((Equal t u FTrue FFalse :&: x) :|: y)
 
 instance (Minimal f, Sized f, Ord v) => Symbolic (Formula f v) where
   type ConstantOf (Formula f v) = f
@@ -356,15 +356,15 @@ data Solved f v =
   deriving (Eq, Ord, Show)
 
 instance (PrettyTerm f, Pretty v) => Pretty (Solved f v) where
-  pretty Unsolvable = text "false"
-  pretty Tautological = text "true"
-  pretty x =
-    pretty [
-      pretty (prob x),
-      pretty (solution x),
-      pretty (headLess x),
-      pretty (headGreater x),
-      pretty (less x) ]
+  pPrint Unsolvable = text "false"
+  pPrint Tautological = text "true"
+  pPrint x =
+    pPrint [
+      pPrint (prob x),
+      pPrint (solution x),
+      pPrint (headLess x),
+      pPrint (headGreater x),
+      pPrint (less x) ]
 
 solve :: (Minimal f, Sized f, Ord f, Ord v) => Formula f v -> Solved f v
 solve = solve1 . filter (/= FTrue) . literals
@@ -512,12 +512,12 @@ instance (Minimal f, Sized f, Ord f, Ord v) => Ord (Extended f v) where
     | otherwise = GT
 
 instance (PrettyTerm f, Pretty v) => Pretty (Extended f v) where
-  pretty (Original f) = pretty f
-  pretty (ConstrainedVar x n k l) =
-    text "c" <> pretty n <> pretty x <> brackets (pretty k <> bound l)
+  pPrint (Original f) = pPrint f
+  pPrint (ConstrainedVar x n k l) =
+    text "c" <> pPrint n <> pPrint x <> brackets (pPrint k <> bound l)
     where
       bound Nothing = text ""
-      bound (Just f) = text ", >" <+> pretty f
+      bound (Just f) = text ", >" <+> pPrint f
 
 instance (PrettyTerm f, Pretty v) => PrettyTerm (Extended f v) where
   termStyle (Original f) = termStyle f

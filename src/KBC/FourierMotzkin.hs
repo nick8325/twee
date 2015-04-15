@@ -21,15 +21,15 @@ data Term a =
     vars :: Map a Rational }
   deriving (Eq, Ord, Show)
 instance Pretty a => Pretty (Term a) where
-  pretty (Term a vs)
-    | Map.null vs = pretty a
-    | a == 0 = prettyVars vs
-    | otherwise = pretty a <+> text "+" <+> prettyVars vs
+  pPrint (Term a vs)
+    | Map.null vs = pPrint a
+    | a == 0 = pPrintVars vs
+    | otherwise = pPrint a <+> text "+" <+> pPrintVars vs
     where
-      prettyVars vs = sep (punctuate (text " +") [ pretty' a <> text "|" <> pretty x <> text "|" | (x, a) <- Map.toList vs ])
-      pretty' 1 = text ""
-      pretty' (-1) = text "-"
-      pretty' x = pretty x
+      pPrintVars vs = sep (punctuate (text " +") [ pPrint' a <> text "|" <> pPrint x <> text "|" | (x, a) <- Map.toList vs ])
+      pPrint' 1 = text ""
+      pPrint' (-1) = text "-"
+      pPrint' x = pPrint x
 
 constTerm :: Rational -> Term a
 constTerm a = Term a Map.empty
@@ -78,8 +78,8 @@ instance Monad Bound where
   Open   x >>= f = Open (bound (f x))
 
 instance Pretty a => Pretty (Bound a) where
-  pretty (Closed x) = pretty x <+> text ">= 0"
-  pretty (Open x) = pretty x <+> text "> 0"
+  pPrint (Closed x) = pPrint x <+> text ">= 0"
+  pPrint (Open x) = pPrint x <+> text "> 0"
 
 boundTrue :: (Ord a, Num a) => Bound a -> Bool
 boundTrue (Closed x) = x >= 0
@@ -95,16 +95,16 @@ data Problem a =
   deriving (Eq, Ord, Show)
 
 instance Pretty a => Pretty (Problem a) where
-  pretty Unsolvable = text "Unsolvable"
-  pretty p =
+  pPrint Unsolvable = text "Unsolvable"
+  pPrint p =
     brackets (sep (punctuate (text ",") xs))
     where
       xs =
-        [pretty t | t <- Set.toList (pos p)] ++
-        [pretty x <+> text ">=" <+> pretty a | (x, Closed a) <- Map.toList (lower p)] ++
-        [pretty x <+> text ">"  <+> pretty a | (x, Open a)   <- Map.toList (lower p)] ++
-        [pretty x <+> text "<=" <+> pretty a | (x, Closed a) <- Map.toList (upper p)] ++
-        [pretty x <+> text "<"  <+> pretty a | (x, Open a)   <- Map.toList (upper p)]
+        [pPrint t | t <- Set.toList (pos p)] ++
+        [pPrint x <+> text ">=" <+> pPrint a | (x, Closed a) <- Map.toList (lower p)] ++
+        [pPrint x <+> text ">"  <+> pPrint a | (x, Open a)   <- Map.toList (lower p)] ++
+        [pPrint x <+> text "<=" <+> pPrint a | (x, Closed a) <- Map.toList (upper p)] ++
+        [pPrint x <+> text "<"  <+> pPrint a | (x, Open a)   <- Map.toList (upper p)]
 
 problem :: Ord a => [Bound (Term a)] -> Problem a
 problem ts = addTerms ts empty
@@ -204,11 +204,11 @@ minValue p t = do
 data Step a = Stop | Eliminate a [Bound (Term a)] [Bound (Term a)] (Problem a) deriving Show
 
 instance Pretty a => Pretty (Step a) where
-  pretty Stop = text "Stop"
-  pretty (Eliminate x ls us p) =
-    hang e 2 (pretty p)
+  pPrint Stop = text "Stop"
+  pPrint (Eliminate x ls us p) =
+    hang e 2 (pPrint p)
     where
-      e = text "Eliminate" <+> pretty x <+> text "between" <+> pretty ls <+> text "and" <+> pretty us <+> text "giving"
+      e = text "Eliminate" <+> pPrint x <+> text "between" <+> pPrint ls <+> text "and" <+> pPrint us <+> text "giving"
 
 eliminations :: Ord a => Problem a -> [Step a]
 eliminations p =
