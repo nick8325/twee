@@ -37,7 +37,7 @@ instance Sized Constant where
   funArity = conArity
 
 instance Pretty Constant where pPrint = text . conName
-instance PrettyTerm Constant
+instance PrettyTerm Constant where termStyle _ = uncurried
 
 newtype Variable = V Int deriving (Eq, Ord, Numbered)
 
