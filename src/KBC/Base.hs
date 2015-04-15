@@ -10,8 +10,8 @@ module KBC.Base(
   Symbolic(..), terms, varsDL, vars, funsDL, funs, symbolsDL, symbols,
   Numbered(..), canonicalise,
   module KBC.Pretty,
-  module Text.PrettyPrint.HughesPJ,
-  PrettyTerm(..), TermStyle(..), prettyStyle) where
+  module Text.PrettyPrint.HughesPJClass,
+  PrettyTerm(..), TermStyle(..), pPrintStyle) where
 
 #include "errors.h"
 import Control.Monad
@@ -29,7 +29,7 @@ import Data.Rewriting.Term hiding (Term, fold, map, fromString, parse, parseIO, 
 import Data.Rewriting.Term.Ops(subterms)
 import KBC.Pretty
 import KBC.Utils
-import Text.PrettyPrint.HughesPJ hiding (empty)
+import Text.PrettyPrint.HughesPJClass hiding (empty)
 import Data.Ord
 
 -- Renamings of functionality from term-rewriting.
@@ -158,74 +158,74 @@ class Pretty a => PrettyTerm a where
 data TermStyle = Invisible | Curried | Uncurried | Tuple Int | TupleType | ListType | Infix Int | Infixr Int | Prefix | Postfix | Gyrator deriving Show
 
 instance (PrettyTerm f, Pretty v) => Pretty (Tm f v) where
-  prettyPrec p (Var x) = prettyPrec p x
-  prettyPrec p (Fun f xs) =
-    prettyStyle (termStyle f) p (pretty f) xs
+  pPrintPrec l p (Var x) = pPrintPrec l p x
+  pPrintPrec l p (Fun f xs) =
+    pPrintStyle (termStyle f) l p (pPrint f) xs
 
 instance (PrettyTerm f, Pretty v) => Pretty (Rule f v) where
-  pretty (Rule l r) =
-    hang (pretty l <+> text "->") 2 (pretty r)
+  pPrint (Rule l r) =
+    hang (pPrint l <+> text "->") 2 (pPrint r)
 
-prettyStyle :: Pretty a => TermStyle -> Int -> Doc -> [a] -> Doc
-prettyStyle Invisible p d [] = d
-prettyStyle Invisible p _ [t] = prettyPrec p t
-prettyStyle Invisible p _ (t:ts) =
-  prettyParen (p > 10) $
-    hang (pretty t) 2
-      (fsep (map (prettyPrec 11) ts))
-prettyStyle Curried p d [] = d
-prettyStyle Curried p d xs =
-  prettyParen (p > 10) $
+pPrintStyle :: Pretty a => TermStyle -> PrettyLevel -> Rational -> Doc -> [a] -> Doc
+pPrintStyle Invisible l p d [] = d
+pPrintStyle Invisible l p _ [t] = pPrintPrec l p t
+pPrintStyle Invisible l p _ (t:ts) =
+  pPrintParen (p > 10) $
+    hang (pPrint t) 2
+      (fsep (map (pPrintPrec l 11) ts))
+pPrintStyle Curried l p d [] = d
+pPrintStyle Curried l p d xs =
+  pPrintParen (p > 10) $
     hang d 2
-      (fsep (map (prettyPrec 11) xs))
-prettyStyle Uncurried p d [] = d
-prettyStyle Uncurried p d xs =
-  d <> parens (fsep (punctuate comma (map pretty xs)))
-prettyStyle (Tuple arity) p d xs
+      (fsep (map (pPrintPrec l 11) xs))
+pPrintStyle Uncurried l p d [] = d
+pPrintStyle Uncurried l p d xs =
+  d <> parens (fsep (punctuate comma (map (pPrintPrec l 0) xs)))
+pPrintStyle (Tuple arity) l p d xs
   | length xs >= arity =
-    prettyStyle Curried p
-      (prettyTuple (take arity (map pretty xs)))
+    pPrintStyle Curried l p
+      (pPrintTuple (take arity (map (pPrintPrec l 0) xs)))
       (drop arity xs)
   | otherwise =
-    prettyStyle Curried p
+    pPrintStyle Curried l p
       (text ("(" ++ replicate (arity-1) ',' ++ ")")) xs
-prettyStyle Postfix p d [x] =
-  prettyPrec 11 x <> d
-prettyStyle Postfix p d xs =
-  prettyStyle Curried p (parens d) xs
-prettyStyle Prefix p d [x] =
-  d <> prettyPrec 11 x
-prettyStyle Prefix p d xs =
-  prettyStyle Curried p (parens d) xs
-prettyStyle TupleType p d xs =
-  prettyStyle (Tuple (length xs)) p d xs
-prettyStyle ListType p d [x] =
-  brackets (pretty x)
-prettyStyle ListType p d xs =
-  prettyStyle Curried p d xs
-prettyStyle Gyrator p d [x, y] =
-  d <> brackets (sep (punctuate comma [pretty x, pretty y]))
-prettyStyle Gyrator p d (x:y:zs) =
-  prettyStyle Curried p (prettyStyle Gyrator p d [x, y]) zs
-prettyStyle Gyrator p d xs = prettyStyle Curried p d xs
-prettyStyle style p d xs =
+pPrintStyle Postfix l p d [x] =
+  pPrintPrec l 11 x <> d
+pPrintStyle Postfix l p d xs =
+  pPrintStyle Curried l p (parens d) xs
+pPrintStyle Prefix l p d [x] =
+  d <> pPrintPrec l 11 x
+pPrintStyle Prefix l p d xs =
+  pPrintStyle Curried l p (parens d) xs
+pPrintStyle TupleType l p d xs =
+  pPrintStyle (Tuple (length xs)) l p d xs
+pPrintStyle ListType l p d [x] =
+  brackets (pPrintPrec l 0 x)
+pPrintStyle ListType l p d xs =
+  pPrintStyle Curried l p d xs
+pPrintStyle Gyrator l p d [x, y] =
+  d <> brackets (sep (punctuate comma [pPrintPrec l 0 x, pPrintPrec l 0 y]))
+pPrintStyle Gyrator l p d (x:y:zs) =
+  pPrintStyle Curried l p (pPrintStyle Gyrator l p d [x, y]) zs
+pPrintStyle Gyrator l p d xs = pPrintStyle Curried l p d xs
+pPrintStyle style l p d xs =
   case xs of
     [x, y] ->
-      prettyParen (p > pOp) $
-        hang (prettyPrec (pOp+1) x <+> d) 2
-             (prettyPrec (pOp+r) y)
+      pPrintParen (p > pOp) $
+        hang (pPrintPrec l (pOp+1) x <+> d) 2
+             (pPrintPrec l (pOp+r) y)
     (x:y:xs) ->
-      prettyParen (p > pOp) $
-        hang (prettyStyle style 11 d [x, y]) 2
-          (fsep (map (prettyPrec 11) xs))
+      pPrintParen (p > pOp) $
+        hang (pPrintStyle style l 11 d [x, y]) 2
+          (fsep (map (pPrintPrec l 11) xs))
     [x] ->
-      parens (prettyPrec (pOp+1) x <+> d)
+      parens (pPrintPrec l (pOp+1) x <+> d)
     _ ->
-      prettyParen (p > pOp) $
+      pPrintParen (p > pOp) $
         hang (parens d) 2
-          (fsep (map (prettyPrec 11) xs))
+          (fsep (map (pPrintPrec l 11) xs))
   where
     (r, pOp) =
       case style of
-        Infixr pOp -> (0, pOp)
-        Infix  pOp -> (1, pOp)
+        Infixr pOp -> (0, fromIntegral pOp)
+        Infix  pOp -> (1, fromIntegral pOp)
