@@ -24,7 +24,7 @@ import Data.Rewriting.Rule(Rule(..))
 import qualified Data.Set as Set
 import Data.Set(Set)
 import qualified Debug.Trace
-import KBC.FourierMotzkin((<==))
+import Solver.FourierMotzkin((<==))
 import Control.Monad.Trans.State.Strict
 
 data Event f v =

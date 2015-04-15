@@ -3,8 +3,9 @@ module KBC.Constraints where
 
 #include "errors.h"
 import KBC.Base
-import qualified KBC.FourierMotzkin as FM
-import KBC.FourierMotzkin hiding (Term(..), trace, Stop, solve, implies, Unsolvable)
+import qualified Solver.FourierMotzkin as FM
+import qualified Solver.FourierMotzkin.Internal as FM
+import Solver.FourierMotzkin hiding (trace, solve)
 import KBC.Term
 import KBC.Utils
 import Control.Monad
@@ -130,7 +131,7 @@ data Formula f v =
   | FFalse
   | Formula f v :&: Formula f v
   | Formula f v :|: Formula f v
-  | Size (Bound (FM.Term v))
+  | Size (Constraint v)
   | HeadIs Sense (Tm f v) f
   | Less (Tm f v) (Tm f v)
     -- Equal t u p q represents (t = u & p) | q.
@@ -168,7 +169,7 @@ instance (Minimal f, Sized f, Ord v) => Symbolic (Formula f v) where
   termsDL FFalse = mzero
   termsDL (p :&: q) = termsDL p `mplus` termsDL q
   termsDL (p :|: q) = termsDL p `mplus` termsDL q
-  termsDL (Size t) = msum (map (return . Var) (Map.keys (FM.vars (bound t))))
+  termsDL (Size t) = msum (map (return . Var) (Map.keys (FM.vars (FM.bound t))))
   termsDL (HeadIs _ t _) = return t
   termsDL (Less t u) = return t `mplus` return u
   termsDL (Equal t u p q) = return t `mplus` return u `mplus` termsDL p `mplus` termsDL q
@@ -177,10 +178,10 @@ instance (Minimal f, Sized f, Ord v) => Symbolic (Formula f v) where
   substf sub FFalse = FFalse
   substf sub (p :&: q) = substf sub p &&& substf sub q
   substf sub (p :|: q) = substf sub p ||| substf sub q
-  substf sub (Size t) = Size t { bound = substFM sub (bound t) }
+  substf sub (Size t) = Size t { FM.bound = substFM sub (FM.bound t) }
     where
       substFM f t =
-        constTerm (FM.constant t) +
+        scalar (FM.constant t) +
         sum [k ^* termSize (f v) | (v, k) <- Map.toList (FM.vars t)]
   substf sub (HeadIs sense t f) = HeadIs sense (substf sub t) f
   substf sub (Less t u) = Less (substf sub t) (substf sub u)
@@ -189,12 +190,12 @@ instance (Minimal f, Sized f, Ord v) => Symbolic (Formula f v) where
 termSize :: (Minimal f, Sized f, Ord v) => Tm f v -> FM.Term v
 termSize = foldTerm FM.var fun
   where
-    fun f ss = constTerm (funSize f) + sum ss
+    fun f ss = scalar (funSize f) + sum ss
 
-sizeAxioms :: Ord v => FM.Term v -> [Bound (FM.Term v)]
+sizeAxioms :: Ord v => FM.Term v -> [Constraint v]
 sizeAxioms s = [ var x >== 1 | x <- Map.keys (FM.vars s) ]
 
-termAxioms :: (Symbolic a, Ord (VariableOf a)) => a -> [Bound (FM.Term (VariableOf a))]
+termAxioms :: (Symbolic a, Ord (VariableOf a)) => a -> [Constraint (VariableOf a)]
 termAxioms t = [ var x >== 1 | x <- usort (vars t) ]
 
 (|||), (&&&) :: Formula f v -> Formula f v -> Formula f v
@@ -224,8 +225,8 @@ true (p :|: q) = true p || true q
 true (Less t u) = t `simplerThan` u
 true (HeadIs Lesser (Fun f _) g) | f < g = True
 true (HeadIs Greater (Fun f _) g) | f > g = True
-true (Size (Closed s)) | minSize s >= Just 0 = True
-true (Size (Open s))   | minSize s >  Just 0 = True
+true (Size (FM.Closed s)) | minSize s >= Just 0 = True
+true (Size (FM.Open s))   | minSize s >  Just 0 = True
 true _ = False
 
 minSize :: Ord v => FM.Term v -> Maybe Rational
@@ -262,10 +263,10 @@ simplify (Equal t u p q) =
     equal t u p q = Equal t u p q
 simplify (Size s)
   | isNothing (solve s) = return FFalse
-  | isNothing (solve (negateBound s)) = return FTrue
+  | isNothing (solve (FM.negateBound s)) = return FTrue
   where
-    solve s = FM.solve (addTerms [s] p)
-    p = problem (sizeAxioms (bound s))
+    solve s = FM.solve (addConstraints [s] p)
+    p = problem (sizeAxioms (FM.bound s))
 simplify (HeadIs sense (Fun f ts) g)
   | test sense f g = return FTrue
   | otherwise = return FFalse
@@ -319,7 +320,7 @@ negFormula FTrue = return FFalse
 negFormula FFalse = return FTrue
 negFormula (p :&: q) = liftM2 (|||) (negFormula p) (negFormula q)
 negFormula (p :|: q) = liftM2 (&&&) (negFormula p) (negFormula q)
-negFormula (Size s) = return (Size (negateBound s))
+negFormula (Size s) = return (Size (FM.negateBound s))
 negFormula (Less t u) = return (Equal t u FTrue (Less u t))
 negFormula (HeadIs sense (Var x) f) = do
   t <- specialise x f
@@ -425,9 +426,9 @@ implies form (p :&: q) = implies form p && implies form q
 implies form (p :|: q) = implies form p || implies form q
 implies form (Equal _ _ _ p) = implies form p
 implies form (Size s) =
-  isNothing (FM.solve (addTerms ts (prob form)))
+  isNothing (FM.solve (addConstraints ts (prob form)))
   where
-    ts = negateBound s:sizeAxioms (bound s)
+    ts = FM.negateBound s:sizeAxioms (FM.bound s)
 implies form (Less (Var x) (Var y)) =
   y `Set.member` Map.findWithDefault Set.empty x (less form)
 implies form (HeadIs Lesser (Var x) f) =
@@ -457,11 +458,11 @@ minimiseSolved t s =
   s { solution = loop (solution s) }
   where
     sz = termSize t
-    p = addTerms (sizeAxioms sz) (prob s)
+    p = addConstraints (sizeAxioms sz) (prob s)
     loop m
       | x < 0 = __
       | otherwise =
-          case FM.solve (addTerms [sz <== fromIntegral (n-1)] p) of
+          case FM.solve (addConstraints [sz <== fromIntegral (n-1)] p) of
             Nothing -> m
             Just m -> loop m
       where
@@ -529,7 +530,7 @@ toModel Tautological = Map.empty
 toModel s =
   Map.fromList [(x, var x i) | (x, i) <- zip (sortBy cmp vs) [0..]]
   where
-    vs = usort (Set.toList (pvars (prob s)) ++
+    vs = usort (Set.toList (FM.pvars (prob s)) ++
                 Map.keys (headLess s) ++
                 Map.keys (headGreater s) ++
                 concat [(x:Set.toList s) | (x, s) <- Map.toList (less s)])
