@@ -15,16 +15,13 @@ import KBC.Rewrite
 import KBC.Term
 import KBC.Utils
 import Control.Monad
-import Data.List
 import Data.Maybe
 import Data.Ord
-import Data.Functor.Identity
 import qualified Data.Rewriting.CriticalPair as CP
 import Data.Rewriting.Rule(Rule(..))
 import qualified Data.Set as Set
 import Data.Set(Set)
 import qualified Debug.Trace
-import Solver.FourierMotzkin((<==))
 import Control.Monad.Trans.State.Strict
 
 data Event f v =
@@ -43,8 +40,8 @@ traceM (NewCP cps) = traceIf False (hang (text "Critical pair") 2 (pPrint cps))
 traceM (Consider eq ctx) = traceIf True (sep [text "Considering", nest 2 (pPrint eq), text "under", nest 2 (pPrint ctx)])
 traceM (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
 traceIf :: Monad m => Bool -> Doc -> m ()
---traceIf True x = Debug.Trace.traceM (show x)
-traceIf _ s = return ()
+traceIf True x | False = Debug.Trace.traceM (show x)
+traceIf _ _ = return ()
 
 data KBC f v =
   KBC {
@@ -61,7 +58,7 @@ data CP f v =
 
 instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
   compare =
-    comparing $ \(CP size (Constrained ctx (l :==: r))) ->
+    comparing $ \(CP size (Constrained _ (l :==: r))) ->
       (measure l, measure r, size)
 
 instance (PrettyTerm f, Pretty v) => Pretty (CP f v) where
@@ -146,8 +143,7 @@ complete = do
 newEquation ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) =>
   Constrained (Equation f v) -> StateT (KBC f v) IO ()
-newEquation (Constrained ctx (t :==: u)) = do
-  n <- gets maxSize
+newEquation (Constrained _ (t :==: u)) =
   queueCPs noLabel (map unlabelled (split (Constrained (toContext FTrue) (t :==: u))))
 
 queueCPs ::
@@ -210,7 +206,7 @@ impliedCases rules ctx (t :==: u) = do
 consider ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered v, Pretty v) =>
   Label -> Label -> Constrained (Equation f v) -> StateT (KBC f v) IO ()
-consider l1 l2 (Constrained ctx (t :==: u)) = do
+consider _ _ (Constrained ctx (t :==: u)) = do
   t :==: u <- normalisePair ctx (t :==: u)
   forM_ (orient (t :==: u)) $
     \(Constrained ctx' (Rule t u)) ->
@@ -309,7 +305,7 @@ canonicaliseBoth (x, y) = (x', substf (Var . increase) y')
     increase v = withNumber (n+number v) v
 
 criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) => Int -> Constrained (Rule f v) -> Constrained (Rule f v) -> [Constrained (Equation f v)]
-criticalPairs n r1 r2 = do
+criticalPairs _ r1 r2 = do
   guard (not (or [ funSize f == 0 && funArity f == 1 | f <- funs (lhs (constrained r1)) ++ funs (lhs (constrained r2)) ]))
   let (Constrained ctx1 r1', Constrained ctx2 r2') = canonicaliseBoth (r1, r2)
   cp <- CP.cps [r1'] [r2']

@@ -29,7 +29,7 @@ empty :: Queue q
 empty = Queue Queue.empty (Set.singleton noLabel) (noLabel+1)
 
 enqueue :: Ord a => Label -> [Labelled a] -> Queue a -> Queue a
-enqueue l [] q = q
+enqueue _ [] q = q
 enqueue l xs q = q { queue = Queue.insert q' (queue q) }
   where
     q' = Labelled l (Subqueue (Queue.fromList xs))

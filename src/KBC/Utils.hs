@@ -6,7 +6,6 @@ module KBC.Utils where
 import Control.Arrow((&&&))
 import Control.Exception
 import Data.List(groupBy, sortBy)
-import Data.Monoid
 import Data.Ord(comparing)
 import System.IO
 

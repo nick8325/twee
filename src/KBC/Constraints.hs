@@ -16,7 +16,6 @@ import Data.Maybe
 import Data.Ord
 import qualified Data.Set as Set
 import Data.Set(Set)
-import qualified Data.Rewriting.Substitution.Type as Subst
 import Data.List
 
 -- Constrained things.
@@ -85,7 +84,7 @@ mainSplit p =
 mainSplits :: (Minimal f, Sized f, Numbered v, Ord f, Ord v) => Formula f v -> [Formula f v]
 mainSplits p =
   case runM simplify p of
-    Equal t u p q -> mainSplits q
+    Equal _ _ _ q -> mainSplits q
     p :|: q -> mainSplits p ++ mainSplits q
     p -> [p]
 
@@ -155,9 +154,9 @@ instance (PrettyTerm f, Pretty v) => Pretty (Formula f v) where
     pPrintParen (p > 10)
       (hang (pPrintPrec l 11 x <+> text "|") 2 (pPrintPrec l 11 y))
   pPrintPrec l p (Size t) = pPrintPrec l p t
-  pPrintPrec l p (HeadIs sense t x) = text "hd(" <> pPrintPrec l 0 t <> text ")" <+> pPrintPrec l 0 sense <+> pPrintPrec l 0 x
-  pPrintPrec l p (Less t u) = pPrintPrec l 0 t <+> text "<" <+> pPrintPrec l 0 u
-  pPrintPrec l p (Equal t u FTrue FFalse) =
+  pPrintPrec l _ (HeadIs sense t x) = text "hd(" <> pPrintPrec l 0 t <> text ")" <+> pPrintPrec l 0 sense <+> pPrintPrec l 0 x
+  pPrintPrec l _ (Less t u) = pPrintPrec l 0 t <+> text "<" <+> pPrintPrec l 0 u
+  pPrintPrec l _ (Equal t u FTrue FFalse) =
     pPrintPrec l 0 t <+> text "=" <+> pPrintPrec l 0 u
   pPrintPrec l p (Equal t u x y) =
     pPrintPrec l p ((Equal t u FTrue FFalse :&: x) :|: y)
@@ -174,8 +173,8 @@ instance (Minimal f, Sized f, Ord v) => Symbolic (Formula f v) where
   termsDL (Less t u) = return t `mplus` return u
   termsDL (Equal t u p q) = return t `mplus` return u `mplus` termsDL p `mplus` termsDL q
 
-  substf sub FTrue = FTrue
-  substf sub FFalse = FFalse
+  substf _ FTrue = FTrue
+  substf _ FFalse = FFalse
   substf sub (p :&: q) = substf sub p &&& substf sub q
   substf sub (p :|: q) = substf sub p ||| substf sub q
   substf sub (Size t) = Size t { FM.bound = substFM sub (FM.bound t) }
@@ -209,8 +208,8 @@ p ||| q = p :|: q
 
 FTrue &&& p = p
 p &&& FTrue = p
-FFalse &&& p = FFalse
-p &&& FFalse = FFalse
+FFalse &&& _ = FFalse
+_ &&& FFalse = FFalse
 Equal t u p q &&& r = Equal t u (p &&& r) (q &&& r)
 r &&& Equal t u p q = Equal t u (p &&& r) (q &&& r)
 p &&& (q :|: r) = (p &&& q) ||| (p &&& r)
@@ -258,8 +257,8 @@ simplify (Equal t u p q) =
     Nothing -> simplify q
     Just{} -> liftM2 (equal t u) (simplify p) (simplify q)
   where
-    equal t u FFalse q = q
-    equal t u _ FTrue = FTrue
+    equal _ _ FFalse q = q
+    equal _ _ _ FTrue = FTrue
     equal t u p q = Equal t u p q
 simplify (Size s)
   | isNothing (solve s) = return FFalse
@@ -267,7 +266,7 @@ simplify (Size s)
   where
     solve s = FM.solve (addConstraints [s] p)
     p = problem (sizeAxioms (FM.bound s))
-simplify (HeadIs sense (Fun f ts) g)
+simplify (HeadIs sense (Fun f _) g)
   | test sense f g = return FTrue
   | otherwise = return FFalse
   where
@@ -297,6 +296,7 @@ structLess (Fun f ts) (Fun g us) =
   where
     loop [] [] = FFalse
     loop (t:ts) (u:us) = Equal t u (loop ts us) (Less t u)
+    loop _ _ = ERROR("inconsistent arities")
 structLess (Var x) (Fun f ts) = do
   u <- specialise x f
   rest <- structLess u (Fun f ts)
@@ -309,6 +309,8 @@ structLess (Fun f ts) (Var x) = do
   return $
     Equal (Var x) u rest $
       HeadIs Greater (Var x) f
+structLess (Var _) (Var _) =
+  ERROR("impossible case in structLess")
 
 specialise :: (Minimal f, Sized f, Ord f, Ord v, Numbered v) => v -> f -> M (Tm f v)
 specialise x f = do
@@ -371,7 +373,7 @@ solve :: (Minimal f, Sized f, Ord f, Ord v) => Formula f v -> Solved f v
 solve = solve1 . filter (/= FTrue) . literals
   where
     literals (p :&: q) = literals p ++ literals q
-    literals (p :|: q) = ERROR "must call split before using a context"
+    literals (_ :|: _) = ERROR "must call split before using a context"
     literals (Equal _ _ _ _) = ERROR "must call split before using a context"
     literals p = [p]
 
@@ -439,9 +441,10 @@ implies form (HeadIs Greater (Var x) f) =
   case Map.lookup x (headGreater form) of
     Just g | g >= f -> True
     _ -> False
+implies _ _ = ERROR("non-split formula")
 
 modelSize :: (Pretty v, Minimal f, Sized f, Ord f, Ord v) => Tm f v -> Solved f v -> Integer
-modelSize t Unsolvable = __
+modelSize _ Unsolvable = __
 modelSize t Tautological = fromIntegral (size t)
 modelSize t s = ceiling (FM.eval 1 (solution s) (termSize t))
 
@@ -452,8 +455,8 @@ minimiseContext t ctx =
     s = minimiseSolved t (solved ctx)
 
 minimiseSolved :: (Pretty v, Minimal f, Sized f, Ord f, Ord v) => Tm f v -> Solved f v -> Solved f v
-minimiseSolved t Unsolvable = Unsolvable
-minimiseSolved t Tautological = Tautological
+minimiseSolved _ Unsolvable = Unsolvable
+minimiseSolved _ Tautological = Tautological
 minimiseSolved t s =
   s { solution = loop (solution s) }
   where
@@ -489,6 +492,7 @@ toExtended m (Fun f ts) =
 fromExtended :: Tm (Extended f v) v -> Tm f v
 fromExtended (Fun (Original f) ts) = Fun f (map fromExtended ts)
 fromExtended (Fun (ConstrainedVar x _ _ _) []) = Var x
+fromExtended (Fun (ConstrainedVar _ _ _ _) _) = ERROR("constrained var applied to arguments")
 fromExtended (Var x) = Var x
 
 instance (Minimal f, Sized f) => Sized (Extended f v) where
@@ -547,5 +551,5 @@ toModel s =
           | y <- x:filter (sameSize x) (Set.toList (Map.findWithDefault Set.empty x (less s))) ]))
     varSize x = Map.findWithDefault 1 x (solution s)
     sameSize x y = varSize x == varSize y
-    try f [] = Nothing
+    try _ [] = Nothing
     try f xs = Just (f xs)

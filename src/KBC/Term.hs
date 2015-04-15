@@ -3,17 +3,14 @@
 module KBC.Term where
 
 #include "errors.h"
+#if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
+#endif
 import Control.Monad
-import Control.Monad.Trans.State.Strict
-import Data.Functor.Identity
 import Data.List
-import qualified Data.Map as Map
 import Data.Ord
-import qualified Data.Rewriting.Substitution.Type as T
 import KBC.Base
 import KBC.Utils
-import Data.Ratio
 
 class Minimal a where
   minimal :: a
@@ -65,6 +62,7 @@ orientTerms t u =
   case compareTerms t u of
     Just (t', u', LT) -> do { guard (check t u t' u'); return LT }
     Just (t', u', GT) -> do { guard (check u t u' t'); return GT }
+    Just (_,  _,  EQ) -> ERROR("invalid result from compareTerms")
     Nothing           -> Just EQ
   where
     check t u t' u' =
@@ -78,5 +76,5 @@ size :: Sized f => Tm f v -> Int
 size t = ceiling (exactSize t)
 
 exactSize :: Sized f => Tm f v -> Rational
-exactSize (Var x) = 1
+exactSize (Var _) = 1
 exactSize (Fun f xs) = funSize f + sum (map exactSize xs)

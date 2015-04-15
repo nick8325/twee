@@ -2,7 +2,7 @@
 -- Term indexing (perfect discrimination trees).
 module KBC.Index where
 
-import KBC.Base hiding (empty)
+import KBC.Base
 import Control.Applicative
 import Control.Monad
 import qualified Data.DList as DList

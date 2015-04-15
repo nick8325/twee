@@ -34,4 +34,5 @@ library
     fourier-motzkin
   hs-source-dirs:      src
   include-dirs:        src
+  ghc-options:         -W
   default-language:    Haskell2010
