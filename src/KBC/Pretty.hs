@@ -1,9 +1,8 @@
 -- | Pretty-printing of terms and assorted other values.
 
-{-# LANGUAGE CPP, Rank2Types #-}
+{-# LANGUAGE Rank2Types #-}
 module KBC.Pretty where
 
-#include "errors.h"
 import Text.PrettyPrint.HughesPJClass
 import qualified Data.Map as Map
 import Data.Map(Map)
