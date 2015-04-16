@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, CPP, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, CPP, GeneralizedNewtypeDeriving, TypeFamilies #-}
 #include "errors.h"
 import Control.Applicative
 import Control.Monad
@@ -14,6 +14,7 @@ import Data.Rewriting.Rule(Rule(..))
 import Text.ParserCombinators.ReadP
 import Data.List
 import System.Environment
+import System.Exit
 import Data.Ord
 
 data Constant =
@@ -48,9 +49,9 @@ parseDecl :: Int -> ReadP Constant
 parseDecl n = do
   name <- munch1 (/= '/')
   char '/'
-  size <- readS_to_P reads
-  char '='
   arity <- readS_to_P reads
+  char '='
+  size <- readS_to_P reads
   return (Constant n arity size name)
 
 parseTerm :: ReadP (Tm String String)
@@ -89,6 +90,22 @@ replace xs x =
     Just y -> y
     Nothing -> error (show x ++ " not found")
 
+check :: (Symbolic a, ConstantOf a ~ Constant, VariableOf a ~ Variable) => a -> IO ()
+check eq = do
+  forM_ (terms eq >>= subterms) $ \t ->
+    case t of
+      Fun f xs | conArity f /= length xs -> do
+          print $
+            fsep [
+            text "Function",
+            nest 2 (pPrint f),
+            text "has arity",
+            nest 2 (pPrint (conArity f)),
+            text "but called as",
+            nest 2 (pPrint (Fun f xs))]
+          exitWith (ExitFailure 1)
+      _ -> return ()
+
 main = do
   [size] <- getArgs
   input  <- getContents
@@ -106,6 +123,7 @@ main = do
   mapM_ prettyPrint axioms
   putStrLn "\nGoals:"
   mapM_ prettyPrint goals
+  check (axioms, goals)
   putStrLn "\nGo!"
 
   norm <-
