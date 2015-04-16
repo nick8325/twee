@@ -1,0 +1,17 @@
+a/0      = 1
+false/0  = 1
+true/0   = 1
+i/0      = 1
+k/0      = 1
+s/0      = 1
+equals/2 = 1
+app/2    = 0
+--
+app(i, X) = X
+app(app(k, X), Y) = X
+app(app(app(s, X), Y), Z) = app(app(X, Z), app(Y, Z))
+equals(X, X) = true
+equals(app(X, a), app(a, app(X, a))) = false
+--
+false
+true
