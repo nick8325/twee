@@ -144,8 +144,8 @@ lookup t idx = partialToList f (lookupPartial t) idx
         {-# INLINE tryOne #-}
         tryOne x idx err =
           case Map.lookup x (Subst.toMap sub) of
-            Just u | t == u -> err
-            Just _ -> ok sub idx err
+            Just u | t == u -> ok sub idx err
+            Just _ -> err
             Nothing ->
               let
                 sub' = Subst.fromMap (Map.insert x t (Subst.toMap sub))
