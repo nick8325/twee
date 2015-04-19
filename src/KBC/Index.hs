@@ -96,38 +96,42 @@ data Result f v a =
 
 newtype Results f v a =
   Results {
-    unResults :: DList (Result f v a) }
-  deriving (Functor, Show)
+    unResults :: Subst f v -> DList (Result f v a) }
+  deriving Functor
 
 instance (Ord f, Ord v) => Applicative (Results f v) where
   pure = return
   (<*>) = liftM2 ($)
 
 instance (Ord f, Ord v) => Monad (Results f v) where
-  return x = Results (return (Result x (Subst.fromMap Map.empty)))
-  Results xs >>= f =
-    Results $ do
-      Result x sub1 <- xs
-      Result y sub2 <- unResults (f x)
-      Just sub <- return (Subst.merge sub1 sub2)
-      return (Result y sub)
+  return x = Results (\sub -> return (Result x sub))
+  Results f >>= k =
+    Results $ \sub -> do
+      Result x sub1 <- f sub
+      unResults (k x) sub1
 
 instance (Ord f, Ord v) => Alternative (Results f v) where
   empty = mzero
   (<|>) = mplus
 
 instance (Ord f, Ord v) => MonadPlus (Results f v) where
-  mzero = Results mzero
-  Results x `mplus` Results y = Results (x `mplus` y)
+  mzero = Results (\_ -> mzero)
+  Results f `mplus` Results g =
+    Results (\sub -> f sub `mplus` g sub)
+
+{-# INLINE toDList #-}
+toDList :: Set a -> DList a
+toDList = foldr (\x y -> return x `mplus` y) mzero
 
 lookup ::
   (Symbolic a, Ord (ConstantOf a), Ord (VariableOf a)) =>
   TmOf a -> Index a -> [a]
 lookup t idx =
-  concatMap flattenResult (DList.toList (unResults (lookupPartial t idx)))
-  where
-    flattenResult (Result idx' sub) =
-      [ substf (evalSubst sub) m | m <- Set.toList (here idx') ]
+  DList.toList $ do
+    Result idx' sub <-
+      unResults (lookupPartial t idx) (Subst.fromMap Map.empty)
+    m <- toDList (here idx')
+    return (substf (evalSubst sub) m)
 
 lookupPartial, lookupVar, lookupFun ::
   (Ord (ConstantOf a), Ord (VariableOf a)) =>
@@ -135,9 +139,12 @@ lookupPartial, lookupVar, lookupFun ::
 lookupPartial t idx = lookupFun t idx `mplus` lookupVar t idx
 
 lookupVar t idx =
-  Results $ do
+  Results $ \sub -> do
     (x, idx') <- DList.fromList (Map.toList (var idx))
-    return (Result idx' (Subst.fromMap (Map.singleton x t)))
+    case Map.lookup x (Subst.toMap sub) of
+      Just u | t == u -> mzero
+      Just _ -> return (Result idx' sub)
+      Nothing -> return (Result idx' (Subst.fromMap (Map.insert x t (Subst.toMap sub))))
 
 lookupFun (Fun f ts) idx =
   case Map.lookup f (fun idx) of
