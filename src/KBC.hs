@@ -100,20 +100,20 @@ newLabelM =
       (l, q) -> (l, s { queue = q })
 
 rules :: KBC f v -> Index (Constrained (Rule f v))
-rules = Index.mapMonotonic peel id id . labelledRules
+rules = Index.mapMonotonic peel . labelledRules
 
 allRules :: (Minimal f, Sized f, Numbered v, Ord f, Ord v) => KBC f v -> Index (Constrained (Rule f v))
 allRules x = rules x `Index.union` extraRules x
 
 constrainedNormaliser ::
-  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) =>
+  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   StateT (KBC f v) IO (Context f v -> Tm f v -> Tm f v)
 constrainedNormaliser = do
   rules <- gets allRules
   return $ \ctx -> normaliseWith (anywhere (tryConstrainedRules ctx rules))
 
 specificNormaliser ::
-  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) =>
+  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   StateT (KBC f v) IO (Set (Formula f v) -> Tm f v -> Tm f v)
 specificNormaliser = do
   rules <- gets allRules
@@ -121,7 +121,7 @@ specificNormaliser = do
     normaliseWith (anywhere (trySpecificRules forms rules))
 
 normaliser ::
-  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) =>
+  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   StateT (KBC f v) IO (Tm f v -> Tm f v)
 normaliser = do
   rules <- gets allRules
@@ -129,7 +129,7 @@ normaliser = do
     normaliseWith (anywhere (tryRules rules))
 
 complete ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered v, Pretty v) =>
+  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
   StateT (KBC f v) IO ()
 complete = do
   res <- dequeueM
@@ -141,13 +141,13 @@ complete = do
       return ()
 
 newEquation ::
-  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) =>
+  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   Equation f v -> StateT (KBC f v) IO ()
 newEquation (t :==: u) =
   queueCPs noLabel (map unlabelled (split (Constrained (toContext FTrue) (t :==: u))))
 
 queueCPs ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered v, Pretty v) =>
+  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
   Label -> [Labelled (Constrained (Equation f v))] -> StateT (KBC f v) IO ()
 queueCPs l eqns = do
   norm <- normaliser
@@ -176,7 +176,7 @@ toCP norm (Constrained ctx (l :==: r)) = do
 -- If we normalise after step 4, add the critical pair to the extra rules.
 
 normalisePair ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered v, Pretty v) =>
+  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
   Context f v -> Equation f v -> StateT (KBC f v) IO (Equation f v)
 normalisePair ctx (t :==: u) = do
   norm <- normaliser
@@ -193,7 +193,7 @@ normalisePair ctx (t :==: u) = do
   return $! aux Set.empty (norm t) (norm u)
 
 impliedCases ::
-  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) =>
+  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   Index (Constrained (Rule f v)) ->
   Context f v -> Equation f v -> [Formula f v]
 impliedCases rules ctx (t :==: u) = do
@@ -204,7 +204,7 @@ impliedCases rules ctx (t :==: u) = do
   return form
 
 consider ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered v, Pretty v) =>
+  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
   Label -> Label -> Constrained (Equation f v) -> StateT (KBC f v) IO ()
 consider _ _ (Constrained ctx (t :==: u)) = do
   t :==: u <- normalisePair ctx (t :==: u)
@@ -229,7 +229,7 @@ andM (mx:xs) = do
   if x then andM xs else return False
 
 joinable ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered v, Pretty v) =>
+  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
   Constrained (Equation f v) -> StateT (KBC f v) IO Bool
 joinable (Constrained ctx eq) =
   andM $ do
@@ -242,13 +242,13 @@ joinable (Constrained ctx eq) =
            | t == t' && u == u' -> return False
            | otherwise -> joinable (Constrained ctx (t' :==: u'))
 
-addRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered v, Pretty v) => Constrained (Rule f v) -> StateT (KBC f v) IO Label
+addRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) => Constrained (Rule f v) -> StateT (KBC f v) IO Label
 addRule rule = do
   l <- newLabelM
   modify (\s -> s { labelledRules = Index.insert (Labelled l rule) (labelledRules s) })
   return l
 
-deleteRule :: (Minimal f, Sized f, Ord f, Ord v, Numbered v) => Label -> Constrained (Rule f v) -> StateT (KBC f v) IO ()
+deleteRule :: (Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Constrained (Rule f v) -> StateT (KBC f v) IO ()
 deleteRule l rule =
   modify $ \s ->
     s { labelledRules = Index.delete (Labelled l rule) (labelledRules s),
@@ -260,7 +260,7 @@ instance (PrettyTerm f, Pretty v) => Pretty (Reduction f v) where
   pPrint (Simplify rule) = text "Simplify" <+> pPrint rule
   pPrint (Reorient rule) = text "Reorient" <+> pPrint rule
 
-interreduce :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered v, Pretty v) => Constrained (Rule f v) -> StateT (KBC f v) IO ()
+interreduce :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f, Numbered v, Pretty v) => Constrained (Rule f v) -> StateT (KBC f v) IO ()
 interreduce new = do
   rules <- gets (Index.elems . labelledRules)
   let reductions = catMaybes (map (moveLabel . fmap (reduceWith new)) rules)
@@ -269,7 +269,7 @@ interreduce new = do
   sequence_ [ newEquation (unorient (constrained rule)) | Reorient rule <- map peel reductions ]
   sequence_ [ deleteRule l rule | Labelled l (Reorient rule) <- reductions ]
 
-reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) => Constrained (Rule f v) -> Constrained (Rule f v) -> Maybe (Reduction f v)
+reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Constrained (Rule f v) -> Constrained (Rule f v) -> Maybe (Reduction f v)
 reduceWith new old
   | not (lhs (constrained new) `isInstanceOf` lhs (constrained old)) &&
     not (null (tryRule (context old) new (lhs (constrained old)))) =
@@ -278,7 +278,7 @@ reduceWith new old
       Just (Simplify old)
   | otherwise = Nothing
 
-simplifyRule :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) => Label -> Constrained (Rule f v) -> StateT (KBC f v) IO ()
+simplifyRule :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Constrained (Rule f v) -> StateT (KBC f v) IO ()
 simplifyRule l rule@(Constrained ctx (Rule lhs rhs)) = do
   norm <- constrainedNormaliser
   modify $ \s ->
@@ -287,7 +287,7 @@ simplifyRule l rule@(Constrained ctx (Rule lhs rhs)) = do
          Index.insert (Labelled l (Constrained ctx (Rule lhs (norm ctx rhs))))
            (Index.delete (Labelled l rule) (labelledRules s)) }
 
-addCriticalPairs :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered v, Pretty v) => Label -> Constrained (Rule f v) -> StateT (KBC f v) IO ()
+addCriticalPairs :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f, Numbered v, Pretty v) => Label -> Constrained (Rule f v) -> StateT (KBC f v) IO ()
 addCriticalPairs l new = do
   rules <- gets labelledRules
   size  <- gets maxSize

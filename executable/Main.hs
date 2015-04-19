@@ -29,6 +29,9 @@ con0 = Constant 0 0 1 "*"
 instance Eq Constant where
   x == y = x `compare` y == EQ
 instance Ord Constant where compare = comparing conIndex
+instance Numbered Constant where
+  number = conIndex
+  withNumber = __
 
 instance Minimal Constant where
   minimal = con0

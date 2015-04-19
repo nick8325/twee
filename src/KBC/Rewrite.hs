@@ -42,19 +42,19 @@ tryRule ctx rule t = do
   guard (any (implies (solved ctx)) (mainSplits (formula (context rule'))))
   return (rhs (constrained rule'))
 
-tryConstrainedRules :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) => Context f v -> Index (Constrained (Rule f v)) -> Strategy f v
+tryConstrainedRules :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Context f v -> Index (Constrained (Rule f v)) -> Strategy f v
 tryConstrainedRules ctx rules t = do
   rule <- Index.lookup t rules
   guard (any (implies (solved ctx)) (mainSplits (formula (context rule))))
   return (rhs (constrained rule))
 
-trySpecificRules :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) => Set (Formula f v) -> Index (Constrained (Rule f v)) -> Strategy f v
+trySpecificRules :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Set (Formula f v) -> Index (Constrained (Rule f v)) -> Strategy f v
 trySpecificRules forms rules t = do
   rule <- Index.lookup t rules
   guard (true (formula (context rule)) || formula (context rule) `Set.member` forms)
   return (rhs (constrained rule))
 
-tryRules :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) => Index (Constrained (Rule f v)) -> Strategy f v
+tryRules :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Index (Constrained (Rule f v)) -> Strategy f v
 tryRules rules t = do
   rule <- Index.lookup t rules
   guard (true (formula (context rule)))
