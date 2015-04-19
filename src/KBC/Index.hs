@@ -91,6 +91,30 @@ type Partial a b =
   (GSubst Int (ConstantOf a) (VariableOf a) -> Index a -> b -> b) ->
    GSubst Int (ConstantOf a) (VariableOf a) -> Index a -> b -> b
 
+{-# INLINE yes #-}
+yes :: Partial a b
+yes ok sub idx err = ok sub idx err
+
+{-# INLINE no #-}
+no :: Partial a b
+no ok sub idx err = err
+
+{-# INLINE orElse #-}
+orElse :: Partial a b -> Partial a b -> Partial a b
+f `orElse` g = \ok sub idx err -> f ok sub idx (g ok sub idx err)
+
+{-# INLINE andThen #-}
+andThen :: Partial a b -> Partial a b -> Partial a b
+f `andThen` g = \ok sub idx err -> f (\sub idx err -> g ok sub idx err) sub idx err
+
+{-# INLINE withIndex #-}
+withIndex :: Index a -> Partial a b -> Partial a b
+withIndex idx f = \ok sub _ err -> f ok sub idx err
+
+{-# INLINE inIndex #-}
+inIndex :: (Index a -> Partial a b) -> Partial a b
+inIndex f = \ok sub idx err -> f idx ok sub idx err
+
 {-# INLINE partialToList #-}
 partialToList ::
   (GSubst Int (ConstantOf a) (VariableOf a) -> Index a -> [b]) ->
@@ -111,8 +135,7 @@ lookup t idx = partialToList f (lookupPartial t) idx
     substNumbered sub x =
       Map.findWithDefault (Var x) (number x) (Subst.toMap sub)
 
-    lookupPartial t ok sub idx err =
-      lookupFun t ok sub idx (lookupVar t ok sub idx err)
+    lookupPartial t = lookupFun t `orElse` lookupVar t
 
     {-# INLINE lookupVar #-}
     lookupVar t ok sub idx err =
@@ -130,17 +153,17 @@ lookup t idx = partialToList f (lookupPartial t) idx
                 ok sub' idx err
 
     {-# INLINE lookupFun #-}
-    lookupFun (Fun f ts) ok sub idx err =
-      case IntMap.lookup (number f) (fun idx) of
-        Nothing -> err
-        Just idx ->
-          let
-            loop [] ok sub idx err = ok sub idx err
-            loop (t:ts) ok sub idx err =
-              lookupPartial t (\sub idx err -> loop ts ok sub idx err) sub idx err
-          in
-            loop ts ok sub idx err
-    lookupFun _ _ _ _ err = err
+    lookupFun (Fun f ts) =
+      inIndex $ \idx ->
+        case IntMap.lookup (number f) (fun idx) of
+          Nothing -> no
+          Just idx ->
+            let
+              loop [] = yes
+              loop (t:ts) = lookupPartial t `andThen` loop ts
+            in
+              withIndex idx (loop ts)
+    lookupFun _ = no
 
 elems :: Index a -> [a]
 elems idx =
