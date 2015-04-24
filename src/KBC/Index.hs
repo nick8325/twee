@@ -3,8 +3,6 @@
 module KBC.Index where
 
 import KBC.Base
-import Control.Applicative
-import Control.Monad
 import qualified Data.Map as Map
 import qualified Data.IntMap.Strict as IntMap
 import Data.IntMap.Strict(IntMap)
@@ -97,7 +95,7 @@ yes ok sub idx err = ok sub idx err
 
 {-# INLINE no #-}
 no :: Partial a b
-no ok sub idx err = err
+no _ _ _ err = err
 
 {-# INLINE orElse #-}
 orElse :: Partial a b -> Partial a b -> Partial a b
