@@ -255,7 +255,7 @@ simplify (Equal t u p q) | t == u = simplify (p ||| q)
 simplify (Equal t u p q) =
   case unify t u of
     Nothing -> simplify q
-    Just{} -> liftM2 (equal t u) (simplify p) (simplify q)
+    Just sub -> liftM2 (equal t u) (simplify (substf (evalSubst sub) p)) (simplify q)
   where
     equal _ _ FFalse q = q
     equal _ _ _ FTrue = FTrue
@@ -446,7 +446,9 @@ implies _ _ = ERROR("non-split formula")
 modelSize :: (Pretty v, Minimal f, Sized f, Ord f, Ord v) => Tm f v -> Solved f v -> Integer
 modelSize _ Unsolvable = __
 modelSize t Tautological = fromIntegral (size t)
-modelSize t s = ceiling (FM.eval 1 (solution s) (termSize t))
+modelSize t s = ceiling (FM.eval val (termSize t))
+  where
+    val x = Map.findWithDefault 1 x (solution s)
 
 minimiseContext :: (Minimal f, Sized f, Pretty v, Ord f, Ord v) => Tm f v -> Context f v -> Context f v
 minimiseContext t ctx =
@@ -469,7 +471,8 @@ minimiseSolved t s =
             Nothing -> m
             Just m -> loop m
       where
-        x = FM.eval 1 m sz
+        x = FM.eval val sz
+        val v = Map.findWithDefault 1 v m
         n :: Integer
         n = ceiling x
 
@@ -479,12 +482,16 @@ data Extended f v =
     -- x is at position n among all ConstrainedVars,
     -- has size k and its head is smaller than f
   | ConstrainedVar v Int Rational (Maybe f)
+    -- Unconstrained variables.
+    -- These go above the minimal constant but less than
+    -- anything else.
+  | UnconstrainedVar v
   deriving (Eq, Show)
 
 toExtended :: Ord v => Map v (Extended f v) -> Tm f v -> Tm (Extended f v) v
 toExtended m (Var x) =
   case Map.lookup x m of
-    Nothing -> Var x
+    Nothing -> Fun (UnconstrainedVar x) []
     Just f -> Fun f []
 toExtended m (Fun f ts) =
   Fun (Original f) (map (toExtended m) ts)
@@ -492,29 +499,43 @@ toExtended m (Fun f ts) =
 fromExtended :: Tm (Extended f v) v -> Tm f v
 fromExtended (Fun (Original f) ts) = Fun f (map fromExtended ts)
 fromExtended (Fun (ConstrainedVar x _ _ _) []) = Var x
-fromExtended (Fun (ConstrainedVar _ _ _ _) _) = ERROR("constrained var applied to arguments")
+fromExtended (Fun (UnconstrainedVar x) []) = Var x
+fromExtended (Fun _ _) = ERROR("extended var applied to arguments")
 fromExtended (Var x) = Var x
 
 instance (Minimal f, Sized f) => Sized (Extended f v) where
   funSize (Original f) = funSize f
   funSize (ConstrainedVar _ _ k _) = k
+  funSize UnconstrainedVar{} = 1
   funArity (Original f) = funArity f
-  funArity ConstrainedVar{} = 0
+  funArity _ = 0
+
+instance Numbered f => Numbered (Extended f v) where
+  number (Original f) = number f
+  number _ = ERROR("extended vars don't have numbers")
+  withNumber n (Original f) = Original (withNumber n f)
+  withNumber _ _ = ERROR("extended vars don't have numbers")
 
 instance (Minimal f, Sized f, Ord f, Ord v) => Ord (Extended f v) where
   compare (Original f) (Original g) = compare f g
+
   compare (ConstrainedVar _ m _ _) (ConstrainedVar _ n _ _) = compare m n
-  compare x@Original{} y@ConstrainedVar{} =
-    case compare y x of
-      LT -> GT
-      EQ -> EQ
-      GT -> LT
   compare (ConstrainedVar _ _ _ Nothing) (Original f)
     | funSize f == 0 && funArity f == 1 = LT
     | otherwise = GT
   compare (ConstrainedVar _ _ _ (Just f)) (Original g)
     | f <= g = LT
     | otherwise = GT
+
+  compare (UnconstrainedVar x) (UnconstrainedVar y) = compare x y
+  compare UnconstrainedVar{} (Original f) | f == minimal = GT
+  compare UnconstrainedVar{} _ = LT
+
+  compare x y =
+    case compare y x of
+      LT -> GT
+      EQ -> EQ
+      GT -> LT
 
 instance (PrettyTerm f, Pretty v) => Pretty (Extended f v) where
   pPrint (Original f) = pPrint f
@@ -523,10 +544,11 @@ instance (PrettyTerm f, Pretty v) => Pretty (Extended f v) where
     where
       bound Nothing = text ""
       bound (Just f) = text ", >" <+> pPrint f
+  pPrint (UnconstrainedVar x) = pPrint x
 
 instance (PrettyTerm f, Pretty v) => PrettyTerm (Extended f v) where
   termStyle (Original f) = termStyle f
-  termStyle ConstrainedVar{} = curried
+  termStyle _ = curried
 
 toModel :: (Ord f, Ord v) => Solved f v -> Map v (Extended f v)
 toModel Unsolvable = __
@@ -553,3 +575,30 @@ toModel s =
     sameSize x y = varSize x == varSize y
     try _ [] = Nothing
     try f xs = Just (f xs)
+
+trueIn :: (Sized f, Minimal f, Ord f, Ord v) => Map v (Extended f v) -> Formula f v -> Bool
+trueIn _ FTrue = True
+trueIn _ FFalse = False
+trueIn model (p :&: q) = trueIn model p && trueIn model q
+trueIn model (p :|: q) = trueIn model p || trueIn model q
+trueIn model (Size p) =
+  FM.boundTrue (fmap (eval val) p)
+  where
+    val x =
+      case Map.lookup x model of
+        Just (ConstrainedVar _ _ k _) -> k
+        _ -> 1
+trueIn _ (HeadIs Lesser (Fun f _) g) = f < g
+trueIn _ (HeadIs Greater (Fun f _) g) = f > g
+trueIn model (HeadIs Lesser (Var x) f) =
+  case Map.lookup x model of
+    Nothing -> UnconstrainedVar x < Original f
+    Just t  -> t < Original f
+trueIn model (HeadIs Greater (Var x) f) =
+  case Map.lookup x model of
+    Nothing -> UnconstrainedVar x > Original f
+    Just t  -> t > Original f
+trueIn model (Less t u) =
+  toExtended model t `simplerThan` toExtended model u
+trueIn model (Equal t u p q) =
+  (t == u && trueIn model p) || trueIn model q

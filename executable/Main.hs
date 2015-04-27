@@ -10,6 +10,7 @@ import KBC.Base hiding (char)
 import KBC.Term
 import KBC.Equation
 import KBC.Utils
+import KBC.Rewrite
 import Data.Rewriting.Rule(Rule(..))
 import Text.ParserCombinators.ReadP
 import Data.List
@@ -137,4 +138,4 @@ main = do
 
   putStrLn "\nHere we are:"
   forM_ goals $ \t ->
-    prettyPrint (Rule t (norm t))
+    prettyPrint (Rule t (result (norm t)))

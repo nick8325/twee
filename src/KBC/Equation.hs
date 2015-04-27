@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies, FlexibleContexts #-}
 module KBC.Equation where
 
 import KBC.Base
@@ -31,20 +31,35 @@ unorient (Rule l r) = l :==: r
 
 orient :: (Minimal f, Sized f, Ord f, Ord v, Numbered v) => Equation f v -> [Constrained (Rule f v)]
 orient (l :==: r) =
-  case orientTerms l r of
-    Just GT -> [Constrained (toContext FTrue) (Rule l r)]
-    Just LT -> [Constrained (toContext FTrue) (Rule r l)]
-    Just EQ -> []
-    Nothing -> rule l r ++ rule r l
+  -- If we have an equation where some variables appear only on one side, e.g.:
+  --   f x y = g x z
+  -- then replace it with the equations:
+  --   f x y = f x k
+  --   g x z = g x k
+  --   f x k = g x k
+  -- where k is an arbitrary constant
+  [ rule l l' | not (null ls), ord /= Just GT ] ++
+  [ rule r r' | not (null rs), ord /= Just LT ] ++
+  case ord of
+    Just GT ->
+      [Constrained (toContext FTrue) (Rule l r')]
+    Just LT ->
+      [Constrained (toContext FTrue) (Rule r l')]
+    Just EQ ->
+      []
+    Nothing ->
+      [rule l' r'] ++ [rule r' l']
   where
-    rule l r
-      | null vs =
-          [Constrained (toContext (Less r l)) (Rule l r)]
-      | otherwise = rule l r' ++ rule r r'
-      where
-        vs = usort (vars r) \\ usort (vars l)
-        -- Replace f x = g y with f x = g k, g y = g k where k is the minimal element
-        r' = substf (\x -> if x `elem` vs then Fun minimal [] else Var x) r
+    ord = orientTerms l' r'
+    l' = erase ls l
+    r' = erase rs r
+    ls = usort (vars l) \\ usort (vars r)
+    rs = usort (vars r) \\ usort (vars l)
+
+    erase [] t = t
+    erase xs t = substf (\x -> if x `elem` xs then Fun minimal [] else Var x) t
+
+    rule t u = reduce (Constrained (toContext (Less u t)) (Rule t u))
 
 bothSides :: (Tm f v -> Tm f' v') -> Equation f v -> Equation f' v'
 bothSides f (t :==: u) = f t :==: f u
