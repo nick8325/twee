@@ -152,17 +152,24 @@ toCP norm (Constrained ctx (l :==: r)) = do
   guard (l' /= r')
   return (CP (size l) (Constrained ctx (l' :==: r')))
 
-complete ::
+complete1 ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
-  StateT (KBC f v) IO ()
-complete = do
+  StateT (KBC f v) IO Bool
+complete1 = do
   res <- dequeueM
   case res of
     Just (l1, l2, cp) -> do
       consider l1 l2 (cpEquation cp)
-      complete
+      return True
     Nothing ->
-      return ()
+      return False
+
+complete ::
+  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
+  StateT (KBC f v) IO ()
+complete = do
+  res <- complete1
+  when res complete
 
 consider ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>

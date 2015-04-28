@@ -130,10 +130,23 @@ main = do
   check (axioms, goals)
   putStrLn "\nGo!"
 
+  let
+    stop
+      | length goals <= 1 = return False
+      | otherwise = do
+          norm <- normaliser
+          let goals' = map (result . norm) goals
+          return (and (zipWith (==) goals' (tail goals')))
+
+    loop = do
+      res1 <- complete1
+      res2 <- stop
+      when (res1 && not res2) loop
+
   norm <-
     flip evalStateT (initialState (read size)) $ do
       mapM_ newEquation axioms
-      complete
+      loop
       normaliser
 
   putStrLn "\nHere we are:"
