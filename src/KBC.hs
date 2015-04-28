@@ -24,7 +24,6 @@ import Data.Set(Set)
 import qualified Debug.Trace
 import Control.Monad.Trans.State.Strict
 import Data.Map.Strict(Map)
-import qualified Data.Map.Strict as Map
 
 data Event f v =
     NewRule (Constrained (Rule f v))
@@ -41,7 +40,7 @@ traceM (NewCP cps) = traceIf True (hang (text "Critical pair") 2 (pPrint cps))
 traceM (Consider eq) = traceIf True (sep [text "Considering", nest 2 (pPrint eq)])
 traceM (Split eq []) = traceIf True (sep [text "Split", nest 2 (pPrint eq), text "into nothing"])
 traceM (Split eq eqs) = traceIf True (sep [text "Split", nest 2 (pPrint eq), text "into", nest 2 (vcat (map pPrint eqs))])
-traceM (Discharge eq fs) = traceIf True (sep [text "Discharge", nest 2 (pPrint eq), text "under", pPrint fs])
+traceM (Discharge eq fs) = traceIf True (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
 traceIf :: Monad m => Bool -> Doc -> m ()
 traceIf True x = Debug.Trace.traceM (show x)
 traceIf _ _ = return ()
@@ -187,12 +186,13 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
                               (\fs -> result (snorm (Set.fromList fs) t) == result (snorm (Set.fromList fs) u))
           traceM (Discharge pair rs)
           consider l1 l2 (Constrained (toContext (runM simplify (formula ctx &&& runM negFormula (foldr (&&&) FTrue rs)))) (t :==: u))
-        False ->
+        False -> do
           forM_ (usort (map canonicalise (orient (t' :==: u')))) $ \rule -> do
             traceM (NewRule rule)
             l <- addRule rule
             interreduce rule
             addCriticalPairs l rule
+          consider l1 l2 pair
 
 shrinkList :: [a] -> ([a] -> Bool) -> [a]
 shrinkList [] _ = []
@@ -249,10 +249,10 @@ addCriticalPairs :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f,
 addCriticalPairs l new = do
   rules <- gets labelledRules
   size  <- gets maxSize
-  queueCPs l $
+  queueCPs l . usort . map canonicalise $
     [ Labelled l' cp
     | Labelled l' old <- Index.elems rules,
-      cp <- usort (criticalPairs size new old ++ criticalPairs size old new) ]
+      cp <- criticalPairs size new old ++ criticalPairs size old new ]
 
 canonicaliseBoth :: (Symbolic a, Ord (VariableOf a), Numbered (VariableOf a)) => (a, a) -> (a, a)
 canonicaliseBoth (x, y) = (x', substf (Var . increase) y')
@@ -276,4 +276,4 @@ criticalPairs _ r1 r2 = do
           substf (rename f . evalSubst sub . Left) (formula ctx1) &&&
           substf (rename f . evalSubst sub . Right) (formula ctx2)
 
-  split (Constrained ctx (left :==: right))
+  return (Constrained ctx (left :==: right))

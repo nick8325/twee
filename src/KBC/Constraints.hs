@@ -149,17 +149,20 @@ instance (PrettyTerm f, Pretty v) => Pretty (Formula f v) where
   pPrintPrec _ _ FFalse = text "false"
   pPrintPrec l p (x :&: y) =
     pPrintParen (p > 10)
-      (hang (pPrintPrec l 11 x <+> text "&") 2 (pPrintPrec l 11 y))
+      (hang (pPrintPrec l 11 x <+> text "&") 0 (pPrintPrec l 11 y))
   pPrintPrec l p (x :|: y) =
     pPrintParen (p > 10)
-      (hang (pPrintPrec l 11 x <+> text "|") 2 (pPrintPrec l 11 y))
+      (hang (pPrintPrec l 11 x <+> text "|") 0 (pPrintPrec l 11 y))
   pPrintPrec l p (Size t) = pPrintPrec l p t
   pPrintPrec l _ (HeadIs sense t x) = text "hd(" <> pPrintPrec l 0 t <> text ")" <+> pPrintPrec l 0 sense <+> pPrintPrec l 0 x
   pPrintPrec l _ (Less t u) = pPrintPrec l 0 t <+> text "<" <+> pPrintPrec l 0 u
   pPrintPrec l _ (Equal t u FTrue FFalse) =
     pPrintPrec l 0 t <+> text "=" <+> pPrintPrec l 0 u
+  pPrintPrec l _ (Equal t u p FFalse) =
+    text "{" <> pPrintPrec l 0 t <+> text "=" <+> pPrintPrec l 0 u <> text "}" <+>
+    pPrintPrec l 11 p
   pPrintPrec l p (Equal t u x y) =
-    pPrintPrec l p ((Equal t u FTrue FFalse :&: x) :|: y)
+    pPrintPrec l p ((Equal t u x FFalse) :|: y)
 
 instance (Minimal f, Sized f, Ord v) => Symbolic (Formula f v) where
   type ConstantOf (Formula f v) = f
@@ -249,17 +252,28 @@ newName x = do
 simplify :: (Minimal f, Sized f, Ord f, Ord v, Numbered v) => Formula f v -> M (Formula f v)
 simplify FTrue = return FTrue
 simplify FFalse = return FFalse
-simplify (p :&: q) = liftM2 (&&&) (simplify p) (simplify q)
-simplify (p :|: q) = liftM2 (|||) (simplify p) (simplify q)
+simplify (p :&: q) = liftM2 (&&&) (simplify p) (simplify q) >>= go
+  where
+    go p@Equal{} = simplify p
+    go p = return p
+simplify (p :|: q) = liftM2 (|||) (simplify p) (simplify q) >>= go
+  where
+    go p@Equal{} = simplify p
+    go p = return p
 simplify (Equal t u p q) | t == u = simplify (p ||| q)
 simplify (Equal t u p q) =
   case unify t u of
     Nothing -> simplify q
-    Just sub -> liftM2 (equal t u) (simplify (substf (evalSubst sub) p)) (simplify q)
+    Just sub -> liftM2 (equal t u) (simplify (substf (sanitise (evalSubst sub)) p)) (simplify q)
   where
     equal _ _ FFalse q = q
     equal _ _ _ FTrue = FTrue
     equal t u p q = Equal t u p q
+    sanitise f x
+      | isVar t || isGround t = t
+      | otherwise = Var x
+      where
+        t = f x
 simplify (Size s)
   | isNothing (solve s) = return FFalse
   | isNothing (solve (FM.negateBound s)) = return FTrue
