@@ -136,11 +136,16 @@ queueCPs ::
   Label -> [Labelled (Constrained (Equation f v))] -> StateT (KBC f v) IO ()
 queueCPs l eqns = do
   norm <- normaliser
-  n <- gets maxSize
-  let cps = catMaybes (map (moveLabel . fmap (toCP (result . norm))) eqns)
-      cps' = [ cp | cp <- cps, cpSize (peel cp) <= fromIntegral n ]
-  mapM_ (traceM . NewCP . peel) cps'
-  enqueueM l cps'
+  maxN <- gets maxSize
+  let cps = [ Labelled l' (CP n (Constrained ctx (t' :==: u')))
+            | Labelled l' (Constrained ctx (t :==: u)) <- eqns,
+              t /= u,
+              let t' :==: u' = order (result (norm t) :==: result (norm u)),
+              t' /= u',
+              let n = size t',
+              n <= fromIntegral maxN ]
+  mapM_ (traceM . NewCP . peel) cps
+  enqueueM l cps
 
 toCP ::
   (Minimal f, Sized f, Ord f, Ord v, Numbered v, PrettyTerm f, Pretty v) =>
@@ -256,7 +261,7 @@ addCriticalPairs :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f,
 addCriticalPairs l new = do
   rules <- gets labelledRules
   size  <- gets maxSize
-  queueCPs l . usort . map canonicalise $
+  queueCPs l $
     [ Labelled l' cp
     | Labelled l' old <- Index.elems rules,
       cp <- criticalPairs size new old ++ criticalPairs size old new ]
