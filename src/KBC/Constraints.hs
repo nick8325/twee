@@ -270,7 +270,7 @@ simplify (Equal t u p q) =
     equal _ _ _ FTrue = FTrue
     equal t u p q = Equal t u p q
     sanitise f x
-      | isVar t || isGround t = t
+      | (isVar t && t < Var x) || isGround t = t
       | otherwise = Var x
       where
         t = f x
