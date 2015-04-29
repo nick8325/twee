@@ -65,3 +65,10 @@ tryRule rule t = do
   let rule' = substf (evalSubst sub) rule
   guard (true (formula (context rule')))
   return rule'
+
+tryRuleInModel :: (Ord f, Sized f, Minimal f, Ord v) => Map v (Extended f v) -> Constrained (Rule f v) -> Strategy f v
+tryRuleInModel model rule t = do
+  sub <- maybeToList (match (lhs (constrained rule)) t)
+  let rule' = substf (evalSubst sub) rule
+  guard (trueIn model (formula (context rule')))
+  return rule'

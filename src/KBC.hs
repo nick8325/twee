@@ -199,11 +199,14 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
           traceM (Discharge pair rs)
           consider l1 l2 (Constrained (toContext (runM simplify (formula ctx &&& runM negFormula (foldr (&&&) FTrue rs)))) (t :==: u))
         False -> do
-          forM_ (usort (map canonicalise (filter (trueIn model . formula . context) (orient (t' :==: u'))))) $ \rule -> do
-            traceM (NewRule rule)
-            l <- addRule rule
-            interreduce rule
-            addCriticalPairs l rule
+          let applicable rule =
+                not (null (anywhere (tryRuleInModel model rule) t')) ||
+                not (null (anywhere (tryRuleInModel model rule) u'))
+              rule:_ = filter applicable (orient (t' :==: u'))
+          traceM (NewRule rule)
+          l <- addRule rule
+          interreduce rule
+          addCriticalPairs l rule
           consider l1 l2 pair
 
 shrinkList :: [a] -> ([a] -> Bool) -> [a]
