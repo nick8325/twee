@@ -133,18 +133,10 @@ postfix =
     pPrintPrec l 11 x <> d
 
 -- | For infix operators.
--- e.g. @infixStyle (Left 5)@ corresponds to @infixl 5@.
--- Currently terms that mix left- and right-associative
--- operators are not printed correctly.
-infixStyle :: Either Int Int -> TermStyle
-infixStyle fixity =
+infixStyle :: Int -> TermStyle
+infixStyle pOp =
   fixedArity 2 $
   TermStyle $ \l p d [x, y] ->
-    pPrintParen (p > pOp) $
-      hang (pPrintPrec l (pOp+1) x <+> d) 2
-           (pPrintPrec l (pOp+r) y)
-  where
-    (r, pOp) =
-      case fixity of
-        Left pOp -> (0, fromIntegral pOp)
-        Right pOp -> (1, fromIntegral pOp)
+    pPrintParen (p > fromIntegral pOp) $
+      hang (pPrintPrec l (fromIntegral pOp+1) x <+> d) 2
+           (pPrintPrec l (fromIntegral pOp+1) y)

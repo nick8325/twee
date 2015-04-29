@@ -25,7 +25,7 @@ data Constant =
     conSize  :: Int,
     conName  :: String }
 
-con0 = Constant 0 0 1 "*"
+con0 = Constant 0 0 1 "?"
 
 instance Eq Constant where
   x == y = x `compare` y == EQ
@@ -42,7 +42,9 @@ instance Sized Constant where
   funArity = conArity
 
 instance Pretty Constant where pPrint = text . conName
-instance PrettyTerm Constant where termStyle _ = uncurried
+instance PrettyTerm Constant where
+  termStyle con | conArity con == 2 && not (any isAlphaNum (conName con)) = infixStyle 5
+  termStyle _ = uncurried
 
 newtype Variable = V Int deriving (Eq, Ord, Numbered)
 
