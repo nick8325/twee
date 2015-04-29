@@ -189,25 +189,27 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
     p -> do
       let model = toModel (solve p)
       norm <- modelNormaliser model
-      let Reduction t' rs1  = norm t
+      let Reduction t' rs1 = norm t
           Reduction u' rs2 = norm u
-      case t' == u' of
-        True -> do
-          snorm <- specificNormaliser
-          let rs = shrinkList (usort (map (formula . context) rs1 ++ map (formula . context) rs2))
-                              (\fs -> result (snorm (Set.fromList fs) t) == result (snorm (Set.fromList fs) u))
-          traceM (Discharge pair rs)
-          consider l1 l2 (Constrained (toContext (runM simplify (formula ctx &&& runM negFormula (foldr (&&&) FTrue rs)))) (t :==: u))
-        False -> do
-          let applicable rule =
-                not (null (anywhere (tryRuleInModel model rule) t')) ||
-                not (null (anywhere (tryRuleInModel model rule) u'))
-              rule:_ = filter applicable (orient (t' :==: u'))
-          traceM (NewRule rule)
-          l <- addRule rule
-          interreduce rule
-          addCriticalPairs l rule
-          consider l1 l2 pair
+      cond <-
+        case t' == u' of
+          True -> do
+            snorm <- specificNormaliser
+            let rs = shrinkList (usort (map (formula . context) rs1 ++ map (formula . context) rs2))
+                                (\fs -> result (snorm (Set.fromList fs) t) == result (snorm (Set.fromList fs) u))
+            traceM (Discharge pair rs)
+            return (foldr (&&&) FTrue rs)
+          False -> do
+            let applicable rule =
+                  not (null (anywhere (tryRuleInModel model rule) t')) ||
+                  not (null (anywhere (tryRuleInModel model rule) u'))
+                rule:_ = filter applicable (orient (t' :==: u'))
+            traceM (NewRule rule)
+            l <- addRule rule
+            interreduce rule
+            addCriticalPairs l rule
+            return (formula (context rule))
+      consider l1 l2 (Constrained (toContext (runM simplify (formula ctx &&& runM negFormula cond))) (t :==: u))
 
 shrinkList :: [a] -> ([a] -> Bool) -> [a]
 shrinkList [] _ = []
