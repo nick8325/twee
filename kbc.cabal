@@ -30,7 +30,7 @@ library
     transformers,
     dlist,
     pretty,
-    pqueue,
+    heaps,
     fourier-motzkin
   hs-source-dirs:      src
   include-dirs:        src

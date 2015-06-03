@@ -38,17 +38,10 @@ orient (l :==: r) =
   --   g x z = g x k
   --   f x k = g x k
   -- where k is an arbitrary constant
-  [ rule l l' | not (null ls), ord /= Just GT ] ++
-  [ rule r r' | not (null rs), ord /= Just LT ] ++
-  case ord of
-    Just GT ->
-      [Constrained (toContext FTrue) (Rule l r')]
-    Just LT ->
-      [Constrained (toContext FTrue) (Rule r l')]
-    Just EQ ->
-      []
-    Nothing ->
-      [rule l' r'] ++ [rule r' l']
+  [ rule l r' | ord /= Just LT && ord /= Just EQ ] ++
+  [ rule r l' | ord /= Just GT && ord /= Just EQ ] ++
+  [ rule l l' | not (null ls), ord /= Just LT ] ++
+  [ rule r r' | not (null rs), ord /= Just GT ]
   where
     ord = orientTerms l' r'
     l' = erase ls l

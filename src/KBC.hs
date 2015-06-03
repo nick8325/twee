@@ -60,7 +60,7 @@ data CP f v =
 instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
   compare =
     comparing $ \(CP size (Constrained _ (l :==: r))) ->
-      (measure l, measure r, size)
+      (size, measure l, measure r)
 
 instance (PrettyTerm f, Pretty v) => Pretty (CP f v) where
   pPrint = pPrint . cpEquation
@@ -204,7 +204,7 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
                   not (null (anywhere (tryRuleInModel model rule) t')) ||
                   not (null (anywhere (tryRuleInModel model rule) u'))
                 rule:_ = filter applicable (orient (t' :==: u'))
-            traceM (NewRule rule)
+            traceM (NewRule (canonicalise rule))
             l <- addRule rule
             interreduce rule
             addCriticalPairs l rule
