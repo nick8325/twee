@@ -23,7 +23,7 @@ instance (PrettyTerm f, Pretty v) => Pretty (Equation f v) where
 
 order :: (Sized f, Ord f, Ord v) => Equation f v -> Equation f v
 order (l :==: r)
-  | l == r || measure l >= measure r = l :==: r
+  | l == r || termSize l >= termSize r = l :==: r
   | otherwise = r :==: l
 
 unorient :: Rule f v -> Equation f v
@@ -52,7 +52,7 @@ orient (l :==: r) =
     erase [] t = t
     erase xs t = substf (\x -> if x `elem` xs then Fun minimal [] else Var x) t
 
-    rule t u = reduce (Constrained (toContext (Less u t)) (Rule t u))
+    rule t u = Constrained (toConstraint (less Strict u t)) (Rule t u)
 
 bothSides :: (Tm f v -> Tm f' v') -> Equation f v -> Equation f' v'
 bothSides f (t :==: u) = f t :==: f u

@@ -1,7 +1,7 @@
 -- | Pretty-printing of terms and assorted other values.
 
 {-# LANGUAGE Rank2Types #-}
-module KBC.Pretty where
+module KBC.Pretty(module KBC.Pretty, Pretty(..), prettyShow) where
 
 import Text.PrettyPrint.HughesPJClass
 import qualified Data.Map as Map

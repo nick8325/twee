@@ -1,31 +1,32 @@
-{-# LANGUAGE TypeOperators, TypeFamilies, CPP, FlexibleContexts, UndecidableInstances, StandaloneDeriving, ConstraintKinds #-}
+{-# LANGUAGE TypeFamilies, CPP, FlexibleContexts, UndecidableInstances, StandaloneDeriving, RecordWildCards, GADTs, ScopedTypeVariables #-}
 module KBC.Constraints where
 
 #include "errors.h"
 import KBC.Base
 import qualified Solver.FourierMotzkin as FM
 import qualified Solver.FourierMotzkin.Internal as FM
-import Solver.FourierMotzkin hiding (trace, solve)
 import KBC.Term
-import KBC.Utils
 import Control.Monad
-import Control.Monad.Trans.State.Strict
-import qualified Data.Map.Strict as Map
-import Data.Map.Strict(Map)
-import Data.Maybe
 import Data.Ord
-import qualified Data.Set as Set
+import Data.Function
 import Data.Set(Set)
+import Data.Map.Strict(Map)
+import qualified Data.Set as Set
+import qualified Data.Map.Strict as Map
+import KBC.Utils
+import Data.Maybe
+import Control.Monad.Trans.Writer
 import Data.List
+import Data.Graph
 
 -- Constrained things.
 data Constrained a =
   Constrained {
-    context     :: ContextOf a,
+    constraint  :: Constraint (ConstantOf a) (VariableOf a),
     constrained :: a }
 
 instance (PrettyTerm (ConstantOf a), Pretty (VariableOf a), Pretty a) => Pretty (Constrained a) where
-  pPrint (Constrained (Context { formula = FTrue }) x) = pPrint x
+  pPrint (Constrained Constraint{formula = And []} x) = pPrint x
   pPrint (Constrained ctx x) =
     hang (pPrint x) 2 (text "when" <+> pPrint ctx)
 
@@ -39,382 +40,350 @@ instance (Minimal (ConstantOf a), Sized (ConstantOf a), Ord (ConstantOf a), Ord 
 
   termsDL x =
     termsDL (constrained x) `mplus`
-    termsDL (context x)
+    termsDL (constraint x)
 
   substf sub (Constrained ctx x) =
     Constrained (substf sub ctx) (substf sub x)
 
-reduce :: (Symbolic a, Minimal (ConstantOf a), Sized (ConstantOf a), Ord (ConstantOf a), Ord (VariableOf a), Numbered (VariableOf a)) => Constrained a -> Constrained a
-reduce x =
-  case split x of
-    [y] | simple (formula (context y)) -> y
-    [] -> Constrained (toContext FFalse) (constrained x)
-    _ -> x
-  where
-    simple (p :&: q) = simple p && simple q
-    simple (p :|: q) = simple p || simple q
-    simple FTrue = True
-    simple FFalse = True
-    simple Less{} = True
-    simple _ = False
+data Constraint f v =
+  Constraint {
+    formula       :: Formula Simple f v,
+    branches      :: Formula Fancy f v,
+    instances     :: Set (Instance f v) }
 
-split :: (Symbolic a, Minimal (ConstantOf a), Sized (ConstantOf a), Ord (ConstantOf a), Ord (VariableOf a), Numbered (VariableOf a)) => Constrained a -> [Constrained a]
-split (Constrained ctx x) =
-  case runM simplify (formula ctx) of
-    Equal t u p q ->
-      let Just sub = unify t u in
-      split (make q) ++ split (substf (evalSubst sub) (make (prune p)))
-    p :|: q ->
-      split (make p) ++ split (make q)
-    p -> [make p | satisfiable (solved (toContext p))]
-  where
-    make ctx = Constrained (toContext ctx) x
-    prune (Equal t u p q) = Equal t u (prune p) (prune q)
-    prune (p :|: q) = prune p ||| prune q
-    prune p
-      | satisfiable (solved (toContext p)) = p
-      | otherwise = FFalse
-
-mainSplit :: (Minimal f, Sized f, Numbered v, Ord f, Ord v) => Formula f v -> Formula f v
-mainSplit p =
-  case filter (satisfiable . solve) (mainSplits p) of
-    [] -> FFalse
-    (q:_) -> q
-
-mainSplits :: (Minimal f, Sized f, Numbered v, Ord f, Ord v) => Formula f v -> [Formula f v]
-mainSplits p =
-  case runM simplify p of
-    Equal _ _ _ q -> mainSplits q
-    p :|: q -> mainSplits p ++ mainSplits q
-    p -> [p]
-
-neg :: (Symbolic a, Minimal (ConstantOf a), Sized (ConstantOf a), Numbered (VariableOf a), Ord (ConstantOf a), Ord (VariableOf a)) => Constrained a -> Constrained a
-neg = runM $ \x -> do
-  f <- negFormula (formula (context x))
-  return x { context = toContext f }
-
--- Contexts (sets of constraints).
-type ContextOf a = Context (ConstantOf a) (VariableOf a)
-data Context f v =
-  Context {
-    formula :: Formula f v,
-    solved  :: Solved f v,
-    model   :: Map v (Extended f v) }
-  deriving Show
-
-toContext :: (Minimal f, Sized f, Ord f, Ord v) => Formula f v -> Context f v
-toContext x = Context x s (toModel s)
-  where
-    s = solve x
-
-instance (Eq f, Eq v) => Eq (Context f v) where
-  x == y = formula x == formula y
-instance (Ord f, Ord v) => Ord (Context f v) where
+instance (Eq f, Eq v) => Eq (Constraint f v) where
+  (==) = (==) `on` formula
+  
+instance (Ord f, Ord v) => Ord (Constraint f v) where
   compare = comparing formula
-instance (PrettyTerm f, Pretty v) => Pretty (Context f v) where
-  pPrint = pPrint . formula
-instance (Minimal f, Sized f, Ord f, Ord v) => Symbolic (Context f v) where
-  type ConstantOf (Context f v) = f
-  type VariableOf (Context f v) = v
-  termsDL ctx = termsDL (formula ctx)
-  substf sub ctx = toContext (substf sub (formula ctx))
 
--- Formulas.
-type FormulaOf a = Formula (ConstantOf a) (VariableOf a)
-data Formula f v =
-  -- After calling split, formulas are in the following form:
-  --  * No occurrences of Equal.
-  --  * HeadIs and Less can only be applied to variables.
-  --  * No tautological or impossible literals.
-    FTrue
-  | FFalse
-  | Formula f v :&: Formula f v
-  | Formula f v :|: Formula f v
-  | Size (Constraint v)
-  | HeadIs Sense (Tm f v) f
-  | Less (Tm f v) (Tm f v)
-    -- Equal t u p q represents (t = u & p) | q.
-    -- The smart constructors (|||) and (&&&) lift
-    -- Equal to the top level.
-  | Equal (Tm f v) (Tm f v) (Formula f v) (Formula f v)
-  deriving (Eq, Ord, Show)
+deriving instance (Show f, Show v) => Show (Constraint f v)
 
-data Sense = Lesser | Greater deriving (Eq, Ord, Show)
-instance Pretty Sense where
-  pPrint Lesser = text "<"
-  pPrint Greater = text ">"
+instance (PrettyTerm f, Pretty v) => Pretty (Constraint f v) where
+  pPrintPrec l p = pPrintPrec l p . formula
 
-instance (PrettyTerm f, Pretty v) => Pretty (Formula f v) where
-  pPrintPrec _ _ FTrue = text "true"
-  pPrintPrec _ _ FFalse = text "false"
-  pPrintPrec l p (x :&: y) =
+instance (Minimal f, Sized f, Ord f, Ord v) => Symbolic (Constraint f v) where
+  type ConstantOf (Constraint f v) = f
+  type VariableOf (Constraint f v) = v
+
+  termsDL = termsDL . formula
+
+  substf sub Constraint{..} =
+    toConstraint (substf sub formula)
+
+data Instance f v = Subst (Subst f v) | HeadEqual v f deriving (Eq, Ord, Show)
+
+instance (PrettyTerm f, Pretty v) => Pretty (Instance f v) where
+  pPrint (Subst sub) = pPrint sub
+  pPrint (HeadEqual x f) = text "hd(" <> pPrint x <> text ") = " <> pPrint f
+
+data Formula k f v where
+  Less        :: Tm f v -> Tm f v -> Formula k f v
+  LessEq      :: Tm f v -> Tm f v -> Formula Simple f v
+  And         :: [Formula k f v] -> Formula k f v
+  Or          :: [Formula k f v] -> Formula k f v
+  SizeIs      :: FM.Constraint v -> Formula Fancy f v
+  HeadLess    :: v -> f -> Formula Fancy f v
+  HeadGreater :: v -> f -> Formula Fancy f v
+
+deriving instance (Eq f,   Eq v)   => Eq   (Formula k f v)
+deriving instance (Ord f,  Ord v)  => Ord  (Formula k f v)
+deriving instance (Show f, Show v) => Show (Formula k f v)
+
+data Simple
+data Fancy
+
+instance (PrettyTerm f, Pretty v) => Pretty (Formula k f v) where
+  pPrintPrec _ _ (Less t u) = hang (pPrint t <+> text "<") 2 (pPrint u)
+  pPrintPrec _ _ (LessEq t u) = hang (pPrint t <+> text "<=") 2 (pPrint u)
+  pPrintPrec _ _ (And []) = text "true"
+  pPrintPrec _ _ (Or []) = text "false"
+  pPrintPrec l p (And xs) =
     pPrintParen (p > 10)
-      (hang (pPrintPrec l 11 x <+> text "&") 0 (pPrintPrec l 11 y))
-  pPrintPrec l p (x :|: y) =
+      (fsep (punctuate (text " &") (map (pPrintPrec l 11) xs)))
+  pPrintPrec l p (Or xs) =
     pPrintParen (p > 10)
-      (hang (pPrintPrec l 11 x <+> text "|") 0 (pPrintPrec l 11 y))
-  pPrintPrec l p (Size t) = pPrintPrec l p t
-  pPrintPrec l _ (HeadIs sense t x) = text "hd(" <> pPrintPrec l 0 t <> text ")" <+> pPrintPrec l 0 sense <+> pPrintPrec l 0 x
-  pPrintPrec l _ (Less t u) = pPrintPrec l 0 t <+> text "<" <+> pPrintPrec l 0 u
-  pPrintPrec l _ (Equal t u FTrue FFalse) =
-    pPrintPrec l 0 t <+> text "=" <+> pPrintPrec l 0 u
-  pPrintPrec l _ (Equal t u p FFalse) =
-    text "{" <> pPrintPrec l 0 t <+> text "=" <+> pPrintPrec l 0 u <> text "}" <+>
-    pPrintPrec l 11 p
-  pPrintPrec l p (Equal t u x y) =
-    pPrintPrec l p ((Equal t u x FFalse) :|: y)
+      (fsep (punctuate (text " |") (map (pPrintPrec l 11) xs)))
+  pPrintPrec l p (SizeIs t) = pPrintPrec l p t
+  pPrintPrec l _ (HeadLess t x) = text "hd(" <> pPrintPrec l 0 t <> text ") <" <+> pPrintPrec l 0 x
+  pPrintPrec l _ (HeadGreater t x) = text "hd(" <> pPrintPrec l 0 t <> text ") >" <+> pPrintPrec l 0 x
 
-instance (Minimal f, Sized f, Ord v) => Symbolic (Formula f v) where
-  type ConstantOf (Formula f v) = f
-  type VariableOf (Formula f v) = v
-  termsDL FTrue = mzero
-  termsDL FFalse = mzero
-  termsDL (p :&: q) = termsDL p `mplus` termsDL q
-  termsDL (p :|: q) = termsDL p `mplus` termsDL q
-  termsDL (Size t) = msum (map (return . Var) (Map.keys (FM.vars (FM.bound t))))
-  termsDL (HeadIs _ t _) = return t
-  termsDL (Less t u) = return t `mplus` return u
-  termsDL (Equal t u p q) = return t `mplus` return u `mplus` termsDL p `mplus` termsDL q
+instance (Minimal f, Sized f, Ord f, Ord v) => Symbolic (Formula k f v) where
+  type ConstantOf (Formula k f v) = f
+  type VariableOf (Formula k f v) = v
 
-  substf _ FTrue = FTrue
-  substf _ FFalse = FFalse
-  substf sub (p :&: q) = substf sub p &&& substf sub q
-  substf sub (p :|: q) = substf sub p ||| substf sub q
-  substf sub (Size t) = Size t { FM.bound = substFM sub (FM.bound t) }
+  termsDL (Less t u) = termsDL (t, u)
+  termsDL (LessEq t u) = termsDL (t, u)
+  termsDL (And ts) = msum (map termsDL ts)
+  termsDL (Or ts) = msum (map termsDL ts)
+  termsDL (SizeIs t) = termsDL (SizeConstraint t)
+  termsDL (HeadGreater x _) = return (Var x)
+  termsDL (HeadLess x _) = return (Var x)
+
+  substf sub (Less t u) = less' (substf sub t) (substf sub u)
+  substf sub (LessEq t u) = less Nonstrict (substf sub t) (substf sub u)
+  substf sub (And ts) = conj (map (substf sub) ts)
+  substf sub (Or ts) = disj (map (substf sub) ts)
+  substf sub (SizeIs t) = sizeIs t'
+    where
+      SizeConstraint t' = substf sub (SizeConstraint t)
+  substf sub (HeadGreater x f) = headGreater (substf sub (Var x)) f
+  substf sub (HeadLess x f) = headLess (substf sub (Var x)) f
+
+newtype SizeConstraint f v = SizeConstraint (FM.Constraint v)
+
+instance (Sized f, Ord v) => Symbolic (SizeConstraint f v) where
+  type ConstantOf (SizeConstraint f v) = f
+  type VariableOf (SizeConstraint f v) = v
+  termsDL (SizeConstraint t) =
+    msum . map (return . Var) . Map.keys . FM.vars . FM.bound $ t
+  substf sub (SizeConstraint t) =
+    SizeConstraint t { FM.bound = substFM sub (FM.bound t) }
     where
       substFM f t =
-        scalar (FM.constant t) +
-        sum [k ^* termSize (f v) | (v, k) <- Map.toList (FM.vars t)]
-  substf sub (HeadIs sense t f) = HeadIs sense (substf sub t) f
-  substf sub (Less t u) = Less (substf sub t) (substf sub u)
-  substf sub (Equal t u p q) = Equal (substf sub t) (substf sub u) (substf sub p) (substf sub q)
+        FM.scalar (FM.constant t) +
+        sum [k FM.^* termSize (f v) | (v, k) <- Map.toList (FM.vars t)]
 
-termSize :: (Minimal f, Sized f, Ord v) => Tm f v -> FM.Term v
+termSize :: (Sized f, Ord v) => Tm f v -> FM.Term v
 termSize = foldTerm FM.var fun
   where
-    fun f ss = scalar (funSize f) + sum ss
+    fun f ss = FM.scalar (funSize f) + sum ss
 
-sizeAxioms :: Ord v => FM.Term v -> [Constraint v]
-sizeAxioms s = [ var x >== 1 | x <- Map.keys (FM.vars s) ]
+problem :: (Symbolic a, Ord (VariableOf a)) => a -> FM.Problem (VariableOf a)
+problem t =
+  FM.problem [ FM.var x FM.>== 1 | x <- usort (vars t) ]
 
-termAxioms :: (Symbolic a, Ord (VariableOf a)) => a -> [Constraint (VariableOf a)]
-termAxioms t = [ var x >== 1 | x <- usort (vars t) ]
+negateFormula :: Formula Simple f v -> Formula Simple f v
+negateFormula (Less t u) = LessEq u t
+negateFormula (LessEq t u) = Less u t
+negateFormula (And ts) = Or (map negateFormula ts)
+negateFormula (Or ts) = And (map negateFormula ts)
 
-(|||), (&&&) :: Formula f v -> Formula f v -> Formula f v
-FTrue ||| _ = FTrue
-_ ||| FTrue = FTrue
-FFalse ||| p = p
-p ||| FFalse = p
-Equal t u p q ||| r = Equal t u p (q ||| r)
-r ||| Equal t u p q = Equal t u p (q ||| r)
-p ||| q = p :|: q
+less :: (Sized f, Minimal f, Ord f, Ord v) => Strictness -> Tm f v -> Tm f v -> Formula Simple f v
+less str t u
+  | str == Nonstrict && isNothing (unify t u) = less Strict t u
+  | lessThan str t u = true
+  | lessThan (negateStrictness str) u t = false
+  | otherwise =
+    case str of
+      Strict    -> uncurry Less   (focus str t u)
+      Nonstrict -> uncurry LessEq (focus str t u)
 
-FTrue &&& p = p
-p &&& FTrue = p
-FFalse &&& _ = FFalse
-_ &&& FFalse = FFalse
-Equal t u p q &&& r = Equal t u (p &&& r) (q &&& r)
-r &&& Equal t u p q = Equal t u (p &&& r) (q &&& r)
-p &&& (q :|: r) = (p &&& q) ||| (p &&& r)
-(p :|: q) &&& r = (p &&& r) ||| (q &&& r)
-p &&& q = p :&: q
+less' :: (Sized f, Minimal f, Ord f, Ord v) => Tm f v -> Tm f v -> Formula k f v
+less' t u =
+  case less Strict t u of
+    And []   -> And []
+    Or  []   -> Or []
+    Less t u -> Less t u
+    _        -> ERROR("less returned bad constructor")
 
-true :: (Minimal f, Sized f, Ord f, Ord v) => Formula f v -> Bool
-true FTrue = True
-true FFalse = False
-true (p :&: q) = true p && true q
-true (p :|: q) = true p || true q
-true (Less t u) = t `simplerThan` u
-true (HeadIs Lesser (Fun f _) g) | f < g = True
-true (HeadIs Greater (Fun f _) g) | f > g = True
-true (Size (FM.Closed s)) | minSize s >= Just 0 = True
-true (Size (FM.Open s))   | minSize s >  Just 0 = True
-true _ = False
-
-minSize :: Ord v => FM.Term v -> Maybe Rational
-minSize s
-  | any (< 0) (Map.elems (FM.vars s)) = Nothing
-  | otherwise = Just (sum (Map.elems (FM.vars s)) + FM.constant s)
-
-type M = State Int
-
-runM :: (Symbolic a, Numbered (VariableOf a)) => (a -> M b) -> a -> b
-runM f x = evalState (f x) n
+focus :: (Sized f, Minimal f, Ord f, Ord v) => Strictness -> Tm f v -> Tm f v -> (Tm f v, Tm f v)
+focus str t@(Fun f ts) u@(Fun g us) | f == g = loop ts us
   where
-    n = maximum (0:map (succ . number) (vars x))
+    prob = problem (t, u)
+    diff = termSize t - termSize u
 
-newName :: Numbered a => a -> M a
-newName x = do
-  n <- get
-  put $! n+1
-  return (withNumber n x)
+    loop [] [] = (t, u)
+    loop (x:xs) (y:ys)
+      | x == y = loop xs ys
+      | canFocus x y = focus str x y
+      | otherwise = (t, u)
+    loop _ _ = ERROR("incorrect function arity")
 
-simplify :: (Minimal f, Sized f, Ord f, Ord v, Numbered v) => Formula f v -> M (Formula f v)
-simplify FTrue = return FTrue
-simplify FFalse = return FFalse
-simplify (p :&: q) = liftM2 (&&&) (simplify p) (simplify q) >>= go
-  where
-    go p@Equal{} = simplify p
-    go p = return p
-simplify (p :|: q) = liftM2 (|||) (simplify p) (simplify q) >>= go
-  where
-    go p@Equal{} = simplify p
-    go p = return p
-simplify (Equal t u p q) | t == u = simplify (p ||| q)
-simplify (Equal t u p q) =
-  case unify t u of
-    Nothing -> simplify q
-    Just sub -> liftM2 (equal t u) (simplify (substf (sanitise (evalSubst sub)) p)) (simplify q)
-  where
-    equal _ _ FFalse q = q
-    equal _ _ _ FTrue = FTrue
-    equal t u p q = Equal t u p q
-    sanitise f x
-      | (isVar t && t < Var x) || isGround t = t
-      | otherwise = Var x
+    canFocus x y =
+      [diff' FM.</= 0] ==> diff FM.<== 0 &&
+      [diff' FM.>/= 0] ==> diff FM.>== 0 &&
+      [diff' FM.>/= 0, diff' FM.</= 0] ==> diff FM.>== 0 &&
+      [diff' FM.>/= 0, diff' FM.</= 0] ==> diff FM.<== 0 &&
+      case unify x y of
+        Nothing -> True
+        Just sub ->
+          let t' = subst sub t
+              u' = subst sub u in
+          case str of
+            Strict    -> lessThan Nonstrict u' t'
+            Nonstrict -> lessThan Nonstrict t' u'
       where
-        t = f x
-simplify (Size s)
-  | isNothing (solve s) = return FFalse
-  | isNothing (solve (FM.negateBound s)) = return FTrue
-  where
-    solve s = FM.solve (addConstraints [s] p)
-    p = problem (sizeAxioms (FM.bound s))
-simplify (HeadIs sense (Fun f _) g)
-  | test sense f g = return FTrue
-  | otherwise = return FFalse
-  where
-    test Lesser = (<)
-    test Greater = (>)
-simplify (HeadIs Lesser _ x) | x == minimal = return FFalse
-simplify (HeadIs Greater _ f) | funSize f == 0 && funArity f == 1 =
-  return FFalse
-simplify (Less t u) | t == u = return FFalse
-simplify (Less _ (Fun x [])) | x == minimal = return FFalse
-simplify (Less t (Var x)) | x `elem` vars t = return FFalse
-simplify (Less (Var x) t) | x `elem` vars t = return FTrue
-simplify (Less t u) | isFun t || isFun u = do
-  rest <- structLess t u
-  simplify (Size (sz </= 0) ||| (Size (sz >== 0) &&& Size (sz <== 0) &&& rest))
-  where
-    sz = termSize t - termSize u
-simplify p = return p
+        diff' = termSize x - termSize y
 
-structLess :: (Minimal f, Sized f, Ord f, Ord v, Numbered v) => Tm f v -> Tm f v -> M (Formula f v)
-structLess (Fun f ts) (Fun g us) =
-  return $
+    infix 4 ==>
+    ps ==> q = isNothing (FM.solve (FM.addConstraints (FM.negateConstraint q:ps) prob))
+focus _ t u = (t, u)
+
+sizeIs :: forall f v. (Sized f, Ord v) => FM.Constraint v -> Formula Fancy f v
+sizeIs p
+  | isNothing (FM.solve (FM.addConstraints [p] prob)) = false
+  | isNothing (FM.solve (FM.addConstraints [FM.negateConstraint p] prob)) = true
+  | otherwise = SizeIs p
+  where
+    prob = problem (SizeConstraint p :: SizeConstraint f v)
+
+headLess :: (Minimal f, Ord f, Ord v) => Tm f v -> f -> Formula Fancy f v
+headLess _ f | f == minimal = false
+headLess (Fun f _) g =
   case compare f g of
-    LT -> FTrue
-    GT -> FFalse
-    EQ -> loop ts us
+    LT -> true
+    _  -> false
+headLess (Var x) f = HeadLess x f
+
+headGreater :: (Sized f, Minimal f, Ord f, Ord v) => Tm f v -> f -> Formula Fancy f v
+headGreater _ f | funSize f == 0 && funArity f == 1 = false
+headGreater (Fun f _) g =
+  case compare f g of
+    GT -> true
+    _  -> false
+headGreater (Var x) f = HeadGreater x f
+
+conj forms
+  | false `elem` forms' = false
+  | otherwise =
+    case forms' of
+      [x] -> x
+      xs  -> And xs
   where
-    loop [] [] = FFalse
-    loop (t:ts) (u:us) = Equal t u (loop ts us) (Less t u)
-    loop _ _ = ERROR("inconsistent arities")
-structLess (Var x) (Fun f ts) = do
-  u <- specialise x f
-  rest <- structLess u (Fun f ts)
-  return $
-    Equal (Var x) u rest $
-      HeadIs Lesser (Var x) f
-structLess (Fun f ts) (Var x) = do
-  u <- specialise x f
-  rest <- structLess (Fun f ts) u
-  return $
-    Equal (Var x) u rest $
-      HeadIs Greater (Var x) f
-structLess (Var _) (Var _) =
-  ERROR("impossible case in structLess")
-
-specialise :: (Minimal f, Sized f, Ord f, Ord v, Numbered v) => v -> f -> M (Tm f v)
-specialise x f = do
-  ns <- replicateM (funArity f) (newName x)
-  return (Fun f (map Var ns))
-
-negFormula :: (Minimal f, Sized f, Numbered v, Ord f, Ord v) => Formula f v -> M (Formula f v)
-negFormula FTrue = return FFalse
-negFormula FFalse = return FTrue
-negFormula (p :&: q) = liftM2 (|||) (negFormula p) (negFormula q)
-negFormula (p :|: q) = liftM2 (&&&) (negFormula p) (negFormula q)
-negFormula (Size s) = return (Size (FM.negateBound s))
-negFormula (Less t u) = return (Equal t u FTrue (Less u t))
-negFormula (HeadIs sense (Var x) f) = do
-  t <- specialise x f
-  return (Equal (Var x) t FTrue (HeadIs (negateSense sense) (Var x) f))
+    flatten (And xs) = xs
+    flatten x = [x]
+    forms' = filter (/= true) (usort (concatMap flatten forms))
+disj forms
+  | true `elem` forms' = true
+  | otherwise =
+    case forms' of
+      [x] -> x
+      xs  -> Or xs
   where
-    negateSense Lesser = Greater
-    negateSense Greater = Lesser
-negFormula _ = ERROR "must call split before using a context"
+    flatten (Or xs) = xs
+    flatten x = [x]
+    forms' = filter (/= false) (usort (concatMap flatten forms))
 
--- Solved formulas.
-type SolvedOf a = Solved (ConstantOf a) (VariableOf a)
-data Solved f v =
+x &&& y = conj [x, y]
+x ||| y = disj [x, y]
+true  = And []
+false = Or []
+
+toConstraint :: (Minimal f, Sized f, Ord f, Ord v) => Formula Simple f v -> Constraint f v
+toConstraint form = Constraint form branch instances
+  where
+    (branch, instances) = runWriter (reduce form)
+
+reduce :: (Minimal f, Sized f, Ord f, Ord v) => Formula Simple f v -> Writer (Set (Instance f v)) (Formula Fancy f v)
+reduce (LessEq t u) = liftM2 (|||) (reduce (less' t u)) (equalsAnd t u (return true))
+reduce (Less t u) = reduceLess t u
+reduce (And xs) = fmap conj (mapM reduce xs)
+reduce (Or xs) = fmap disj (mapM reduce xs)
+
+reduceLess :: (Minimal f, Sized f, Ord f, Ord v) => Tm f v -> Tm f v -> Writer (Set (Instance f v)) (Formula Fancy f v)
+reduceLess (Var x) (Var y) = return (Less (Var x) (Var y))
+reduceLess (Var x) t@(Fun f _) = do
+  headEqual x f
+  let sz = termSize t - FM.var x
+  return $
+    sizeIs (sz FM.>/= 0) |||
+      (sizeIs (sz FM.>== 0) &&& headLess (Var x) f)
+    -- No need to elaborate headEqual case, it turns into an instance
+reduceLess t@(Fun f _) (Var x) = do
+  headEqual x f
+  let sz = FM.var x - termSize t
+  return $
+    sizeIs (sz FM.>/= 0) |||
+      (sizeIs (sz FM.>== 0) &&& headGreater (Var x) f)
+reduceLess t@(Fun f ts) u@(Fun g us) = do
+  let sz = termSize u - termSize t
+  case compare f g of
+    LT -> return (sizeIs (sz FM.>== 0))
+    GT -> return (sizeIs (sz FM.>/= 0))
+    EQ -> do
+      form <- loop ts us
+      return $
+        sizeIs (sz FM.>/= 0) |||
+        (sizeIs (sz FM.>== 0) &&& form)
+  where
+    loop [] [] = return false
+    loop (t:ts) (u:us) = do
+      form <- reduce (less Strict t u)
+      fmap (form |||) (equalsAnd t u (loop ts us))      
+    loop _ _ = ERROR("incorrect function arity")
+
+equalsAnd :: (Ord f, Ord v) =>
+  Tm f v -> Tm f v ->
+  Writer (Set (Instance f v)) (Formula Fancy f v) ->
+  Writer (Set (Instance f v)) (Formula Fancy f v)
+equalsAnd t u form
+  | t == u = form
+  | otherwise =
+    case unify t u of
+      Nothing -> return false
+      Just sub -> do
+        tell (Set.singleton (Subst sub))
+        return false
+
+headEqual :: (Ord f, Ord v) => v -> f -> Writer (Set (Instance f v)) (Formula Fancy f v)
+headEqual x f = do
+  tell (Set.singleton (HeadEqual x f))
+  return false
+
+-- Solving formulas.
+data Solution f v =
   -- We complete the set of constraints as follows:
   --  * Less is transitively closed.
   --  * If Less x y, then size x <= size y.
   --  * If HeadGreater x f and Less x y and HeadLess y g with g <= f,
   --    then size x < size y (size x = size y implies f < g).
-  --    When x = y this becomes: if HeadGreater x f and HeadLess x f,
-  --    then size x < size x, i.e. false.
   -- Once completed, the constraints are satisfiable iff:
   --  1. The size constraints are satisfiable.
   --  2. There is no literal Less x x.
-  Unsolvable |
+  --  3. There is no pair of literals HeadLess x f and HeadGreater x g
+  --     with f <= g.
   Tautological |
-  Solved {
+  Solution {
     -- Size constraints.
-    prob        :: Problem v,
-    solution    :: Map v Rational,
+    sol_prob        :: FM.Problem v,
+    sol_solution    :: Map v Rational,
     -- HeadLess and HeadGreater constraints for variables.
-    headLess    :: Map v f,
-    headGreater :: Map v f,
+    sol_headLess    :: Map v f,
+    sol_headGreater :: Map v f,
     -- Less x y constraints. Transitively closed.
-    less        :: Map v (Set v) }
+    sol_less        :: Map v (Set v) }
   deriving (Eq, Ord, Show)
 
-instance (PrettyTerm f, Pretty v) => Pretty (Solved f v) where
-  pPrint Unsolvable = text "false"
+instance (PrettyTerm f, Pretty v) => Pretty (Solution f v) where
   pPrint Tautological = text "true"
-  pPrint x =
+  pPrint Solution{..} =
     pPrint [
-      pPrint (prob x),
-      pPrint (solution x),
-      pPrint (headLess x),
-      pPrint (headGreater x),
-      pPrint (less x) ]
+      pPrint sol_prob,
+      pPrint sol_solution,
+      pPrint sol_headLess,
+      pPrint sol_headGreater,
+      pPrint sol_less ]
 
-solve :: (Minimal f, Sized f, Ord f, Ord v) => Formula f v -> Solved f v
-solve = solve1 . filter (/= FTrue) . literals
+solve :: (Minimal f, Sized f, Ord f, Ord v) => Formula Fancy f v -> [Solution f v]
+solve form = go [] form >>= solve1
   where
-    literals (p :&: q) = literals p ++ literals q
-    literals (_ :|: _) = ERROR "must call split before using a context"
-    literals (Equal _ _ _ _) = ERROR "must call split before using a context"
-    literals p = [p]
+    go ls (And xs) = foldM go ls xs
+    go ls (Or xs)  = msum [ go ls x | x <- xs ]
+    go ls l = return (l:ls)
 
-solve1 :: (Minimal f, Sized f, Ord f, Ord v) => [Formula f v] -> Solved f v
-solve1 [] = Tautological
+solve1 :: forall f v. (Minimal f, Sized f, Ord f, Ord v) => [Formula Fancy f v] -> [Solution f v]
+solve1 [] = return Tautological
 solve1 ls
-  | not (null equal) = ERROR "must call split before using a context"
-  | FFalse `elem` ls = Unsolvable
-  | or [ Set.member x s | (x, s) <- Map.toList less' ] = Unsolvable
+  | or [ Set.member x s | (x, s) <- Map.toList less' ] = mzero
+  | or [ f >= g | (x, (f, g)) <- Map.toList (Map.intersectionWith (,) headLess' headGreater') ] = mzero
   | otherwise =
       case FM.solve prob of
-        Nothing -> Unsolvable
-        Just sol -> Solved prob sol headLess' headGreater' less'
+        Nothing -> mzero
+        Just sol -> return (Solution prob sol headLess' headGreater' less')
   where
-    size = [s | Size s <- ls]
-    headLess = [(unVar x, f) | HeadIs Lesser x f <- ls]
-    headGreater = [(unVar x, f) | HeadIs Greater x f <- ls]
+    size = [s | SizeIs s <- ls]
+    headLess = [(x, f) | HeadLess x f <- ls]
+    headGreater = [(x, f) | HeadGreater x f <- ls]
     headLess' = Map.fromListWith min headLess
     headGreater' = Map.fromListWith max headGreater
-    less = [(unVar t, unVar u) | Less t u <- ls]
+    less = [(t, u) | Less (Var t) (Var u) <- ls]
     less' = close less
-    equal = [() | Equal{} <- ls]
-    unVar (Var x) = x
-    unVar _ = ERROR "must call split before using a context"
-    prob = FM.problem (size ++ termAxioms ls ++ lessProb ++ headProb)
-    lessProb = [var x <== var y | (x, y) <- less]
-    headProb = [var x </= var y | (x, f) <- Map.toList headGreater', (y, g) <- Map.toList headLess', f >= g]
+    prob = FM.addConstraints ps (problem (map SizeConstraint ps :: [SizeConstraint f v]))
+      where
+        ps = size ++ lessProb ++ headProb
+    lessProb = [FM.var x FM.<== FM.var y | (x, y) <- less]
+    headProb = [FM.var x FM.</= FM.var y | (x, ys) <- Map.toList less', y <- Set.toList ys, Just f <- [Map.lookup x headGreater'], Just g <- [Map.lookup y headLess'], f >= g ]
 
 close :: Ord a => [(a, a)] -> Map a (Set a)
 close bs = Map.fromList [(x, close1 bs x) | x <- usort (map fst bs)]
@@ -428,67 +397,6 @@ close1 bs x = aux (successors x) Set.empty
       | otherwise = aux (successors x ++ xs) (Set.insert x s)
       where
     successors x = [y | (x', y) <- bs, x == x']
-
-satisfiable :: (Ord f, Ord v) => Solved f v -> Bool
-satisfiable Unsolvable = False
-satisfiable _ = True
-
-implies :: (Minimal f, Sized f, Numbered v, Ord f, Ord v) => Solved f v -> Formula f v -> Bool
-implies Unsolvable _ = __
-implies _ FTrue = True
-implies Tautological _ = False
-implies _ FFalse = False
-implies form (p :&: q) = implies form p && implies form q
-implies form (p :|: q) = implies form p || implies form q
-implies form (Equal _ _ _ p) = implies form p
-implies form (Size s) =
-  isNothing (FM.solve (addConstraints ts (prob form)))
-  where
-    ts = FM.negateBound s:sizeAxioms (FM.bound s)
-implies form (Less (Var x) (Var y)) =
-  y `Set.member` Map.findWithDefault Set.empty x (less form)
-implies form (HeadIs Lesser (Var x) f) =
-  case Map.lookup x (headLess form) of
-    Just g | g <= f -> True
-    _ -> False
-implies form (HeadIs Greater (Var x) f) =
-  case Map.lookup x (headGreater form) of
-    Just g | g >= f -> True
-    _ -> False
-implies _ _ = ERROR("non-split formula")
-
-modelSize :: (Pretty v, Minimal f, Sized f, Ord f, Ord v) => Tm f v -> Solved f v -> Integer
-modelSize _ Unsolvable = __
-modelSize t Tautological = fromIntegral (size t)
-modelSize t s = ceiling (FM.eval val (termSize t))
-  where
-    val x = Map.findWithDefault 1 x (solution s)
-
-minimiseContext :: (Minimal f, Sized f, Pretty v, Ord f, Ord v) => Tm f v -> Context f v -> Context f v
-minimiseContext t ctx =
-  ctx { solved = s, model = toModel s }
-  where
-    s = minimiseSolved t (solved ctx)
-
-minimiseSolved :: (Pretty v, Minimal f, Sized f, Ord f, Ord v) => Tm f v -> Solved f v -> Solved f v
-minimiseSolved _ Unsolvable = Unsolvable
-minimiseSolved _ Tautological = Tautological
-minimiseSolved t s =
-  s { solution = loop (solution s) }
-  where
-    sz = termSize t
-    p = addConstraints (sizeAxioms sz) (prob s)
-    loop m
-      | x < 0 = __
-      | otherwise =
-          case FM.solve (addConstraints [sz <== fromIntegral (n-1)] p) of
-            Nothing -> m
-            Just m -> loop m
-      where
-        x = FM.eval val sz
-        val v = Map.findWithDefault 1 v m
-        n :: Integer
-        n = ceiling x
 
 data Extended f v =
     Original f
@@ -517,7 +425,7 @@ fromExtended (Fun (UnconstrainedVar x) []) = Var x
 fromExtended (Fun _ _) = ERROR("extended var applied to arguments")
 fromExtended (Var x) = Var x
 
-instance (Minimal f, Sized f) => Sized (Extended f v) where
+instance Sized f => Sized (Extended f v) where
   funSize (Original f) = funSize f
   funSize (ConstrainedVar _ _ k _) = k
   funSize UnconstrainedVar{} = 1
@@ -529,6 +437,9 @@ instance Numbered f => Numbered (Extended f v) where
   number _ = ERROR("extended vars don't have numbers")
   withNumber n (Original f) = Original (withNumber n f)
   withNumber _ _ = ERROR("extended vars don't have numbers")
+
+instance Minimal f => Minimal (Extended f v) where
+  minimal = Original minimal
 
 instance (Minimal f, Sized f, Ord f, Ord v) => Ord (Extended f v) where
   compare (Original f) (Original g) = compare f g
@@ -557,62 +468,51 @@ instance (PrettyTerm f, Pretty v) => Pretty (Extended f v) where
     text "c" <> pPrint n <> pPrint x <> brackets (pPrint k <> bound l)
     where
       bound Nothing = text ""
-      bound (Just f) = text ", >" <+> pPrint f
+      bound (Just f) = text ", <" <+> pPrint f
   pPrint (UnconstrainedVar x) = pPrint x
 
 instance (PrettyTerm f, Pretty v) => PrettyTerm (Extended f v) where
   termStyle (Original f) = termStyle f
   termStyle _ = curried
 
-toModel :: (Ord f, Ord v) => Solved f v -> Map v (Extended f v)
-toModel Unsolvable = __
+toModel :: (Ord f, Ord v) => Solution f v -> Map v (Extended f v)
 toModel Tautological = Map.empty
-toModel s =
-  Map.fromList [(x, var x i) | (x, i) <- zip (sortBy cmp vs) [0..]]
+toModel Solution{..} =
+  Map.fromList [(x, var x i) | (x, i) <- zip vs' [0..]]
   where
-    vs = usort (Set.toList (FM.pvars (prob s)) ++
-                Map.keys (headLess s) ++
-                Map.keys (headGreater s) ++
-                concat [(x:Set.toList s) | (x, s) <- Map.toList (less s)])
-    cmp x y
-      | y `Set.member` Map.findWithDefault Set.empty x (less s) = LT
-      | x `Set.member` Map.findWithDefault Set.empty y (less s) = GT
-      | otherwise = compare x y
+    vs = usort (Set.toList (FM.pvars sol_prob) ++
+                Map.keys sol_headLess ++
+                Map.keys sol_headGreater ++
+                concat [(x:Set.toList s) | (x, s) <- Map.toList sol_less])
+    vs' = reverse (flattenSCCs (stronglyConnComp [(x, x, Set.toList (Map.findWithDefault Set.empty x sol_less)) | x <- vs]))
     var x i =
       ConstrainedVar x i
         (varSize x)
         (try minimum
          (catMaybes
-          [ Map.lookup y (headLess s)
-          | y <- x:filter (sameSize x) (Set.toList (Map.findWithDefault Set.empty x (less s))) ]))
-    varSize x = Map.findWithDefault 1 x (solution s)
+          [ Map.lookup y sol_headLess
+          | y <- x:filter (sameSize x) (Set.toList (Map.findWithDefault Set.empty x sol_less)) ]))
+    varSize x = Map.findWithDefault 1 x sol_solution
     sameSize x y = varSize x == varSize y
     try _ [] = Nothing
     try f xs = Just (f xs)
 
-trueIn :: (Sized f, Minimal f, Ord f, Ord v) => Map v (Extended f v) -> Formula f v -> Bool
-trueIn _ FTrue = True
-trueIn _ FFalse = False
-trueIn model (p :&: q) = trueIn model p && trueIn model q
-trueIn model (p :|: q) = trueIn model p || trueIn model q
-trueIn model (Size p) =
-  FM.boundTrue (fmap (eval val) p)
-  where
-    val x =
-      case Map.lookup x model of
-        Just (ConstrainedVar _ _ k _) -> k
-        _ -> 1
-trueIn _ (HeadIs Lesser (Fun f _) g) = f < g
-trueIn _ (HeadIs Greater (Fun f _) g) = f > g
-trueIn model (HeadIs Lesser (Var x) f) =
-  case Map.lookup x model of
-    Nothing -> UnconstrainedVar x < Original f
-    Just t  -> t < Original f
-trueIn model (HeadIs Greater (Var x) f) =
-  case Map.lookup x model of
-    Nothing -> UnconstrainedVar x > Original f
-    Just t  -> t > Original f
+trueIn :: (Sized f, Minimal f, Ord f, Ord v) => Map v (Extended f v) -> Formula Simple f v -> Bool
 trueIn model (Less t u) =
-  toExtended model t `simplerThan` toExtended model u
-trueIn model (Equal t u p q) =
-  (t == u && trueIn model p) || trueIn model q
+  lessThan Strict (toExtended model t) (toExtended model u)
+trueIn model (LessEq t u) =
+  lessThan Nonstrict (toExtended model t) (toExtended model u)
+trueIn model (And xs) = all (trueIn model) xs
+trueIn model (Or xs)  = any (trueIn model) xs
+
+instantiate :: (Symbolic a, Sized (ConstantOf a), Minimal (ConstantOf a), Numbered (VariableOf a), Ord (ConstantOf a), Ord (VariableOf a)) => Constrained a -> [Constrained a]
+instantiate x@(Constrained Constraint{..} _) = map inst (Set.toList instances)
+  where
+    inst (Subst sub) = substf (evalSubst sub) x
+    inst (HeadEqual v f) = substf sub x
+      where
+        sub y
+          | v == y    = Fun f (map var [n..funArity f+n-1])
+          | otherwise = Var y
+        var n = Var (withNumber n v)
+        n = maximum (0:map (succ . number) (vars x))

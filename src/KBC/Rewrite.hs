@@ -20,9 +20,6 @@ data Reduction f v =
     steps  :: [Constrained (Rule f v)] }
   deriving Show
 
-formulas :: (Ord f, Ord v) => Reduction f v -> Set (Formula f v)
-formulas = Set.fromList . map (formula . context) . steps
-
 normaliseWith :: Strategy f v -> Tm f v -> Reduction f v
 normaliseWith strat t =
   aux [] t
@@ -47,28 +44,35 @@ nested strat (Fun f xs) =
       | Constrained ctx (Rule y z) <- strat x ] ++
       [ (ctx, x:ys, x:zs) | (ctx, ys, zs) <- inner xs ]
 
-rewriteInModel :: (Numbered f, Sized f, Minimal f, Ord f, Numbered v, Ord v) => Index (Constrained (Rule f v)) -> Map v (Extended f v) -> Strategy f v
-rewriteInModel rules model t =
-  filter (trueIn model . formula . context) (Index.lookup t rules)
+rewriteInModel :: (PrettyTerm f, Pretty v, Numbered f, Sized f, Minimal f, Ord f, Numbered v, Ord v) => Index (Constrained (Rule f v)) -> Map v (Extended f v) -> Strategy f v
+rewriteInModel rules model t = do
+  rule <- Index.lookup t rules
+  guard (trueIn model . formula . constraint $ rule)
+  return rule
 
 rewrite :: (Numbered f, Sized f, Minimal f, Ord f, Numbered v, Ord v) => Index (Constrained (Rule f v)) -> Strategy f v
-rewrite rules t =
-  filter (true . formula . context) (Index.lookup t rules)
+rewrite rules t = do
+  rule <- Index.lookup t rules
+  guard (formula (constraint rule) == true)
+  return rule
 
-rewriteAllowing :: (Numbered f, Sized f, Minimal f, Ord f, Numbered v, Ord v) => Index (Constrained (Rule f v)) -> Set (Formula f v) -> Strategy f v
+rewriteAllowing :: (Numbered f, Sized f, Minimal f, Ord f, Numbered v, Ord v) => Index (Constrained (Rule f v)) -> Set (Formula Simple f v) -> Strategy f v
 rewriteAllowing rules forms t = do
-  filter ((`Set.member` forms) . formula . context) (Index.lookup t rules)
+  rule <- Index.lookup t rules
+  guard (formula (constraint rule) == true ||
+         formula (constraint rule) `Set.member` forms)
+  return rule
 
 tryRule :: (Ord f, Sized f, Minimal f, Ord v) => Constrained (Rule f v) -> Strategy f v
 tryRule rule t = do
   sub <- maybeToList (match (lhs (constrained rule)) t)
   let rule' = substf (evalSubst sub) rule
-  guard (true (formula (context rule')))
+  guard (formula (constraint rule') == true)
   return rule'
 
 tryRuleInModel :: (Ord f, Sized f, Minimal f, Ord v) => Map v (Extended f v) -> Constrained (Rule f v) -> Strategy f v
 tryRuleInModel model rule t = do
   sub <- maybeToList (match (lhs (constrained rule)) t)
   let rule' = substf (evalSubst sub) rule
-  guard (trueIn model (formula (context rule')))
+  guard (trueIn model (formula (constraint rule')))
   return rule'

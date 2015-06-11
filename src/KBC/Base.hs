@@ -51,6 +51,8 @@ instance (Eq f, Eq v, Eq v') => Eq (GSubst v f v') where
   x == y = T.toMap x == T.toMap y
 instance (Ord f, Ord v, Ord v') => Ord (GSubst v f v') where
   compare = comparing T.toMap
+instance (PrettyTerm f, Pretty v, Pretty v') => Pretty (GSubst v f v') where
+  pPrintPrec l p = pPrintPrec l p . T.toMap
 
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where

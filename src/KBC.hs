@@ -31,7 +31,7 @@ data Event f v =
   | NewCP (CP f v)
   | Consider (Constrained (Equation f v))
   | Split (Constrained (Equation f v)) [Constrained (Equation f v)]
-  | Discharge (Constrained (Equation f v)) [Formula f v]
+  | Discharge (Constrained (Equation f v)) [Formula Simple f v]
 
 traceM :: (Monad m, PrettyTerm f, Pretty v) => Event f v -> m ()
 traceM (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
@@ -60,7 +60,7 @@ data CP f v =
 instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
   compare =
     comparing $ \(CP size (Constrained _ (l :==: r))) ->
-      (size, measure l, measure r)
+      (size, l, r)
 
 instance (PrettyTerm f, Pretty v) => Pretty (CP f v) where
   pPrint = pPrint . cpEquation
@@ -119,7 +119,7 @@ modelNormaliser model = do
 
 specificNormaliser ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
-  StateT (KBC f v) IO (Set (Formula f v) -> Tm f v -> Reduction f v)
+  StateT (KBC f v) IO (Set (Formula Simple f v) -> Tm f v -> Reduction f v)
 specificNormaliser = do
   rules <- gets rules
   return $ \forms ->
@@ -129,7 +129,7 @@ newEquation ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   Equation f v -> StateT (KBC f v) IO ()
 newEquation (t :==: u) =
-  queueCPs noLabel (map unlabelled (split (Constrained (toContext FTrue) (t :==: u))))
+  queueCPs noLabel [Labelled noLabel (Constrained (toConstraint true) (t :==: u))]
 
 queueCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
@@ -139,6 +139,7 @@ queueCPs l eqns = do
   maxN <- gets maxSize
   let cps = [ Labelled l' (CP n (Constrained ctx (t' :==: u')))
             | Labelled l' (Constrained ctx (t :==: u)) <- eqns,
+              formula ctx /= false,
               t /= u,
               let t' :==: u' = order (result (norm t) :==: result (norm u)),
               t' /= u',
@@ -179,15 +180,17 @@ complete = do
 consider ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
   Label -> Label -> Constrained (Equation f v) -> StateT (KBC f v) IO ()
-consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
+consider l1 l2 pair@(Constrained ctx (t :==: u)) = unless (formula ctx == false) $ do
   traceM (Consider pair)
-  case mainSplit (formula ctx) of
-    FFalse -> do
-      let pairs = split pair
+  case map toModel (solve (branches ctx)) of
+    [] -> do
+      let pairs = usort (map canonicalise (instantiate pair))
       traceM (Split pair pairs)
       queueCPs l1 (map (Labelled l2) pairs)
-    p -> do
-      let model = toModel (solve p)
+    model:_ -> do
+      Debug.Trace.traceShowM (pPrint (branches ctx))
+      Debug.Trace.traceShowM (pPrint (head (solve (branches ctx))))
+      Debug.Trace.traceShowM (pPrint model)
       norm <- modelNormaliser model
       let Reduction t' rs1 = norm t
           Reduction u' rs2 = norm u
@@ -195,21 +198,23 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
         case t' == u' of
           True -> do
             snorm <- specificNormaliser
-            let rs = shrinkList (usort (map (formula . context) rs1 ++ map (formula . context) rs2))
+            let rs = shrinkList (usort (map (formula . constraint) rs1 ++ map (formula . constraint) rs2))
                                 (\fs -> result (snorm (Set.fromList fs) t) == result (snorm (Set.fromList fs) u))
             traceM (Discharge pair rs)
-            return (foldr (&&&) FTrue rs)
+            return (foldr (&&&) true rs)
           False -> do
             let applicable rule =
                   not (null (anywhere (tryRuleInModel model rule) t')) ||
                   not (null (anywhere (tryRuleInModel model rule) u'))
                 rule:_ = filter applicable (orient (t' :==: u'))
             traceM (NewRule (canonicalise rule))
+            Debug.Trace.traceShowM (pPrint rule)
+            Debug.Trace.traceShowM (pPrint (orient (t' :==: u')))
             l <- addRule rule
             interreduce rule
             addCriticalPairs l rule
-            return (formula (context rule))
-      consider l1 l2 (Constrained (toContext (runM simplify (formula ctx &&& runM negFormula cond))) (t :==: u))
+            return (formula (constraint rule))
+      consider l1 l2 (Constrained (toConstraint (formula ctx &&& negateFormula cond)) (t :==: u))
 
 shrinkList :: [a] -> ([a] -> Bool) -> [a]
 shrinkList [] _ = []
@@ -289,7 +294,7 @@ criticalPairs _ r1 r2 = do
       left = rename f (CP.left cp)
       right = rename f (CP.right cp)
       ctx =
-        toContext $
+        toConstraint $
           substf (rename f . evalSubst sub . Left) (formula ctx1) &&&
           substf (rename f . evalSubst sub . Right) (formula ctx2)
 
