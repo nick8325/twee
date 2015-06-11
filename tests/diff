@@ -1,0 +1,11 @@
+a/0 = 1
+b/0 = 1
+c/0 = 1
+diff/2 = 1
+--
+diff(X, diff(Y, X)) = X
+diff(X, diff(X, Y)) = diff(Y, diff(Y, X))
+diff(diff(X, Y), Z) = diff(diff(X, Z), diff(Y, Z))
+--
+diff(diff(a, c), b)
+diff(diff(a, b), c)

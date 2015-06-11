@@ -1,0 +1,14 @@
+a/0 = 1
+b/0 = 1
+mult/2 = 1
+ld/2 = 0
+rd/2 = 0
+--
+mult(X, ld(X, Y)) = Y
+ld(X, mult(X, Y)) = Y
+mult(rd(X, Y), Y) = X
+rd(mult(X, Y), Y) = X
+mult(X, mult(Y, mult(X, Z))) = mult(mult(mult(X, Y), X), Z)
+--
+mult(a,rd(b,b))
+a
