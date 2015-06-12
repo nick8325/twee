@@ -54,13 +54,14 @@ data KBC f v =
 
 data CP f v =
   CP {
-    cpSize     :: Int,
-    cpEquation :: Constrained (Equation f v) } deriving (Eq, Show)
+    cpSize      :: Int,
+    cpSizeRight :: Int,
+    cpEquation  :: Constrained (Equation f v) } deriving (Eq, Show)
 
 instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
   compare =
-    comparing $ \(CP size (Constrained _ (l :==: r))) ->
-      (size, l, r)
+    comparing $ \(CP size size' (Constrained _ (l :==: r))) ->
+      (size, size', l, r)
 
 instance (PrettyTerm f, Pretty v) => Pretty (CP f v) where
   pPrint = pPrint . cpEquation
@@ -137,7 +138,7 @@ queueCPs ::
 queueCPs l eqns = do
   norm <- normaliser
   maxN <- gets maxSize
-  let cps = [ Labelled l' (CP n (Constrained ctx (t' :==: u')))
+  let cps = [ Labelled l' (CP n (size u') (Constrained ctx (t' :==: u')))
             | Labelled l' (Constrained ctx (t :==: u)) <- eqns,
               formula ctx /= false,
               t /= u,
@@ -156,7 +157,7 @@ toCP norm (Constrained ctx (l :==: r)) = do
   guard (l /= r)
   let l' :==: r' = order (norm l :==: norm r)
   guard (l' /= r')
-  return (CP (size l) (Constrained ctx (l' :==: r')))
+  return (CP (size l') (size r') (Constrained ctx (l' :==: r')))
 
 complete1 ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
@@ -182,39 +183,56 @@ consider ::
   Label -> Label -> Constrained (Equation f v) -> StateT (KBC f v) IO ()
 consider l1 l2 pair@(Constrained ctx (t :==: u)) = unless (formula ctx == false) $ do
   traceM (Consider pair)
-  case map toModel (solve (branches ctx)) of
-    [] -> do
-      let pairs = usort (map canonicalise (instantiate pair))
-      traceM (Split pair pairs)
-      queueCPs l1 (map (Labelled l2) pairs)
-    model:_ -> do
-      Debug.Trace.traceShowM (pPrint (branches ctx))
-      Debug.Trace.traceShowM (pPrint (head (solve (branches ctx))))
-      Debug.Trace.traceShowM (pPrint model)
-      norm <- modelNormaliser model
-      let Reduction t' rs1 = norm t
-          Reduction u' rs2 = norm u
-      cond <-
-        case t' == u' of
-          True -> do
-            snorm <- specificNormaliser
-            let rs = shrinkList (usort (map (formula . constraint) rs1 ++ map (formula . constraint) rs2))
-                                (\fs -> result (snorm (Set.fromList fs) t) == result (snorm (Set.fromList fs) u))
-            traceM (Discharge pair rs)
-            return (foldr (&&&) true rs)
-          False -> do
-            let applicable rule =
-                  not (null (anywhere (tryRuleInModel model rule) t')) ||
-                  not (null (anywhere (tryRuleInModel model rule) u'))
-                rule:_ = filter applicable (orient (t' :==: u'))
-            traceM (NewRule (canonicalise rule))
-            Debug.Trace.traceShowM (pPrint rule)
-            Debug.Trace.traceShowM (pPrint (orient (t' :==: u')))
-            l <- addRule rule
-            interreduce rule
-            addCriticalPairs l rule
-            return (formula (constraint rule))
-      consider l1 l2 (Constrained (toConstraint (formula ctx &&& negateFormula cond)) (t :==: u))
+  norm <- normaliser
+  t <- return (result (norm t))
+  u <- return (result (norm u))
+  rs <- gets rules
+  unless (t == u) $ do
+    let stoppable =
+          Nothing -- listToMaybe (map toModel (solve (branches (toConstraint (formula ctx &&& stops)))))
+        stops =
+          foldr (&&&) true . usort $
+            map negateFormula (find t ++ find u)
+        find t = [ formula ctx' | Constrained ctx' _ <- anywhere (flip Index.lookup rs) t ]
+    case stoppable of
+      Just model -> do
+        let applicable rule =
+              not (null (anywhere (tryRuleInModel model rule) t)) ||
+              not (null (anywhere (tryRuleInModel model rule) u))
+            rule:_ = filter applicable (orient (t :==: u))
+        traceM (NewRule (canonicalise rule))
+        l <- addRule rule
+        interreduce rule
+        addCriticalPairs l rule
+      Nothing ->
+        case map toModel (solve (branches ctx)) of
+          [] -> do
+            let pairs = usort (map canonicalise (instantiate (Constrained ctx (t :==: u))))
+            traceM (Split pair pairs)
+            queueCPs l1 (map (Labelled l2) pairs)
+          model:_ -> do
+            norm <- modelNormaliser model
+            let Reduction t' rs1 = norm t
+                Reduction u' rs2 = norm u
+            cond <-
+              case t' == u' of
+                True -> do
+                  snorm <- specificNormaliser
+                  let rs = shrinkList (usort (map (formula . constraint) rs1 ++ map (formula . constraint) rs2))
+                                      (\fs -> result (snorm (Set.fromList fs) t) == result (snorm (Set.fromList fs) u))
+                  traceM (Discharge pair rs)
+                  return (foldr (&&&) true rs)
+                False -> do
+                  let applicable rule =
+                        not (null (anywhere (tryRuleInModel model rule) t')) ||
+                        not (null (anywhere (tryRuleInModel model rule) u'))
+                      rule:_ = filter applicable (orient (t' :==: u'))
+                  traceM (NewRule (canonicalise rule))
+                  l <- addRule rule
+                  interreduce rule
+                  addCriticalPairs l rule
+                  return (formula (constraint rule))
+            consider l1 l2 (Constrained (toConstraint (formula ctx &&& negateFormula cond)) (t :==: u))
 
 shrinkList :: [a] -> ([a] -> Bool) -> [a]
 shrinkList [] _ = []

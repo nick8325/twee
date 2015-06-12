@@ -100,10 +100,14 @@ instance (PrettyTerm f, Pretty v) => Pretty (Formula k f v) where
   pPrintPrec _ _ (Or []) = text "false"
   pPrintPrec l p (And xs) =
     pPrintParen (p > 10)
-      (fsep (punctuate (text " &") (map (pPrintPrec l 11) xs)))
+      (fsep (punctuate (text " &") (nest' (map (pPrintPrec l 11) xs))))
+    where
+      nest' (x:xs) = x:map (nest 2) xs
   pPrintPrec l p (Or xs) =
     pPrintParen (p > 10)
-      (fsep (punctuate (text " |") (map (pPrintPrec l 11) xs)))
+      (fsep (punctuate (text " |") (nest' (map (pPrintPrec l 11) xs))))
+    where
+      nest' (x:xs) = x:map (nest 2) xs
   pPrintPrec l p (SizeIs t) = pPrintPrec l p t
   pPrintPrec l _ (HeadLess t x) = text "hd(" <> pPrintPrec l 0 t <> text ") <" <+> pPrintPrec l 0 x
   pPrintPrec l _ (HeadGreater t x) = text "hd(" <> pPrintPrec l 0 t <> text ") >" <+> pPrintPrec l 0 x
@@ -193,8 +197,8 @@ focus str t@(Fun f ts) u@(Fun g us) | f == g = loop ts us
     canFocus x y =
       [diff' FM.</= 0] ==> diff FM.<== 0 &&
       [diff' FM.>/= 0] ==> diff FM.>== 0 &&
-      [diff' FM.>/= 0, diff' FM.</= 0] ==> diff FM.>== 0 &&
-      [diff' FM.>/= 0, diff' FM.</= 0] ==> diff FM.<== 0 &&
+      [diff' FM.>== 0, diff' FM.<== 0] ==> diff FM.>== 0 &&
+      [diff' FM.>== 0, diff' FM.<== 0] ==> diff FM.<== 0 &&
       case unify x y of
         Nothing -> True
         Just sub ->
@@ -276,16 +280,28 @@ reduceLess (Var x) (Var y) = return (Less (Var x) (Var y))
 reduceLess (Var x) t@(Fun f _) = do
   headEqual x f
   let sz = termSize t - FM.var x
-  return $
-    sizeIs (sz FM.>/= 0) |||
-      (sizeIs (sz FM.>== 0) &&& headLess (Var x) f)
+      hl = headLess (Var x) f
+  if hl == false
+  then return (sizeIs (sz FM.>/= 0))
+  else if hl == true
+  then return (sizeIs (sz FM.>== 0))
+  else
+    return $
+      sizeIs (sz FM.>/= 0) |||
+        (sizeIs (sz FM.>== 0) &&& hl)
     -- No need to elaborate headEqual case, it turns into an instance
 reduceLess t@(Fun f _) (Var x) = do
   headEqual x f
   let sz = FM.var x - termSize t
-  return $
-    sizeIs (sz FM.>/= 0) |||
-      (sizeIs (sz FM.>== 0) &&& headGreater (Var x) f)
+      hg = headGreater (Var x) f
+  if hg == false
+  then return (sizeIs (sz FM.>/= 0))
+  else if hg == true
+  then return (sizeIs (sz FM.>== 0))
+  else
+    return $
+      sizeIs (sz FM.>/= 0) |||
+        (sizeIs (sz FM.>== 0) &&& hg)
 reduceLess t@(Fun f ts) u@(Fun g us) = do
   let sz = termSize u - termSize t
   case compare f g of

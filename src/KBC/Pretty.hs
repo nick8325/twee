@@ -40,7 +40,7 @@ instance (Pretty k, Pretty v) => Pretty (Map k v) where
 instance (Eq a, Integral a, Pretty a) => Pretty (Ratio a) where
   pPrint a
     | denominator a == 1 = pPrint (numerator a)
-    | otherwise = text "(" <+> pPrint a <+> text ")"
+    | otherwise = text "(" <+> pPrint (numerator a) <> text "/" <> pPrint (denominator a) <+> text ")"
 
 instance (PrettyTerm f, Pretty v) => Pretty (Rule f v) where
   pPrint (Rule l r) =

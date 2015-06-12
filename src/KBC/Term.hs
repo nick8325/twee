@@ -54,5 +54,5 @@ lessThan str t@(Fun f ts) u@(Fun g us) =
     lexLess _ _ = ERROR("incorrect function arity")
     xs = sort (vars t)
     ys = sort (vars u)
-    st = size t
-    su = size u
+    st = exactSize t
+    su = exactSize u
