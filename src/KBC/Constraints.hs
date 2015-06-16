@@ -238,16 +238,28 @@ headGreater (Fun f _) g =
     _  -> false
 headGreater (Var x) f = HeadGreater x f
 
-conj forms
-  | false `elem` forms' = false
-  | otherwise =
-    case forms' of
-      [x] -> x
-      xs  -> And xs
+contradicts :: (Minimal f, Sized f, Ord f, Ord v) => Formula k f v -> Formula k f v -> Bool
+contradicts (HeadGreater x f) (HeadLess y g) | x == y && f >= g = True
+contradicts (HeadLess y g) (HeadGreater x f) | x == y && f >= g = True
+contradicts (Less t u)   (Less u' t')   | t == t' && u == u' = True
+contradicts (Less t u)   (LessEq u' t') | t == t' && u == u' = True
+contradicts (LessEq t u) (Less u' t')   | t == t' && u == u' = True
+contradicts (SizeIs (FM.Open x))   (SizeIs (FM.Open y))   | x == negate y = True
+contradicts (SizeIs (FM.Open x))   (SizeIs (FM.Closed y)) | x == negate y = True
+contradicts (SizeIs (FM.Closed x)) (SizeIs (FM.Open y))   | x == negate y = True
+contradicts _ _ = False
+
+conj forms = go [] forms
   where
-    flatten (And xs) = xs
-    flatten x = [x]
-    forms' = filter (/= true) (usort (concatMap flatten forms))
+    go xs (Or ys:zs) =
+      disj [ go xs (y:zs) | y <- ys ]
+    go xs (And ys:zs) =
+      go xs (ys ++ zs)
+    go xs (y:ys)
+      | any (contradicts y) xs = false
+      | otherwise = go (y:xs) ys
+    go [x] [] = x
+    go xs  [] = And xs
 disj forms
   | true `elem` forms' = true
   | otherwise =
