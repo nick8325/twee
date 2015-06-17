@@ -249,17 +249,16 @@ contradicts (SizeIs (FM.Open x))   (SizeIs (FM.Closed y)) | x == negate y = True
 contradicts (SizeIs (FM.Closed x)) (SizeIs (FM.Open y))   | x == negate y = True
 contradicts _ _ = False
 
-conj forms = go [] forms
+conj forms
+  | false `elem` forms' = false
+  | otherwise =
+    case forms' of
+      [x] -> x
+      xs  -> And xs
   where
-    go xs (Or ys:zs) =
-      disj [ go xs (y:zs) | y <- ys ]
-    go xs (And ys:zs) =
-      go xs (ys ++ zs)
-    go xs (y:ys)
-      | any (contradicts y) xs = false
-      | otherwise = go (y:xs) ys
-    go [x] [] = x
-    go xs  [] = And xs
+    flatten (And xs) = xs
+    flatten x = [x]
+    forms' = filter (/= true) (usort (concatMap flatten forms))
 disj forms
   | true `elem` forms' = true
   | otherwise =
