@@ -1,7 +1,7 @@
 -- Knuth-Bendix completion, up to an adjustable size limit.
 -- Does constrained rewriting for unorientable equations.
 
-{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts #-}
+{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, RecordWildCards #-}
 module KBC where
 
 #include "errors.h"
@@ -190,7 +190,25 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = unless (formula ctx == false)
   u <- return (result (norm u))
   rs <- gets rules
   unless (t == u) $ do
-    case map toModel (solve (branches ctx)) of
+    let evil ctx0 ctx =
+          case map toModel (solve (branches ctx)) of
+            [] -> ctx0
+            model:_ ->
+              let constraints =
+                    map constraint $
+                    anywhere (rewriteInModel rs model) t ++
+                    anywhere (rewriteInModel rs model) u in
+              case [ ctx' | c <- constraints, let ctx' = toConstraint (formula ctx &&& negateFormula (formula c)), not (null (map toModel (solve (branches ctx')))) ] of
+                [] -> ctx
+                (ctx':_) -> evil ctx ctx'
+        nice ctx' =
+          head ([ctx | ctx <- ctxs, not (null (solve (branches ctx)))] ++ [ctx'])
+          where
+            ctxs =
+              usort $
+                [ toConstraint (formula constraint &&& formula ctx) | Constrained{..} <- anywhere (flip Index.lookup rs) t, rhs constrained == u ] ++
+                [ toConstraint (formula constraint &&& formula ctx) | Constrained{..} <- anywhere (flip Index.lookup rs) u, rhs constrained == t ]
+    case map toModel (solve (branches (nice (evil ctx ctx)))) of
       [] -> do
         let pairs = usort (map canonicalise (instantiate (Constrained ctx (t :==: u))))
         traceM (Split pair pairs)
