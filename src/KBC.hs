@@ -56,12 +56,14 @@ data CP f v =
   CP {
     cpSize      :: Int,
     cpSizeRight :: Int,
+    oriented    :: Bool,
     cpEquation  :: Constrained (Equation f v) } deriving (Eq, Show)
 
 instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
   compare =
-    comparing $ \(CP size size' (Constrained _ (l :==: r))) ->
-      (size, size', l, r)
+    comparing $ \(CP size size' oriented (Constrained ctx (l :==: r))) ->
+      if oriented then size * 2 + size'
+      else (size + size') * 2
 
 instance (PrettyTerm f, Pretty v) => Pretty (CP f v) where
   pPrint = pPrint . cpEquation
@@ -138,7 +140,7 @@ queueCPs ::
 queueCPs l eqns = do
   norm <- normaliser
   maxN <- gets maxSize
-  let cps = [ Labelled l' (CP n (size u') (Constrained ctx (t' :==: u')))
+  let cps = [ Labelled l' (CP n (size u') (lessThan Strict u' t') (Constrained ctx (t' :==: u')))
             | Labelled l' (Constrained ctx (t :==: u)) <- eqns,
               formula ctx /= false,
               t /= u,
@@ -157,7 +159,7 @@ toCP norm (Constrained ctx (l :==: r)) = do
   guard (l /= r)
   let l' :==: r' = order (norm l :==: norm r)
   guard (l' /= r')
-  return (CP (size l') (size r') (Constrained ctx (l' :==: r')))
+  return (CP (size l') (size r') (lessThan Strict r' l') (Constrained ctx (l' :==: r')))
 
 complete1 ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>

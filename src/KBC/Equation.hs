@@ -21,10 +21,14 @@ instance Symbolic (Equation f v) where
 instance (PrettyTerm f, Pretty v) => Pretty (Equation f v) where
   pPrint (x :==: y) = hang (pPrint x <+> text "=") 2 (pPrint y)
 
-order :: (Sized f, Ord f, Ord v) => Equation f v -> Equation f v
+order :: (Minimal f, Sized f, Ord f, Ord v) => Equation f v -> Equation f v
 order (l :==: r)
-  | l == r || size l >= size r = l :==: r
-  | otherwise = r :==: l
+  | l == r = l :==: r
+  | otherwise =
+    case compare (size l) (size r) of
+      LT -> r :==: l
+      GT -> l :==: r
+      EQ -> if lessThan Nonstrict l r then r :==: l else l :==: r
 
 unorient :: Rule f v -> Equation f v
 unorient (Rule l r) = l :==: r
