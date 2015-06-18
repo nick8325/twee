@@ -5,6 +5,7 @@ import KBC.Base
 import KBC.Constraints
 import KBC.Term
 import KBC.Utils
+import KBC.Rewrite
 import Control.Monad
 import Data.Rewriting.Rule hiding (isVariantOf, vars)
 import Data.List
@@ -33,7 +34,7 @@ order (l :==: r)
 unorient :: Rule f v -> Equation f v
 unorient (Rule l r) = l :==: r
 
-orient :: (Minimal f, Sized f, Ord f, Ord v, Numbered v) => Equation f v -> [Constrained (Rule f v)]
+orient :: (Minimal f, Sized f, Ord f, Ord v, Numbered v) => Equation f v -> [Oriented (Rule f v)]
 orient (l :==: r) =
   -- If we have an equation where some variables appear only on one side, e.g.:
   --   f x y = g x z
@@ -44,8 +45,8 @@ orient (l :==: r) =
   -- where k is an arbitrary constant
   [ rule l r' | ord /= Just LT && ord /= Just EQ ] ++
   [ rule r l' | ord /= Just GT && ord /= Just EQ ] ++
-  [ rule l l' | not (null ls), ord /= Just LT ] ++
-  [ rule r r' | not (null rs), ord /= Just GT ]
+  [ MkOriented (WeaklyOriented (map Var ls)) (Rule l l') | not (null ls), ord /= Just LT ] ++
+  [ MkOriented (WeaklyOriented (map Var rs)) (Rule r r') | not (null rs), ord /= Just GT ]
   where
     ord = orientTerms l' r'
     l' = erase ls l
@@ -56,7 +57,9 @@ orient (l :==: r) =
     erase [] t = t
     erase xs t = substf (\x -> if x `elem` xs then Fun minimal [] else Var x) t
 
-    rule t u = Constrained (toConstraint (less Strict u t)) (Rule t u)
+    rule t u
+      | lessThan Strict u t = MkOriented Oriented (Rule t u)
+      | otherwise = MkOriented Unoriented (Rule t u)
 
 bothSides :: (Tm f v -> Tm f' v') -> Equation f v -> Equation f' v'
 bothSides f (t :==: u) = f t :==: f u

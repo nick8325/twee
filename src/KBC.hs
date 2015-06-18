@@ -26,8 +26,8 @@ import Control.Monad.Trans.State.Strict
 import Data.Map.Strict(Map)
 
 data Event f v =
-    NewRule (Constrained (Rule f v))
-  | Reduce (Simplification f v) (Constrained (Rule f v))
+    NewRule (Oriented (Rule f v))
+  | Reduce (Simplification f v) (Oriented (Rule f v))
   | NewCP (CP f v)
   | Consider (Constrained (Equation f v))
   | Split (Constrained (Equation f v)) [Constrained (Equation f v)]
@@ -48,7 +48,7 @@ traceIf _ _ = return ()
 data KBC f v =
   KBC {
     maxSize       :: Int,
-    labelledRules :: Index (Labelled (Constrained (Rule f v))),
+    labelledRules :: Index (Labelled (Oriented (Rule f v))),
     queue         :: Queue (CP f v) }
   deriving Show
 
@@ -101,7 +101,7 @@ newLabelM =
     case newLabel (queue s) of
       (l, q) -> (l, s { queue = q })
 
-rules :: KBC f v -> Index (Constrained (Rule f v))
+rules :: KBC f v -> Index (Oriented (Rule f v))
 rules = Index.mapMonotonic peel . labelledRules
 
 normaliser ::
@@ -195,10 +195,10 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = unless (formula ctx == false)
             [] -> ctx0
             model:_ ->
               let constraints =
-                    map constraint $
+                    map ruleConstraint $
                     anywhere (rewriteInModel rs model) t ++
                     anywhere (rewriteInModel rs model) u in
-              case [ ctx' | c <- constraints, let ctx' = toConstraint (formula ctx &&& negateFormula (formula c)), not (null (map toModel (solve (branches ctx')))) ] of
+              case [ ctx' | c <- constraints, let ctx' = toConstraint (formula ctx &&& negateFormula c), not (null (map toModel (solve (branches ctx')))) ] of
                 [] -> ctx
                 (ctx':_) -> evil ctx ctx'
         nice ctx' =
@@ -206,8 +206,8 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = unless (formula ctx == false)
           where
             ctxs =
               usort $
-                [ toConstraint (formula constraint &&& formula ctx) | Constrained{..} <- anywhere (flip Index.lookup rs) t, rhs constrained == u ] ++
-                [ toConstraint (formula constraint &&& formula ctx) | Constrained{..} <- anywhere (flip Index.lookup rs) u, rhs constrained == t ]
+                [ toConstraint (ruleConstraint o &&& formula ctx) | o@MkOriented{..} <- anywhere (flip Index.lookup rs) t, rhs rule == u ] ++
+                [ toConstraint (ruleConstraint o &&& formula ctx) | o@MkOriented{..} <- anywhere (flip Index.lookup rs) u, rhs rule == t ]
     case map toModel (solve (branches (nice (evil ctx ctx)))) of
       [] -> do
         let pairs = usort (map canonicalise (instantiate (Constrained ctx (t :==: u))))
@@ -221,7 +221,7 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = unless (formula ctx == false)
           case t' == u' of
             True -> do
               snorm <- specificNormaliser
-              let rs = shrinkList (usort (map (formula . constraint) rs1 ++ map (formula . constraint) rs2))
+              let rs = shrinkList (usort (map ruleConstraint rs1 ++ map ruleConstraint rs2))
                                   (\fs -> result (snorm (Set.fromList fs) t) == result (snorm (Set.fromList fs) u))
               traceM (Discharge pair rs)
               return (foldr (&&&) true rs)
@@ -234,7 +234,7 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = unless (formula ctx == false)
               l <- addRule rule
               interreduce rule
               addCriticalPairs l rule
-              return (formula (constraint rule))
+              return (ruleConstraint rule)
         consider l1 l2 (Constrained (toConstraint (formula ctx &&& negateFormula cond)) (t :==: u))
 
 shrinkList :: [a] -> ([a] -> Bool) -> [a]
@@ -243,52 +243,52 @@ shrinkList (x:xs) p
   | p xs = shrinkList xs p
   | otherwise = x:shrinkList xs (\ys -> p (x:ys))
 
-addRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) => Constrained (Rule f v) -> StateT (KBC f v) IO Label
+addRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) => Oriented (Rule f v) -> StateT (KBC f v) IO Label
 addRule rule = do
   l <- newLabelM
   modify (\s -> s { labelledRules = Index.insert (Labelled l rule) (labelledRules s) })
   return l
 
-deleteRule :: (Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Constrained (Rule f v) -> StateT (KBC f v) IO ()
+deleteRule :: (Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Oriented (Rule f v) -> StateT (KBC f v) IO ()
 deleteRule l rule =
   modify $ \s ->
     s { labelledRules = Index.delete (Labelled l rule) (labelledRules s),
         queue = deleteLabel l (queue s) }
 
-data Simplification f v = Simplify (Constrained (Rule f v)) | Reorient (Constrained (Rule f v)) deriving Show
+data Simplification f v = Simplify (Oriented (Rule f v)) | Reorient (Oriented (Rule f v)) deriving Show
 
 instance (PrettyTerm f, Pretty v) => Pretty (Simplification f v) where
   pPrint (Simplify rule) = text "Simplify" <+> pPrint rule
   pPrint (Reorient rule) = text "Reorient" <+> pPrint rule
 
-interreduce :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f, Numbered v, Pretty v) => Constrained (Rule f v) -> StateT (KBC f v) IO ()
+interreduce :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f, Numbered v, Pretty v) => Oriented (Rule f v) -> StateT (KBC f v) IO ()
 interreduce new = do
   rules <- gets (Index.elems . labelledRules)
   let reductions = catMaybes (map (moveLabel . fmap (reduceWith new)) rules)
   sequence_ [ traceM (Reduce red new) | red <- map peel reductions ]
   sequence_ [ simplifyRule l rule | Labelled l (Simplify rule) <- reductions ]
-  sequence_ [ newEquation (unorient (constrained rule)) | Reorient rule <- map peel reductions ]
+  sequence_ [ newEquation (unorient (rule r)) | Reorient r <- map peel reductions ]
   sequence_ [ deleteRule l rule | Labelled l (Reorient rule) <- reductions ]
 
-reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Constrained (Rule f v) -> Constrained (Rule f v) -> Maybe (Simplification f v)
+reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Oriented (Rule f v) -> Oriented (Rule f v) -> Maybe (Simplification f v)
 reduceWith new old
-  | not (lhs (constrained new) `isInstanceOf` lhs (constrained old)) &&
-    not (null (anywhere (tryRule new) (lhs (constrained old)))) =
+  | not (lhs (rule new) `isInstanceOf` lhs (rule old)) &&
+    not (null (anywhere (tryRule new) (lhs (rule old)))) =
       Just (Reorient old)
-  | not (null (anywhere (tryRule new) (rhs (constrained old)))) =
+  | not (null (anywhere (tryRule new) (rhs (rule old)))) =
       Just (Simplify old)
   | otherwise = Nothing
 
-simplifyRule :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Constrained (Rule f v) -> StateT (KBC f v) IO ()
-simplifyRule l rule@(Constrained ctx (Rule lhs rhs)) = do
+simplifyRule :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Oriented (Rule f v) -> StateT (KBC f v) IO ()
+simplifyRule l rule@(MkOriented ctx (Rule lhs rhs)) = do
   norm <- normaliser
   modify $ \s ->
     s {
       labelledRules =
-         Index.insert (Labelled l (Constrained ctx (Rule lhs (result (norm rhs)))))
+         Index.insert (Labelled l (MkOriented ctx (Rule lhs (result (norm rhs)))))
            (Index.delete (Labelled l rule) (labelledRules s)) }
 
-addCriticalPairs :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f, Numbered v, Pretty v) => Label -> Constrained (Rule f v) -> StateT (KBC f v) IO ()
+addCriticalPairs :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f, Numbered v, Pretty v) => Label -> Oriented (Rule f v) -> StateT (KBC f v) IO ()
 addCriticalPairs l new = do
   rules <- gets labelledRules
   size  <- gets maxSize
@@ -305,9 +305,9 @@ canonicaliseBoth (x, y) = (x', substf (Var . increase) y')
     n  = maximum (0:map (succ . number) (vars x'))
     increase v = withNumber (n+number v) v
 
-criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) => Int -> Constrained (Rule f v) -> Constrained (Rule f v) -> [Constrained (Equation f v)]
+criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) => Int -> Oriented (Rule f v) -> Oriented (Rule f v) -> [Constrained (Equation f v)]
 criticalPairs _ r1 r2 = do
-  let (Constrained ctx1 r1', Constrained ctx2 r2') = canonicaliseBoth (r1, r2)
+  let (cr1@(MkOriented _ r1'), cr2@(MkOriented _ r2')) = canonicaliseBoth (r1, r2)
   cp <- CP.cps [r1'] [r2']
   let sub = CP.subst cp
       f (Left x)  = x
@@ -316,7 +316,7 @@ criticalPairs _ r1 r2 = do
       right = rename f (CP.right cp)
       ctx =
         toConstraint $
-          substf (rename f . evalSubst sub . Left) (formula ctx1) &&&
-          substf (rename f . evalSubst sub . Right) (formula ctx2)
+          substf (rename f . evalSubst sub . Left) (ruleConstraint cr1) &&&
+          substf (rename f . evalSubst sub . Right) (ruleConstraint cr2)
 
   return (Constrained ctx (left :==: right))
