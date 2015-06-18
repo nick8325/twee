@@ -132,7 +132,7 @@ newEquation ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   Equation f v -> StateT (KBC f v) IO ()
 newEquation (t :==: u) =
-  queueCPs noLabel [Labelled noLabel (Constrained (toConstraint true) (t :==: u))]
+  consider noLabel noLabel (Constrained (toConstraint true) (t :==: u))
 
 queueCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
