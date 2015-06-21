@@ -1,0 +1,30 @@
+0/0=1
+[]/0=1
+length/1=1
+text/1=1
+nest/2=1
++/2=1
+++/2=1
+$$/2=1
+<>/2=1
+--
+length([]) = 0
++(X, 0) = X
++(X, Y) = +(Y, X)
++(X, +(Y, Z)) = +(+(X, Y), Z)
+++(Xs, []) = Xs
+++([], Xs) = Xs
+++(Xs, ++(Ys, Zs)) = ++(++(Xs, Ys), Zs)
+length(++(Xs, Ys)) = +(length(Xs), length(Ys))
+nest(0, X) = X
+<>(X, text([])) = X
+nest(+(I, J), X) = nest(I, nest(J, X))
+$$(X, $$(Y, Z)) = $$($$(X, Y), Z)
+<>(X, nest(I, Y)) = <>(X, Y)
+<>(nest(I, X), Y) = nest(I, <>(X, Y))
+<>($$(X, Y), Z) = $$(X, <>(Y, Z))
+<>(<>(X, Y), Z) = <>(X, <>(Y, Z))
+<>(text(X), text(Y)) = text(++(X, Y))
+$$(nest(I, X), nest(I, Y)) = nest(I, $$(X, Y))
+<>(text(Xs), $$(<>(text([]), X), Y)) = $$(<>(text(Xs), X), nest(length(Xs), Y))
+--

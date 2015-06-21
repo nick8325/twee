@@ -1,5 +1,5 @@
 +/0 = 1
-app/2 = 1
+app/2 = 0
 --
 app(app(+, X), Y) = app(app(+, Y), X)
 app(app(+, X), app(app(+, Y), Z)) = app(app(+, app(app(+, X), Y)), Z)

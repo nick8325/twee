@@ -1,0 +1,15 @@
+a/0      = 1
+false/0  = 1
+true/0   = 1
+k/0      = 1
+s/0      = 1
+@/2      = 0
+equals/2 = 0
+--
+@(@(k, X), Y) = X
+@(@(@(s, X), Y), Z) = @(@(X, Z), @(Y, Z))
+equals(X, X) = true
+equals(@(X, a), @(a, @(X, a))) = false
+--
+false
+true

@@ -1,17 +1,17 @@
 a/0      = 1
 false/0  = 1
 true/0   = 1
-i/0      = 1
-k/0      = 1
-s/0      = 1
-equals/2 = 1
-app/2    = 0
+c/0      = 1
+f/0      = 1
+w/0      = 1
+@/2    = 0
+equals/2 = 0
 --
-app(i, X) = X
-app(app(k, X), Y) = X
-app(app(app(s, X), Y), Z) = app(app(X, Z), app(Y, Z))
+@(@(@(c, X), Y), Z) = @(X, @(Y, Z))
+@(@(@(f, X), Y), Z) = @(@(X, Z), Y)
+@(w, X) = @(X, X)
 equals(X, X) = true
-equals(app(X, a), app(a, app(X, a))) = false
+equals(@(X, a), @(a, @(X, a))) = false
 --
 false
 true
