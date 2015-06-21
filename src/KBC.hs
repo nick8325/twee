@@ -189,7 +189,12 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = unless (formula ctx == false)
   t <- return (result (norm t))
   u <- return (result (norm u))
   rs <- gets rules
-  unless (t == u) $ do
+  let subsumed =
+        or [ rhs (rule x) == u | x <- look t ] ||
+        or [ rhs (rule x) == t | x <- look u ]
+      look t = nested (anywhere (flip Index.lookup rs)) t ++
+               [ r | r <- Index.lookup t rs, not (isVariantOf t (lhs (rule r))) ]
+  unless (t == u || subsumed) $ do
     let evil ctx0 ctx =
           case map toModel (solve (branches ctx)) of
             [] -> ctx0

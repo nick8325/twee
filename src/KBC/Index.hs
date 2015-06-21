@@ -124,11 +124,17 @@ partialToList f m idx =
 lookup ::
   (Symbolic a, Numbered (ConstantOf a), Numbered (VariableOf a), Eq (ConstantOf a), Eq (VariableOf a)) =>
   TmOf a -> Index a -> [a]
-lookup t idx = partialToList f (lookupPartial t) idx
+lookup t idx = map fst (lookup' t idx)
+
+{-# INLINEABLE lookup' #-}
+lookup' ::
+  (Symbolic a, Numbered (ConstantOf a), Numbered (VariableOf a), Eq (ConstantOf a), Eq (VariableOf a)) =>
+  TmOf a -> Index a -> [(a, a)]
+lookup' t idx = partialToList f (lookupPartial t) idx
   where
     f sub idx = do
       m <- Set.toList (here idx)
-      return (substf (substNumbered sub) m)
+      return (substf (substNumbered sub) m, m)
 
     substNumbered sub x =
       Map.findWithDefault (Var x) (number x) (Subst.toMap sub)
