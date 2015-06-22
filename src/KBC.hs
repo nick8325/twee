@@ -49,6 +49,7 @@ data KBC f v =
   KBC {
     maxSize       :: Int,
     labelledRules :: Index (Labelled (Oriented (Rule f v))),
+    extraRules    :: Index (Oriented (Rule f v)),
     queue         :: Queue (CP f v) }
   deriving Show
 
@@ -78,6 +79,7 @@ initialState maxSize =
   KBC {
     maxSize       = maxSize,
     labelledRules = Index.empty,
+    extraRules    = Index.empty,
     queue         = empty }
 
 enqueueM ::
@@ -104,11 +106,16 @@ newLabelM =
 rules :: KBC f v -> Index (Oriented (Rule f v))
 rules = Index.mapMonotonic peel . labelledRules
 
+allRules :: (Ord f, Ord v) => KBC f v -> Index (Oriented (Rule f v))
+allRules state =
+  Index.mapMonotonic peel (labelledRules state) `Index.union`
+  extraRules state
+
 normaliser ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   StateT (KBC f v) IO (Tm f v -> Reduction f v)
 normaliser = do
-  rules <- gets rules
+  rules <- gets allRules
   return $
     normaliseWith (anywhere (rewrite rules))
 
@@ -116,7 +123,7 @@ modelNormaliser ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   Map v (Extended f v) -> StateT (KBC f v) IO (Tm f v -> Reduction f v)
 modelNormaliser model = do
-  rules <- gets rules
+  rules <- gets allRules
   return $
     normaliseWith (anywhere (rewriteInModel rules model))
 
@@ -124,15 +131,16 @@ specificNormaliser ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   StateT (KBC f v) IO (Set (Formula Simple f v) -> Tm f v -> Reduction f v)
 specificNormaliser = do
-  rules <- gets rules
+  rules <- gets allRules
   return $ \forms ->
     normaliseWith (anywhere (rewriteAllowing rules forms))
 
 newEquation ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   Equation f v -> StateT (KBC f v) IO ()
-newEquation (t :==: u) =
+newEquation (t :==: u) = do
   consider noLabel noLabel (Constrained (toConstraint true) (t :==: u))
+  return ()
 
 queueCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
@@ -180,67 +188,88 @@ complete = do
   res <- complete1
   when res complete
 
-consider ::
+data ConsiderResult = Joined | Case | New
+
+consider, consider1 ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
-  Label -> Label -> Constrained (Equation f v) -> StateT (KBC f v) IO ()
-consider l1 l2 pair@(Constrained ctx (t :==: u)) = unless (formula ctx == false) $ do
+  Label -> Label -> Constrained (Equation f v) -> StateT (KBC f v) IO ConsiderResult
+consider l1 l2 pair@(Constrained _ (t :==: u)) = do
+  norm <- normaliser
+  res <- consider1 l1 l2 pair
+  case res of
+    Case -> do
+      let t' = result (norm t)
+          u' = result (norm u)
+      forM_ (orient (t' :==: u')) $ \rule ->
+        modify (\s -> s { extraRules = Index.insert rule (extraRules s) })
+      return res
+    _ -> return res
+
+consider1 l1 l2 pair@(Constrained ctx (t :==: u)) = if formula ctx == false then return Joined else do
   traceM (Consider pair)
   norm <- normaliser
   t <- return (result (norm t))
   u <- return (result (norm u))
-  rs <- gets rules
+  rs <- gets allRules
   let subsumed =
         or [ rhs (rule x) == u | x <- look t ] ||
         or [ rhs (rule x) == t | x <- look u ]
       look t = nested (anywhere (flip Index.lookup rs)) t ++
                [ r | r <- Index.lookup t rs, not (isVariantOf t (lhs (rule r))) ]
-  unless (t == u || subsumed) $ do
-    let evil ctx0 ctx =
-          case map toModel (solve (branches ctx)) of
-            [] -> ctx0
-            model:_ ->
-              let constraints =
-                    map ruleConstraint $
-                    anywhere (rewriteInModel rs model) t ++
-                    anywhere (rewriteInModel rs model) u in
-              case [ ctx' | c <- constraints, let ctx' = toConstraint (formula ctx &&& negateFormula c), not (null (map toModel (solve (branches ctx')))) ] of
-                [] -> ctx
-                (ctx':_) -> evil ctx ctx'
-        nice ctx' =
-          head ([ctx | ctx <- ctxs, not (null (solve (branches ctx)))] ++ [ctx'])
-          where
-            ctxs =
-              usort $
-                [ toConstraint (ruleConstraint o &&& formula ctx) | o@MkOriented{..} <- anywhere (flip Index.lookup rs) t, rhs rule == u ] ++
-                [ toConstraint (ruleConstraint o &&& formula ctx) | o@MkOriented{..} <- anywhere (flip Index.lookup rs) u, rhs rule == t ]
-    case map toModel (solve (branches (nice (evil ctx ctx)))) of
-      [] -> do
-        let pairs = usort (map canonicalise (instantiate (Constrained ctx (t :==: u))))
-        traceM (Split pair pairs)
-        queueCPs l1 (map (Labelled l2) pairs)
-      model:_ -> do
-        norm <- modelNormaliser model
-        let Reduction t' rs1 = norm t
-            Reduction u' rs2 = norm u
-        cond <-
-          case t' == u' of
-            True -> do
-              snorm <- specificNormaliser
-              let rs = shrinkList (usort (map ruleConstraint rs1 ++ map ruleConstraint rs2))
-                                  (\fs -> result (snorm (Set.fromList fs) t) == result (snorm (Set.fromList fs) u))
-              traceM (Discharge pair rs)
-              return (foldr (&&&) true rs)
-            False -> do
-              let applicable rule =
-                    not (null (anywhere (tryRuleInModel model rule) t')) ||
-                    not (null (anywhere (tryRuleInModel model rule) u'))
-                  rule:_ = filter applicable (orient (t' :==: u'))
-              traceM (NewRule (canonicalise rule))
-              l <- addRule rule
-              interreduce rule
-              addCriticalPairs l rule
-              return (ruleConstraint rule)
-        consider l1 l2 (Constrained (toConstraint (formula ctx &&& negateFormula cond)) (t :==: u))
+  case (t == u || subsumed) of
+    True -> return Joined
+    False -> do
+      let evil ctx0 ctx =
+            case map toModel (solve (branches ctx)) of
+              [] -> ctx0
+              model:_ ->
+                let constraints =
+                      map ruleConstraint $
+                      anywhere (rewriteInModel rs model) t ++
+                      anywhere (rewriteInModel rs model) u in
+                case [ ctx' | c <- constraints, let ctx' = toConstraint (formula ctx &&& negateFormula c), not (null (map toModel (solve (branches ctx')))) ] of
+                  [] -> ctx
+                  (ctx':_) -> evil ctx ctx'
+          nice ctx' =
+            head ([ctx | ctx <- ctxs, not (null (solve (branches ctx)))] ++ [ctx'])
+            where
+              ctxs =
+                usort $
+                  [ toConstraint (ruleConstraint o &&& formula ctx) | o@MkOriented{..} <- anywhere (flip Index.lookup rs) t, rhs rule == u ] ++
+                  [ toConstraint (ruleConstraint o &&& formula ctx) | o@MkOriented{..} <- anywhere (flip Index.lookup rs) u, rhs rule == t ]
+      case map toModel (solve (branches (nice (evil ctx ctx)))) of
+        [] -> do
+          let pairs = usort (map canonicalise (instantiate (Constrained ctx (t :==: u))))
+          traceM (Split pair pairs)
+          --queueCPs l1 (map (Labelled l2) pairs)
+          mapM_ (consider1 l1 l2) pairs
+          return Case
+        model:_ -> do
+          norm <- modelNormaliser model
+          let Reduction t' rs1 = norm t
+              Reduction u' rs2 = norm u
+          cond <-
+            case t' == u' of
+              True -> do
+                snorm <- specificNormaliser
+                let rs = shrinkList (usort (map ruleConstraint rs1 ++ map ruleConstraint rs2))
+                                    (\fs -> result (snorm (Set.fromList fs) t) == result (snorm (Set.fromList fs) u))
+                traceM (Discharge pair rs)
+                return (foldr (&&&) true rs)
+              False -> do
+                let applicable rule =
+                      not (null (anywhere (tryRuleInModel model rule) t')) ||
+                      not (null (anywhere (tryRuleInModel model rule) u'))
+                    rule:_ = filter applicable (orient (t' :==: u'))
+                traceM (NewRule (canonicalise rule))
+                l <- addRule rule
+                interreduce rule
+                addCriticalPairs l rule
+                return (ruleConstraint rule)
+          res <- consider1 l1 l2 (Constrained (toConstraint (formula ctx &&& negateFormula cond)) (t :==: u))
+          return $ case res of
+            New -> New
+            _ -> Case
 
 shrinkList :: [a] -> ([a] -> Bool) -> [a]
 shrinkList [] _ = []
