@@ -24,6 +24,7 @@ import Data.Set(Set)
 import qualified Debug.Trace
 import Control.Monad.Trans.State.Strict
 import Data.Map.Strict(Map)
+import Data.List
 
 data Event f v =
     NewRule (Oriented (Rule f v))
@@ -200,8 +201,8 @@ consider l1 l2 pair@(Constrained _ (t :==: u)) = do
     Case -> do
       let t' = result (norm t)
           u' = result (norm u)
-      forM_ (orient (t' :==: u')) $ \rule ->
-        modify (\s -> s { extraRules = Index.insert rule (extraRules s) })
+      --forM_ (orient (t' :==: u')) $ \rule ->
+      --  modify (\s -> s { extraRules = Index.insert rule (extraRules s) })
       return res
     _ -> return res
 
@@ -241,8 +242,8 @@ consider1 l1 l2 pair@(Constrained ctx (t :==: u)) = if formula ctx == false then
         [] -> do
           let pairs = usort (map canonicalise (instantiate (Constrained ctx (t :==: u))))
           traceM (Split pair pairs)
-          --queueCPs l1 (map (Labelled l2) pairs)
-          mapM_ (consider1 l1 l2) pairs
+          queueCPs l1 (map (Labelled l2) pairs)
+          --mapM_ (consider1 l1 l2) pairs
           return Case
         model:_ -> do
           norm <- modelNormaliser model
@@ -255,7 +256,7 @@ consider1 l1 l2 pair@(Constrained ctx (t :==: u)) = if formula ctx == false then
                 let rs = shrinkList (usort (map ruleConstraint rs1 ++ map ruleConstraint rs2))
                                     (\fs -> result (snorm (Set.fromList fs) t) == result (snorm (Set.fromList fs) u))
                 traceM (Discharge pair rs)
-                return (foldr (&&&) true rs)
+                return (conj [ disj (r:map negateFormula rs') | r:rs' <- inits rs ])
               False -> do
                 let applicable rule =
                       not (null (anywhere (tryRuleInModel model rule) t')) ||
@@ -263,9 +264,9 @@ consider1 l1 l2 pair@(Constrained ctx (t :==: u)) = if formula ctx == false then
                     rule:_ = filter applicable (orient (t' :==: u'))
                 traceM (NewRule (canonicalise rule))
                 l <- addRule rule
-                interreduce rule
+                interreduce l rule
                 addCriticalPairs l rule
-                return (ruleConstraint rule)
+                return false --(ruleConstraint rule)
           res <- consider1 l1 l2 (Constrained (toConstraint (formula ctx &&& negateFormula cond)) (t :==: u))
           return $ case res of
             New -> New
@@ -295,13 +296,13 @@ instance (PrettyTerm f, Pretty v) => Pretty (Simplification f v) where
   pPrint (Simplify rule) = text "Simplify" <+> pPrint rule
   pPrint (Reorient rule) = text "Reorient" <+> pPrint rule
 
-interreduce :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f, Numbered v, Pretty v) => Oriented (Rule f v) -> StateT (KBC f v) IO ()
-interreduce new = do
+interreduce :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f, Numbered v, Pretty v) => Label -> Oriented (Rule f v) -> StateT (KBC f v) IO ()
+interreduce l new = do
   rules <- gets (Index.elems . labelledRules)
   let reductions = catMaybes (map (moveLabel . fmap (reduceWith new)) rules)
   sequence_ [ traceM (Reduce red new) | red <- map peel reductions ]
   sequence_ [ simplifyRule l rule | Labelled l (Simplify rule) <- reductions ]
-  sequence_ [ newEquation (unorient (rule r)) | Reorient r <- map peel reductions ]
+  queueCPs l [Labelled noLabel (Constrained (toConstraint true) (unorient (rule r))) | Reorient r <- map peel reductions ]
   sequence_ [ deleteRule l rule | Labelled l (Reorient rule) <- reductions ]
 
 reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Oriented (Rule f v) -> Oriented (Rule f v) -> Maybe (Simplification f v)
@@ -310,7 +311,7 @@ reduceWith new old
     not (null (anywhere (tryRule new) (lhs (rule old)))) =
       Just (Reorient old)
   | not (null (anywhere (tryRule new) (rhs (rule old)))) =
-      Just (Simplify old)
+      Just (case orientation old of { Unoriented -> Reorient old; _ -> Simplify old })
   | otherwise = Nothing
 
 simplifyRule :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Oriented (Rule f v) -> StateT (KBC f v) IO ()
