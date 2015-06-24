@@ -220,17 +220,17 @@ consider1 l1 l2 pair@(Constrained ctx (t :==: u)) = if formula ctx == false then
   case (t == u || subsumed) of
     True -> return Joined
     False -> do
-      let evil ctx0 ctx = ctx0
-{-            case map toModel (solve (branches ctx)) of
+      let evil ctx0 ctx =
+            case map toModel (solve (branches ctx)) of
               [] -> ctx0
               model:_ ->
                 let constraints =
                       map ruleConstraint $
                       anywhere (rewriteInModel rs model) t ++
                       anywhere (rewriteInModel rs model) u in
-                case [ ctx' | c <- constraints, let ctx' = toConstraint (formula ctx &&& negateFormula c), not (null (map toModel (solve (branches ctx')))) ] of
+                case [ ctx' | c <- constraints, let ctx' = toConstraint (formula ctx &&& negateFormula c), not (null (solve (branches ctx'))) ] of
                   [] -> ctx
-                  (ctx':_) -> evil ctx ctx'-}
+                  (ctx':_) -> evil ctx ctx'
           nice ctx' =
             head ([ctx | ctx <- ctxs, not (null (solve (branches ctx)))] ++ [ctx'])
             where
@@ -256,7 +256,9 @@ consider1 l1 l2 pair@(Constrained ctx (t :==: u)) = if formula ctx == false then
                 let rs = shrinkList (usort (map ruleConstraint rs1 ++ map ruleConstraint rs2))
                                     (\fs -> result (snorm (Set.fromList fs) t) == result (snorm (Set.fromList fs) u))
                 traceM (Discharge pair rs)
-                return (conj [ disj (r:map negateFormula rs') | r:rs' <- tails rs ])
+                let diag [] = true
+                    diag (r:rs) = r &&& (negateFormula r ||| diag rs)
+                return (diag rs)
               False -> do
                 let applicable rule =
                       not (null (anywhere (tryRuleInModel model rule) t')) ||
