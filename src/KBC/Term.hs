@@ -12,6 +12,9 @@ import KBC.Utils
 class Minimal a where
   minimal :: a
 
+minimalTerm :: Minimal f => Tm f v
+minimalTerm = Fun minimal []
+
 class Sized a where
   funSize  :: a -> Rational
   funArity :: a -> Int

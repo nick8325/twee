@@ -35,6 +35,7 @@ unorient :: Rule f v -> Equation f v
 unorient (Rule l r) = l :==: r
 
 orient :: (Minimal f, Sized f, Ord f, Ord v, Numbered v) => Equation f v -> [Oriented (Rule f v)]
+orient (l :==: r) | l == r = []
 orient (l :==: r) =
   -- If we have an equation where some variables appear only on one side, e.g.:
   --   f x y = g x z
@@ -45,8 +46,8 @@ orient (l :==: r) =
   -- where k is an arbitrary constant
   [ rule l r' | ord /= Just LT && ord /= Just EQ ] ++
   [ rule r l' | ord /= Just GT && ord /= Just EQ ] ++
-  [ MkOriented (WeaklyOriented (map Var ls)) (Rule l l') | not (null ls), ord /= Just LT ] ++
-  [ MkOriented (WeaklyOriented (map Var rs)) (Rule r r') | not (null rs), ord /= Just GT ]
+  [ MkOriented (WeaklyOriented (map Var ls)) (Rule l l') | not (null ls), ord /= Just GT ] ++
+  [ MkOriented (WeaklyOriented (map Var rs)) (Rule r r') | not (null rs), ord /= Just LT ]
   where
     ord = orientTerms l' r'
     l' = erase ls l

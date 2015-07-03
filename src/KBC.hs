@@ -32,9 +32,9 @@ data Event f v =
   | NewCP (CP f v)
   | Consider (Constrained (Equation f v))
   | Split (Constrained (Equation f v)) [Constrained (Equation f v)]
-  | Discharge (Constrained (Equation f v)) [Formula Simple f v]
+  | Discharge (Constrained (Equation f v)) [Formula f v]
 
-traceM :: (Monad m, PrettyTerm f, Pretty v) => Event f v -> m ()
+traceM :: (Monad m, Minimal f, PrettyTerm f, Pretty v) => Event f v -> m ()
 traceM (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
 traceM (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
 traceM (NewCP cps) = traceIf True (hang (text "Critical pair") 2 (pPrint cps))
@@ -50,7 +50,6 @@ data KBC f v =
   KBC {
     maxSize       :: Int,
     labelledRules :: Index (Labelled (Oriented (Rule f v))),
-    extraRules    :: Index (Oriented (Rule f v)),
     queue         :: Queue (CP f v) }
   deriving Show
 
@@ -67,7 +66,7 @@ instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
       if oriented then size * 2 + size'
       else (size + size') * 2
 
-instance (PrettyTerm f, Pretty v) => Pretty (CP f v) where
+instance (Minimal f, PrettyTerm f, Pretty v) => Pretty (CP f v) where
   pPrint = pPrint . cpEquation
 
 report :: KBC f v -> String
@@ -80,7 +79,6 @@ initialState maxSize =
   KBC {
     maxSize       = maxSize,
     labelledRules = Index.empty,
-    extraRules    = Index.empty,
     queue         = empty }
 
 enqueueM ::
@@ -107,40 +105,27 @@ newLabelM =
 rules :: KBC f v -> Index (Oriented (Rule f v))
 rules = Index.mapMonotonic peel . labelledRules
 
-allRules :: (Ord f, Ord v) => KBC f v -> Index (Oriented (Rule f v))
-allRules state =
-  Index.mapMonotonic peel (labelledRules state) `Index.union`
-  extraRules state
-
 normaliser ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   StateT (KBC f v) IO (Tm f v -> Reduction f v)
 normaliser = do
-  rules <- gets allRules
+  rules <- gets rules
   return $
     normaliseWith (anywhere (rewrite rules))
 
 modelNormaliser ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
-  Map v (Extended f v) -> StateT (KBC f v) IO (Tm f v -> Reduction f v)
-modelNormaliser model = do
-  rules <- gets allRules
-  return $
+  StateT (KBC f v) IO ([Formula f v] -> Tm f v -> Reduction f v)
+modelNormaliser = do
+  rules <- gets rules
+  return $ \model ->
     normaliseWith (anywhere (rewriteInModel rules model))
-
-specificNormaliser ::
-  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
-  StateT (KBC f v) IO (Set (Formula Simple f v) -> Tm f v -> Reduction f v)
-specificNormaliser = do
-  rules <- gets allRules
-  return $ \forms ->
-    normaliseWith (anywhere (rewriteAllowing rules forms))
 
 newEquation ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   Equation f v -> StateT (KBC f v) IO ()
 newEquation (t :==: u) = do
-  consider noLabel noLabel (Constrained (toConstraint true) (t :==: u))
+  consider noLabel noLabel (Constrained (And []) (t :==: u))
   return ()
 
 queueCPs ::
@@ -151,7 +136,6 @@ queueCPs l eqns = do
   maxN <- gets maxSize
   let cps = [ Labelled l' (CP n (size u') (lessThan Strict u' t') (Constrained ctx (t' :==: u')))
             | Labelled l' (Constrained ctx (t :==: u)) <- eqns,
-              formula ctx /= false,
               t /= u,
               let t' :==: u' = order (result (norm t) :==: result (norm u)),
               t' /= u',
@@ -188,97 +172,66 @@ complete ::
 complete = do
   res <- complete1
   when res complete
-
-data ConsiderResult = Joined | Case | New
-
-consider, consider1 ::
+consider ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
-  Label -> Label -> Constrained (Equation f v) -> StateT (KBC f v) IO ConsiderResult
-consider l1 l2 pair@(Constrained _ (t :==: u)) = do
-  norm <- normaliser
-  res <- consider1 l1 l2 pair
-  case res of
-    Case -> do
-      let t' = result (norm t)
-          u' = result (norm u)
-      --forM_ (orient (t' :==: u')) $ \rule ->
-      --  modify (\s -> s { extraRules = Index.insert rule (extraRules s) })
-      return res
-    _ -> return res
-
-consider1 l1 l2 pair@(Constrained ctx (t :==: u)) = if formula ctx == false then return Joined else do
+  Label -> Label -> Constrained (Equation f v) -> StateT (KBC f v) IO ()
+consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
   traceM (Consider pair)
+  rs <- gets rules
   norm <- normaliser
   t <- return (result (norm t))
   u <- return (result (norm u))
-  rs <- gets allRules
-  let subsumed =
-        or [ rhs (rule x) == u | x <- look t ] ||
-        or [ rhs (rule x) == t | x <- look u ]
-      look t = nested (anywhere (flip Index.lookup rs)) t ++
-               [ r | r <- Index.lookup t rs, not (isVariantOf t (lhs (rule r))) ]
-  case (t == u || subsumed) of
-    True -> return Joined
-    False -> do
-      let evil ctx0 ctx =
-            case map toModel (solve (branches ctx)) of
-              [] -> ctx0
-              model:_ ->
-                let constraints =
-                      map ruleConstraint $
-                      anywhere (rewriteInModel rs model) t ++
-                      anywhere (rewriteInModel rs model) u in
-                case [ ctx' | c <- constraints, let ctx' = toConstraint (formula ctx &&& negateFormula c), not (null (solve (branches ctx'))) ] of
-                  [] -> ctx
-                  (ctx':_) -> evil ctx ctx'
-          nice ctx' =
-            head ([ctx | ctx <- ctxs, not (null (solve (branches ctx)))] ++ [ctx'])
-            where
-              ctxs =
-                usort $
-                  [ toConstraint (ruleConstraint o &&& formula ctx) | o@MkOriented{..} <- anywhere (flip Index.lookup rs) t, rhs rule == u ] ++
-                  [ toConstraint (ruleConstraint o &&& formula ctx) | o@MkOriented{..} <- anywhere (flip Index.lookup rs) u, rhs rule == t ]
-      case map toModel (solve (branches (nice (evil ctx ctx)))) of
+  forM_ (orient (t :==: u)) $ \r@(MkOriented _ (Rule t u)) -> do
+    let subsumed t u =
+          or [ rhs (rule x) == u | x <- anywhere (flip Index.lookup rs) t ] ||
+          or [ rhs (rule x) == t | x <- anywhere (flip Index.lookup rs) u ]
+    unless (t == u || subsumed t u) $ do
+      let (here, there) = partition (isNothing . snd) (map (solve (usort (vars t ++ vars u))) (branches ctx))
+      case here of
         [] -> do
-          let pairs = usort (map canonicalise (instantiate (Constrained ctx (t :==: u))))
+          let pairs = usort (map canonicalise [ Constrained (And ctx') (substf (evalSubst sub) (t :==: u)) | (ctx', Just sub) <- there ])
           traceM (Split pair pairs)
           queueCPs l1 (map (Labelled l2) pairs)
-          --mapM_ (consider1 l1 l2) pairs
-          return Case
-        model:_ -> do
-          norm <- modelNormaliser model
-          let Reduction t' rs1 = norm t
-              Reduction u' rs2 = norm u
-          cond <-
+        (model, Nothing):_ -> do
+          norm <- modelNormaliser
+          let Reduction t' rs1 = norm model t
+              Reduction u' rs2 = norm model u
+          ctx' <-
             case t' == u' of
               True -> do
-                snorm <- specificNormaliser
-                let rs = shrinkList (usort (map ruleConstraint rs1 ++ map ruleConstraint rs2))
-                                    (\fs -> result (snorm (Set.fromList fs) t) == result (snorm (Set.fromList fs) u))
-                traceM (Discharge pair rs)
-                let diag [] = true
-                    diag (r:rs) = r &&& (negateFormula r ||| diag rs)
-                return (diag rs)
+                let rs = shrinkList model (\fs -> result (norm fs t) == result (norm fs u))
+                    nt = norm rs t
+                    nu = norm rs u
+                    rs' = strengthen rs (\fs -> valid fs nt && valid fs nu)
+                traceM (Discharge pair rs')
+                let diag [] = Or []
+                    diag (r:rs) = negateFormula r ||| (r &&& diag rs)
+                return (And [ctx, diag rs'])
               False -> do
-                let applicable rule =
-                      not (null (anywhere (tryRuleInModel model rule) t')) ||
-                      not (null (anywhere (tryRuleInModel model rule) u'))
-                    rule:_ = filter applicable (orient (t' :==: u'))
-                traceM (NewRule (canonicalise rule))
-                l <- addRule rule
-                interreduce l rule
-                addCriticalPairs l rule
-                return false --(ruleConstraint rule)
-          res <- consider1 l1 l2 (Constrained (toConstraint (formula ctx &&& negateFormula cond)) (t :==: u))
-          return $ case res of
-            New -> New
-            _ -> Case
+                traceM (NewRule (canonicalise r))
+                l <- addRule r
+                interreduce l r
+                addCriticalPairs l r
+                return ctx
+          consider l1 l2 (Constrained ctx' (t :==: u))
+
+valid :: (Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) => [Formula f v] -> Reduction f v -> Bool
+valid model Reduction{..} = all valid1 steps
+  where
+    valid1 orule = allowedInModel Nonstrict model orule
 
 shrinkList :: [a] -> ([a] -> Bool) -> [a]
 shrinkList [] _ = []
 shrinkList (x:xs) p
   | p xs = shrinkList xs p
   | otherwise = x:shrinkList xs (\ys -> p (x:ys))
+
+strengthen :: [Formula f v] -> ([Formula f v] -> Bool) -> [Formula f v]
+strengthen [] _ = []
+strengthen (Less t u:xs) p
+  | p (LessEq t u:xs) = strengthen (LessEq t u:xs) p
+  | otherwise = Less t u:strengthen xs (\ys -> p (Less t u:ys))
+strengthen (x:xs) p = x:strengthen xs (\ys -> p (x:ys))
 
 addRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) => Oriented (Rule f v) -> StateT (KBC f v) IO Label
 addRule rule = do
@@ -304,7 +257,7 @@ interreduce l new = do
   let reductions = catMaybes (map (moveLabel . fmap (reduceWith new)) rules)
   sequence_ [ traceM (Reduce red new) | red <- map peel reductions ]
   sequence_ [ simplifyRule l rule | Labelled l (Simplify rule) <- reductions ]
-  queueCPs l [Labelled noLabel (Constrained (toConstraint true) (unorient (rule r))) | Reorient r <- map peel reductions ]
+  queueCPs l [Labelled noLabel (Constrained (And []) (unorient (rule r))) | Reorient r <- map peel reductions ]
   sequence_ [ deleteRule l rule | Labelled l (Reorient rule) <- reductions ]
 
 reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Oriented (Rule f v) -> Oriented (Rule f v) -> Maybe (Simplification f v)
@@ -351,9 +304,5 @@ criticalPairs _ r1 r2 = do
       f (Right x) = x
       left = rename f (CP.left cp)
       right = rename f (CP.right cp)
-      ctx =
-        toConstraint $
-          substf (rename f . evalSubst sub . Left) (ruleConstraint cr1) &&&
-          substf (rename f . evalSubst sub . Right) (ruleConstraint cr2)
 
-  return (Constrained ctx (left :==: right))
+  return (Constrained (And []) (left :==: right))
