@@ -218,7 +218,7 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
 valid :: (Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) => [Formula f v] -> Reduction f v -> Bool
 valid model Reduction{..} = all valid1 steps
   where
-    valid1 orule = allowedInModel Nonstrict model orule
+    valid1 orule = allowedInModel model orule
 
 shrinkList :: [a] -> ([a] -> Bool) -> [a]
 shrinkList [] _ = []

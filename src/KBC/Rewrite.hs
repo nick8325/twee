@@ -65,19 +65,18 @@ nested strat (Fun f xs) =
       [ (orn, x:ys, x:zs) | (orn, ys, zs) <- inner xs ]
 
 allowedInModel :: (Ord f, Ord v, Sized f, Minimal f, PrettyTerm f, Pretty v) =>
-  Strictness -> [Formula f v] -> Oriented (Rule f v) -> Bool
-allowedInModel _ _ (MkOriented Oriented _) = True
-allowedInModel Nonstrict _ (MkOriented (WeaklyOriented _) _) = True
-allowedInModel Strict cond (MkOriented (WeaklyOriented xs) _) =
-  or [lessThanIn cond Strict minimalTerm x | x <- xs]
-allowedInModel str cond (MkOriented Unoriented (Rule t u)) =
-  lessThanIn cond str u t
+  [Formula f v] -> Oriented (Rule f v) -> Bool
+allowedInModel _ (MkOriented Oriented _) = True
+allowedInModel cond (MkOriented (WeaklyOriented xs) _) =
+  or [x /= minimalTerm | x <- xs]
+allowedInModel cond (MkOriented Unoriented (Rule t u)) =
+  lessThanIn cond Nonstrict u t && t /= u
 
 rewriteInModel :: (Ord f, Ord v, Numbered f, Numbered v, Sized f, Minimal f, PrettyTerm f, Pretty v) =>
   Index (Oriented (Rule f v)) -> [Formula f v] -> Tm f v -> [Oriented (Rule f v)]
 rewriteInModel rules model t = do
   orule <- Index.lookup t rules
-  guard (allowedInModel Strict model orule)
+  guard (allowedInModel model orule)
   return orule
 
 rewrite :: (PrettyTerm f, Pretty v, Numbered f, Sized f, Minimal f, Ord f, Numbered v, Ord v) => Index (Oriented (Rule f v)) -> Strategy f v
@@ -103,5 +102,5 @@ tryRuleInModel :: (Ord f, Sized f, Minimal f, Ord v, PrettyTerm f, Pretty v) => 
 tryRuleInModel model orule t = do
   sub <- maybeToList (match (lhs (rule orule)) t)
   let orule' = substf (evalSubst sub) orule
-  guard (allowedInModel Strict model orule')
+  guard (allowedInModel model orule')
   return orule'
