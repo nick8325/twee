@@ -196,24 +196,24 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
           norm <- modelNormaliser
           let Reduction t' rs1 = norm model t
               Reduction u' rs2 = norm model u
-          ctx' <-
-            case t' == u' of
-              True -> do
-                let rs = shrinkList model (\fs -> result (norm fs t) == result (norm fs u))
-                    nt = norm rs t
-                    nu = norm rs u
-                    rs' = strengthen rs (\fs -> valid fs nt && valid fs nu)
-                traceM (Discharge pair rs')
-                let diag [] = Or []
-                    diag (r:rs) = negateFormula r ||| (r &&& diag rs)
-                return (And [ctx, diag rs'])
-              False -> do
-                traceM (NewRule (canonicalise r))
-                l <- addRule r
-                interreduce l r
-                addCriticalPairs l r
-                return ctx
-          consider l1 l2 (Constrained ctx' (t :==: u))
+          case t' == u' of
+            True -> do
+              let rs = shrinkList model (\fs -> result (norm fs t) == result (norm fs u))
+                  nt = norm rs t
+                  nu = norm rs u
+                  rs' = strengthen rs (\fs -> valid fs nt && valid fs nu)
+              traceM (Discharge pair rs')
+              let diag [] = Or []
+                  diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
+                  weaken (LessEq t u) = Less t u
+                  weaken x = x
+                  ctx' = And [ctx, diag rs']
+              consider l1 l2 (Constrained ctx' (t :==: u))
+            False -> do
+              traceM (NewRule (canonicalise r))
+              l <- addRule r
+              interreduce l r
+              addCriticalPairs l r
 
 valid :: (Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) => [Formula f v] -> Reduction f v -> Bool
 valid model Reduction{..} = all valid1 steps
