@@ -216,7 +216,7 @@ addMinimal t0 b@Branch{..}
   | t `elem` minimals = [b]
   | otherwise =
     filter (not . contradictory)
-      [b { minimals    = t:minimals }]
+      [b { minimals = t:minimals }]
   where
     t = norm b t0
 

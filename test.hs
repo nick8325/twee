@@ -133,6 +133,22 @@ prop_7 (Pair t u) =
   counterexample (prettyShow (less Strict t u)) $
   conjoin [ counterexample (prettyShow model) $ trueIn model (Less t u) | model <- fmap toModel (solve (branches (toConstraint (less Strict t u)))) ]
 
+prop_8 :: Pair Fun Var -> Pair Fun Var -> Property
+prop_8 (Pair t u) (Pair v w) =
+  counterexample ("t = " ++ prettyShow t) $
+  counterexample ("u = " ++ prettyShow u) $
+  counterexample ("v = " ++ prettyShow v) $
+  counterexample ("w = " ++ prettyShow w) $
+  let c1 = less Strict t u
+      c2 = less Strict v w
+      b = branches . toConstraint in
+  counterexample ("t < u: " ++ prettyShow (b c1)) $
+  counterexample ("v < w: " ++ prettyShow (b c2)) $
+  counterexample ("t < u && v < w: " ++ prettyShow (b (c1 &&& c2))) $
+  counterexample ("t < u && v >= w: " ++ prettyShow (b (c1 &&& negateFormula c2))) $
+  not (null (solve (branches (toConstraint (c1 &&& c2))))) ==>
+  branches (toConstraint (c1 &&& negateFormula c2)) /= branches (toConstraint c1)
+
 return []
 --main = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000000 })
-main = quickCheckWith stdArgs { maxSuccess = 1000000 } prop_7
+main = quickCheckWith stdArgs { maxSuccess = 1000000 } prop_8
