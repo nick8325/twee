@@ -17,6 +17,7 @@ import Data.List
 import System.Environment
 import System.Exit
 import Data.Ord
+import qualified KBC.Index as Index
 
 data Constant =
   Constant {
@@ -145,12 +146,19 @@ main = do
       res2 <- stop
       when (res1 && not res2) loop
 
-  norm <-
+  (norm, rs) <-
     flip evalStateT (initialState (read size)) $ do
       mapM_ newEquation axioms
       loop
-      normaliser
+      norm <- normaliser
+      rs   <- gets (Index.elems . rules)
+      return (norm, rs)
 
   putStrLn "\nHere we are:"
   forM_ goals $ \t ->
     prettyPrint (Rule t (result (norm t)))
+  putStrLn $
+    show (length rs) ++ " rules, of which " ++
+    show (length (filter ((== Oriented) . orientation) rs)) ++ " oriented, " ++
+    show (length (filter ((== Unoriented) . orientation) rs)) ++ " unoriented, " ++
+    show (length [ r | r@(MkOriented (WeaklyOriented _) _) <- rs ]) ++ " weakly oriented."
