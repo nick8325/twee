@@ -189,7 +189,7 @@ addLess t0 u0 b@Branch{..} =
     newLess =
       (t, u):
       [(t, v) | (u', v) <- less, u == u'] ++
-      [(v, t) | (v, t') <- less, t == t']
+      [(v, u) | (v, t') <- less, t == t']
     newNonminimals =
       [u | t `elem` nonminimals]
 
