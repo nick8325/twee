@@ -182,7 +182,7 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
   u <- return (result (norm u))
   Debug.Trace.traceShowM (pPrint (orient (t :==: u)))
   forM_ (orient (t :==: u)) $ \r@(MkOriented _ (Rule t u)) -> do
-    res <- groundJoin (Constrained ctx r)
+    res <- groundJoin (branches ctx) r
     case res of
       Left pairs -> do
         traceM (Split r pairs)
@@ -194,13 +194,13 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
         addCriticalPairs l r
 
 groundJoin :: (Numbered f, Numbered v, Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) =>
-  Constrained (Oriented (Rule f v)) -> StateT (KBC f v) IO (Either [Constrained (Equation f v)] (Oriented (Rule f v)))
-groundJoin (Constrained ctx r@(MkOriented _ (Rule t u))) = do
+  [Branch f v] -> Oriented (Rule f v) -> StateT (KBC f v) IO (Either [Constrained (Equation f v)] (Oriented (Rule f v)))
+groundJoin ctx r@(MkOriented _ (Rule t u)) = do
   rs <- gets rules
   let subsumed t u =
         or [ rhs (rule x) == u | x <- anywhere (flip Index.lookup rs) t ]
   if t /= u && not (subsumed t u) then do
-    let (here, there) = partition (isNothing . snd) (map (solve (usort (vars t ++ vars u))) (branches ctx))
+    let (here, there) = partition (isNothing . snd) (map (solve (usort (vars t ++ vars u))) ctx)
     case here of
       [] -> do
         let pairs = usort (map canonicalise [ Constrained (And ctx') (substf (evalSubst sub) (t :==: u)) | (ctx', Just sub) <- there ])
@@ -220,8 +220,8 @@ groundJoin (Constrained ctx r@(MkOriented _ (Rule t u))) = do
                 diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
                 weaken (LessEq t u) = Less t u
                 weaken x = x
-                ctx' = And [ctx, diag rs']
-            groundJoin (Constrained ctx' r)
+                ctx' = formAnd (diag rs') ctx
+            groundJoin ctx' r
           False ->
             return (Right (canonicalise r))
   else return (Left [])

@@ -163,6 +163,17 @@ contradictory Branch{..} =
   or [x `elem` map snd less | x <- minimals] ||
   or [x `elem` nonminimals  | x <- minimals]
 
+formAnd :: (Ord f, Ord v) => Formula f v -> [Branch f v] -> [Branch f v]
+formAnd f bs = usort (bs >>= add f)
+  where
+    add (Less t u) b = addLess t u b
+    add (LessEq t u) b = addLess t u b ++ addEquals t u b
+    add (Minimal t) b = addMinimal t b
+    add (Nonminimal t) b = addNonminimal t b
+    add (And []) b = [b]
+    add (And (f:fs)) b = add f b >>= add (And fs)
+    add (Or fs) b = usort (concat [ add f b | f <- fs ])
+
 branches :: (Ord f, Ord v) => Formula f v -> [Branch f v]
 branches x = aux [x]
   where
