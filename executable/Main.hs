@@ -116,7 +116,9 @@ check eq = do
 main = do
   [size] <- getArgs
   input  <- getContents
-  let (sig, ("--":eqs1)) = break (== "--") (lines input)
+  let (sig, ("--":eqs1)) = break (== "--") (filter (not . comment) (lines input))
+      comment ('%':_) = True
+      comment _ = False
       (axioms0, ("--":goals0)) = break (== "--") eqs1
       fs0 = zipWith (run . parseDecl) [1..] (map tok sig)
       fs = [(conName f, f) | f <- fs0]
