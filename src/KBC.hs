@@ -31,13 +31,13 @@ data Event f v =
   | Reduce (Simplification f v) (Oriented (Rule f v))
   | NewCP (CP f v)
   | Consider (Constrained (Equation f v))
-  | Split (Constrained (Equation f v)) [Constrained (Equation f v)]
-  | Discharge (Constrained (Equation f v)) [Formula f v]
+  | Split (Oriented (Rule f v)) [Constrained (Equation f v)]
+  | Discharge (Oriented (Rule f v)) [Formula f v]
 
 traceM :: (Monad m, Minimal f, PrettyTerm f, Pretty v) => Event f v -> m ()
 traceM (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
 traceM (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
-traceM (NewCP cps) = traceIf True (hang (text "Critical pair") 2 (pPrint cps))
+traceM (NewCP cps) = traceIf False (hang (text "Critical pair") 2 (pPrint cps))
 traceM (Consider eq) = traceIf True (sep [text "Considering", nest 2 (pPrint eq)])
 traceM (Split eq []) = traceIf True (sep [text "Split", nest 2 (pPrint eq), text "into nothing"])
 traceM (Split eq eqs) = traceIf True (sep [text "Split", nest 2 (pPrint eq), text "into", nest 2 (vcat (map pPrint eqs))])
@@ -177,43 +177,54 @@ consider ::
   Label -> Label -> Constrained (Equation f v) -> StateT (KBC f v) IO ()
 consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
   traceM (Consider pair)
-  rs <- gets rules
   norm <- normaliser
   t <- return (result (norm t))
   u <- return (result (norm u))
+  Debug.Trace.traceShowM (pPrint (orient (t :==: u)))
   forM_ (orient (t :==: u)) $ \r@(MkOriented _ (Rule t u)) -> do
-    let subsumed t u =
-          or [ rhs (rule x) == u | x <- anywhere (flip Index.lookup rs) t ] ||
-          or [ rhs (rule x) == t | x <- anywhere (flip Index.lookup rs) u ]
-    unless (t == u || subsumed t u) $ do
-      let (here, there) = partition (isNothing . snd) (map (solve (usort (vars t ++ vars u))) (branches ctx))
-      case here of
-        [] -> do
-          let pairs = usort (map canonicalise [ Constrained (And ctx') (substf (evalSubst sub) (t :==: u)) | (ctx', Just sub) <- there ])
-          traceM (Split pair pairs)
-          queueCPs l1 (map (Labelled l2) pairs)
-        (model, Nothing):_ -> do
-          norm <- modelNormaliser
-          let Reduction t' rs1 = norm model t
-              Reduction u' rs2 = norm model u
-          case t' == u' of
-            True -> do
-              let rs = shrinkList model (\fs -> result (norm fs t) == result (norm fs u))
-                  nt = norm rs t
-                  nu = norm rs u
-                  rs' = strengthen rs (\fs -> valid fs nt && valid fs nu)
-              traceM (Discharge pair rs')
-              let diag [] = Or []
-                  diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
-                  weaken (LessEq t u) = Less t u
-                  weaken x = x
-                  ctx' = And [ctx, diag rs']
-              consider l1 l2 (Constrained ctx' (t :==: u))
-            False -> do
-              traceM (NewRule (canonicalise r))
-              l <- addRule r
-              interreduce l r
-              addCriticalPairs l r
+    res <- groundJoin (Constrained ctx r)
+    case res of
+      Left pairs -> do
+        traceM (Split r pairs)
+        queueCPs l1 (map (Labelled l2) pairs)
+      Right r -> do
+        traceM (NewRule (canonicalise r))
+        l <- addRule r
+        interreduce l r
+        addCriticalPairs l r
+
+groundJoin :: (Numbered f, Numbered v, Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) =>
+  Constrained (Oriented (Rule f v)) -> StateT (KBC f v) IO (Either [Constrained (Equation f v)] (Oriented (Rule f v)))
+groundJoin (Constrained ctx r@(MkOriented _ (Rule t u))) = do
+  rs <- gets rules
+  let subsumed t u =
+        or [ rhs (rule x) == u | x <- anywhere (flip Index.lookup rs) t ]
+  if t /= u && not (subsumed t u) then do
+    let (here, there) = partition (isNothing . snd) (map (solve (usort (vars t ++ vars u))) (branches ctx))
+    case here of
+      [] -> do
+        let pairs = usort (map canonicalise [ Constrained (And ctx') (substf (evalSubst sub) (t :==: u)) | (ctx', Just sub) <- there ])
+        return (Left pairs)
+      (model, Nothing):_ -> do
+        norm <- modelNormaliser
+        let Reduction t' rs1 = norm model t
+            Reduction u' rs2 = norm model u
+        case t' == u' of
+          True -> do
+            let rs = shrinkList model (\fs -> result (norm fs t) == result (norm fs u))
+                nt = norm rs t
+                nu = norm rs u
+                rs' = strengthen rs (\fs -> valid fs nt && valid fs nu)
+            traceM (Discharge r rs')
+            let diag [] = Or []
+                diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
+                weaken (LessEq t u) = Less t u
+                weaken x = x
+                ctx' = And [ctx, diag rs']
+            groundJoin (Constrained ctx' r)
+          False ->
+            return (Right (canonicalise r))
+  else return (Left [])
 
 valid :: (Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) => [Formula f v] -> Reduction f v -> Bool
 valid model Reduction{..} = all valid1 steps
