@@ -180,7 +180,6 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
   norm <- normaliser
   t <- return (result (norm t))
   u <- return (result (norm u))
-  Debug.Trace.traceShowM (pPrint (orient (t :==: u)))
   forM_ (orient (t :==: u)) $ \r@(MkOriented _ (Rule t u)) -> do
     res <- groundJoin (branches ctx) r
     case res of

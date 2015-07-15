@@ -7,9 +7,6 @@ import qualified KBC.Index as Index
 import KBC.Index(Index)
 import KBC.Term
 import Data.Rewriting.Rule
-import Data.Map.Strict(Map)
-import Data.Set(Set)
-import qualified Data.Set as Set
 import Control.Monad
 import Data.Maybe
 

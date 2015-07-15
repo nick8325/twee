@@ -277,12 +277,15 @@ lessThanIn cond str t@(Fun f ts) u@(Fun g us)
 
     termSizeIs op = isNothing (FM.solve prob)
       where
-        prob = FM.problem $
-          sz `op` 0:
-          [FM.var x FM.<== FM.var y | Less x y <- cond] ++
-          [FM.var x FM.<== FM.var y | LessEq x y <- cond] ++
-          [FM.var x FM.>== 1 | x <- Map.keys (FM.vars sz)]
+        prob = FM.addConstraints [sz `op` 0] prob0
         sz = termSize t - termSize u
+
+    prob0 =
+      FM.problem $
+        [FM.var x FM.<== FM.var y | Less x y <- cond] ++
+        [FM.var x FM.<== FM.var y | LessEq x y <- cond] ++
+        [FM.var x FM.>== 1 | x <- Map.keys (FM.vars (termSize t - termSize u))]
+
     termSize (Var x) = FM.var x
     termSize (Fun f xs) = FM.scalar (funSize f) + sum (map termSize xs)
 

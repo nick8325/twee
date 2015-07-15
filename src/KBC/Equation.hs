@@ -2,7 +2,6 @@
 module KBC.Equation where
 
 import KBC.Base
-import KBC.Constraints
 import KBC.Term
 import KBC.Utils
 import KBC.Rewrite
