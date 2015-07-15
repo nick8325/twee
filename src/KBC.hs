@@ -28,19 +28,18 @@ import Data.List
 
 data Event f v =
     NewRule (Oriented (Rule f v))
+  | ExtraRule (Oriented (Rule f v))
   | Reduce (Simplification f v) (Oriented (Rule f v))
   | NewCP (CP f v)
   | Consider (Constrained (Equation f v))
-  | Split (Oriented (Rule f v)) [Constrained (Equation f v)]
   | Discharge (Oriented (Rule f v)) [Formula f v]
 
 traceM :: (Monad m, Minimal f, PrettyTerm f, Pretty v) => Event f v -> m ()
 traceM (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
+traceM (ExtraRule rule) = traceIf True (hang (text "Extra rule") 2 (pPrint rule))
 traceM (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
 traceM (NewCP cps) = traceIf False (hang (text "Critical pair") 2 (pPrint cps))
 traceM (Consider eq) = traceIf True (sep [text "Considering", nest 2 (pPrint eq)])
-traceM (Split eq []) = traceIf True (sep [text "Split", nest 2 (pPrint eq), text "into nothing"])
-traceM (Split eq eqs) = traceIf True (sep [text "Split", nest 2 (pPrint eq), text "into", nest 2 (vcat (map pPrint eqs))])
 traceM (Discharge eq fs) = traceIf True (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
 traceIf :: Monad m => Bool -> Doc -> m ()
 traceIf True x = Debug.Trace.traceM (show x)
@@ -50,6 +49,7 @@ data KBC f v =
   KBC {
     maxSize       :: Int,
     labelledRules :: Index (Labelled (Oriented (Rule f v))),
+    extraRules    :: Index (Oriented (Rule f v)),
     queue         :: Queue (CP f v) }
   deriving Show
 
@@ -79,6 +79,7 @@ initialState maxSize =
   KBC {
     maxSize       = maxSize,
     labelledRules = Index.empty,
+    extraRules    = Index.empty,
     queue         = empty }
 
 enqueueM ::
@@ -102,8 +103,10 @@ newLabelM =
     case newLabel (queue s) of
       (l, q) -> (l, s { queue = q })
 
-rules :: KBC f v -> Index (Oriented (Rule f v))
-rules = Index.mapMonotonic peel . labelledRules
+rules :: (Ord f, Ord v) => KBC f v -> Index (Oriented (Rule f v))
+rules k =
+  Index.mapMonotonic peel (labelledRules k)
+  `Index.union` extraRules k
 
 normaliser ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
@@ -183,17 +186,20 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
   forM_ (orient (t :==: u)) $ \r@(MkOriented _ (Rule t u)) -> do
     res <- groundJoin (branches ctx) r
     case res of
-      Left pairs -> do
-        traceM (Split r pairs)
-        queueCPs l1 (map (Labelled l2) pairs)
-      Right r -> do
+      Failed -> do
         traceM (NewRule (canonicalise r))
         l <- addRule r
         interreduce l r
         addCriticalPairs l r
+      Hard -> do
+        traceM (ExtraRule (canonicalise r))
+        modify (\s -> s { extraRules = Index.insert r (extraRules s) })
+      Easy -> return ()
+
+data Join = Easy | Hard | Failed
 
 groundJoin :: (Numbered f, Numbered v, Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) =>
-  [Branch f v] -> Oriented (Rule f v) -> StateT (KBC f v) IO (Either [Constrained (Equation f v)] (Oriented (Rule f v)))
+  [Branch f v] -> Oriented (Rule f v) -> StateT (KBC f v) IO Join
 groundJoin ctx r@(MkOriented _ (Rule t u)) = do
   rs <- gets rules
   let subsumed t u =
@@ -203,7 +209,8 @@ groundJoin ctx r@(MkOriented _ (Rule t u)) = do
     case here of
       [] -> do
         let pairs = usort (map canonicalise [ Constrained (And ctx') (substf (evalSubst sub) (t :==: u)) | (ctx', Just sub) <- there ])
-        return (Left pairs)
+        mapM_ (consider noLabel noLabel) pairs
+        return Easy
       (model, Nothing):_ -> do
         norm <- modelNormaliser
         let Reduction t' rs1 = norm model t
@@ -220,10 +227,14 @@ groundJoin ctx r@(MkOriented _ (Rule t u)) = do
                 weaken (LessEq t u) = Less t u
                 weaken x = x
                 ctx' = formAnd (diag rs') ctx
-            groundJoin ctx' r
+            res <- groundJoin ctx' r
+            return $
+              case res of
+                Easy | length rs' > 1 -> Hard
+                _ -> res
           False ->
-            return (Right (canonicalise r))
-  else return (Left [])
+            return Failed
+  else return Easy
 
 valid :: (Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) => [Formula f v] -> Reduction f v -> Bool
 valid model Reduction{..} = all valid1 steps
