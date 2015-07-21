@@ -205,7 +205,7 @@ groundJoin ctx r@(MkOriented _ (Rule t u)) = do
   let subsumed t u =
         or [ rhs (rule x) == u | x <- anywhere (flip Index.lookup rs) t ] ||
         or [ rhs (rule x) == t | x <- nested (anywhere (flip Index.lookup rs)) u ] ||
-        or [ rhs (rule x) == t | (x, x') <- Index.lookup' u rs, not (isVariantOf (rhs (rule x')) u) ]
+        or [ rhs (rule x) == t | (x, x') <- Index.lookup' u rs, not (isVariantOf (lhs (rule x')) u) ]
   if t /= u && not (subsumed t u) then do
     let (here, there) = partition (isNothing . snd) (map (solve (usort (vars t ++ vars u))) ctx)
     case here of
