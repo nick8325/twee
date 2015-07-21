@@ -57,14 +57,15 @@ data CP f v =
   CP {
     cpSize      :: Int,
     cpSizeRight :: Int,
+    cpIndex     :: Int,
     oriented    :: Bool,
     cpEquation  :: Constrained (Equation f v) } deriving (Eq, Show)
 
 instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
   compare =
-    comparing $ \(CP size size' oriented (Constrained ctx (l :==: r))) ->
-      if oriented then size * 2 + size'
-      else (size + size') * 2
+    comparing $ \(CP size size' idx oriented (Constrained ctx (l :==: r))) ->
+      if oriented then (size * 2 + size', idx)
+      else ((size + size') * 2, idx)
 
 instance (Minimal f, PrettyTerm f, Pretty v) => Pretty (CP f v) where
   pPrint = pPrint . cpEquation
@@ -137,25 +138,22 @@ queueCPs ::
 queueCPs l eqns = do
   norm <- normaliser
   maxN <- gets maxSize
-  let cps = [ Labelled l' (CP n (size u') (lessThan Strict u' t') (Constrained ctx (t' :==: u')))
-            | Labelled l' (Constrained ctx (t :==: u)) <- eqns,
+  let eqns' =
+        usort $
+        [ Labelled l' (Constrained ctx' (order eq'))
+        | Labelled l' (Constrained ctx (t  :==: u)) <- eqns,
+          t /= u,
+          let t' = result (norm t)
+              u' = result (norm u)
+              Constrained ctx' eq' = canonicalise (Constrained ctx (t' :==: u')),
+          t' /= u' ]
+  let cps = [ Labelled l' (CP n (size u) i (lessThan Strict u t) (Constrained ctx (t :==: u)))
+            | (i, Labelled l' (Constrained ctx (t :==: u))) <- zip [0..] eqns,
               t /= u,
-              let t' :==: u' = order (result (norm t) :==: result (norm u)),
-              t' /= u',
-              let n = size t',
+              let n = size t `max` size u,
               n <= fromIntegral maxN ]
   mapM_ (traceM . NewCP . peel) cps
   enqueueM l cps
-
-toCP ::
-  (Minimal f, Sized f, Ord f, Ord v, Numbered v, PrettyTerm f, Pretty v) =>
-  (Tm f v -> Tm f v) ->
-  Constrained (Equation f v) -> Maybe (CP f v)
-toCP norm (Constrained ctx (l :==: r)) = do
-  guard (l /= r)
-  let l' :==: r' = order (norm l :==: norm r)
-  guard (l' /= r')
-  return (CP (size l') (size r') (lessThan Strict r' l') (Constrained ctx (l' :==: r')))
 
 complete1 ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
