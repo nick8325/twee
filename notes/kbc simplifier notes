@@ -1,0 +1,25 @@
+f(t:ts) < g(u:us) <==> t < u
+
+Assume t /= u. Also assume f = g otherwise comparing t and u doesn't make sense.
+
+Show:
+1  #t < #u ==> #(t:ts) <= #(u:us)
+2  #t > #u ==> #(t:ts) >= #(u:us)
+3   t = u  ==> f(t:ts) >= g(u:us)
+4  #t = #u ==> #(t:ts)  = #(u:us)
+
+f(t:ts) <= g(u:us) <==> t <= u
+
+Assume t /= u
+
+Show:
+1  as above?
+2  as above?
+3  t = u  ==> f(t:ts) <= g(u:us)
+4 #t = #u ==> f = g & #(t:ts) = #(u:us)
+
+Same actually except nr. 3.
+
+So: if t = u ==> f(t:ts) <= g(u:us) then <=-constraint?
+    if t = u ==> f(t:ts) >= g(u:us) then <-constraint?
+How does </<= in bigger (unfocused) constraint affect things?
