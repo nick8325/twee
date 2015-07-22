@@ -1,0 +1,26 @@
+% Obviously inconsistent because w X Y = X X Y = X.
+% Interesting thing is the final rules:
+% w @ X0 -> X0 @ X0 (unoriented)
+% X0 @ X0 -> w @ X0 (unoriented)
+% X0 @ X1 -> X0 @ ? (weak on [X1])
+% X0 @ X1 -> w @ X0 (unoriented)
+% We should maybe use X0 @ X1 -> X0 @ ? to simplify the
+% other rules (many of which would still be oriented the same)
+a/0      = 1
+c/0      = 1
+f/0      = 1
+w/0      = 1
+@/2    = 1
+false/0  = -5
+true/0   = -5
+equals/2 = -5
+--
+@(@(@(c, X), Y), Z) = @(X, @(Y, Z))
+@(@(@(f, X), Y), Z) = @(@(X, Z), Y)
+@(w, X) = @(X, X)
+@(@(w, X), Y) = X
+equals(X, X) = true
+equals(@(X, a), @(a, @(X, a))) = false
+--
+false
+true
