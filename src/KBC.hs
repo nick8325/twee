@@ -49,6 +49,7 @@ data KBC f v =
   KBC {
     maxSize       :: Int,
     labelledRules :: Index (Labelled (Oriented (Rule f v))),
+    weakInverse   :: Index (Labelled (Rule f v)),
     extraRules    :: Index (Oriented (Rule f v)),
     queue         :: Queue (CP f v) }
   deriving Show
@@ -80,6 +81,7 @@ initialState maxSize =
   KBC {
     maxSize       = maxSize,
     labelledRules = Index.empty,
+    weakInverse   = Index.empty,
     extraRules    = Index.empty,
     queue         = empty }
 
@@ -185,13 +187,17 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
     res <- groundJoin (branches ctx) r
     case res of
       Failed -> do
-        traceM (NewRule (canonicalise r))
-        l <- addRule r
-        interreduce l r
-        addCriticalPairs l r
+        s <- get
+        let r' = canonicalise (strengthenRule s r)
+        traceM (NewRule r')
+        l <- addRule r'
+        interreduce l r'
+        addCriticalPairs l r'
       Hard -> do
-        traceM (ExtraRule (canonicalise r))
-        modify (\s -> s { extraRules = Index.insert r (extraRules s) })
+        s <- get
+        let r' = canonicalise (strengthenRule s r)
+        traceM (ExtraRule r')
+        modify (\s -> s { extraRules = Index.insert r' (extraRules s) })
       Easy -> return ()
 
 data Join = Easy | Hard | Failed
@@ -254,17 +260,44 @@ strengthen (Less t u:xs) p
   | otherwise = Less t u:strengthen xs (\ys -> p (Less t u:ys))
 strengthen (x:xs) p = x:strengthen xs (\ys -> p (x:ys))
 
+strengthenRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) => KBC f v -> Oriented (Rule f v) -> Oriented (Rule f v)
+strengthenRule s@KBC{..} r@(MkOriented o (Rule t u)) =
+  case anywhere expand1 t of
+    [] -> r
+    (MkOriented _ (Rule t t'):_) ->
+      strengthenRule s (MkOriented o (Rule t' u))
+  where
+    expand1 t = map (apply t . peel . snd) (Index.lookup' t weakInverse)
+    apply t (Rule u v) =
+      case match u t of
+        Nothing -> __
+        Just sub ->
+          MkOriented Oriented . Rule t $
+            substf (evalSubst sub) (freshen (vars u ++ vars r) v)
+    freshen vs t =
+      substf (\x -> if x `elem` vars t then Var x else Var (withNumber (number x + v) x)) t
+      where
+        v = maximum (0:map (succ . number) vs)
+
 addRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) => Oriented (Rule f v) -> StateT (KBC f v) IO Label
 addRule rule = do
   l <- newLabelM
   modify (\s -> s { labelledRules = Index.insert (Labelled l rule) (labelledRules s) })
+  case rule of
+    MkOriented (WeaklyOriented _) (Rule t u) ->
+      modify (\s -> s { weakInverse = Index.insert (Labelled l (Rule u t)) (weakInverse s) })
+    _ -> return ()
   return l
 
 deleteRule :: (Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Oriented (Rule f v) -> StateT (KBC f v) IO ()
-deleteRule l rule =
+deleteRule l rule = do
   modify $ \s ->
     s { labelledRules = Index.delete (Labelled l rule) (labelledRules s),
         queue = deleteLabel l (queue s) }
+  case rule of
+    MkOriented (WeaklyOriented _) (Rule t u) ->
+      modify (\s -> s { weakInverse = Index.delete (Labelled l (Rule u t)) (weakInverse s) })
+    _ -> return ()
 
 data Simplification f v = Simplify (Oriented (Rule f v)) | Reorient (Oriented (Rule f v)) deriving Show
 
