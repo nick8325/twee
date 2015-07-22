@@ -1,0 +1,12 @@
+a/0=1
+b/0=1
+c/0=1
+d/0=1
+length/1=1
+++/2=1
+--
+++(Xs, ++(Ys, Zs)) = ++(++(Xs, Ys), Zs)
+length(++(Xs, Ys)) = length(++(Ys, Xs))
+--
+length(++(++(c,a),b))
+length(++(a,++(b,c)))

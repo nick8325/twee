@@ -1,0 +1,16 @@
+a/0=1
+b/0=1
+plus/2=1
+neg/1=0
+false/0=1
+true/0=1
+equals/2=-1
+--
+plus(X, Y) = plus(Y, X)
+plus(X, plus(Y, Z)) = plus(plus(X, Y), Z)
+neg(plus(neg(plus(X, Y)), neg(plus(X, neg(Y))))) = X
+equals(X,X) = true
+equals(plus(X, X), X) = false
+--
+true
+false

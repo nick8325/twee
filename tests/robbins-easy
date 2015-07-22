@@ -1,0 +1,11 @@
+a/0=1
+b/0=1
+plus/2=1
+neg/1=1
+--
+plus(X, Y) = plus(Y, X)
+plus(X, plus(Y, Z)) = plus(plus(X, Y), Z)
+plus(neg(plus(neg(X), Y)), neg(plus(neg(X), neg(Y)))) = X
+--
+neg(plus(neg(plus(a, b)), neg(plus(a, neg(b)))))
+a
