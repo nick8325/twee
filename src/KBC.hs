@@ -350,6 +350,8 @@ canonicaliseBoth (x, y) = (x', substf (Var . increase) y')
     increase v = withNumber (n+number v) v
 
 criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) => Int -> Oriented (Rule f v) -> Oriented (Rule f v) -> [Constrained (Equation f v)]
+criticalPairs _ (MkOriented (WeaklyOriented _) _) _ = []
+criticalPairs _ _ (MkOriented (WeaklyOriented _) _) = []
 criticalPairs _ r1 r2 = do
   let (cr1@(MkOriented _ r1'), cr2@(MkOriented _ r2')) = canonicaliseBoth (r1, r2)
   cp <- CP.cps [r1'] [r2']
