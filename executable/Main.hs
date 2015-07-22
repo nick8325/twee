@@ -11,6 +11,7 @@ import KBC.Term
 import KBC.Equation
 import KBC.Utils
 import KBC.Rewrite
+import KBC.Queue
 import Data.Rewriting.Rule(Rule(..))
 import Text.ParserCombinators.ReadP
 import Data.List
@@ -148,19 +149,27 @@ main = do
       res2 <- stop
       when (res1 && not res2) loop
 
-  (norm, rs) <-
+  (norm, rs, es) <-
     flip evalStateT (initialState (read size)) $ do
       mapM_ newEquation axioms
       loop
       norm <- normaliser
-      rs   <- gets (Index.elems . rules)
-      return (norm, rs)
+      rs   <- gets (map peel . Index.elems . labelledRules)
+      es   <- gets (Index.elems . extraRules)
+      return (norm, rs, es)
 
-  putStrLn "\nHere we are:"
-  forM_ goals $ \t ->
-    prettyPrint (Rule t (result (norm t)))
+  putStrLn "\nFinal rules:"
+  mapM_ prettyPrint rs
+  putStrLn ""
+
   putStrLn $
     show (length rs) ++ " rules, of which " ++
     show (length (filter ((== Oriented) . orientation) rs)) ++ " oriented, " ++
     show (length (filter ((== Unoriented) . orientation) rs)) ++ " unoriented, " ++
-    show (length [ r | r@(MkOriented (WeaklyOriented _) _) <- rs ]) ++ " weakly oriented."
+    show (length [ r | r@(MkOriented (WeaklyOriented _) _) <- rs ]) ++ " weakly oriented. " ++
+    show (length es) ++ " extra rules."
+
+  unless (null goals) $ do
+    putStrLn "\nNormalised goal terms:"
+    forM_ goals $ \t ->
+      prettyPrint (Rule t (result (norm t)))
