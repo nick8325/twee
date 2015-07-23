@@ -149,14 +149,15 @@ main = do
       res2 <- stop
       when (res1 && not res2) loop
 
-  (norm, rs, es) <-
+  (norm, rs, es, q) <-
     flip evalStateT (initialState (read size)) $ do
       mapM_ newEquation axioms
       loop
       norm <- normaliser
       rs   <- gets (map peel . Index.elems . labelledRules)
       es   <- gets (Index.elems . extraRules)
-      return (norm, rs, es)
+      q    <- gets KBC.queue
+      return (norm, rs, es, q)
 
   putStrLn "\nFinal rules:"
   mapM_ prettyPrint rs
@@ -167,7 +168,8 @@ main = do
     show (length (filter ((== Oriented) . orientation) rs)) ++ " oriented, " ++
     show (length (filter ((== Unoriented) . orientation) rs)) ++ " unoriented, " ++
     show (length [ r | r@(MkOriented (WeaklyOriented _) _) <- rs ]) ++ " weakly oriented. " ++
-    show (length es) ++ " extra rules."
+    show (length es) ++ " extra rules. " ++
+    show (queueSize q) ++ " queued critical pairs."
 
   unless (null goals) $ do
     putStrLn "\nNormalised goal terms:"

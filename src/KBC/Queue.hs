@@ -58,6 +58,12 @@ dequeue q@Queue{labels = ls, queue = q0} =
       x@(Labelled l _, q) <- Heap.viewMin q
       if l `Set.member` ls then return x else viewMin q
 
+queueSize :: Ord a => Queue a -> Int
+queueSize q =
+  case dequeue q of
+    Nothing -> 0
+    Just (_, _, _, q) -> 1 + queueSize q
+
 newtype Label = Label Int deriving (Eq, Ord, Num, Show)
 
 noLabel :: Label
