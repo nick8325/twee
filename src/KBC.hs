@@ -244,7 +244,7 @@ groundJoin ctx r@(MkOriented _ (Rule t u)) = do
       [] -> do
         let pairs = usort (map canonicalise [ Constrained (And ctx') (substf (evalSubst sub) (t :==: u)) | (ctx', Just sub) <- there ])
         mapM_ (consider noLabel noLabel) pairs
-        return Easy
+        return Hard
       (model, Nothing):_ -> do
         norm <- modelNormaliser
         let Reduction t' rs1 = norm model t
@@ -264,7 +264,7 @@ groundJoin ctx r@(MkOriented _ (Rule t u)) = do
             res <- groundJoin ctx' r
             return $
               case res of
-                Easy | length rs' > 1 -> Hard
+                Easy -> Hard
                 _ -> res
           False ->
             return Failed
