@@ -275,11 +275,11 @@ strengthenRule s@KBC{..} r@(MkOriented o (Rule t u)) =
         Nothing -> __
         Just sub ->
           MkOriented Oriented . Rule t $
-            substf (evalSubst sub) (freshen (vars u ++ vars r) v)
-    freshen vs t =
-      substf (\x -> if x `elem` vars t then Var x else Var (withNumber (number x + v) x)) t
+            substf (evalSubst sub) (freshen (vars u) (vars r) v)
+    freshen vs vs' t =
+      substf (\x -> if x `elem` vs then Var x else Var (withNumber (number x + v) x)) t
       where
-        v = maximum (0:map (succ . number) vs)
+        v = maximum (0:map (succ . number) (vs ++ vs'))
 
 addRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) => Oriented (Rule f v) -> StateT (KBC f v) IO Label
 addRule rule = do
