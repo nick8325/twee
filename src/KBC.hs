@@ -362,12 +362,13 @@ simplifyRule l rule@(MkOriented ctx (Rule lhs rhs)) = do
 
 addCriticalPairs :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f, Numbered v, Pretty v) => Label -> Oriented (Rule f v) -> StateT (KBC f v) IO ()
 addCriticalPairs l new = do
+  s <- get
   rules <- gets labelledRules
   size  <- gets maxSize
   queueCPs l $
     [ Labelled l' cp
     | Labelled l' old <- Index.elems rules,
-      cp <- criticalPairs size new old ++ criticalPairs size old new ]
+      cp <- criticalPairs s size new old ++ criticalPairs s size old new ]
 
 canonicaliseBoth :: (Symbolic a, Ord (VariableOf a), Numbered (VariableOf a)) => (a, a) -> (a, a)
 canonicaliseBoth (x, y) = (x', substf (Var . increase) y')
@@ -377,10 +378,10 @@ canonicaliseBoth (x, y) = (x', substf (Var . increase) y')
     n  = maximum (0:map (succ . number) (vars x'))
     increase v = withNumber (n+number v) v
 
-criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v) => Int -> Oriented (Rule f v) -> Oriented (Rule f v) -> [Constrained (Equation f v)]
-criticalPairs _ (MkOriented (WeaklyOriented _) _) _ = []
-criticalPairs _ _ (MkOriented (WeaklyOriented _) _) = []
-criticalPairs _ r1 r2 = do
+criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Oriented (Rule f v) -> [Constrained (Equation f v)]
+criticalPairs _ _ (MkOriented (WeaklyOriented _) _) _ = []
+criticalPairs _ _ _ (MkOriented (WeaklyOriented _) _) = []
+criticalPairs KBC{..} _ r1 r2 = do
   let (cr1@(MkOriented _ r1'), cr2@(MkOriented _ r2')) = canonicaliseBoth (r1, r2)
   cp <- CP.cps [r1'] [r2']
   let sub = CP.subst cp
@@ -389,4 +390,9 @@ criticalPairs _ r1 r2 = do
       left = rename f (CP.left cp)
       right = rename f (CP.right cp)
 
+      inner = rename f (fromMaybe __ (subtermAt (CP.top cp) (CP.leftPos cp)))
+
+      rs = Index.mapMonotonic peel labelledRules `Index.union` extraRules
+
+  guard (null (nested (anywhere (rewrite rs)) inner))
   return (Constrained (And []) (left :==: right))
