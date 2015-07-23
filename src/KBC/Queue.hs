@@ -1,5 +1,5 @@
 -- A priority queue, with orphan murder.
-{-# LANGUAGE TypeFamilies, GeneralizedNewtypeDeriving, DeriveFunctor #-}
+{-# LANGUAGE TypeFamilies, GeneralizedNewtypeDeriving, DeriveFunctor, RecordWildCards #-}
 module KBC.Queue where
 
 import KBC.Base
@@ -33,6 +33,9 @@ getMin h
 empty :: Queue q
 empty = Queue Heap.empty (Set.singleton noLabel) (noLabel+1)
 
+emptyFrom :: Queue a -> Queue a
+emptyFrom q = q { queue = Heap.empty }
+
 enqueue :: Ord a => Label -> [Labelled a] -> Queue a -> Queue a
 enqueue _ [] q = q
 enqueue l xs q = q { queue = Heap.insert q' (queue q) }
@@ -63,6 +66,14 @@ queueSize q =
   case dequeue q of
     Nothing -> 0
     Just (_, _, _, q) -> 1 + queueSize q
+
+toList :: Queue a -> [Labelled [Labelled a]]
+toList Queue{..} =
+  map (fmap (filter p . Heap.toUnsortedList . unSubqueue)) $
+    filter p (Heap.toUnsortedList queue)
+  where
+    p :: Labelled a -> Bool
+    p x = labelOf x `Set.member` labels
 
 newtype Label = Label Int deriving (Eq, Ord, Num, Show)
 

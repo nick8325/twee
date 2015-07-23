@@ -1,7 +1,7 @@
 -- Knuth-Bendix completion, up to an adjustable size limit.
 -- Does constrained rewriting for unorientable equations.
 
-{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, RecordWildCards #-}
+{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, RecordWildCards, ScopedTypeVariables #-}
 module KBC where
 
 #include "errors.h"
@@ -33,6 +33,7 @@ data Event f v =
   | NewCP (CP f v)
   | Consider (Constrained (Equation f v))
   | Discharge (Oriented (Rule f v)) [Formula f v]
+  | NormaliseCPs Int
 
 traceM :: (Monad m, Minimal f, PrettyTerm f, Pretty v) => Event f v -> m ()
 traceM (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
@@ -41,6 +42,8 @@ traceM (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"),
 traceM (NewCP cps) = traceIf False (hang (text "Critical pair") 2 (pPrint cps))
 traceM (Consider eq) = traceIf True (sep [text "Considering", nest 2 (pPrint eq)])
 traceM (Discharge eq fs) = traceIf True (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
+traceM (NormaliseCPs n) = traceIf True (text "Normalise unprocessed critical pairs after generating" <+> pPrint n)
+
 traceIf :: Monad m => Bool -> Doc -> m ()
 traceIf True x = Debug.Trace.traceM (show x)
 traceIf _ _ = return ()
@@ -51,6 +54,8 @@ data KBC f v =
     labelledRules :: Index (Labelled (Oriented (Rule f v))),
     weakInverse   :: Index (Labelled (Rule f v)),
     extraRules    :: Index (Oriented (Rule f v)),
+    totalCPs      :: Int,
+    renormaliseAt :: Int,
     queue         :: Queue (CP f v) }
   deriving Show
 
@@ -83,13 +88,17 @@ initialState maxSize =
     labelledRules = Index.empty,
     weakInverse   = Index.empty,
     extraRules    = Index.empty,
+    totalCPs      = 0,
+    renormaliseAt = 100,
     queue         = empty }
 
 enqueueM ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered v, Pretty v) =>
   Label -> [Labelled (CP f v)] -> StateT (KBC f v) IO ()
 enqueueM l eqns = do
-  modify (\s -> s { queue = enqueue l eqns (queue s) })
+  modify $ \s -> s {
+    queue    = enqueue l eqns (queue s),
+    totalCPs = totalCPs s + length eqns }
 
 dequeueM ::
   (Minimal f, Sized f, Ord f, Ord v) =>
@@ -157,10 +166,21 @@ queueCPs l eqns = do
   mapM_ (traceM . NewCP . peel) cps
   enqueueM l cps
 
+complete ::
+  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
+  StateT (KBC f v) IO ()
+complete = do
+  res <- complete1
+  when res complete
+
 complete1 ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
   StateT (KBC f v) IO Bool
 complete1 = do
+  KBC{..} <- get
+  when (totalCPs >= renormaliseAt) $ do
+    normaliseCPs
+    modify (\s -> s { renormaliseAt = renormaliseAt * 3 `div` 2 })
   res <- dequeueM
   case res of
     Just (l1, l2, cp) -> do
@@ -169,12 +189,18 @@ complete1 = do
     Nothing ->
       return False
 
-complete ::
+normaliseCPs ::
+  forall f v.
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
   StateT (KBC f v) IO ()
-complete = do
-  res <- complete1
-  when res complete
+normaliseCPs = do
+  s@KBC{..} <- get
+  traceM (NormaliseCPs totalCPs :: Event f v)
+  put s { queue = emptyFrom queue }
+  forM_ (toList queue) $ \(Labelled l cps) ->
+    queueCPs l (map (fmap cpEquation) cps)
+  modify (\s -> s { totalCPs = totalCPs })
+
 consider ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
   Label -> Label -> Constrained (Equation f v) -> StateT (KBC f v) IO ()
