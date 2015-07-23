@@ -4,3 +4,4 @@ change Symbolic to remove type families (e.g. Symbolic Rule instead of Symbolic 
 clean up main file (remove references to I/O, move state-reading stuff out of monad, etc.)
 look in ideas/y-inconsistent for interesting example
 find out why diff gets so much slower after strengthening rules
+take size of top term into account when ordering CPs
