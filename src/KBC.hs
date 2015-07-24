@@ -52,7 +52,6 @@ data KBC f v =
   KBC {
     maxSize       :: Int,
     labelledRules :: Index (Labelled (Oriented (Rule f v))),
-    weakInverse   :: Index (Labelled (Rule f v)),
     extraRules    :: Index (Oriented (Rule f v)),
     totalCPs      :: Int,
     renormaliseAt :: Int,
@@ -92,7 +91,6 @@ initialState maxSize =
   KBC {
     maxSize       = maxSize,
     labelledRules = Index.empty,
-    weakInverse   = Index.empty,
     extraRules    = Index.empty,
     totalCPs      = 0,
     renormaliseAt = 100,
@@ -214,17 +212,13 @@ consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
     res <- groundJoin (branches ctx) r
     case res of
       Failed -> do
-        s <- get
-        let r' = canonicalise (strengthenRule s r)
-        traceM (NewRule r')
-        l <- addRule r'
-        interreduce l r'
-        addCriticalPairs l r'
+        traceM (NewRule (canonicalise r))
+        l <- addRule r
+        interreduce l r
+        addCriticalPairs l r
       Hard -> do
-        s <- get
-        let r' = canonicalise (strengthenRule s r)
-        traceM (ExtraRule r')
-        modify (\s -> s { extraRules = Index.insert r' (extraRules s) })
+        traceM (ExtraRule (canonicalise r))
+        modify (\s -> s { extraRules = Index.insert r (extraRules s) })
       Easy -> return ()
 
 data Join = Easy | Hard | Failed
@@ -289,44 +283,17 @@ strengthen (Less t u:xs) p
   | otherwise = Less t u:strengthen xs (\ys -> p (Less t u:ys))
 strengthen (x:xs) p = x:strengthen xs (\ys -> p (x:ys))
 
-strengthenRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) => KBC f v -> Oriented (Rule f v) -> Oriented (Rule f v)
-strengthenRule s@KBC{..} r@(MkOriented o (Rule t u)) =
-  case anywhere expand1 t of
-    [] -> r
-    (MkOriented _ (Rule t t'):_) ->
-      strengthenRule s (MkOriented o (Rule t' u))
-  where
-    expand1 t = map (apply t . peel . snd) (Index.lookup' t weakInverse)
-    apply t (Rule u v) =
-      case match u t of
-        Nothing -> __
-        Just sub ->
-          MkOriented Oriented . Rule t $
-            substf (evalSubst sub) (freshen (vars u) (vars r) v)
-    freshen vs vs' t =
-      substf (\x -> if x `elem` vs then Var x else Var (withNumber (number x + v) x)) t
-      where
-        v = maximum (0:map (succ . number) (vs ++ vs'))
-
 addRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) => Oriented (Rule f v) -> State (KBC f v) Label
 addRule rule = do
   l <- newLabelM
   modify (\s -> s { labelledRules = Index.insert (Labelled l rule) (labelledRules s) })
-  case rule of
-    MkOriented (WeaklyOriented _) (Rule t u) ->
-      modify (\s -> s { weakInverse = Index.insert (Labelled l (Rule u t)) (weakInverse s) })
-    _ -> return ()
   return l
 
 deleteRule :: (Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Oriented (Rule f v) -> State (KBC f v) ()
-deleteRule l rule = do
+deleteRule l rule =
   modify $ \s ->
     s { labelledRules = Index.delete (Labelled l rule) (labelledRules s),
         queue = deleteLabel l (queue s) }
-  case rule of
-    MkOriented (WeaklyOriented _) (Rule t u) ->
-      modify (\s -> s { weakInverse = Index.delete (Labelled l (Rule u t)) (weakInverse s) })
-    _ -> return ()
 
 data Simplification f v = Simplify (Oriented (Rule f v)) | Reorient (Oriented (Rule f v)) deriving Show
 
@@ -379,8 +346,6 @@ canonicaliseBoth (x, y) = (x', substf (Var . increase) y')
     increase v = withNumber (n+number v) v
 
 criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Oriented (Rule f v) -> [Constrained (Equation f v)]
-criticalPairs _ _ (MkOriented (WeaklyOriented _) _) _ = []
-criticalPairs _ _ _ (MkOriented (WeaklyOriented _) _) = []
 criticalPairs s _ r1 r2 = do
   let (cr1@(MkOriented _ r1'), cr2@(MkOriented _ r2')) = canonicaliseBoth (r1, r2)
   cp <- CP.cps [r1'] [r2']
