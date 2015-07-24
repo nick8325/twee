@@ -13,7 +13,7 @@ import KBC.Utils
 import KBC.Rewrite
 import KBC.Queue
 import Data.Rewriting.Rule(Rule(..))
-import Text.ParserCombinators.ReadP
+import Text.ParserCombinators.ReadP hiding (get)
 import Data.List
 import System.Environment
 import System.Exit
@@ -140,8 +140,8 @@ main = do
     stop
       | length goals <= 1 = return False
       | otherwise = do
-          norm <- normaliser
-          let goals' = map (result . norm) goals
+          s <- get
+          let goals' = map (result . normalise s) goals
           return (and (zipWith (==) goals' (tail goals')))
 
     loop = do
@@ -149,29 +149,20 @@ main = do
       res2 <- stop
       when (res1 && not res2) loop
 
-  (norm, rs, es, q) <-
-    flip evalStateT (initialState (read size)) $ do
-      mapM_ newEquation axioms
-      loop
-      norm <- normaliser
-      rs   <- gets (map peel . Index.elems . labelledRules)
-      es   <- gets (Index.elems . extraRules)
-      q    <- gets KBC.queue
-      return (norm, rs, es, q)
+    s =
+      flip execState (initialState (read size)) $ do
+        mapM_ newEquation axioms
+        loop
+
+    rs = Index.elems (rules s)
 
   putStrLn "\nFinal rules:"
   mapM_ prettyPrint rs
   putStrLn ""
 
-  putStrLn $
-    show (length rs) ++ " rules, of which " ++
-    show (length (filter ((== Oriented) . orientation) rs)) ++ " oriented, " ++
-    show (length (filter ((== Unoriented) . orientation) rs)) ++ " unoriented, " ++
-    show (length [ r | r@(MkOriented (WeaklyOriented _) _) <- rs ]) ++ " weakly oriented. " ++
-    show (length es) ++ " extra rules. " ++
-    show (queueSize q) ++ " queued critical pairs."
+  putStrLn (report s)
 
   unless (null goals) $ do
     putStrLn "\nNormalised goal terms:"
     forM_ goals $ \t ->
-      prettyPrint (Rule t (result (norm t)))
+      prettyPrint (Rule t (result (normalise s t)))
