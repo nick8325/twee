@@ -176,7 +176,7 @@ complete1 = do
   KBC{..} <- get
   when (totalCPs >= renormaliseAt) $ do
     normaliseCPs
-    modify (\s -> s { renormaliseAt = renormaliseAt * 3 `div` 2 })
+    modify (\s -> s { renormaliseAt = renormaliseAt * 3 })
   res <- dequeueM
   case res of
     Just (l1, l2, cp) -> do
