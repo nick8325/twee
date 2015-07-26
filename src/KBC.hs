@@ -227,10 +227,8 @@ groundJoin :: (Numbered f, Numbered v, Sized f, Minimal f, Ord f, Ord v, PrettyT
   [Branch f v] -> Oriented (Rule f v) -> State (KBC f v) Join
 groundJoin ctx r@(MkOriented _ (Rule t u)) = do
   rs <- gets rules
-  es <- gets extraRules
   let subsumed t u =
         or [ rhs (rule x) == u | x <- anywhere (flip Index.lookup rs) t ] ||
-        or [ rhs (rule x) == u | x <- anywhere (flip Index.lookup es) t ] ||
         or [ rhs (rule x) == t | x <- nested (anywhere (flip Index.lookup rs)) u ] ||
         or [ rhs (rule x) == t | (x, x') <- Index.lookup' u rs, not (isVariantOf (lhs (rule x')) u) ]
   if t /= u && not (subsumed t u) then do
@@ -337,21 +335,12 @@ addCriticalPairs l new = do
     | Labelled l' old <- Index.elems rules,
       cp <- criticalPairs s size new old ++ criticalPairs s size old new ]
 
-canonicaliseBoth :: (Symbolic a, Ord (VariableOf a), Numbered (VariableOf a)) => (a, a) -> (a, a)
-canonicaliseBoth (x, y) = (x', substf (Var . increase) y')
-  where
-    x' = canonicalise x
-    y' = canonicalise y
-    n  = maximum (0:map (succ . number) (vars x'))
-    increase v = withNumber (n+number v) v
-
 criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Oriented (Rule f v) -> [Constrained (Equation f v)]
-criticalPairs s _ r1 r2 = do
-  let (cr1@(MkOriented _ r1'), cr2@(MkOriented _ r2')) = canonicaliseBoth (r1, r2)
-  cp <- CP.cps [r1'] [r2']
+criticalPairs s _ (MkOriented _ r1) (MkOriented _ r2) = do
+  cp <- CP.cps [r1] [r2]
   let sub = CP.subst cp
-      f (Left x)  = x
-      f (Right x) = x
+      f (Left x)  = withNumber (number x*2) x
+      f (Right x) = withNumber (number x*2+1) x
       left = rename f (CP.left cp)
       right = rename f (CP.right cp)
 
