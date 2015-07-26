@@ -23,27 +23,9 @@ import qualified Debug.Trace
 import Control.Monad.Trans.State.Strict
 import Data.List
 
-data Event f v =
-    NewRule (Oriented (Rule f v))
-  | ExtraRule (Oriented (Rule f v))
-  | Reduce (Simplification f v) (Oriented (Rule f v))
-  | NewCP (CP f v)
-  | Consider (Constrained (Equation f v))
-  | Discharge (Oriented (Rule f v)) [Formula f v]
-  | NormaliseCPs Int
-
-traceM :: (Monad m, Minimal f, PrettyTerm f, Pretty v) => Event f v -> m ()
-traceM (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
-traceM (ExtraRule rule) = traceIf True (hang (text "Extra rule") 2 (pPrint rule))
-traceM (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
-traceM (NewCP cps) = traceIf False (hang (text "Critical pair") 2 (pPrint cps))
-traceM (Consider eq) = traceIf True (sep [text "Considering", nest 2 (pPrint eq)])
-traceM (Discharge eq fs) = traceIf True (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
-traceM (NormaliseCPs n) = traceIf True (text "Normalise unprocessed critical pairs after generating" <+> pPrint n)
-
-traceIf :: Monad m => Bool -> Doc -> m ()
-traceIf True x = Debug.Trace.traceM (show x)
-traceIf _ _ = return ()
+--------------------------------------------------------------------------------
+-- Completion engine state.
+--------------------------------------------------------------------------------
 
 data KBC f v =
   KBC {
@@ -55,6 +37,16 @@ data KBC f v =
     queue         :: Queue (CP f v) }
   deriving Show
 
+initialState :: Int -> KBC f v
+initialState maxSize =
+  KBC {
+    maxSize       = maxSize,
+    labelledRules = Index.empty,
+    extraRules    = Index.empty,
+    totalCPs      = 0,
+    renormaliseAt = 100,
+    queue         = empty }
+
 report :: (Ord f, Ord v, Sized f, Minimal f) => KBC f v -> String
 report KBC{..} =
   show (length rs) ++ " rules, of which " ++
@@ -65,33 +57,6 @@ report KBC{..} =
   show (queueSize queue) ++ " queued critical pairs."
   where
     rs = map peel (Index.elems labelledRules)
-
-data CP f v =
-  CP {
-    cpSize      :: Int,
-    cpSizeRight :: Int,
-    cpIndex     :: Int,
-    oriented    :: Bool,
-    cpEquation  :: Constrained (Equation f v) } deriving (Eq, Show)
-
-instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
-  compare =
-    comparing $ \(CP size size' idx oriented (Constrained _ (_ :==: _))) ->
-      if oriented then (size * 2 + size', idx)
-      else ((size + size') * 2, idx)
-
-instance (Minimal f, PrettyTerm f, Pretty v) => Pretty (CP f v) where
-  pPrint = pPrint . cpEquation
-
-initialState :: Int -> KBC f v
-initialState maxSize =
-  KBC {
-    maxSize       = maxSize,
-    labelledRules = Index.empty,
-    extraRules    = Index.empty,
-    totalCPs      = 0,
-    renormaliseAt = 100,
-    queue         = empty }
 
 enqueueM ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered v, Pretty v) =>
@@ -116,6 +81,10 @@ newLabelM =
     case newLabel (queue s) of
       (l, q) -> (l, s { queue = q })
 
+--------------------------------------------------------------------------------
+-- Rewriting.
+--------------------------------------------------------------------------------
+
 rules :: (Ord f, Ord v) => KBC f v -> Index (Oriented (Rule f v))
 rules k =
   Index.mapMonotonic peel (labelledRules k)
@@ -126,41 +95,16 @@ normalise ::
   KBC f v -> Tm f v -> Reduction f v
 normalise s = normaliseWith (anywhere (rewrite (rules s)))
 
-modelNormalise ::
+normaliseIn ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   KBC f v -> [Formula f v] -> Tm f v -> Reduction f v
-modelNormalise s model =
+normaliseIn s model =
   normaliseWith (anywhere (rewriteInModel (rules s) model))
 
-newEquation ::
-  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
-  Equation f v -> State (KBC f v) ()
-newEquation (t :==: u) = do
-  consider noLabel noLabel (Constrained (And []) (t :==: u))
-  return ()
 
-queueCPs ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
-  Label -> [Labelled (Constrained (Equation f v))] -> State (KBC f v) ()
-queueCPs l eqns = do
-  s <- get
-  maxN <- gets maxSize
-  let eqns' =
-        usort $
-        [ Labelled l' (Constrained ctx' (order eq'))
-        | Labelled l' (Constrained ctx (t  :==: u)) <- eqns,
-          t /= u,
-          let t' = result (normalise s t)
-              u' = result (normalise s u)
-              Constrained ctx' eq' = canonicalise (Constrained ctx (t' :==: u')),
-          t' /= u' ]
-  let cps = [ Labelled l' (CP n (size u) i (lessThan Strict u t) (Constrained ctx (t :==: u)))
-            | (i, Labelled l' (Constrained ctx (t :==: u))) <- zip [0..] eqns',
-              t /= u,
-              let n = size t `max` size u,
-              n <= fromIntegral maxN ]
-  mapM_ (traceM . NewCP . peel) cps
-  enqueueM l cps
+--------------------------------------------------------------------------------
+-- Completion loop.
+--------------------------------------------------------------------------------
 
 complete ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
@@ -177,10 +121,11 @@ complete1 = do
   when (totalCPs >= renormaliseAt) $ do
     normaliseCPs
     modify (\s -> s { renormaliseAt = renormaliseAt * 3 })
+
   res <- dequeueM
   case res of
-    Just (l1, l2, cp) -> do
-      consider l1 l2 (cpEquation cp)
+    Just (_, _, cp) -> do
+      consider (cpEquation cp)
       return True
     Nothing ->
       return False
@@ -199,8 +144,8 @@ normaliseCPs = do
 
 consider ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
-  Label -> Label -> Constrained (Equation f v) -> State (KBC f v) ()
-consider _ _ pair@(Constrained ctx (t :==: u)) = do
+  Constrained (Equation f v) -> State (KBC f v) ()
+consider pair@(Constrained ctx (t :==: u)) = do
   traceM (Consider pair)
   s <- get
   t <- return (result (normalise s t))
@@ -233,18 +178,18 @@ groundJoin ctx r@(MkOriented _ (Rule t u)) = do
     case here of
       [] -> do
         let pairs = usort (map canonicalise [ Constrained (And ctx') (substf (evalSubst sub) (t :==: u)) | (ctx', Just sub) <- there ])
-        mapM_ (consider noLabel noLabel) pairs
+        mapM_ consider pairs
         return Hard
       (_, Just _):_ -> __
       (model, Nothing):_ -> do
         s <- get
-        let Reduction t' _ = modelNormalise s model t
-            Reduction u' _ = modelNormalise s model u
+        let Reduction t' _ = normaliseIn s model t
+            Reduction u' _ = normaliseIn s model u
         case t' == u' of
           True -> do
-            let rs = shrinkList model (\fs -> result (modelNormalise s fs t) == result (modelNormalise s fs u))
-                nt = modelNormalise s rs t
-                nu = modelNormalise s rs u
+            let rs = shrinkList model (\fs -> result (normaliseIn s fs t) == result (normaliseIn s fs u))
+                nt = normaliseIn s rs t
+                nu = normaliseIn s rs u
                 rs' = strengthen rs (\fs -> valid fs nt && valid fs nu)
             traceM (Discharge r rs')
             let diag [] = Or []
@@ -333,6 +278,34 @@ addCriticalPairs l new = do
     | Labelled l' old <- Index.elems rules,
       cp <- criticalPairs s size new old ++ criticalPairs s size old new ]
 
+newEquation ::
+  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
+  Equation f v -> State (KBC f v) ()
+newEquation (t :==: u) = do
+  consider (Constrained (And []) (t :==: u))
+  return ()
+
+--------------------------------------------------------------------------------
+-- Critical pairs.
+--------------------------------------------------------------------------------
+
+data CP f v =
+  CP {
+    cpSize      :: Int,
+    cpSizeRight :: Int,
+    cpIndex     :: Int,
+    oriented    :: Bool,
+    cpEquation  :: Constrained (Equation f v) } deriving (Eq, Show)
+
+instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
+  compare =
+    comparing $ \(CP size size' idx oriented (Constrained _ (_ :==: _))) ->
+      if oriented then (size * 2 + size', idx)
+      else ((size + size') * 2, idx)
+
+instance (Minimal f, PrettyTerm f, Pretty v) => Pretty (CP f v) where
+  pPrint = pPrint . cpEquation
+
 criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Oriented (Rule f v) -> [Constrained (Equation f v)]
 criticalPairs s _ (MkOriented _ r1) (MkOriented _ r2) = do
   cp <- CP.cps [r1] [r2]
@@ -345,3 +318,52 @@ criticalPairs s _ (MkOriented _ r1) (MkOriented _ r2) = do
 
   guard (null (nested (anywhere (rewrite (rules s))) inner))
   return (Constrained (And []) (left :==: right))
+
+queueCPs ::
+  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
+  Label -> [Labelled (Constrained (Equation f v))] -> State (KBC f v) ()
+queueCPs l eqns = do
+  s <- get
+  maxN <- gets maxSize
+  let eqns' =
+        usort $
+        [ Labelled l' (Constrained ctx' (order eq'))
+        | Labelled l' (Constrained ctx (t  :==: u)) <- eqns,
+          t /= u,
+          let t' = result (normalise s t)
+              u' = result (normalise s u)
+              Constrained ctx' eq' = canonicalise (Constrained ctx (t' :==: u')),
+          t' /= u' ]
+  let cps = [ Labelled l' (CP n (size u) i (lessThan Strict u t) (Constrained ctx (t :==: u)))
+            | (i, Labelled l' (Constrained ctx (t :==: u))) <- zip [0..] eqns',
+              t /= u,
+              let n = size t `max` size u,
+              n <= fromIntegral maxN ]
+  mapM_ (traceM . NewCP . peel) cps
+  enqueueM l cps
+
+--------------------------------------------------------------------------------
+-- Tracing.
+--------------------------------------------------------------------------------
+
+data Event f v =
+    NewRule (Oriented (Rule f v))
+  | ExtraRule (Oriented (Rule f v))
+  | Reduce (Simplification f v) (Oriented (Rule f v))
+  | NewCP (CP f v)
+  | Consider (Constrained (Equation f v))
+  | Discharge (Oriented (Rule f v)) [Formula f v]
+  | NormaliseCPs Int
+
+traceM :: (Monad m, Minimal f, PrettyTerm f, Pretty v) => Event f v -> m ()
+traceM (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
+traceM (ExtraRule rule) = traceIf True (hang (text "Extra rule") 2 (pPrint rule))
+traceM (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
+traceM (NewCP cps) = traceIf False (hang (text "Critical pair") 2 (pPrint cps))
+traceM (Consider eq) = traceIf True (sep [text "Considering", nest 2 (pPrint eq)])
+traceM (Discharge eq fs) = traceIf True (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
+traceM (NormaliseCPs n) = traceIf True (text "Normalise unprocessed critical pairs after generating" <+> pPrint n)
+
+traceIf :: Monad m => Bool -> Doc -> m ()
+traceIf True x = Debug.Trace.traceM (show x)
+traceIf _ _ = return ()
