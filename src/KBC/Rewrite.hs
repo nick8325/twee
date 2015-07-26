@@ -81,7 +81,7 @@ rewrite rules t = do
   orule <- Index.lookup t rules
   case orientation orule of
     Oriented -> return ()
-    WeaklyOriented ts -> guard (or [ isFun t && t /= Fun minimal [] | t <- ts ])
+    WeaklyOriented ts -> guard (or [ t /= minimalTerm | t <- ts ])
     Unoriented -> guard (lessThan Strict (rhs (rule orule)) (lhs (rule orule)))
   return orule
 
@@ -91,7 +91,7 @@ tryRule orule t = do
   let orule' = substf (evalSubst sub) orule
   case orientation orule' of
     Oriented -> return ()
-    WeaklyOriented ts -> guard (or [ isFun t && t /= Fun minimal [] | t <- ts ])
+    WeaklyOriented ts -> guard (or [ t /= minimalTerm | t <- ts ])
     Unoriented -> guard (lessThan Strict (rhs (rule orule')) (lhs (rule orule')))
   return orule'
 
