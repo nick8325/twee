@@ -64,7 +64,7 @@ nested strat (Fun f xs) =
 allowedInModel :: (Ord f, Ord v, Sized f, Minimal f, PrettyTerm f, Pretty v) =>
   [Formula f v] -> Oriented (Rule f v) -> Bool
 allowedInModel _ (MkOriented Oriented _) = True
-allowedInModel cond (MkOriented (WeaklyOriented xs) _) =
+allowedInModel _ (MkOriented (WeaklyOriented xs) _) =
   or [x /= minimalTerm | x <- xs]
 allowedInModel cond (MkOriented Unoriented (Rule t u)) =
   lessThanIn cond Nonstrict u t && t /= u

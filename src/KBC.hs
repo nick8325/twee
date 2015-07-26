@@ -19,11 +19,8 @@ import Data.Maybe
 import Data.Ord
 import qualified Data.Rewriting.CriticalPair as CP
 import Data.Rewriting.Rule(Rule(..))
-import qualified Data.Set as Set
-import Data.Set(Set)
 import qualified Debug.Trace
 import Control.Monad.Trans.State.Strict
-import Data.Map.Strict(Map)
 import Data.List
 
 data Event f v =
@@ -79,7 +76,7 @@ data CP f v =
 
 instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
   compare =
-    comparing $ \(CP size size' idx oriented (Constrained ctx (l :==: r))) ->
+    comparing $ \(CP size size' idx oriented (Constrained _ (_ :==: _))) ->
       if oriented then (size * 2 + size', idx)
       else ((size + size') * 2, idx)
 
@@ -203,12 +200,12 @@ normaliseCPs = do
 consider ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
   Label -> Label -> Constrained (Equation f v) -> State (KBC f v) ()
-consider l1 l2 pair@(Constrained ctx (t :==: u)) = do
+consider _ _ pair@(Constrained ctx (t :==: u)) = do
   traceM (Consider pair)
   s <- get
   t <- return (result (normalise s t))
   u <- return (result (normalise s u))
-  forM_ (orient (t :==: u)) $ \r@(MkOriented _ (Rule t u)) -> do
+  forM_ (orient (t :==: u)) $ \r -> do
     res <- groundJoin (branches ctx) r
     case res of
       Failed -> do
@@ -238,10 +235,11 @@ groundJoin ctx r@(MkOriented _ (Rule t u)) = do
         let pairs = usort (map canonicalise [ Constrained (And ctx') (substf (evalSubst sub) (t :==: u)) | (ctx', Just sub) <- there ])
         mapM_ (consider noLabel noLabel) pairs
         return Hard
+      (_, Just _):_ -> __
       (model, Nothing):_ -> do
         s <- get
-        let Reduction t' rs1 = modelNormalise s model t
-            Reduction u' rs2 = modelNormalise s model u
+        let Reduction t' _ = modelNormalise s model t
+            Reduction u' _ = modelNormalise s model u
         case t' == u' of
           True -> do
             let rs = shrinkList model (\fs -> result (modelNormalise s fs t) == result (modelNormalise s fs u))
@@ -338,8 +336,7 @@ addCriticalPairs l new = do
 criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Oriented (Rule f v) -> [Constrained (Equation f v)]
 criticalPairs s _ (MkOriented _ r1) (MkOriented _ r2) = do
   cp <- CP.cps [r1] [r2]
-  let sub = CP.subst cp
-      f (Left x)  = withNumber (number x*2) x
+  let f (Left x)  = withNumber (number x*2) x
       f (Right x) = withNumber (number x*2+1) x
       left = rename f (CP.left cp)
       right = rename f (CP.right cp)

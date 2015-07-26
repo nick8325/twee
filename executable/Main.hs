@@ -1,20 +1,21 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, CPP, GeneralizedNewtypeDeriving, TypeFamilies #-}
 #include "errors.h"
+
+#if __GLASGOW_HASKELL__ < 710
 import Control.Applicative
+#endif
+
 import Control.Monad
 import Control.Monad.Trans.State.Strict
 import Data.Char
-import qualified Data.Map as Map
 import KBC
 import KBC.Base hiding (char)
 import KBC.Term
 import KBC.Equation
 import KBC.Utils
 import KBC.Rewrite
-import KBC.Queue
 import Data.Rewriting.Rule(Rule(..))
 import Text.ParserCombinators.ReadP hiding (get)
-import Data.List
 import System.Environment
 import System.Exit
 import Data.Ord
