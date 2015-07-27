@@ -248,8 +248,8 @@ interreduce l new = do
   let reductions = catMaybes (map (moveLabel . fmap (reduceWith new)) rules)
   sequence_ [ traceM (Reduce red new) | red <- map peel reductions ]
   sequence_ [ simplifyRule l rule | Labelled l (Simplify rule) <- reductions ]
-  queueCPs l [Labelled noLabel (Constrained (And []) (unorient (rule r))) | Reorient r <- map peel reductions ]
   sequence_ [ deleteRule l rule | Labelled l (Reorient rule) <- reductions ]
+  queueCPs l [Labelled noLabel (Constrained (And []) (unorient (rule r))) | Reorient r <- map peel reductions ]
 
 reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Oriented (Rule f v) -> Oriented (Rule f v) -> Maybe (Simplification f v)
 reduceWith new old
