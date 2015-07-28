@@ -287,7 +287,7 @@ lessThanIn cond str t@(Fun f ts) u@(Fun g us)
         [FM.var x FM.>== 1 | x <- Map.keys (FM.vars (termSize t - termSize u))]
 
     termSize (Var x) = FM.var x
-    termSize (Fun f xs) = FM.scalar (funSize f) + sum (map termSize xs)
+    termSize (Fun f xs) = FM.scalar (fromIntegral (funSize f)) + sum (map termSize xs)
 
     lexLess [] [] = str == Nonstrict
     lexLess (t:ts) (u:us) =
@@ -299,5 +299,5 @@ lessThanIn cond str t@(Fun f ts) u@(Fun g us)
     lexLess _ _ = ERROR("incorrect function arity")
     xs = sort (vars t)
     ys = sort (vars u)
-    st = exactSize t
-    su = exactSize u
+    st = fromIntegral (size t)
+    su = fromIntegral (size u)

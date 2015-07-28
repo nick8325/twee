@@ -16,15 +16,12 @@ minimalTerm :: Minimal f => Tm f v
 minimalTerm = Fun minimal []
 
 class Sized a where
-  funSize  :: a -> Rational
+  funSize  :: a -> Int
   funArity :: a -> Int
 
 size :: Sized f => Tm f v -> Int
-size t = ceiling (exactSize t)
-
-exactSize :: Sized f => Tm f v -> Rational
-exactSize (Var _) = 1
-exactSize (Fun f xs) = funSize f + sum (map exactSize xs)
+size (Var _) = 1
+size (Fun f xs) = funSize f + sum (map size xs)
 
 data Strictness = Strict | Nonstrict deriving (Eq, Ord, Show)
 
@@ -57,5 +54,5 @@ lessThan str t@(Fun f ts) u@(Fun g us) =
     lexLess _ _ = ERROR("incorrect function arity")
     xs = sort (vars t)
     ys = sort (vars u)
-    st = exactSize t
-    su = exactSize u
+    st = size t
+    su = size u
