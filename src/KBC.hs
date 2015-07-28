@@ -307,7 +307,7 @@ instance (Minimal f, PrettyTerm f, Pretty v) => Pretty (CP f v) where
   pPrint = pPrint . cpEquation
 
 criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Oriented (Rule f v) -> [Constrained (Equation f v)]
-criticalPairs s _ (MkOriented _ r1) (MkOriented _ r2) = do
+criticalPairs s n (MkOriented _ r1) (MkOriented _ r2) = do
   cp <- CP.cps [r1] [r2]
   let f (Left x)  = withNumber (number x*2) x
       f (Right x) = withNumber (number x*2+1) x
@@ -316,6 +316,7 @@ criticalPairs s _ (MkOriented _ r1) (MkOriented _ r2) = do
 
       inner = rename f (fromMaybe __ (subtermAt (CP.top cp) (CP.leftPos cp)))
 
+  guard (size (CP.top cp) <= n)
   guard (null (nested (anywhere (rewrite (rules s))) inner))
   return (Constrained (And []) (left :==: right))
 
@@ -337,8 +338,7 @@ queueCPs l eqns = do
   let cps = [ Labelled l' (CP n (size u) i (lessEq u t) (Constrained ctx (t :==: u)))
             | (i, Labelled l' (Constrained ctx (t :==: u))) <- zip [0..] eqns',
               t /= u,
-              let n = size t `max` size u,
-              n <= fromIntegral maxN ]
+              let n = size t `max` size u ]
   mapM_ (traceM . NewCP . peel) cps
   enqueueM l cps
 
