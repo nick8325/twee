@@ -46,7 +46,12 @@ instance Sized Constant where
 
 instance Pretty Constant where pPrint = text . conName
 instance PrettyTerm Constant where
-  termStyle con | conArity con == 2 && not (any isAlphaNum (conName con)) = infixStyle 5
+  termStyle con
+    | not (any isAlphaNum (conName con)) =
+      case conArity con of
+        1 -> prefix
+        2 -> infixStyle 5
+        _ -> uncurried
   termStyle _ = uncurried
 
 newtype Variable = V Int deriving (Eq, Ord, Numbered)
