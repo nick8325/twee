@@ -67,7 +67,7 @@ allowedInModel _ (MkOriented Oriented _) = True
 allowedInModel _ (MkOriented (WeaklyOriented xs) _) =
   or [x /= minimalTerm | x <- xs]
 allowedInModel cond (MkOriented Unoriented (Rule t u)) =
-  lessThanIn cond Nonstrict u t && t /= u
+  lessEqIn cond u t && t /= u
 
 rewriteInModel :: (Ord f, Ord v, Numbered f, Numbered v, Sized f, Minimal f, PrettyTerm f, Pretty v) =>
   Index (Oriented (Rule f v)) -> [Formula f v] -> Tm f v -> [Oriented (Rule f v)]
@@ -82,7 +82,7 @@ rewrite rules t = do
   case orientation orule of
     Oriented -> return ()
     WeaklyOriented ts -> guard (or [ t /= minimalTerm | t <- ts ])
-    Unoriented -> guard (lessThan Strict (rhs (rule orule)) (lhs (rule orule)))
+    Unoriented -> guard (lessEq (rhs (rule orule)) (lhs (rule orule)) && rhs (rule orule) /= lhs (rule orule))
   return orule
 
 tryRule :: (Ord f, Sized f, Minimal f, Ord v) => Oriented (Rule f v) -> Strategy f v
@@ -92,7 +92,7 @@ tryRule orule t = do
   case orientation orule' of
     Oriented -> return ()
     WeaklyOriented ts -> guard (or [ t /= minimalTerm | t <- ts ])
-    Unoriented -> guard (lessThan Strict (rhs (rule orule')) (lhs (rule orule')))
+    Unoriented -> guard (lessEq (rhs (rule orule')) (lhs (rule orule')) && rhs (rule orule') /= lhs (rule orule'))
   return orule'
 
 tryRuleInModel :: (Ord f, Sized f, Minimal f, Ord v, PrettyTerm f, Pretty v) => [Formula f v] -> Oriented (Rule f v) -> Strategy f v

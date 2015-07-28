@@ -8,6 +8,8 @@ import KBC.Base
 #if __GLASGOW_HASKELL__ < 710
 import KBC.Utils
 #endif
+import qualified Data.Map.Strict as Map
+import qualified Data.Rewriting.Substitution.Type as Subst
 
 class Minimal a where
   minimal :: a
@@ -23,34 +25,32 @@ size :: Sized f => Tm f v -> Int
 size (Var _) = 1
 size (Fun f xs) = funSize f + sum (map size xs)
 
-data Strictness = Strict | Nonstrict deriving (Eq, Ord, Show)
-
-negateStrictness :: Strictness -> Strictness
-negateStrictness Strict = Nonstrict
-negateStrictness Nonstrict = Strict
-
 orientTerms :: (Sized f, Minimal f, Ord f, Ord v) => Tm f v -> Tm f v -> Maybe Ordering
 orientTerms t u
   | t == u = Just EQ
-  | lessThan Strict t u = Just LT
-  | lessThan Strict u t = Just GT
+  | lessEq t u = Just LT
+  | lessEq u t = Just GT
   | otherwise = Nothing
 
-lessThan :: (Sized f, Minimal f, Ord f, Ord v) => Strictness -> Tm f v -> Tm f v -> Bool
-lessThan Nonstrict (Fun f []) _    | f == minimal = True
-lessThan Strict _ (Fun f [])       | f == minimal = False
-lessThan Nonstrict (Var x) (Var y) | x == y = True
-lessThan _ _ (Var _) = False
-lessThan _ (Var x) t = x `elem` vars t
-lessThan str t@(Fun f ts) u@(Fun g us) =
+lessEq :: (Sized f, Minimal f, Ord f, Ord v) => Tm f v -> Tm f v -> Bool
+lessEq (Fun f []) _    | f == minimal = True
+lessEq (Var x) (Var y) | x == y = True
+lessEq _ (Var _) = False
+lessEq (Var x) t = x `elem` vars t
+lessEq t@(Fun f ts) u@(Fun g us) =
   xs `isSubsequenceOf` ys &&
   (st < su ||
    (st == su && f < g) ||
    (st == su && f == g && lexLess ts us))
   where
-    lexLess [] [] = str == Nonstrict
+    lexLess [] [] = True
     lexLess (t:ts) (u:us) =
-      (t == u && lexLess ts us) || lessThan Strict t u
+      lessEq t u &&
+      case unify t u of
+        Nothing -> True
+        Just sub
+          | Map.null (Subst.toMap sub) -> lexLess ts us
+          | otherwise -> lexLess (substf (evalSubst sub) ts) (substf (evalSubst sub) us)
     lexLess _ _ = ERROR("incorrect function arity")
     xs = sort (vars t)
     ys = sort (vars u)

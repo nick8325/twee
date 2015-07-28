@@ -334,7 +334,7 @@ queueCPs l eqns = do
               u' = result (normalise s u)
               Constrained ctx' eq' = canonicalise (Constrained ctx (t' :==: u')),
           t' /= u' ]
-  let cps = [ Labelled l' (CP n (size u) i (lessThan Strict u t) (Constrained ctx (t :==: u)))
+  let cps = [ Labelled l' (CP n (size u) i (lessEq u t) (Constrained ctx (t :==: u)))
             | (i, Labelled l' (Constrained ctx (t :==: u))) <- zip [0..] eqns',
               t /= u,
               let n = size t `max` size u,

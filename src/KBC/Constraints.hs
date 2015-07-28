@@ -257,15 +257,13 @@ solve xs Branch{..}
         [Less x y | (x:xs) <- tails vs, y <- xs] ++
         [Nonminimal x | x <- vs]
 
-lessThanIn :: (Sized f, Minimal f, Ord f, Ord v) => [Formula f v] -> Strictness -> Tm f v -> Tm f v -> Bool
-lessThanIn _ Nonstrict t _       |  t == minimalTerm = True
-lessThanIn cond Strict t (Var x) | t == minimalTerm && Nonminimal x `elem` cond = True
-lessThanIn _ Strict _ t          | t == minimalTerm = False
-lessThanIn _ Nonstrict (Var x) (Var y) | x == y = True
-lessThanIn cond str (Var x) (Var y) = Less x y `elem` cond || (str == Nonstrict && LessEq x y `elem` cond)
-lessThanIn _ _ _ (Var _) = False
-lessThanIn cond str (Var x) t = x `elem` vars t || or [ y `elem` vars t | Less x' y <- cond, x == x' ] || (str == Nonstrict && or [ y `elem` vars t | LessEq x' y <- cond, x == x' ])
-lessThanIn cond str t@(Fun f ts) u@(Fun g us)
+lessEqIn :: (Sized f, Minimal f, Ord f, Ord v) => [Formula f v] -> Tm f v -> Tm f v -> Bool
+lessEqIn _ t _       |  t == minimalTerm = True
+lessEqIn _ (Var x) (Var y) | x == y = True
+lessEqIn cond (Var x) (Var y) = Less x y `elem` cond || LessEq x y `elem` cond
+lessEqIn _ _ (Var _) = False
+lessEqIn cond (Var x) t = x `elem` vars t || or [ y `elem` vars t | Less x' y <- cond, x == x' ] || or [ y `elem` vars t | LessEq x' y <- cond, x == x' ]
+lessEqIn cond t@(Fun f ts) u@(Fun g us)
   | f < g     = nonstrict
   | f > g     = strict
   | otherwise = nonstrict && (strict || lexLess ts us)
@@ -289,13 +287,15 @@ lessThanIn cond str t@(Fun f ts) u@(Fun g us)
     termSize (Var x) = FM.var x
     termSize (Fun f xs) = FM.scalar (fromIntegral (funSize f)) + sum (map termSize xs)
 
-    lexLess [] [] = str == Nonstrict
+    lexLess [] [] = True
     lexLess (t:ts) (u:us) =
-      (t == u && lexLess ts us) || lessThanIn cond Strict t u
-      || (str == Nonstrict && lessThanIn cond Nonstrict t u &&
-          case unify t u of
-            Nothing  -> True
-            Just sub -> lexLess (substf (evalSubst sub) ts) (substf (evalSubst sub) us))
+      lessEqIn cond t u &&
+      case unify t u of
+        Nothing -> True
+        Just sub
+          | Map.null (Subst.toMap sub) -> lexLess ts us
+          | otherwise ->
+            lexLess (substf (evalSubst sub) ts) (substf (evalSubst sub) us)
     lexLess _ _ = ERROR("incorrect function arity")
     xs = sort (vars t)
     ys = sort (vars u)

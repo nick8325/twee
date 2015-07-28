@@ -8,6 +8,8 @@ import KBC.Rewrite
 import Control.Monad
 import Data.Rewriting.Rule hiding (isVariantOf, vars)
 import Data.List
+import qualified Data.Map.Strict as Map
+import qualified Data.Rewriting.Substitution.Type as Subst
 
 data Equation f v = Tm f v :==: Tm f v deriving (Eq, Ord, Show)
 type EquationOf a = Equation (ConstantOf a) (VariableOf a)
@@ -28,7 +30,7 @@ order (l :==: r)
     case compare (size l) (size r) of
       LT -> r :==: l
       GT -> l :==: r
-      EQ -> if lessThan Nonstrict l r then r :==: l else l :==: r
+      EQ -> if lessEq l r then r :==: l else l :==: r
 
 unorient :: Rule f v -> Equation f v
 unorient (Rule l r) = l :==: r
@@ -57,9 +59,16 @@ orient (l :==: r) =
     erase [] t = t
     erase xs t = substf (\x -> if x `elem` xs then Fun minimal [] else Var x) t
 
-    rule t u
-      | lessThan Strict u t = MkOriented Oriented (Rule t u)
-      | otherwise = MkOriented Unoriented (Rule t u)
+    rule t u = MkOriented o (Rule t u)
+      where
+        o | lessEq u t =
+            case unify t u of
+              Nothing -> Oriented
+              Just sub
+                | all (== minimalTerm) (Map.elems (Subst.toMap sub)) ->
+                  WeaklyOriented (map Var (Map.keys (Subst.toMap sub)))
+                | otherwise -> Unoriented
+          | otherwise = Unoriented
 
 bothSides :: (Tm f v -> Tm f' v') -> Equation f v -> Equation f' v'
 bothSides f (t :==: u) = f t :==: f u
