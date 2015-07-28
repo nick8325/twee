@@ -15,3 +15,22 @@ Use connectedness to cheaply apply permutative laws!
 Also use connectedness when simplifying RHS of rules
  ==> allowed to do permutative rewrites as long as RHS < LHS (?)
  ==> store model of RHS vars along with rule
+
+Use following idea from Bachmair:
+
+  "For instance, suppose that all rewrite rules are numbered during
+  completion in such a way that no two rules in any system Rn are
+  assigned the same number. In addition, a rule is marked once all
+  critical pairs with lower-numbered rules have been computed. Let P
+  be a critical overlap s <- u -> t and supposed the rules numbered i,
+  j, and k, respectively, are applied in the proof steps u -> s, u ->
+  t and u -> v. If rule max(i, k) is marked, then all critical pairs
+  between the corresponding rules have been computed, so that s and v
+  are connected below u. Similarly, if rule max(j, k) is marked, then
+  t and v are connected below u."
+
+  As we eagerly add critical pairs, "rule max(i, k) is marked" means:
+  rule i is the earlier rule of the two in the critical pair, and rule
+  k is an earlier rule than the one from the critical pair. In particular,
+  when we generate a critical pair, check that the top term can't be
+  reduced by any earlier rule than the one we actually picked. (?)
