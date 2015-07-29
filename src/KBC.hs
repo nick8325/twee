@@ -101,17 +101,28 @@ normaliseIn ::
 normaliseIn s model =
   normaliseWith (anywhere (rewriteInModel (rules s) model))
 
+normaliseSub ::
+  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
+  KBC f v -> Tm f v -> [Formula f v] -> Tm f v -> Reduction f v
+normaliseSub s top model =
+  normaliseWith (anywhere (rewriteSub (rules s) top model))
+
 normaliseCP ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   KBC f v -> Critical (Equation f v) -> Maybe (Critical (Equation f v))
 normaliseCP s (Critical top (t :=: u))
-  | t  == u        = Nothing
-  | t' == u'       = Nothing
-  | subsumed t' u' = Nothing
+  | t  == u          = Nothing
+  | t' == u'         = Nothing
+  | subsumed t' u'   = Nothing
+  | t'' == u''       = Nothing
+  | subsumed t'' u'' = Nothing
   | otherwise = Just (Critical top (t' :=: u'))
   where
-    t' = result (normalise s t)
-    u' = result (normalise s u)
+    t'  = result (normalise s t)
+    u'  = result (normalise s u)
+    t'' = result (normaliseSub s top m t')
+    u'' = result (normaliseSub s top m u')
+    m = fst (solve (vars t' ++ vars u') trueBranch)
     subsumed t u =
       or [ rhs (rule x) == u | x <- anywhere (flip Index.lookup rs) t ] ||
       or [ rhs (rule x) == t | x <- nested (anywhere (flip Index.lookup rs)) u ] ||

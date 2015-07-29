@@ -76,6 +76,14 @@ rewriteInModel rules model t = do
   guard (allowedInModel model orule)
   return orule
 
+rewriteSub :: (Ord f, Ord v, Numbered f, Numbered v, Sized f, Minimal f, PrettyTerm f, Pretty v) =>
+  Index (Oriented (Rule f v)) -> Tm f v -> [Formula f v] -> Tm f v -> [Oriented (Rule f v)]
+rewriteSub rules top model t = do
+  orule <- Index.lookup t rules
+  let u = rhs (rule orule)
+  guard (allowedInModel model orule && lessEq u top && isNothing (unify u top))
+  return orule
+
 rewrite :: (PrettyTerm f, Pretty v, Numbered f, Sized f, Minimal f, Ord f, Numbered v, Ord v) => Index (Oriented (Rule f v)) -> Strategy f v
 rewrite rules t = do
   orule <- Index.lookup t rules

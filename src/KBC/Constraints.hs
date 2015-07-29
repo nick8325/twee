@@ -154,6 +154,9 @@ data Branch f v =
     nonminimals :: [v] }
   deriving (Eq, Ord)
 
+trueBranch :: Branch f v
+trueBranch = Branch [] [] [] []
+
 norm :: Ord v => Branch f v -> v -> v
 norm Branch{..} x = fromMaybe x (lookup x equals)
 
