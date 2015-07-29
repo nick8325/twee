@@ -1,5 +1,5 @@
--- Knuth-Bendix completion, up to an adjustable size limit.
--- Does constrained rewriting for unorientable equations.
+-- Knuth-Bendix completion, with lots of exciting tricks for
+-- unorientable equations.
 
 {-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, RecordWildCards, ScopedTypeVariables #-}
 module KBC where
