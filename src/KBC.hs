@@ -101,6 +101,22 @@ normaliseIn ::
 normaliseIn s model =
   normaliseWith (anywhere (rewriteInModel (rules s) model))
 
+normaliseCP ::
+  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
+  KBC f v -> Critical (Equation f v) -> Maybe (Critical (Equation f v))
+normaliseCP s (Critical top (t :==: u))
+  | t  == u        = Nothing
+  | t' == u'       = Nothing
+  | subsumed t' u' = Nothing
+  | otherwise = Just (Critical top (t' :==: u'))
+  where
+    t' = result (normalise s t)
+    u' = result (normalise s u)
+    subsumed t u =
+      or [ rhs (rule x) == u | x <- anywhere (flip Index.lookup rs) t ] ||
+      or [ rhs (rule x) == t | x <- nested (anywhere (flip Index.lookup rs)) u ] ||
+      or [ rhs (rule x) == t | (x, x') <- Index.lookup' u rs, not (isVariantOf (lhs (rule x')) u) ]
+    rs = rules s
 
 --------------------------------------------------------------------------------
 -- Completion loop.
@@ -145,63 +161,50 @@ normaliseCPs = do
 consider ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
   Critical (Equation f v) -> State (KBC f v) ()
-consider pair@(Critical top (t :==: u)) = do
+consider pair = do
   traceM (Consider pair)
   s <- get
-  t <- return (result (normalise s t))
-  u <- return (result (normalise s u))
-  forM_ (orient (t :==: u)) $ \r -> do
-    res <- groundJoin (branches (And [])) r
-    case res of
-      Failed -> do
-        traceM (NewRule (canonicalise r))
-        l <- addRule (Critical top r)
-        interreduce l r
-        addCriticalPairs l r
-      Hard -> do
-        traceM (ExtraRule (canonicalise r))
-        modify (\s -> s { extraRules = Index.insert r (extraRules s) })
-      Easy -> return ()
-
-data Join = Easy | Hard | Failed
-
-groundJoin :: (Numbered f, Numbered v, Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) =>
-  [Branch f v] -> Oriented (Rule f v) -> State (KBC f v) Join
-groundJoin ctx r@(MkOriented _ (Rule t u)) = do
-  rs <- gets rules
-  let subsumed t u =
-        or [ rhs (rule x) == u | x <- anywhere (flip Index.lookup rs) t ] ||
-        or [ rhs (rule x) == t | x <- nested (anywhere (flip Index.lookup rs)) u ] ||
-        or [ rhs (rule x) == t | (x, x') <- Index.lookup' u rs, not (isVariantOf (lhs (rule x')) u) ]
-  if t /= u && not (subsumed t u) then do
-    let (here, there) = partition (isNothing . snd) (map (solve (usort (vars t ++ vars u))) ctx)
-    case here of
-      [] -> return Hard
-      (_, Just _):_ -> __
-      (model, Nothing):_ -> do
+  case normaliseCP s pair of
+    Nothing -> return ()
+    Just (Critical top eq) ->
+      forM_ (orient eq) $ \r@(MkOriented _ (Rule t u)) -> do
         s <- get
-        let Reduction t' _ = normaliseIn s model t
-            Reduction u' _ = normaliseIn s model u
-        case t' == u' of
-          True -> do
-            let rs = shrinkList model (\fs -> result (normaliseIn s fs t) == result (normaliseIn s fs u))
-                nt = normaliseIn s rs t
-                nu = normaliseIn s rs u
-                rs' = strengthen rs (\fs -> valid fs nt && valid fs nu)
-            traceM (Discharge r rs')
-            let diag [] = Or []
-                diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
-                weaken (LessEq t u) = Less t u
-                weaken x = x
-                ctx' = formAnd (diag rs') ctx
-            res <- groundJoin ctx' r
-            return $
-              case res of
-                Easy -> Hard
-                _ -> res
-          False ->
-            return Failed
-  else return Easy
+        case normaliseCP s (Critical top (t :==: u)) of
+          Nothing -> return ()
+          Just eq | groundJoinable s (branches (And [])) eq -> do
+            traceM (ExtraRule (canonicalise r))
+            modify (\s -> s { extraRules = Index.insert r (extraRules s) })
+          _ -> do
+            traceM (NewRule (canonicalise r))
+            l <- addRule (Critical top r)
+            interreduce l r
+            addCriticalPairs l r
+
+groundJoinable :: (Numbered f, Numbered v, Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) =>
+  KBC f v -> [Branch f v] -> Critical (Equation f v) -> Bool
+groundJoinable s ctx r@(Critical _ (t :==: u)) =
+  case filter (isNothing . snd) (map (solve (usort (vars t ++ vars u))) ctx) of
+    (_, Just _):_ -> __
+    [] -> True
+    (model, Nothing):_
+      | t' /= u' -> False
+      | otherwise ->
+          let rs = shrinkList model (\fs -> result (normaliseIn s fs t) == result (normaliseIn s fs u))
+              nt = normaliseIn s rs t
+              nu = normaliseIn s rs u
+              rs' = strengthen rs (\fs -> valid fs nt && valid fs nu)
+
+              diag [] = Or []
+              diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
+              weaken (LessEq t u) = Less t u
+              weaken x = x
+              ctx' = formAnd (diag rs') ctx in
+
+          trace (Discharge r rs') $
+          groundJoinable s ctx' r
+      where
+        Reduction t' _ = normaliseIn s model t
+        Reduction u' _ = normaliseIn s model u
 
 valid :: (Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) => [Formula f v] -> Reduction f v -> Bool
 valid model Reduction{..} = all valid1 steps
@@ -370,18 +373,21 @@ data Event f v =
   | Reduce (Simplification f v) (Oriented (Rule f v))
   | NewCP (CP f v)
   | Consider (Critical (Equation f v))
-  | Discharge (Oriented (Rule f v)) [Formula f v]
+  | Discharge (Critical (Equation f v)) [Formula f v]
   | NormaliseCPs Int
 
-traceM :: (Monad m, Minimal f, PrettyTerm f, Pretty v) => Event f v -> m ()
-traceM (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
-traceM (ExtraRule rule) = traceIf True (hang (text "Extra rule") 2 (pPrint rule))
-traceM (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
-traceM (NewCP cps) = traceIf False (hang (text "Critical pair") 2 (pPrint cps))
-traceM (Consider eq) = traceIf True (sep [text "Considering", nest 2 (pPrint eq)])
-traceM (Discharge eq fs) = traceIf True (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
-traceM (NormaliseCPs n) = traceIf True (text "Normalise unprocessed critical pairs after generating" <+> pPrint n)
+trace :: (Minimal f, PrettyTerm f, Pretty v) => Event f v -> a -> a
+trace (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
+trace (ExtraRule rule) = traceIf True (hang (text "Extra rule") 2 (pPrint rule))
+trace (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
+trace (NewCP cps) = traceIf False (hang (text "Critical pair") 2 (pPrint cps))
+trace (Consider eq) = traceIf True (sep [text "Considering", nest 2 (pPrint eq)])
+trace (Discharge eq fs) = traceIf True (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
+trace (NormaliseCPs n) = traceIf True (text "Normalise unprocessed critical pairs after generating" <+> pPrint n)
 
-traceIf :: Monad m => Bool -> Doc -> m ()
-traceIf True x = Debug.Trace.traceM (show x)
-traceIf _ _ = return ()
+traceM :: (Monad m, Minimal f, PrettyTerm f, Pretty v) => Event f v -> m ()
+traceM x = trace x (return ())
+
+traceIf :: Bool -> Doc -> a -> a
+traceIf True x = Debug.Trace.trace (show x)
+traceIf False _ = id
