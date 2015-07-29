@@ -87,7 +87,7 @@ parseEquation = do
   t <- parseTerm
   string "="
   u <- parseTerm
-  return (t :==: u)
+  return (t :=: u)
 
 run :: ReadP a -> String -> a
 run p xs =

@@ -104,11 +104,11 @@ normaliseIn s model =
 normaliseCP ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   KBC f v -> Critical (Equation f v) -> Maybe (Critical (Equation f v))
-normaliseCP s (Critical top (t :==: u))
+normaliseCP s (Critical top (t :=: u))
   | t  == u        = Nothing
   | t' == u'       = Nothing
   | subsumed t' u' = Nothing
-  | otherwise = Just (Critical top (t' :==: u'))
+  | otherwise = Just (Critical top (t' :=: u'))
   where
     t' = result (normalise s t)
     u' = result (normalise s u)
@@ -169,7 +169,7 @@ consider pair = do
     Just (Critical top eq) ->
       forM_ (orient eq) $ \r@(MkOriented _ (Rule t u)) -> do
         s <- get
-        case normaliseCP s (Critical top (t :==: u)) of
+        case normaliseCP s (Critical top (t :=: u)) of
           Nothing -> return ()
           Just eq | groundJoinable s (branches (And [])) eq -> do
             traceM (ExtraRule (canonicalise r))
@@ -182,7 +182,7 @@ consider pair = do
 
 groundJoinable :: (Numbered f, Numbered v, Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) =>
   KBC f v -> [Branch f v] -> Critical (Equation f v) -> Bool
-groundJoinable s ctx r@(Critical _ (t :==: u)) =
+groundJoinable s ctx r@(Critical _ (t :=: u)) =
   case filter (isNothing . snd) (map (solve (usort (vars t ++ vars u))) ctx) of
     (_, Just _):_ -> __
     [] -> True
@@ -281,8 +281,8 @@ addCriticalPairs l new = do
 newEquation ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   Equation f v -> State (KBC f v) ()
-newEquation (t :==: u) = do
-  consider (Critical minimalTerm (t :==: u))
+newEquation (t :=: u) = do
+  consider (Critical minimalTerm (t :=: u))
   return ()
 
 --------------------------------------------------------------------------------
@@ -320,7 +320,7 @@ data CP f v =
 
 instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
   compare =
-    comparing $ \(CP size size' idx oriented (Critical _ (_ :==: _))) ->
+    comparing $ \(CP size size' idx oriented (Critical _ (_ :=: _))) ->
       if oriented then (size * 2 + size', idx)
       else ((size + size') * 2, idx)
 
@@ -339,7 +339,7 @@ criticalPairs s n (MkOriented _ r1) (MkOriented _ r2) = do
 
   guard (size (CP.top cp) <= n)
   guard (null (nested (anywhere (rewrite (rules s))) inner))
-  return (Critical (rename f (CP.top cp)) (left :==: right))
+  return (Critical (rename f (CP.top cp)) (left :=: right))
 
 queueCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
@@ -350,14 +350,14 @@ queueCPs l eqns = do
   let eqns' =
         usort $
         [ Labelled l' (Critical top' (order eq'))
-        | Labelled l' (Critical top (t  :==: u)) <- eqns,
+        | Labelled l' (Critical top (t  :=: u)) <- eqns,
           t /= u,
           let t' = result (normalise s t)
               u' = result (normalise s u)
-              Critical top' eq' = canonicalise (Critical top (t' :==: u')),
+              Critical top' eq' = canonicalise (Critical top (t' :=: u')),
           t' /= u' ]
-  let cps = [ Labelled l' (CP n (size u) i (lessEq u t) (Critical top (t :==: u)))
-            | (i, Labelled l' (Critical top (t :==: u))) <- zip [0..] eqns',
+  let cps = [ Labelled l' (CP n (size u) i (lessEq u t) (Critical top (t :=: u)))
+            | (i, Labelled l' (Critical top (t :=: u))) <- zip [0..] eqns',
               t /= u,
               let n = size t `max` size u ]
   mapM_ (traceM . NewCP . peel) cps
