@@ -188,8 +188,8 @@ consider pair = do
           _ -> do
             traceM (NewRule (canonicalise r))
             l <- addRule (Critical top r)
-            interreduce l r
             addCriticalPairs l r
+            interreduce r
 
 groundJoinable :: (Numbered f, Numbered v, Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) =>
   KBC f v -> [Branch f v] -> Critical (Equation f v) -> Bool
@@ -253,23 +253,35 @@ instance (PrettyTerm f, Pretty v) => Pretty (Simplification f v) where
   pPrint (Simplify rule) = text "Simplify" <+> pPrint rule
   pPrint (Reorient rule) = text "Reorient" <+> pPrint rule
 
-interreduce :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f, Numbered v, Pretty v) => Label -> Oriented (Rule f v) -> State (KBC f v) ()
-interreduce l new = do
+interreduce :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f, Numbered v, Pretty v) => Oriented (Rule f v) -> State (KBC f v) ()
+interreduce new = do
+  s <- get
   rules <- gets (Index.elems . labelledRules)
-  let reductions = catMaybes (map (moveLabel . fmap (reduceWith new)) rules)
+  let reductions = catMaybes [ fmap (Labelled l) (reduceWith s l new old) | Labelled l old <- rules ]
   sequence_ [ traceM (Reduce red new) | red <- map peel reductions ]
   sequence_ [ simplifyRule l rule | Labelled l (Simplify rule) <- reductions ]
   sequence_ [ deleteRule l rule | Labelled l (Reorient rule) <- reductions ]
-  queueCPs l [Labelled noLabel (Critical top (unorient (rule r))) | Reorient (Critical top r) <- map peel reductions ]
 
-reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Oriented (Rule f v) -> Critical (Oriented (Rule f v)) -> Maybe (Simplification f v)
-reduceWith new (Critical top old)
-  | not (lhs (rule new) `isInstanceOf` lhs (rule old)) &&
-    not (null (anywhere (tryRule new) (lhs (rule old)))) =
+reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => KBC f v -> Label -> Oriented (Rule f v) -> Critical (Oriented (Rule f v)) -> Maybe (Simplification f v)
+reduceWith s lab new (Critical top old@(MkOriented _ (Rule l r)))
+  | not (lhs (rule new) `isInstanceOf` l) &&
+    not (null (anywhere (tryRule new) l)) =
+      Just (Reorient (Critical top old))
+  | not (lhs (rule new) `isInstanceOf` l) &&
+    orientation new == Unoriented &&
+    not (null (anywhere (tryRuleInModel m new) l)) &&
+    groundJoinable s' (branches (And [])) (Critical top (l :=: r)) =
       Just (Reorient (Critical top old))
   | not (null (anywhere (tryRule new) (rhs (rule old)))) =
-      Just (case orientation old of { Unoriented -> Reorient (Critical top old); _ -> Simplify (Critical top old) })
+      Just (Simplify (Critical top old))
+  | orientation old == Unoriented &&
+    not (null (anywhere (tryRuleInModel m new) l)) &&
+    groundJoinable s' (branches (And [])) (Critical top (l :=: r)) =
+      Just (Reorient (Critical top old))
   | otherwise = Nothing
+  where
+    m = fst (solve (vars l ++ vars r) trueBranch)
+    s' = s { labelledRules = Index.delete (Labelled lab (Critical top old)) (labelledRules s) }
 
 simplifyRule :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Critical (Oriented (Rule f v)) -> State (KBC f v) ()
 simplifyRule l rule@(Critical top (MkOriented ctx (Rule lhs rhs))) = do
