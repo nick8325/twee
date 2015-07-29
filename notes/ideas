@@ -34,3 +34,8 @@ Use following idea from Bachmair:
   k is an earlier rule than the one from the critical pair. In particular,
   when we generate a critical pair, check that the top term can't be
   reduced by any earlier rule than the one we actually picked. (?)
+
+Questions:
+  Do we ever need to do split any more?
+  (given that our constraints are always <=)
+  Hopefully not, because we don't do it!
