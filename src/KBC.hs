@@ -1,7 +1,7 @@
 -- Knuth-Bendix completion, with lots of exciting tricks for
 -- unorientable equations.
 
-{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, RecordWildCards, ScopedTypeVariables #-}
+{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, RecordWildCards, ScopedTypeVariables, UndecidableInstances, StandaloneDeriving #-}
 module KBC where
 
 #include "errors.h"
@@ -30,7 +30,7 @@ import Data.List
 data KBC f v =
   KBC {
     maxSize       :: Int,
-    labelledRules :: Index (Labelled (Oriented (Rule f v))),
+    labelledRules :: Index (Labelled (Critical (Oriented (Rule f v)))),
     extraRules    :: Index (Oriented (Rule f v)),
     totalCPs      :: Int,
     renormaliseAt :: Int,
@@ -56,7 +56,7 @@ report KBC{..} =
   show (length (Index.elems extraRules)) ++ " extra rules. " ++
   show (queueSize queue) ++ " queued critical pairs."
   where
-    rs = map peel (Index.elems labelledRules)
+    rs = map (critical . peel) (Index.elems labelledRules)
 
 enqueueM ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered v, Pretty v) =>
@@ -87,7 +87,7 @@ newLabelM =
 
 rules :: (Ord f, Ord v) => KBC f v -> Index (Oriented (Rule f v))
 rules k =
-  Index.mapMonotonic peel (labelledRules k)
+  Index.mapMonotonic (critical . peel) (labelledRules k)
   `Index.union` extraRules k
 
 normalise ::
@@ -144,18 +144,18 @@ normaliseCPs = do
 
 consider ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
-  Constrained (Equation f v) -> State (KBC f v) ()
-consider pair@(Constrained ctx (t :==: u)) = do
+  Critical (Equation f v) -> State (KBC f v) ()
+consider pair@(Critical top (t :==: u)) = do
   traceM (Consider pair)
   s <- get
   t <- return (result (normalise s t))
   u <- return (result (normalise s u))
   forM_ (orient (t :==: u)) $ \r -> do
-    res <- groundJoin (branches ctx) r
+    res <- groundJoin (branches (And [])) r
     case res of
       Failed -> do
         traceM (NewRule (canonicalise r))
-        l <- addRule r
+        l <- addRule (Critical top r)
         interreduce l r
         addCriticalPairs l r
       Hard -> do
@@ -176,10 +176,7 @@ groundJoin ctx r@(MkOriented _ (Rule t u)) = do
   if t /= u && not (subsumed t u) then do
     let (here, there) = partition (isNothing . snd) (map (solve (usort (vars t ++ vars u))) ctx)
     case here of
-      [] -> do
-        let pairs = usort (map canonicalise [ Constrained (And ctx') (substf (evalSubst sub) (t :==: u)) | (ctx', Just sub) <- there ])
-        mapM_ consider pairs
-        return Hard
+      [] -> return Hard
       (_, Just _):_ -> __
       (model, Nothing):_ -> do
         s <- get
@@ -224,19 +221,19 @@ strengthen (Less t u:xs) p
   | otherwise = Less t u:strengthen xs (\ys -> p (Less t u:ys))
 strengthen (x:xs) p = x:strengthen xs (\ys -> p (x:ys))
 
-addRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) => Oriented (Rule f v) -> State (KBC f v) Label
+addRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) => Critical (Oriented (Rule f v)) -> State (KBC f v) Label
 addRule rule = do
   l <- newLabelM
   modify (\s -> s { labelledRules = Index.insert (Labelled l rule) (labelledRules s) })
   return l
 
-deleteRule :: (Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Oriented (Rule f v) -> State (KBC f v) ()
+deleteRule :: (Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Critical (Oriented (Rule f v)) -> State (KBC f v) ()
 deleteRule l rule =
   modify $ \s ->
     s { labelledRules = Index.delete (Labelled l rule) (labelledRules s),
         queue = deleteLabel l (queue s) }
 
-data Simplification f v = Simplify (Oriented (Rule f v)) | Reorient (Oriented (Rule f v)) deriving Show
+data Simplification f v = Simplify (Critical (Oriented (Rule f v))) | Reorient (Critical (Oriented (Rule f v))) deriving Show
 
 instance (PrettyTerm f, Pretty v) => Pretty (Simplification f v) where
   pPrint (Simplify rule) = text "Simplify" <+> pPrint rule
@@ -249,23 +246,23 @@ interreduce l new = do
   sequence_ [ traceM (Reduce red new) | red <- map peel reductions ]
   sequence_ [ simplifyRule l rule | Labelled l (Simplify rule) <- reductions ]
   sequence_ [ deleteRule l rule | Labelled l (Reorient rule) <- reductions ]
-  queueCPs l [Labelled noLabel (Constrained (And []) (unorient (rule r))) | Reorient r <- map peel reductions ]
+  queueCPs l [Labelled noLabel (Critical top (unorient (rule r))) | Reorient (Critical top r) <- map peel reductions ]
 
-reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Oriented (Rule f v) -> Oriented (Rule f v) -> Maybe (Simplification f v)
-reduceWith new old
+reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Oriented (Rule f v) -> Critical (Oriented (Rule f v)) -> Maybe (Simplification f v)
+reduceWith new (Critical top old)
   | not (lhs (rule new) `isInstanceOf` lhs (rule old)) &&
     not (null (anywhere (tryRule new) (lhs (rule old)))) =
-      Just (Reorient old)
+      Just (Reorient (Critical top old))
   | not (null (anywhere (tryRule new) (rhs (rule old)))) =
-      Just (case orientation old of { Unoriented -> Reorient old; _ -> Simplify old })
+      Just (case orientation old of { Unoriented -> Reorient (Critical top old); _ -> Simplify (Critical top old) })
   | otherwise = Nothing
 
-simplifyRule :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Oriented (Rule f v) -> State (KBC f v) ()
-simplifyRule l rule@(MkOriented ctx (Rule lhs rhs)) = do
+simplifyRule :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Critical (Oriented (Rule f v)) -> State (KBC f v) ()
+simplifyRule l rule@(Critical top (MkOriented ctx (Rule lhs rhs))) = do
   modify $ \s ->
     s {
       labelledRules =
-         Index.insert (Labelled l (MkOriented ctx (Rule lhs (result (normalise s rhs)))))
+         Index.insert (Labelled l (Critical top (MkOriented ctx (Rule lhs (result (normalise s rhs))))))
            (Index.delete (Labelled l rule) (labelledRules s)) }
 
 addCriticalPairs :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f, Numbered v, Pretty v) => Label -> Oriented (Rule f v) -> State (KBC f v) ()
@@ -275,19 +272,40 @@ addCriticalPairs l new = do
   size  <- gets maxSize
   queueCPs l $
     [ Labelled l' cp
-    | Labelled l' old <- Index.elems rules,
+    | Labelled l' (Critical _ old) <- Index.elems rules,
       cp <- criticalPairs s size new old ++ criticalPairs s size old new ]
 
 newEquation ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   Equation f v -> State (KBC f v) ()
 newEquation (t :==: u) = do
-  consider (Constrained (And []) (t :==: u))
+  consider (Critical minimalTerm (t :==: u))
   return ()
 
 --------------------------------------------------------------------------------
 -- Critical pairs.
 --------------------------------------------------------------------------------
+
+data Critical a =
+  Critical {
+    top      :: TmOf a,
+    critical :: a }
+
+instance Eq a => Eq (Critical a) where x == y = critical x == critical y
+instance Ord a => Ord (Critical a) where compare = comparing critical
+
+instance (PrettyTerm (ConstantOf a), Pretty (VariableOf a), Pretty a) => Pretty (Critical a) where
+  pPrint Critical{..} =
+    hang (pPrint critical) 2 (text "from" <+> pPrint top)
+
+deriving instance (Show a, Show (ConstantOf a), Show (VariableOf a)) => Show (Critical a)
+
+instance Symbolic a => Symbolic (Critical a) where
+  type ConstantOf (Critical a) = ConstantOf a
+  type VariableOf (Critical a) = VariableOf a
+
+  termsDL Critical{..} = termsDL critical `mplus` termsDL top
+  substf sub Critical{..} = Critical (substf sub top) (substf sub critical)
 
 data CP f v =
   CP {
@@ -295,18 +313,18 @@ data CP f v =
     cpSizeRight :: Int,
     cpIndex     :: Int,
     oriented    :: Bool,
-    cpEquation  :: Constrained (Equation f v) } deriving (Eq, Show)
+    cpEquation  :: Critical (Equation f v) } deriving (Eq, Show)
 
 instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
   compare =
-    comparing $ \(CP size size' idx oriented (Constrained _ (_ :==: _))) ->
+    comparing $ \(CP size size' idx oriented (Critical _ (_ :==: _))) ->
       if oriented then (size * 2 + size', idx)
       else ((size + size') * 2, idx)
 
 instance (Minimal f, PrettyTerm f, Pretty v) => Pretty (CP f v) where
   pPrint = pPrint . cpEquation
 
-criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Oriented (Rule f v) -> [Constrained (Equation f v)]
+criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Oriented (Rule f v) -> [Critical (Equation f v)]
 criticalPairs s n (MkOriented _ r1) (MkOriented _ r2) = do
   cp <- CP.cps [r1] [r2]
   let f (Left x)  = withNumber (number x*2) x
@@ -318,25 +336,25 @@ criticalPairs s n (MkOriented _ r1) (MkOriented _ r2) = do
 
   guard (size (CP.top cp) <= n)
   guard (null (nested (anywhere (rewrite (rules s))) inner))
-  return (Constrained (And []) (left :==: right))
+  return (Critical (rename f (CP.top cp)) (left :==: right))
 
 queueCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
-  Label -> [Labelled (Constrained (Equation f v))] -> State (KBC f v) ()
+  Label -> [Labelled (Critical (Equation f v))] -> State (KBC f v) ()
 queueCPs l eqns = do
   s <- get
   maxN <- gets maxSize
   let eqns' =
         usort $
-        [ Labelled l' (Constrained ctx' (order eq'))
-        | Labelled l' (Constrained ctx (t  :==: u)) <- eqns,
+        [ Labelled l' (Critical top' (order eq'))
+        | Labelled l' (Critical top (t  :==: u)) <- eqns,
           t /= u,
           let t' = result (normalise s t)
               u' = result (normalise s u)
-              Constrained ctx' eq' = canonicalise (Constrained ctx (t' :==: u')),
+              Critical top' eq' = canonicalise (Critical top (t' :==: u')),
           t' /= u' ]
-  let cps = [ Labelled l' (CP n (size u) i (lessEq u t) (Constrained ctx (t :==: u)))
-            | (i, Labelled l' (Constrained ctx (t :==: u))) <- zip [0..] eqns',
+  let cps = [ Labelled l' (CP n (size u) i (lessEq u t) (Critical top (t :==: u)))
+            | (i, Labelled l' (Critical top (t :==: u))) <- zip [0..] eqns',
               t /= u,
               let n = size t `max` size u ]
   mapM_ (traceM . NewCP . peel) cps
@@ -351,7 +369,7 @@ data Event f v =
   | ExtraRule (Oriented (Rule f v))
   | Reduce (Simplification f v) (Oriented (Rule f v))
   | NewCP (CP f v)
-  | Consider (Constrained (Equation f v))
+  | Consider (Critical (Equation f v))
   | Discharge (Oriented (Rule f v)) [Formula f v]
   | NormaliseCPs Int
 
