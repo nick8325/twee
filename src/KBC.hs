@@ -21,7 +21,6 @@ import qualified Data.Rewriting.CriticalPair as CP
 import Data.Rewriting.Rule(Rule(..))
 import qualified Debug.Trace
 import Control.Monad.Trans.State.Strict
-import Data.List
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
@@ -369,7 +368,6 @@ queueCPs ::
   Label -> [Labelled (Critical (Equation f v))] -> State (KBC f v) ()
 queueCPs l eqns = do
   s <- get
-  maxN <- gets maxSize
   let eqns' =
         usort $
         [ Labelled l' (Critical top' (order eq'))
