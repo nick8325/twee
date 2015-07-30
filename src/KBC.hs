@@ -200,7 +200,7 @@ groundJoinable s ctx r@(Critical top (t :=: u)) =
     (model, Nothing):_
       | isJust (normaliseCP s (Critical top (t' :=: u'))) -> False
       | otherwise ->
-          let rs = shrinkList model (\fs -> result (normaliseIn s fs t) == result (normaliseIn s fs u))
+          let rs = shrinkList model (\fs -> isNothing (normaliseCP s (Critical top (result (normaliseIn s fs t) :=: result (normaliseIn s fs u)))))
               nt = normaliseIn s rs t
               nu = normaliseIn s rs u
               rs' = strengthen rs (\fs -> valid fs nt && valid fs nu)
