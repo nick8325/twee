@@ -254,12 +254,16 @@ instance (PrettyTerm f, Pretty v) => Pretty (Simplification f v) where
 
 interreduce :: (PrettyTerm f, Ord f, Minimal f, Sized f, Ord v, Numbered f, Numbered v, Pretty v) => Oriented (Rule f v) -> State (KBC f v) ()
 interreduce new = do
-  s <- get
   rules <- gets (Index.elems . labelledRules)
-  let reductions = catMaybes [ fmap (Labelled l) (reduceWith s l new old) | Labelled l old <- rules ]
-  sequence_ [ traceM (Reduce red new) | red <- map peel reductions ]
-  sequence_ [ simplifyRule l rule | Labelled l (Simplify rule) <- reductions ]
-  sequence_ [ deleteRule l rule | Labelled l (Reorient rule) <- reductions ]
+  forM_ rules $ \(Labelled l old) -> do
+    s <- get
+    case reduceWith s l new old of
+      Nothing -> return ()
+      Just red -> do
+        traceM (Reduce red new)
+        case red of
+          Simplify rule -> simplifyRule l rule
+          Reorient rule -> deleteRule l rule
 
 reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => KBC f v -> Label -> Oriented (Rule f v) -> Critical (Oriented (Rule f v)) -> Maybe (Simplification f v)
 reduceWith s lab new (Critical top old@(MkOriented _ (Rule l r)))
