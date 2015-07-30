@@ -193,12 +193,12 @@ consider pair = do
 
 groundJoinable :: (Numbered f, Numbered v, Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) =>
   KBC f v -> [Branch f v] -> Critical (Equation f v) -> Bool
-groundJoinable s ctx r@(Critical _ (t :=: u)) =
+groundJoinable s ctx r@(Critical top (t :=: u)) =
   case filter (isNothing . snd) (map (solve (usort (vars t ++ vars u))) ctx) of
     (_, Just _):_ -> __
     [] -> True
     (model, Nothing):_
-      | t' /= u' -> False
+      | isJust (normaliseCP s (Critical top (t' :=: u'))) -> False
       | otherwise ->
           let rs = shrinkList model (\fs -> result (normaliseIn s fs t) == result (normaliseIn s fs u))
               nt = normaliseIn s rs t
