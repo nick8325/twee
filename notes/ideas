@@ -1,20 +1,6 @@
-normalise RHS of rewrite rules by ground normalisation?
-check why some of the Robbins problems loop
 change Symbolic to remove type families (e.g. Symbolic Rule instead of Symbolic (Rule f v))
-clean up main file (remove references to I/O, move state-reading stuff out of monad, etc.)
-look in ideas/y-inconsistent for interesting example
-find out why diff gets so much slower after strengthening rules
 take size of top term into account when ordering CPs
 allow constraints between variables and constants
-Use connectedness to cheaply apply permutative laws!
- ==>    t <- s -> u
- Normalise t and u
- Then pick variable ordering
- Normalise wrt that ordering and the constraint that all
- resulting terms must be less than s
-Also use connectedness when simplifying RHS of rules
- ==> allowed to do permutative rewrites as long as RHS < LHS (?)
- ==> store model of RHS vars along with rule
 
 Use following idea from Bachmair:
 
@@ -41,3 +27,13 @@ Questions:
   Hopefully not, because we don't do it!
 
 Check if subsumption checking is sound (applying rules backwards only if subterm)
+
+Add "evil model" construction from before
+
+Do narrowing
+
+Implement unification indexing etc
+
+Nice new term structure: Term = Flat FlatTerm | Subst Term Subst
+
+Add proof production
