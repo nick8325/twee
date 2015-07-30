@@ -263,7 +263,9 @@ interreduce new = do
         traceM (Reduce red new)
         case red of
           Simplify rule -> simplifyRule l rule
-          Reorient rule -> deleteRule l rule
+          Reorient rule@(Critical top (MkOriented _ (Rule t u))) -> do
+            deleteRule l rule
+            queueCPs noLabel [Labelled noLabel (Critical top (t :=: u))]
 
 reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => KBC f v -> Label -> Oriented (Rule f v) -> Critical (Oriented (Rule f v)) -> Maybe (Simplification f v)
 reduceWith s lab new (Critical top old@(MkOriented _ (Rule l r)))
