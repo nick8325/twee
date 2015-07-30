@@ -39,3 +39,5 @@ Questions:
   Do we ever need to do split any more?
   (given that our constraints are always <=)
   Hopefully not, because we don't do it!
+
+Check if subsumption checking is sound (applying rules backwards only if subterm)
