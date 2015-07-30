@@ -37,3 +37,5 @@ Implement unification indexing etc
 Nice new term structure: Term = Flat FlatTerm | Subst Term Subst
 
 Add proof production
+
+Only consider general superpositions

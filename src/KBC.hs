@@ -408,7 +408,7 @@ trace (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
 trace (ExtraRule rule) = traceIf True (hang (text "Extra rule") 2 (pPrint rule))
 trace (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
 trace (NewCP cps) = traceIf False (hang (text "Critical pair") 2 (pPrint cps))
-trace (Consider eq) = traceIf True (sep [text "Considering", nest 2 (pPrint eq)])
+trace (Consider eq) = traceIf False (sep [text "Considering", nest 2 (pPrint eq)])
 trace (Discharge eq fs) = traceIf True (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
 trace (NormaliseCPs n) = traceIf True (text "Normalise unprocessed critical pairs after generating" <+> pPrint n)
 
