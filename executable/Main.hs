@@ -21,6 +21,7 @@ import System.Environment
 import System.Exit
 import Data.Ord
 import qualified KBC.Index as Index
+import System.Exit
 
 data Constant =
   Constant {
@@ -73,13 +74,13 @@ parseTerm :: ReadP (Tm String String)
 parseTerm = var <++ fun
   where
     fun = do
-      name <- munch1 (\c -> c `notElem` "(),")
+      name <- munch1 (\c -> c `notElem` "(),=")
       args <- args <++ return []
       return (Fun name args)
     args = between (char '(') (char ')') (sepBy parseTerm (char ','))
 
     var = fmap Var $ do
-      x <- satisfy isUpper
+      x <- satisfy (\c -> isUpper c || c == '_')
       xs <- munch isAlphaNum
       return (x:xs)
 
@@ -173,3 +174,8 @@ main = do
     putStrLn "\nNormalised goal terms:"
     forM_ goals $ \t ->
       prettyPrint (Rule t (result (normalise s t)))
+
+  let identical xs = and (zipWith (==) xs (tail xs))
+  if identical (map (result . normalise s) goals)
+    then exitWith ExitSuccess
+    else exitWith (ExitFailure 1)
