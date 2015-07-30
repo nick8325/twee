@@ -14,6 +14,7 @@ import KBC.Term
 import KBC.Equation
 import KBC.Utils
 import KBC.Rewrite
+import KBC.Queue
 import Data.Rewriting.Rule(Rule(..))
 import Text.ParserCombinators.ReadP hiding (get)
 import System.Environment
@@ -160,7 +161,7 @@ main = do
         mapM_ newEquation axioms
         loop
 
-    rs = Index.elems (rules s)
+    rs = map peel (Index.elems (labelledRules s))
 
   putStrLn "\nFinal rules:"
   mapM_ prettyPrint rs
