@@ -382,11 +382,9 @@ queueCPs l eqns = do
           let t' = result (normalise s t)
               u' = result (normalise s u)
               Critical top' eq' = canonicalise (Critical top (t' :=: u')),
-          t' /= u' ]
-  let cps = [ Labelled l' (CP n (size u) i (lessEq u t) (Critical top (t :=: u)))
-            | (i, Labelled l' (Critical top (t :=: u))) <- zip [0..] eqns',
-              t /= u,
-              let n = size t `max` size u ]
+          t' /= u']
+  let cps = [ Labelled l' (CP (size t) (size u) i (lessEq u t) (Critical top (t :=: u)))
+            | (i, Labelled l' (Critical top (t :=: u))) <- zip [0..] eqns' ]
   mapM_ (traceM . NewCP . peel) cps
   enqueueM l cps
 
