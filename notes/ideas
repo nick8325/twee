@@ -39,3 +39,5 @@ Nice new term structure: Term = Flat FlatTerm | Subst Term Subst
 Add proof production
 
 Only consider general superpositions
+
+Take age into account with critical pairs
