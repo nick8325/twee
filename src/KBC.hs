@@ -46,7 +46,7 @@ initialState maxSize goals =
     extraRules    = Index.empty,
     goals         = goals,
     totalCPs      = 0,
-    renormaliseAt = 100,
+    renormaliseAt = 1000,
     queue         = empty }
 
 report :: (Ord f, Ord v, Sized f, Minimal f) => KBC f v -> String
