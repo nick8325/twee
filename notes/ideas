@@ -40,4 +40,14 @@ Add proof production
 
 Only consider general superpositions
 
-Take age into account with critical pairs
+Take age into account with critical pairs. Other ideas:
+  * Number of CPs generated from same rule (the fewer the better)
+  * Try each rule before going on to the next one
+  * Reduce size if it matches goal term
+    (subtract size of goal term from both sides?)
+
+When doing connectedness testing, pick a ground (skolemised) instance
+instead of a variable ordering - cheaper
+
+Measure applicability of general superposition stuff by printing
+superposed subterms
