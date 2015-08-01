@@ -53,3 +53,6 @@ Measure applicability of general superposition stuff by printing
 superposed subterms
 
 Change constraint stuff so we always have a total order
+
+When generating a critical pair s <- t -> u,
+add constraints s < t and t > u.
