@@ -51,3 +51,5 @@ instead of a variable ordering - cheaper
 
 Measure applicability of general superposition stuff by printing
 superposed subterms
+
+Change constraint stuff so we always have a total order
