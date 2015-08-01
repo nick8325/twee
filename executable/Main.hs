@@ -150,7 +150,7 @@ main = do
     loop = do
       res <- complete1
       goals <- gets goals
-      when (res && (length goals > 1 && not (identical goals))) loop
+      when (res && (length goals <= 1 || not (identical goals))) loop
 
     s =
       flip execState (initialState (read size) goals2) $ do
