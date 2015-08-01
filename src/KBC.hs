@@ -386,13 +386,9 @@ queueCPs l eqns = do
   s <- get
   let eqns' =
         usort $
-        [ Labelled l' (Critical top' (order eq'))
-        | Labelled l' (Critical top (t  :=: u)) <- eqns,
-          t /= u,
-          let t' = result (normalise s t)
-              u' = result (normalise s u)
-              Critical top' eq' = canonicalise (Critical top (t' :=: u')),
-          t' /= u']
+        [ Labelled l' (canonicalise (Critical top' (order eq')))
+        | Labelled l' eq <- eqns,
+          Just (Critical top' eq') <- [normaliseCP s eq] ]
   let cps = [ Labelled l' (CP (size t) (size u) i (lessEq u t) (Critical top (t :=: u)))
             | (i, Labelled l' (Critical top (t :=: u))) <- zip [0..] eqns' ]
   mapM_ (traceM . NewCP . peel) cps
