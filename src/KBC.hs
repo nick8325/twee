@@ -56,7 +56,7 @@ report KBC{..} =
   show (length (filter ((== Unoriented) . orientation) rs)) ++ " unoriented, " ++
   show (length [ r | r@(MkOriented (WeaklyOriented _) _) <- rs ]) ++ " weakly oriented. " ++
   show (length (Index.elems extraRules)) ++ " extra rules. " ++
-  show (queueSize queue) ++ " queued critical pairs."
+  show (queueSize queue) ++ " queued critical pairs out of " ++ show totalCPs ++ " total."
   where
     rs = map (critical . peel) (Index.elems labelledRules)
 
