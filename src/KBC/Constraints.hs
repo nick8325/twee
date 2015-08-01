@@ -154,6 +154,14 @@ data Branch f v =
     nonminimals :: [v] }
   deriving (Eq, Ord)
 
+instance (Minimal f, PrettyTerm f, Pretty v) => Pretty (Branch f v) where
+  pPrint Branch{..} =
+    braces $ fsep $ punctuate (text ",") $
+      [pPrint x <+> text "<" <+> pPrint y | (x, y) <- less ] ++
+      [pPrint x <+> text "<" <+> pPrint (minimalTerm :: Tm f v) | x <- nonminimals ] ++
+      [pPrint x <+> text "=" <+> pPrint y | (x, y) <- equals ] ++
+      [pPrint x <+> text "=" <+> pPrint (minimalTerm :: Tm f v) | x <- minimals ]
+
 trueBranch :: Branch f v
 trueBranch = Branch [] [] [] []
 
