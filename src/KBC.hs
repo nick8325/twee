@@ -359,18 +359,22 @@ instance (Minimal f, PrettyTerm f, Pretty v) => Pretty (CP f v) where
   pPrint = pPrint . cpEquation
 
 criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Oriented (Rule f v) -> [Critical (Equation f v)]
-criticalPairs s n (MkOriented _ r1) (MkOriented _ r2) = do
+criticalPairs s n (MkOriented or1 r1) (MkOriented or2 r2) = do
   cp <- CP.cps [r1] [r2]
   let f (Left x)  = withNumber (number x*2) x
       f (Right x) = withNumber (number x*2+1) x
       left = rename f (CP.left cp)
       right = rename f (CP.right cp)
+      top = rename f (CP.top cp)
 
       inner = rename f (fromMaybe __ (subtermAt (CP.top cp) (CP.leftPos cp)))
 
+  guard (left /= top && right /= top)
+  when (or1 == Unoriented) $ guard (not (lessEq top left))
+  when (or2 == Unoriented) $ guard (not (lessEq top right))
   guard (size (CP.top cp) <= n)
   guard (null (nested (anywhere (rewrite (rules s))) inner))
-  return (Critical (rename f (CP.top cp)) (left :=: right))
+  return (Critical top (left :=: right))
 
 queueCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
