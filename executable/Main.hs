@@ -135,30 +135,25 @@ main = do
       goals1 = map (run parseTerm . tok) goals0
       vs = zip (usort (vars (axioms1, goals1))) (map V [0..])
       axioms = map (bothSides (mapTerm (replace fs) (replace vs))) axioms1
-      goals = map (mapTerm (replace fs) (replace vs)) goals1
+      goals2 = map (mapTerm (replace fs) (replace vs)) goals1
 
   putStrLn "Axioms:"
   mapM_ prettyPrint axioms
   putStrLn "\nGoals:"
-  mapM_ prettyPrint goals
-  check (axioms, goals)
+  mapM_ prettyPrint goals2
+  check (axioms, goals2)
   putStrLn "\nGo!"
 
   let
-    stop
-      | length goals <= 1 = return False
-      | otherwise = do
-          s <- get
-          let goals' = map (result . normalise s) goals
-          return (and (zipWith (==) goals' (tail goals')))
+    identical xs = and (zipWith (==) xs (tail xs))
 
     loop = do
-      res1 <- complete1
-      res2 <- stop
-      when (res1 && not res2) loop
+      res <- complete1
+      goals <- gets goals
+      when (res && (length goals > 1 && not (identical goals))) loop
 
     s =
-      flip execState (initialState (read size)) $ do
+      flip execState (initialState (read size) goals2) $ do
         mapM_ newEquation axioms
         loop
 
@@ -170,12 +165,12 @@ main = do
 
   putStrLn (report s)
 
-  unless (null goals) $ do
+  unless (null goals2) $ do
     putStrLn "\nNormalised goal terms:"
-    forM_ goals $ \t ->
+    forM_ goals2 $ \t ->
       prettyPrint (Rule t (result (normalise s t)))
 
   let identical xs = and (zipWith (==) xs (tail xs))
-  if identical (map (result . normalise s) goals)
+  if identical (map (result . normalise s) goals2)
     then exitWith ExitSuccess
     else exitWith (ExitFailure 1)

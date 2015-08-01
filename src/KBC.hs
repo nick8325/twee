@@ -31,17 +31,19 @@ data KBC f v =
     maxSize       :: Int,
     labelledRules :: Index (Labelled (Critical (Oriented (Rule f v)))),
     extraRules    :: Index (Oriented (Rule f v)),
+    goals         :: [Tm f v],
     totalCPs      :: Int,
     renormaliseAt :: Int,
     queue         :: Queue (CP f v) }
   deriving Show
 
-initialState :: Int -> KBC f v
-initialState maxSize =
+initialState :: Int -> [Tm f v] -> KBC f v
+initialState maxSize goals =
   KBC {
     maxSize       = maxSize,
     labelledRules = Index.empty,
     extraRules    = Index.empty,
+    goals         = goals,
     totalCPs      = 0,
     renormaliseAt = 100,
     queue         = empty }
@@ -152,6 +154,7 @@ complete1 = do
   case res of
     Just (_, _, cp) -> do
       consider (cpEquation cp)
+      modify $ \s -> s { goals = map (result . normalise s) goals }
       return True
     Nothing ->
       return False
