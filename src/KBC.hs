@@ -21,6 +21,7 @@ import qualified Data.Rewriting.CriticalPair as CP
 import Data.Rewriting.Rule(Rule(..))
 import qualified Debug.Trace
 import Control.Monad.Trans.State.Strict
+import Data.List
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
@@ -196,10 +197,11 @@ consider pair = do
 groundJoinable :: (Numbered f, Numbered v, Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) =>
   KBC f v -> [Branch f v] -> Critical (Equation f v) -> Bool
 groundJoinable s ctx r@(Critical top (t :=: u)) =
-  case filter (isNothing . snd) (map (solve (usort (vars t ++ vars u))) ctx) of
-    (_, Just _):_ -> __
-    [] -> True
-    (model, Nothing):_
+  case partition (isNothing . snd) (map (solve (usort (vars t ++ vars u))) ctx) of
+    ([], instances) ->
+      let rs = [ substf (evalSubst sub) r | (_, Just sub) <- instances ] in
+      all (groundJoinable s (branches (And []))) (usort (map canonicalise rs))
+    ((model, Nothing):_, _)
       | isJust (normaliseCP s (Critical top (t' :=: u'))) -> False
       | otherwise ->
           let rs = shrinkList model (\fs -> isNothing (normaliseCP s (Critical top (result (normaliseIn s fs t) :=: result (normaliseIn s fs u)))))
@@ -218,6 +220,7 @@ groundJoinable s ctx r@(Critical top (t :=: u)) =
       where
         Reduction t' _ = normaliseIn s model t
         Reduction u' _ = normaliseIn s model u
+    _ -> __
 
 valid :: (Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) => [Formula f v] -> Reduction f v -> Bool
 valid model Reduction{..} = all valid1 steps
