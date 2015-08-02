@@ -157,7 +157,7 @@ main = do
         mapM_ newEquation axioms
         loop
 
-    rs = map peel (Index.elems (labelledRules s))
+    rs = map (critical . peel) (Index.elems (labelledRules s))
 
   putStrLn "\nFinal rules:"
   mapM_ prettyPrint rs
