@@ -9,7 +9,7 @@ a: -> ANY
 b: -> ANY
 ORDERING
 KBO
-a=1, b=1, mult=1, ld=1, rd=1
+a=1, b=1, mult=1, ld=0, rd=0
 rd > ld > mult > b > a
 VARIABLES
 X, Y, Z: ANY

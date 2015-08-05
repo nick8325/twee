@@ -1,8 +1,8 @@
 a/0 = 1
 b/0 = 1
 mult/2 = 1
-ld/2 = 1
-rd/2 = 1
+ld/2 = 0
+rd/2 = 0
 --
 mult(X, ld(X, Y)) = Y
 ld(X, mult(X, Y)) = Y
