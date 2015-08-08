@@ -65,8 +65,9 @@ enqueueM ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered v, Pretty v) =>
   Label -> [Labelled (CP f v)] -> State (KBC f v) ()
 enqueueM l eqns = do
+  let eqns' = [Labelled l' cp { cpIndex = i } | (i, Labelled l' cp) <- zip [0..] eqns]
   modify $ \s -> s {
-    queue    = enqueue l eqns (queue s),
+    queue    = enqueue l eqns' (queue s),
     totalCPs = totalCPs s + length eqns }
 
 dequeueM ::
@@ -396,19 +397,26 @@ queueCPs ::
   Label -> [Labelled (Critical (Equation f v))] -> State (KBC f v) ()
 queueCPs l eqns = do
   s <- get
-  let eqns' =
-        usort $
-        [ Labelled l' (Critical top' (order eq'))
-        | Labelled l' (Critical top (t  :=: u)) <- eqns,
-          t /= u,
-          let t' = result (normalise s t)
-              u' = result (normalise s u)
-              Critical top' eq' = canonicalise (Critical top (t' :=: u')),
-          t' /= u']
-  let cps = [ Labelled l' (CP (size t) (size u) i (lessEq u t) (Critical top (t :=: u)))
-            | (i, Labelled l' (Critical top (t :=: u))) <- zip [0..] eqns' ]
+  let cps =
+        usortBy (comparing (critical . cpEquation . peel)) $
+        [ Labelled l' cp
+        | Labelled l' eqn <- eqns,
+          Just cp <- [toCP s eqn] ]
   mapM_ (traceM . NewCP . peel) cps
   enqueueM l cps
+
+toCP ::
+  (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
+  KBC f v -> Critical (Equation f v) -> Maybe (CP f v)
+toCP s (Critical top (t :=: u))
+  | t  == u   = Nothing
+  | t' == u'  = Nothing
+  | otherwise =
+    Just (CP (size t'') (size u'') 0 (lessEq u'' t'') (Critical top' (t'' :=: u'')))
+  where
+    t' = result (normalise s t)
+    u' = result (normalise s u)
+    Critical top' (t'' :=: u'') = canonicalise (Critical top (order (t' :=: u')))
 
 --------------------------------------------------------------------------------
 -- Tracing.
