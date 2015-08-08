@@ -56,3 +56,7 @@ Change constraint stuff so we always have a total order
 
 When generating a critical pair s <- t -> u,
 add constraints s < t and t > u.
+
+Try to combine as many axioms as possible, by recording which axioms
+created each critical pair (including transitively) and minimising the
+maximum number of occurrences of a single axiom
