@@ -171,7 +171,7 @@ normaliseCPs = do
   traceM (NormaliseCPs totalCPs :: Event f v)
   put s { queue = emptyFrom queue }
   forM_ (toList queue) $ \(Labelled l cps) ->
-    queueCPs l (map (fmap cpEquation) cps)
+    queueCPs l (map (fmap (return . cpEquation)) cps)
   modify (\s -> s { totalCPs = totalCPs })
 
 consider ::
@@ -273,7 +273,7 @@ interreduce new = do
           Simplify rule -> simplifyRule l rule
           Reorient rule@(Critical top (MkOriented _ (Rule t u))) -> do
             deleteRule l rule
-            queueCPs noLabel [Labelled noLabel (Critical top (t :=: u))]
+            queueCPs noLabel [Labelled noLabel [Critical top (t :=: u)]]
 
 reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => KBC f v -> Label -> Oriented (Rule f v) -> Critical (Oriented (Rule f v)) -> Maybe (Simplification f v)
 reduceWith s lab new (Critical top old@(MkOriented _ (Rule l r)))
@@ -364,14 +364,14 @@ instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
 instance (Minimal f, PrettyTerm f, Pretty v) => Pretty (CP f v) where
   pPrint = pPrint . cpEquation
 
-criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Index (Labelled (Oriented (Rule f v))) -> [Labelled (Critical (Equation f v))]
+criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Index (Labelled (Oriented (Rule f v))) -> [Labelled [Critical (Equation f v)]]
 criticalPairs s n r idx =
   map pick (groupBy ((==) `on` f) (sortBy (comparing f) (criticalPairs1 s n r idx)))
   where
-    f (_, t, Labelled l _) = (t, l)
-    pick = (\(_, _, x) -> x) . minimumBy (comparing (\(x, _, _) -> x))
+    f (t, Labelled l _) = (t, l)
+    pick xs@((_, Labelled l _):_) = Labelled l (map (peel . snd) xs)
 
-criticalPairs1 :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Index (Labelled (Oriented (Rule f v))) -> [(Int, Tm f v, Labelled (Critical (Equation f v)))]
+criticalPairs1 :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Index (Labelled (Oriented (Rule f v))) -> [(Tm f v, Labelled (Critical (Equation f v)))]
 criticalPairs1 s n (MkOriented or1 r1@(Rule t _)) idx = do
   Labelled l (MkOriented or2 r2) <- Index.elems idx
   cp <- CP.cps [r2] [r1]
@@ -387,21 +387,21 @@ criticalPairs1 s n (MkOriented or1 r1@(Rule t _)) idx = do
   guard (left /= top && right /= top)
   when (or1 == Unoriented) $ guard (not (lessEq top right))
   when (or2 == Unoriented) $ guard (not (lessEq top left))
-  guard (sz <= n)
+  guard (size top <= n)
   guard (null (nested (anywhere (rewrite (rules s))) inner))
-  return (sz, canonicalise (fromMaybe __ (subtermAt t (CP.leftPos cp))),
+  return (canonicalise (fromMaybe __ (subtermAt t (CP.leftPos cp))),
           Labelled l (Critical top (left :=: right)))
 
 queueCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
-  Label -> [Labelled (Critical (Equation f v))] -> State (KBC f v) ()
-queueCPs l eqns = do
+  Label -> [Labelled [(Critical (Equation f v))]] -> State (KBC f v) ()
+queueCPs l eqnss = do
   s <- get
   let cps =
         usortBy (comparing (critical . cpEquation . peel)) $
-        [ Labelled l' cp
-        | Labelled l' eqn <- eqns,
-          Just cp <- [toCP s eqn] ]
+        [ Labelled l' (minimum cps)
+        | Labelled l' eqns <- eqnss,
+          cps@(_:_) <- [catMaybes (map (toCP s) eqns)] ]
   mapM_ (traceM . NewCP . peel) cps
   enqueueM l cps
 
