@@ -51,6 +51,12 @@ mapMonotonic f (Index here fun var) =
     (fmap (mapMonotonic f) fun)
     (fmap (mapMonotonic f) var)
 
+{-# INLINEABLE singleton #-}
+singleton ::
+  (Symbolic a, Numbered (ConstantOf a), Ord (VariableOf a), Numbered (VariableOf a), Ord a) =>
+  a -> Index a
+singleton x = insert x empty
+
 {-# INLINEABLE insert #-}
 insert ::
   (Symbolic a, Numbered (ConstantOf a), Ord (VariableOf a), Numbered (VariableOf a), Ord a) =>

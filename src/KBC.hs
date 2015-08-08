@@ -22,6 +22,7 @@ import Data.Rewriting.Rule(Rule(..))
 import qualified Debug.Trace
 import Control.Monad.Trans.State.Strict
 import Data.List
+import Data.Function
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
@@ -308,9 +309,10 @@ addCriticalPairs l new = do
   rules <- gets labelledRules
   size  <- gets maxSize
   queueCPs l $
-    [ Labelled l' cp
+    criticalPairs s size new (Index.mapMonotonic (fmap critical) rules) ++
+    [ cp
     | Labelled l' (Critical _ old) <- Index.elems rules,
-      cp <- criticalPairs s size new old ++ criticalPairs s size old new ]
+      cp <- criticalPairs s size old (Index.singleton (Labelled l' new)) ]
 
 newEquation ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
@@ -361,23 +363,33 @@ instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
 instance (Minimal f, PrettyTerm f, Pretty v) => Pretty (CP f v) where
   pPrint = pPrint . cpEquation
 
-criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Oriented (Rule f v) -> [Critical (Equation f v)]
-criticalPairs s n (MkOriented or1 r1) (MkOriented or2 r2) = do
-  cp <- CP.cps [r1] [r2]
+criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Index (Labelled (Oriented (Rule f v))) -> [Labelled (Critical (Equation f v))]
+criticalPairs s n r idx =
+  map pick (groupBy ((==) `on` f) (sortBy (comparing f) (criticalPairs1 s n r idx)))
+  where
+    f (_, t, Labelled l _) = (t, l)
+    pick = (\(_, _, x) -> x) . minimumBy (comparing (\(x, _, _) -> x))
+
+criticalPairs1 :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Index (Labelled (Oriented (Rule f v))) -> [(Int, Tm f v, Labelled (Critical (Equation f v)))]
+criticalPairs1 s n (MkOriented or1 r1@(Rule t _)) idx = do
+  Labelled l (MkOriented or2 r2) <- Index.elems idx
+  cp <- CP.cps [r2] [r1]
   let f (Left x)  = withNumber (number x*2) x
       f (Right x) = withNumber (number x*2+1) x
       left = rename f (CP.left cp)
       right = rename f (CP.right cp)
       top = rename f (CP.top cp)
 
-      inner = rename f (fromMaybe __ (subtermAt (CP.top cp) (CP.leftPos cp)))
+      inner = fromMaybe __ (subtermAt top (CP.leftPos cp))
+      sz = size top
 
   guard (left /= top && right /= top)
-  when (or1 == Unoriented) $ guard (not (lessEq top left))
-  when (or2 == Unoriented) $ guard (not (lessEq top right))
-  guard (size (CP.top cp) <= n)
+  when (or1 == Unoriented) $ guard (not (lessEq top right))
+  when (or2 == Unoriented) $ guard (not (lessEq top left))
+  guard (sz <= n)
   guard (null (nested (anywhere (rewrite (rules s))) inner))
-  return (Critical top (left :=: right))
+  return (sz, canonicalise (fromMaybe __ (subtermAt t (CP.leftPos cp))),
+          Labelled l (Critical top (left :=: right)))
 
 queueCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
