@@ -50,3 +50,19 @@ add constraints s < t and t > u.
 Try to combine as many axioms as possible, by recording which axioms
 created each critical pair (including transitively) and minimising the
 maximum number of occurrences of a single axiom
+
+Try COL064-1 as a test case for unification indexing?
+
+We often get laws like
+  some very long term -> 0
+which it seems can't often be useful (esp if 0 doesn't occur in the
+goal). Can we work out which laws can actually help prove the goal?
+
+Do we really need to eagerly generate critical pairs from recently
+generated laws? Maybe gradually notch up maximum age of considered
+critical pairs. E.g.: only consider CPs from rules up to label l/2,
+where l is the current label. Perhaps print out the maximum CP age
+actually used in a proof.
+
+Goal-directed proving - boost CP whose RHS matches a subterm of a
+goal, once rule is added add LHS as a goal
