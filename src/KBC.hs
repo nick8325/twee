@@ -108,8 +108,10 @@ normaliseIn s model =
 normaliseSub ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   KBC f v -> Tm f v -> [Formula f v] -> Tm f v -> Reduction f v
-normaliseSub s top model =
-  normaliseWith (anywhere (rewriteSub (rules s) top model))
+normaliseSub s top model t
+  | lessEq t top && isNothing (unify t top) =
+    normaliseWith (anywhere (rewriteSub (rules s) top model)) t
+  | otherwise = normaliseWith (\_ -> []) t
 
 normaliseCP ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
