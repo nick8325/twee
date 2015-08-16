@@ -351,17 +351,12 @@ instance Symbolic a => Symbolic (Critical a) where
 
 data CP f v =
   CP {
-    cpSize      :: Int,
-    cpSizeRight :: Int,
+    cpWeight    :: Int,
     cpIndex     :: Int,
-    oriented    :: Bool,
     cpEquation  :: Critical (Equation f v) } deriving (Eq, Show)
 
 instance (Minimal f, Sized f, Ord f, Ord v) => Ord (CP f v) where
-  compare =
-    comparing $ \(CP size size' idx oriented (Critical _ (_ :=: _))) ->
-      if oriented then (size * 2 + size', idx)
-      else ((size + size') * 2, idx)
+  compare = comparing (\x -> (cpWeight x, cpIndex x))
 
 instance (Minimal f, PrettyTerm f, Pretty v) => Pretty (CP f v) where
   pPrint = pPrint . cpEquation
@@ -414,11 +409,15 @@ toCP s (Critical top (t :=: u))
   | t  == u   = Nothing
   | t' == u'  = Nothing
   | otherwise =
-    Just (CP (size t'') (size u'') 0 (lessEq u'' t'') (Critical top' (t'' :=: u'')))
+    Just (CP (weight t'' u'') 0 (Critical top' (t'' :=: u'')))
   where
     t' = result (normalise s t)
     u' = result (normalise s u)
     Critical top' (t'' :=: u'') = canonicalise (Critical top (order (t' :=: u')))
+
+    weight t u
+      | u `lessEq` t = size t * 2 + size u
+      | otherwise    = (size t + size u) * 2
 
 --------------------------------------------------------------------------------
 -- Tracing.
