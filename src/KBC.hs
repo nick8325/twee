@@ -416,8 +416,10 @@ toCP s (Critical top (t :=: u))
     Critical top' (t'' :=: u'') = canonicalise (Critical top (order (t' :=: u')))
 
     weight t u
-      | u `lessEq` t = size t * 2 + size u
-      | otherwise    = (size t + size u) * 2
+      | u `lessEq` t = f t u
+      | otherwise    = f t u `min` f u t
+      where
+        f t u = size t + size u + length (vars u \\ vars t)
 
 --------------------------------------------------------------------------------
 -- Tracing.
