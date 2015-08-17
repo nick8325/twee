@@ -43,7 +43,7 @@ instance Numbered Constant where
 
 instance Minimal Constant where
   minimal = con0
-  skolem n = Constant (-n) 0 1 ("sk" ++ show n)
+  skolem n = Constant (-(n+1)) 0 1 ("sk" ++ show n)
   
 instance Sized Constant where
   funSize = fromIntegral . conSize
