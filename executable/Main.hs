@@ -34,13 +34,16 @@ con0 = Constant 0 0 1 "?"
 
 instance Eq Constant where
   x == y = x `compare` y == EQ
-instance Ord Constant where compare = comparing conIndex
+instance Ord Constant where
+  -- Skolem constants are biggest.
+  compare = comparing (\c -> (conIndex c < 0, abs (conIndex c)))
 instance Numbered Constant where
   number = conIndex
   withNumber = __
 
 instance Minimal Constant where
   minimal = con0
+  skolem n = Constant (-n) 0 1 ("sk" ++ show n)
   
 instance Sized Constant where
   funSize = fromIntegral . conSize

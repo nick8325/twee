@@ -13,9 +13,16 @@ import qualified Data.Rewriting.Substitution.Type as Subst
 
 class Minimal a where
   minimal :: a
+  skolem  :: Int -> a
 
 minimalTerm :: Minimal f => Tm f v
 minimalTerm = Fun minimal []
+
+skolemConst :: Minimal f => Int -> Tm f v
+skolemConst n = Fun (skolem n) []
+
+skolemise :: (Minimal f, Numbered v) => Tm f v -> Tm f v
+skolemise = foldTerm (skolemConst . number) Fun
 
 class Sized a where
   funSize  :: a -> Int
