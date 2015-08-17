@@ -69,6 +69,14 @@ allowedInModel _ (MkOriented (WeaklyOriented xs) _) =
 allowedInModel cond (MkOriented Unoriented (Rule t u)) =
   lessEqIn cond u t && t /= u
 
+allowedSkolem :: (Ord f, Ord v, Sized f, Minimal f, PrettyTerm f, Pretty v, Numbered v) =>
+  Oriented (Rule f v) -> Bool
+allowedSkolem (MkOriented Oriented _) = True
+allowedSkolem (MkOriented (WeaklyOriented xs) _) =
+  or [x /= minimalTerm | x <- xs]
+allowedSkolem (MkOriented Unoriented (Rule t u)) =
+  lessEq (skolemise u) (skolemise t) && t /= u
+
 rewriteInModel :: (Ord f, Ord v, Numbered f, Numbered v, Sized f, Minimal f, PrettyTerm f, Pretty v) =>
   Index (Oriented (Rule f v)) -> [Formula f v] -> Tm f v -> [Oriented (Rule f v)]
 rewriteInModel rules model t = do
@@ -77,11 +85,11 @@ rewriteInModel rules model t = do
   return orule
 
 rewriteSub :: (Ord f, Ord v, Numbered f, Numbered v, Sized f, Minimal f, PrettyTerm f, Pretty v) =>
-  Index (Oriented (Rule f v)) -> Tm f v -> [Formula f v] -> Tm f v -> [Oriented (Rule f v)]
-rewriteSub rules top model t = do
+  Index (Oriented (Rule f v)) -> Tm f v -> Tm f v -> [Oriented (Rule f v)]
+rewriteSub rules top t = do
   orule <- Index.lookup t rules
   let u = rhs (rule orule)
-  guard (allowedInModel model orule && lessEq u top && isNothing (unify u top))
+  guard (allowedSkolem orule && lessEq u top && isNothing (unify u top))
   return orule
 
 rewrite :: (PrettyTerm f, Pretty v, Numbered f, Sized f, Minimal f, Ord f, Numbered v, Ord v) => Index (Oriented (Rule f v)) -> Strategy f v
