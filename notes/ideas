@@ -72,3 +72,11 @@ Maybe look at how many variables need to be skolemised in order to
 join it. Possible weight penalty: compute size but giving each skolem
 constant a size of 2 (to encode the idea that probably only bigger
 instances are needed).
+
+Suppose we have the rule
+  x*x*x*x*x*x -> x
+Then we should give the term
+  x*x*x*x*y
+a relatively small weight, because the instance [y->x*x] rewrites to x.
+Somehow, terms that are "close to" being reduced to small terms should
+get a smaller weight.
