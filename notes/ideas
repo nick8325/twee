@@ -80,3 +80,6 @@ Then we should give the term
 a relatively small weight, because the instance [y->x*x] rewrites to x.
 Somehow, terms that are "close to" being reduced to small terms should
 get a smaller weight.
+
+Prioritise CPs with BIG top terms? As this indicates a large
+simplification step.
