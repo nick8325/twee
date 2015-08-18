@@ -35,8 +35,8 @@ con0 = Constant 0 0 1 "?"
 instance Eq Constant where
   x == y = x `compare` y == EQ
 instance Ord Constant where
-  -- Skolem constants are biggest.
-  compare = comparing (\c -> (conIndex c < 0, abs (conIndex c)))
+  -- Skolem constants are smallest, except for minimal constant.
+  compare = comparing (\c -> (conIndex c > 0, abs (conIndex c)))
 instance Numbered Constant where
   number = conIndex
   withNumber = __
