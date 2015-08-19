@@ -427,15 +427,10 @@ toCP s cp = fmap toCP' (normaliseCPQuickly s cp)
         Critical top' (t' :=: u') = canonicalise (Critical top (order (t :=: u)))
 
     weight t u
-      | u `lessEq` t = f t u + penalty t u
-      | otherwise    = (f t u `min` f u t) + penalty t u
+      | u `lessEq` t = f t u
+      | otherwise    = f t u `min` f u t
       where
         f t u = size t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u)
-
-    penalty t u
-      | result (normalise s (skolemise t)) == result (normalise s (skolemise u)) =
-        length (vars t) `max` length (vars u)
-      | otherwise = 0
 
 --------------------------------------------------------------------------------
 -- Tracing.
