@@ -92,6 +92,15 @@ rewriteSub rules top t = do
   guard (allowedSkolem orule && lessEq u top && isNothing (unify u top))
   return orule
 
+simplify :: (PrettyTerm f, Pretty v, Numbered f, Sized f, Minimal f, Ord f, Numbered v, Ord v) => Index (Oriented (Rule f v)) -> Strategy f v
+simplify rules t = do
+  orule <- Index.lookup t rules
+  case orientation orule of
+    Oriented -> return ()
+    WeaklyOriented ts -> guard (or [ t /= minimalTerm | t <- ts ])
+    Unoriented -> mzero
+  return orule
+
 rewrite :: (PrettyTerm f, Pretty v, Numbered f, Sized f, Minimal f, Ord f, Numbered v, Ord v) => Index (Oriented (Rule f v)) -> Strategy f v
 rewrite rules t = do
   orule <- Index.lookup t rules

@@ -94,6 +94,11 @@ rules k =
   Index.mapMonotonic (critical . peel) (labelledRules k)
   `Index.union` extraRules k
 
+normaliseQuickly ::
+  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
+  KBC f v -> Tm f v -> Reduction f v
+normaliseQuickly s = normaliseWith (anywhere (simplify (rules s)))
+
 normalise ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   KBC f v -> Tm f v -> Reduction f v
@@ -116,18 +121,20 @@ normaliseSub s top t
 normaliseCP ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   KBC f v -> Critical (Equation f v) -> Maybe (Critical (Equation f v))
-normaliseCP s (Critical top (t :=: u))
-  | t  == u          = Nothing
-  | t' == u'         = Nothing
-  | subsumed t' u'   = Nothing
-  | t'' == u''       = Nothing
-  | subsumed t'' u'' = Nothing
-  | otherwise = Just (Critical top (t' :=: u'))
+normaliseCP s cp@(Critical top _) =
+  check cp >>=
+  check . norm (normaliseQuickly s) >>=
+  check . norm (normalise s) >>=
+  check . norm (normaliseSub s top)
   where
-    t'  = result (normalise s t)
-    u'  = result (normalise s u)
-    t'' = result (normaliseSub s top t')
-    u'' = result (normaliseSub s top u')
+    check cp@(Critical _ (t :=: u))
+      | t == u = Nothing
+      | subsumed t u = Nothing
+      | otherwise = Just cp
+
+    norm f (Critical top (t :=: u)) =
+      Critical top (result (f t) :=: result (f u))
+
     subsumed t u =
       or [ rhs (rule x) == u | x <- anywhere (flip Index.lookup rs) t ] ||
       or [ rhs (rule x) == t | x <- nested (anywhere (flip Index.lookup rs)) u ] ||
