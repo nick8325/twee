@@ -118,28 +118,36 @@ normaliseSub s top t
     normaliseWith (anywhere (rewriteSub (rules s) top)) t
   | otherwise = normaliseWith (\_ -> []) t
 
-normaliseCP ::
+reduceCP ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
-  KBC f v -> Critical (Equation f v) -> Maybe (Critical (Equation f v))
-normaliseCP s cp@(Critical top _) =
-  check cp >>=
-  check . norm (normaliseQuickly s) >>=
-  check . norm (normalise s) >>=
-  check . norm (normaliseSub s top)
+  KBC f v -> (Tm f v -> Tm f v) ->
+  Critical (Equation f v) -> Maybe (Critical (Equation f v))
+reduceCP s f (Critical top (t :=: u))
+  | t' == u' = Nothing
+  | subsumed s t' u' = Nothing
+  | otherwise = Just (Critical top (t' :=: u'))
   where
-    check cp@(Critical _ (t :=: u))
-      | t == u = Nothing
-      | subsumed t u = Nothing
-      | otherwise = Just cp
+    t' = f t
+    u' = f u
 
-    norm f (Critical top (t :=: u)) =
-      Critical top (result (f t) :=: result (f u))
-
-    subsumed t u =
+    subsumed s t u =
       or [ rhs (rule x) == u | x <- anywhere (flip Index.lookup rs) t ] ||
       or [ rhs (rule x) == t | x <- nested (anywhere (flip Index.lookup rs)) u ] ||
       or [ rhs (rule x) == t | (x, x') <- Index.lookup' u rs, not (isVariantOf (lhs (rule x')) u) ]
-    rs = rules s
+      where
+        rs = rules s
+
+normaliseCP, normaliseCPQuickly ::
+  (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
+  KBC f v -> Critical (Equation f v) -> Maybe (Critical (Equation f v))
+normaliseCPQuickly s cp =
+  reduceCP s id cp >>=
+  reduceCP s (result . normaliseQuickly s) >>=
+  reduceCP s (result . normalise s)
+
+normaliseCP s cp@(Critical top _) =
+  normaliseCPQuickly s cp >>=
+  reduceCP s (result . normaliseSub s top)
 
 --------------------------------------------------------------------------------
 -- Completion loop.
@@ -411,15 +419,12 @@ queueCPs l eqnss = do
 toCP ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
   KBC f v -> Critical (Equation f v) -> Maybe (CP f v)
-toCP s (Critical top (t :=: u))
-  | t  == u   = Nothing
-  | t' == u'  = Nothing
-  | otherwise =
-    Just (CP (weight t'' u'') 0 (Critical top' (t'' :=: u'')))
+toCP s cp = fmap toCP' (normaliseCPQuickly s cp)
   where
-    t' = result (normalise s t)
-    u' = result (normalise s u)
-    Critical top' (t'' :=: u'') = canonicalise (Critical top (order (t' :=: u')))
+    toCP' (Critical top (t :=: u)) =
+      CP (weight t' u') 0 (Critical top' (t' :=: u'))
+      where
+        Critical top' (t' :=: u') = canonicalise (Critical top (order (t :=: u)))
 
     weight t u
       | u `lessEq` t = f t u + penalty t u
