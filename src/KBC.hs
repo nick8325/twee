@@ -293,17 +293,21 @@ interreduce new = do
 
 reduceWith :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => KBC f v -> Label -> Oriented (Rule f v) -> Critical (Oriented (Rule f v)) -> Maybe (Simplification f v)
 reduceWith s lab new (Critical top old@(MkOriented _ (Rule l r)))
-  | not (lhs (rule new) `isInstanceOf` l) &&
+  | {-# SCC "reorient-normal" #-}
+    not (lhs (rule new) `isInstanceOf` l) &&
     not (null (anywhere (tryRule new) l)) =
       Just (Reorient (Critical top old))
-  | not (lhs (rule new) `isInstanceOf` l) &&
+  | {-# SCC "reorient-ground" #-}
+    not (lhs (rule new) `isInstanceOf` l) &&
     orientation new == Unoriented &&
     not (all isNothing [ match (lhs (rule new)) l' | l' <- subterms l ]) &&
     groundJoinable s' (branches (And [])) (Critical top (l :=: r)) =
       Just (Reorient (Critical top old))
-  | not (null (anywhere (tryRule new) (rhs (rule old)))) =
+  | {-# SCC "simplify" #-}
+    not (null (anywhere (tryRule new) (rhs (rule old)))) =
       Just (Simplify (Critical top old))
-  | orientation old == Unoriented &&
+  | {-# SCC "reorient-ground/ground" #-}
+    orientation old == Unoriented &&
     orientation new == Unoriented &&
     not (all isNothing [ match (lhs (rule new)) r' | r' <- subterms r ]) &&
     groundJoinable s' (branches (And [])) (Critical top (l :=: r)) =
