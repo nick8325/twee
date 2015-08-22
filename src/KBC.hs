@@ -23,6 +23,7 @@ import qualified Debug.Trace
 import Control.Monad.Trans.State.Strict
 import Data.List
 import Data.Function
+import Text.Printf
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
@@ -52,14 +53,21 @@ initialState maxSize goals =
 
 report :: (Ord f, Ord v, Sized f, Minimal f) => KBC f v -> String
 report KBC{..} =
-  show (length rs) ++ " rules, of which " ++
-  show (length (filter ((== Oriented) . orientation) rs)) ++ " oriented, " ++
-  show (length (filter ((== Unoriented) . orientation) rs)) ++ " unoriented, " ++
-  show (length [ r | r@(MkOriented (WeaklyOriented _) _) <- rs ]) ++ " weakly oriented. " ++
-  show (length (Index.elems extraRules)) ++ " extra rules. " ++
-  show (queueSize queue) ++ " queued critical pairs out of " ++ show totalCPs ++ " total."
+  printf "Rules: %d total, %d oriented, %d unoriented, %d weakly oriented. "
+    (length rs)
+    (length (filter ((== Oriented) . orientation) rs))
+    (length (filter ((== Unoriented) . orientation) rs))
+    (length [ r | r@(MkOriented (WeaklyOriented _) _) <- rs ]) ++
+  printf "%d extra. %d historical.\n"
+    (length (Index.elems extraRules))
+    n ++
+  printf "Critical pairs: %d total, %d processed, %d queued."
+    totalCPs
+    (totalCPs - queueSize queue)
+    (queueSize queue)
   where
     rs = map (critical . peel) (Index.elems labelledRules)
+    Label n = nextLabel queue
 
 enqueueM ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered v, Pretty v) =>
