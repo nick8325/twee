@@ -132,18 +132,29 @@ reduceCP ::
   Critical (Equation f v) -> Maybe (Critical (Equation f v))
 reduceCP s f (Critical top (t :=: u))
   | t' == u' = Nothing
-  | subsumed s t' u' = Nothing
+  | subsumed s True t' u' = Nothing
   | otherwise = Just (Critical top (t' :=: u'))
   where
     t' = f t
     u' = f u
 
-    subsumed s t u =
-      or [ rhs (rule x) == u | x <- anywhere (flip Index.lookup rs) t ] ||
-      or [ rhs (rule x) == t | x <- nested (anywhere (flip Index.lookup rs)) u ] ||
-      or [ rhs (rule x) == t | (x, x') <- Index.lookup' u rs, not (isVariantOf (lhs (rule x')) u) ]
+    subsumed s root t u =
+      or [ rhs (rule x) == u | x <- Index.lookup t rs ] ||
+      or [ rhs (rule x) == t | (x, x') <- Index.lookup' u rs, not root || not (isVariantOf (lhs (rule x')) u) ] ||
+      case focus t u of
+        Nothing -> False
+        Just (t', u') -> subsumed s False t' u'
       where
         rs = rules s
+
+    focus (Fun f ts) (Fun g us) | f == g = aux ts us
+      where
+        aux [] [] = Nothing
+        aux (t:ts) (u:us)
+          | t == u = aux ts us
+          | ts == us = Just (t, u)
+          | otherwise = Nothing
+    focus _ _ = Nothing
 
 normaliseCP, normaliseCPQuickly ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
