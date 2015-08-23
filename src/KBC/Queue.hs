@@ -11,7 +11,7 @@ import Data.Set(Set)
 
 data Queue a =
   Queue {
-    queue       :: Heap a,
+    queue       :: !(Heap a),
     queueLabels :: Set Label,
     nextLabel   :: Label }
   deriving Show

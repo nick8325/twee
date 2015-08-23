@@ -37,7 +37,7 @@ data KBC f v =
     goals         :: [Tm f v],
     totalCPs      :: Int,
     renormaliseAt :: Int,
-    queue         :: Queue (Passive f v) }
+    queue         :: !(Queue (Passive f v)) }
   deriving Show
 
 initialState :: Int -> [Tm f v] -> KBC f v
@@ -75,7 +75,7 @@ enqueueM ::
   Passive f v -> State (KBC f v) ()
 enqueueM cps = do
   traceM (NewCP cps)
-  modify $ \s -> s {
+  modify' $ \s -> s {
     queue    = enqueue cps (queue s),
     totalCPs = totalCPs s + passiveCount cps }
 
