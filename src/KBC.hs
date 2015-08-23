@@ -1,7 +1,7 @@
 -- Knuth-Bendix completion, with lots of exciting tricks for
 -- unorientable equations.
 
-{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, RecordWildCards, ScopedTypeVariables, UndecidableInstances, StandaloneDeriving #-}
+{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, RecordWildCards, ScopedTypeVariables, UndecidableInstances, StandaloneDeriving, PatternGuards #-}
 module KBC where
 
 #include "errors.h"
@@ -34,6 +34,7 @@ data KBC f v =
     maxSize       :: Int,
     labelledRules :: Index (Labelled (Critical (Oriented (Rule f v)))),
     extraRules    :: Index (Oriented (Rule f v)),
+    subRules      :: Index (Tm f v, Oriented (Rule f v)),
     goals         :: [Tm f v],
     totalCPs      :: Int,
     renormaliseAt :: Int,
@@ -46,6 +47,7 @@ initialState maxSize goals =
     maxSize       = maxSize,
     labelledRules = Index.empty,
     extraRules    = Index.empty,
+    subRules      = Index.empty,
     goals         = goals,
     totalCPs      = 0,
     renormaliseAt = 1000,
@@ -236,6 +238,7 @@ consider pair = do
           Just eq | groundJoinable s (branches (And [])) eq -> do
             traceM (ExtraRule (canonicalise r))
             modify (\s -> s { extraRules = Index.insert r (extraRules s) })
+            newSubRule r
           _ -> do
             traceM (NewRule (canonicalise r))
             l <- addRule (Critical top r)
@@ -288,10 +291,19 @@ strengthen (Less t u:xs) p
   | otherwise = Less t u:strengthen xs (\ys -> p (Less t u:ys))
 strengthen (x:xs) p = x:strengthen xs (\ys -> p (x:ys))
 
+newSubRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) => Oriented (Rule f v) -> State (KBC f v) ()
+newSubRule r@(MkOriented _ (Rule t u)) =
+  modify (\s -> s { subRules = foldr ins (subRules s) (properSubterms t) })
+  where
+    ins v idx
+      | isFun v && not (lessEq v u) && usort (vars u) `isSubsequenceOf` usort (vars v) = Index.insert (v, r) idx
+      | otherwise = idx
+
 addRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) => Critical (Oriented (Rule f v)) -> State (KBC f v) Label
 addRule rule = do
   l <- newLabelM
   modify (\s -> s { labelledRules = Index.insert (Labelled l rule) (labelledRules s) })
+  newSubRule (critical rule)
   return l
 
 deleteRule :: (Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) => Label -> Critical (Oriented (Rule f v)) -> State (KBC f v) ()
@@ -353,6 +365,7 @@ simplifyRule l rule@(Critical top (MkOriented ctx (Rule lhs rhs))) = do
       labelledRules =
          Index.insert (Labelled l (Critical top (MkOriented ctx (Rule lhs (result (normalise s rhs))))))
            (Index.delete (Labelled l rule) (labelledRules s)) }
+  newSubRule (MkOriented ctx (Rule lhs rhs))
 
 newEquation ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
@@ -520,10 +533,45 @@ toCP s l1 l2 cp = fmap toCP' (norm s cp)
     norm s (Critical top (t :=: u))
       | t   == u   = Nothing
       | t'  == u'  = Nothing
+      {-| Just (t'', u'') <- focus top t' u' `mplus` focus top u' t' =
+          Debug.Trace.traceShow (sep [text "Reducing", nest 2 (pPrint (t :=: u)), text "to", nest 2 (pPrint (t'' :=: u''))]) $
+          norm s (Critical top (t'' :=: u''))-}
       | otherwise = Just (Critical top (t' :=: u'))
       where
         t' = result (normaliseQuickly s t)
         u' = result (normaliseQuickly s u)
+
+    focus top t u =
+      listToMaybe $ do
+        (_, r1) <- Index.lookup t (subRules s)
+        r2 <- Index.lookup (replace t u (rhs (rule r1))) (rules s)
+
+        guard (allowedSub top r1 && allowedSub top r2)
+        let t' = rhs (rule r1)
+            u' = rhs (rule r2)
+        guard (subsumes True (t', u') (t, u))
+        return (t', u')
+
+    replace t u v | v == t = u
+    replace t u (Fun f ts) = Fun f (map (replace t u) ts)
+    replace _ _ t = t
+
+    subsumes strict (t', u') (t, u) =
+      (isJust (matchMany minimal [(t', t), (u', u)]) &&
+       (not strict || isNothing (matchMany minimal [(t, t'), (u, u')]))) ||
+      case focus t u of
+        Just (t'', u'') -> subsumes False (t', u') (t'', u'')
+        _ -> False
+      where
+        focus (Fun f ts) (Fun g us) | f == g = aux ts us
+          where
+            aux [] [] = Nothing
+            aux (t:ts) (u:us)
+              | t == u = aux ts us
+              | ts == us = Just (t, u)
+              | otherwise = Nothing
+        focus _ _ = Nothing
+
 
     toCP' (Critical top (t :=: u)) =
       CP (CPInfo (weight t' u') 0) (Critical top' (t' :=: u')) l1 l2

@@ -77,6 +77,13 @@ allowedSkolem (MkOriented (WeaklyOriented xs) _) =
 allowedSkolem (MkOriented Unoriented (Rule t u)) =
   lessEq (skolemise u) (skolemise t) && t /= u
 
+allowedSub :: (Ord f, Ord v, Numbered f, Numbered v, Sized f, Minimal f, PrettyTerm f, Pretty v) =>
+  Tm f v -> Oriented (Rule f v) -> Bool
+allowedSub top orule =
+  allowedSkolem orule && lessEq u top && isNothing (unify u top)
+  where
+    u = rhs (rule orule)
+
 rewriteInModel :: (Ord f, Ord v, Numbered f, Numbered v, Sized f, Minimal f, PrettyTerm f, Pretty v) =>
   Index (Oriented (Rule f v)) -> [Formula f v] -> Tm f v -> [Oriented (Rule f v)]
 rewriteInModel rules model t = do
@@ -88,8 +95,7 @@ rewriteSub :: (Ord f, Ord v, Numbered f, Numbered v, Sized f, Minimal f, PrettyT
   Index (Oriented (Rule f v)) -> Tm f v -> Tm f v -> [Oriented (Rule f v)]
 rewriteSub rules top t = do
   orule <- Index.lookup t rules
-  let u = rhs (rule orule)
-  guard (allowedSkolem orule && lessEq u top && isNothing (unify u top))
+  guard (allowedSub top orule)
   return orule
 
 simplify :: (PrettyTerm f, Pretty v, Numbered f, Sized f, Minimal f, Ord f, Numbered v, Ord v) => Index (Oriented (Rule f v)) -> Strategy f v

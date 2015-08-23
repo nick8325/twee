@@ -6,7 +6,7 @@ module KBC.Base(
   Tm, TmOf, SubstOf, CPOf, RuleOf,
   module Data.Rewriting.Term, foldTerm, mapTerm,
   module Data.Rewriting.Term.Ops,
-  module Data.Rewriting.Substitution, evalSubst, subst, unifyMany,
+  module Data.Rewriting.Substitution, evalSubst, subst, matchMany, unifyMany,
   Symbolic(..), terms, varsDL, vars, funsDL, funs, symbolsDL, symbols,
   Numbered(..), canonicalise,
   module KBC.Pretty,
@@ -43,6 +43,9 @@ evalSubst s = subst s . Var
 
 subst :: Ord v => Subst f v -> Tm f v -> Tm f v
 subst = T.apply
+
+matchMany :: (Ord f, Ord v) => f -> [(Tm f v, Tm f v)] -> Maybe (Subst f v)
+matchMany def ts = match (Fun def (map fst ts)) (Fun def (map snd ts))
 
 unifyMany :: (Ord f, Ord v) => f -> [(Tm f v, Tm f v)] -> Maybe (Subst f v)
 unifyMany def ts = unify (Fun def (map fst ts)) (Fun def (map snd ts))
