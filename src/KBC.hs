@@ -195,16 +195,13 @@ complete1 = do
     Just (ManyCPs (CPs _ l lower upper size rule)) -> do
       s <- get
       modify (\s@KBC{..} -> s { totalCPs = totalCPs - size })
-      let split l u
-            | u - l <= 10 = mapM_ (enqueueM . SingleCP) (toCPs s l u rule)
-            | otherwise = queueCPs l u rule
-          split2 l u = do
-            split l ((l+u) `div` 2)
-            split ((l+u) `div` 2 + 1) u
+      let split l u = do
+            queueCPs l ((l+u) `div` 2) rule
+            queueCPs ((l+u) `div` 2) u rule
 
-      split2 lower (l-1)
-      split l l
-      split2 (l+1) upper
+      split lower (l-1)
+      mapM_ (enqueueM . SingleCP) (toCPs s l l rule)
+      split (l+1) upper
       complete1
     Nothing ->
       return False
@@ -488,11 +485,12 @@ queueCPs ::
   Label -> Label -> Labelled (Oriented (Rule f v)) -> State (KBC f v) ()
 queueCPs lower upper rule = do
   s <- get
-  case toCPs s lower upper rule of
-    [] -> return ()
-    xs ->
-      let best = minimum xs in
-      enqueueM (ManyCPs (CPs (info best) (l2 best) lower upper (length xs) rule))
+  let xs = toCPs s lower upper rule
+  if length xs <= 10 then
+    mapM_ (enqueueM . SingleCP) xs
+  else
+    let best = minimum xs in
+    enqueueM (ManyCPs (CPs (info best) (l2 best) lower upper (length xs) rule))
 
 toCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
