@@ -42,8 +42,8 @@ dequeue q@Queue{queueLabels = ls, queue = q0} = aux q0
         aux q1
       else return (x, q { queue = q1 })
 
-queueSize :: Ord a => Queue a -> Int
-queueSize Queue{queue = q} = Heap.size q
+queueSize :: Labels a => Queue a -> Int
+queueSize q = length (toList q)
 
 toList :: Labels a => Queue a -> [a]
 toList Queue{..} = filter p (Heap.toUnsortedList queue)
