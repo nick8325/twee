@@ -50,7 +50,7 @@ toList Queue{..} = filter p (Heap.toUnsortedList queue)
   where
     p x = and [ l `Set.member` queueLabels | l <- labels x ]
 
-newtype Label = Label Int deriving (Eq, Ord, Num, Show)
+newtype Label = Label Int deriving (Eq, Ord, Num, Show, Integral, Enum, Real)
 
 noLabel :: Label
 noLabel = 0

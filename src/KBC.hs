@@ -63,19 +63,21 @@ report KBC{..} =
     n ++
   printf "Critical pairs: %d total, %d processed, %d queued."
     totalCPs
-    (totalCPs - queueSize queue)
-    (queueSize queue)
+    (totalCPs - s)
+    s
   where
     rs = map (critical . peel) (Index.elems labelledRules)
     Label n = nextLabel queue
+    s = sum (map passiveCount (toList queue))
 
 enqueueM ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered v, Pretty v) =>
   Passive f v -> State (KBC f v) ()
 enqueueM cps = do
+  traceM (NewCP cps)
   modify $ \s -> s {
     queue    = enqueue cps (queue s),
-    totalCPs = totalCPs s + 1 }
+    totalCPs = totalCPs s + passiveCount cps }
 
 dequeueM ::
   (Minimal f, Sized f, Ord f, Ord v) =>
@@ -190,9 +192,19 @@ complete1 = do
       consider cp
       modify $ \s -> s { goals = map (result . normalise s) goals }
       return True
-    Just (ManyCPs (CPs _ rule)) -> do
+    Just (ManyCPs (CPs _ l lower upper size rule)) -> do
       s <- get
-      mapM_ (enqueueM . SingleCP) (toCPs s rule)
+      modify (\s@KBC{..} -> s { totalCPs = totalCPs - size })
+      let split l u
+            | u - l <= 10 = mapM_ (enqueueM . SingleCP) (toCPs s l u rule)
+            | otherwise = queueCPs l u rule
+          split2 l u = do
+            split l ((l+u) `div` 2)
+            split ((l+u) `div` 2 + 1) u
+
+      split2 lower (l-1)
+      split l l
+      split2 (l+1) upper
       complete1
     Nothing ->
       return False
@@ -208,7 +220,7 @@ normaliseCPs = do
   forM_ (toList queue) $ \cp ->
     case cp of
       SingleCP (CP _ cp l1 l2) -> queueCP l1 l2 cp
-      ManyCPs (CPs _ rule) -> queueCPs rule
+      ManyCPs (CPs _ _ lower upper _ rule) -> queueCPs lower upper rule
   modify (\s -> s { totalCPs = totalCPs })
 
 consider ::
@@ -230,7 +242,7 @@ consider pair = do
           _ -> do
             traceM (NewRule (canonicalise r))
             l <- addRule (Critical top r)
-            queueCPs (Labelled l r)
+            queueCPs noLabel l (Labelled l r)
             interreduce r
 
 groundJoinable :: (Numbered f, Numbered v, Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) =>
@@ -394,16 +406,24 @@ data CP f v =
 instance Eq (CP f v) where x == y = info x == info y
 instance Ord (CP f v) where compare = comparing info
 instance Labels (CP f v) where labels x = [l1 x, l2 x]
+instance (PrettyTerm f, Pretty v) => Pretty (CP f v) where
+  pPrint = pPrint . cp
 
 data CPs f v =
   CPs {
-    best :: {-# UNPACK #-} !CPInfo,
-    from :: {-# UNPACK #-} !(Labelled (Oriented (Rule f v))) }
+    best  :: {-# UNPACK #-} !CPInfo,
+    label :: {-# UNPACK #-} !Label,
+    lower :: {-# UNPACK #-} !Label,
+    upper :: {-# UNPACK #-} !Label,
+    count :: {-# UNPACK #-} !Int,
+    from  :: {-# UNPACK #-} !(Labelled (Oriented (Rule f v))) }
   deriving Show
 
 instance Eq (CPs f v) where x == y = best x == best y
 instance Ord (CPs f v) where compare = comparing best
-instance Labels (CPs f v) where labels (CPs _ (Labelled l _)) = [l]
+instance Labels (CPs f v) where labels (CPs _ _ _ _ _ (Labelled l _)) = [l]
+instance (PrettyTerm f, Pretty v) => Pretty (CPs f v) where
+  pPrint CPs{..} = text "Family of size" <+> pPrint count <+> text "from" <+> pPrint from
 
 data Passive f v =
     SingleCP {-# UNPACK #-} !(CP f v)
@@ -418,6 +438,13 @@ instance Ord (Passive f v) where
 instance Labels (Passive f v) where
   labels (SingleCP x) = labels x
   labels (ManyCPs x) = labels x
+instance (PrettyTerm f, Pretty v) => Pretty (Passive f v) where
+  pPrint (SingleCP cp) = pPrint cp
+  pPrint (ManyCPs cps) = pPrint cps
+
+passiveCount :: Passive f v -> Int
+passiveCount SingleCP{} = 1
+passiveCount (ManyCPs x) = count x
 
 criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Index (Labelled (Oriented (Rule f v))) -> [Labelled [Critical (Equation f v)]]
 criticalPairs s n r idx =
@@ -458,19 +485,19 @@ queueCP l1 l2 eq = do
 
 queueCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
-  Labelled (Oriented (Rule f v)) -> State (KBC f v) ()
-queueCPs rule = do
+  Label -> Label -> Labelled (Oriented (Rule f v)) -> State (KBC f v) ()
+queueCPs lower upper rule = do
   s <- get
-  case toCPs s rule of
+  case toCPs s lower upper rule of
     [] -> return ()
     xs ->
       let best = minimum xs in
-      enqueueM (ManyCPs (CPs (info best) rule))
+      enqueueM (ManyCPs (CPs (info best) (l2 best) lower upper (length xs) rule))
 
 toCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
-  KBC f v -> Labelled (Oriented (Rule f v)) -> [CP f v]
-toCPs s (Labelled l new) =
+  KBC f v -> Label -> Label -> Labelled (Oriented (Rule f v)) -> [CP f v]
+toCPs s lower upper (Labelled l new) =
   [ cp { info = (info cp) { cpIndex = i } } | (i, cp) <- zip [0..] cps ]
   where
     cps0 =
@@ -484,7 +511,7 @@ toCPs s (Labelled l new) =
           [ catMaybes (map (toCP s l l') eqns) | Labelled l' eqns <- cps0 ]
 
     rules = Index.filter p (labelledRules s)
-    p (Labelled l' _) = l' <= l
+    p (Labelled l' _) = lower <= l' && l' <= upper
     size = maxSize s
 
 toCP ::
@@ -518,6 +545,7 @@ toCP s l1 l2 cp = fmap toCP' (norm s cp)
 data Event f v =
     NewRule (Oriented (Rule f v))
   | ExtraRule (Oriented (Rule f v))
+  | NewCP (Passive f v)
   | Reduce (Simplification f v) (Oriented (Rule f v))
   | Consider (Critical (Equation f v))
   | Discharge (Critical (Equation f v)) [Formula f v]
@@ -526,6 +554,7 @@ data Event f v =
 trace :: (Minimal f, PrettyTerm f, Pretty v) => Event f v -> a -> a
 trace (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
 trace (ExtraRule rule) = traceIf True (hang (text "Extra rule") 2 (pPrint rule))
+trace (NewCP cp) = traceIf False (hang (text "Critical pair") 2 (pPrint cp))
 trace (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
 trace (Consider eq) = traceIf False (sep [text "Considering", nest 2 (pPrint eq)])
 trace (Discharge eq fs) = traceIf True (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
