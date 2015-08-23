@@ -11,19 +11,13 @@ import Data.Set(Set)
 
 data Queue a =
   Queue {
-    queue     :: Heap (Labelled (Subqueue a)),
-    labels    :: Set Label,
-    nextLabel :: Label }
+    queue       :: Heap a,
+    queueLabels :: Set Label,
+    nextLabel   :: Label }
   deriving Show
 
-newtype Subqueue a =
-  Subqueue { unSubqueue :: Heap (Labelled a) }
-  deriving Show
-
-instance Eq a => Eq (Subqueue a) where
-  Subqueue x == Subqueue y = getMin x == getMin y
-instance Ord a => Ord (Subqueue a) where
-  compare = comparing (\(Subqueue x) -> getMin x)
+class Ord a => Labels a where
+  labels :: a -> [Label]
 
 getMin :: Heap a -> Maybe a
 getMin h
@@ -36,44 +30,25 @@ empty = Queue Heap.empty (Set.singleton noLabel) (noLabel+1)
 emptyFrom :: Queue a -> Queue a
 emptyFrom q = q { queue = Heap.empty }
 
-enqueue :: Ord a => Label -> [Labelled a] -> Queue a -> Queue a
-enqueue _ [] q = q
-enqueue l xs q = q { queue = Heap.insert q' (queue q) }
-  where
-    q' = Labelled l (Subqueue (Heap.fromList xs))
+enqueue :: Labels a => a -> Queue a -> Queue a
+enqueue x q = q { queue = Heap.insert x (queue q) }
 
-dequeue :: Ord a => Queue a -> Maybe (Label, Label, a, Queue a)
-dequeue q@Queue{labels = ls, queue = q0} =
-  fmap (\(l1, l2, x, q1) -> (l1, l2, x, q { queue = q1 })) (dequeue1 q0)
+dequeue :: Labels a => Queue a -> Maybe (a, Queue a)
+dequeue q@Queue{queueLabels = ls, queue = q0} = aux q0
   where
-    dequeue1 q = do
-      (Labelled l (Subqueue sq), q) <- Heap.viewMin q
-      case viewMin sq of
-        Nothing -> dequeue1 q
-        Just (Labelled l' x, sq) ->
-          return (l, l', x, Heap.insert (Labelled l (Subqueue sq)) q)
-
-    viewMin ::
-      Ord a =>
-      Heap (Labelled a) ->
-      Maybe (Labelled a, Heap (Labelled a))
-    viewMin q = do
-      x@(Labelled l _, q) <- Heap.viewMin q
-      if l `Set.member` ls then return x else viewMin q
+    aux q0 = do
+      (x, q1) <- Heap.viewMin q0
+      if or [ l `Set.notMember` ls | l <- labels x ] then
+        aux q1
+      else return (x, q { queue = q1 })
 
 queueSize :: Ord a => Queue a -> Int
-queueSize q =
-  case dequeue q of
-    Nothing -> 0
-    Just (_, _, _, q) -> 1 + queueSize q
+queueSize Queue{queue = q} = Heap.size q
 
-toList :: Queue a -> [Labelled [Labelled a]]
-toList Queue{..} =
-  map (fmap (filter p . Heap.toUnsortedList . unSubqueue)) $
-    filter p (Heap.toUnsortedList queue)
+toList :: Labels a => Queue a -> [a]
+toList Queue{..} = filter p (Heap.toUnsortedList queue)
   where
-    p :: Labelled a -> Bool
-    p x = labelOf x `Set.member` labels
+    p x = and [ l `Set.member` queueLabels | l <- labels x ]
 
 newtype Label = Label Int deriving (Eq, Ord, Num, Show)
 
@@ -81,11 +56,11 @@ noLabel :: Label
 noLabel = 0
 
 newLabel :: Queue a -> (Label, Queue a)
-newLabel q@Queue{nextLabel = n, labels = ls} =
-  (n, q { nextLabel = n+1, labels = Set.insert n ls } )
+newLabel q@Queue{nextLabel = n, queueLabels = ls} =
+  (n, q { nextLabel = n+1, queueLabels = Set.insert n ls } )
 
 deleteLabel :: Label -> Queue a -> Queue a
-deleteLabel l q@Queue{labels = ls} = q { labels = Set.delete l ls }
+deleteLabel l q@Queue{queueLabels = ls} = q { queueLabels = Set.delete l ls }
 
 data Labelled a = Labelled { labelOf :: Label, peel :: a } deriving (Show, Functor)
 

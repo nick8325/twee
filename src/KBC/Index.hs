@@ -2,6 +2,7 @@
 -- Term indexing (perfect discrimination trees).
 module KBC.Index where
 
+import Prelude hiding (filter)
 import KBC.Base
 import qualified Data.Map as Map
 import qualified Data.IntMap.Strict as IntMap
@@ -50,6 +51,13 @@ mapMonotonic f (Index here fun var) =
     (Set.mapMonotonic f here)
     (fmap (mapMonotonic f) fun)
     (fmap (mapMonotonic f) var)
+
+filter :: (a -> Bool) -> Index a -> Index a
+filter p (Index here fun var) =
+  Index
+    (Set.filter p here)
+    (fmap (filter p) fun)
+    (fmap (filter p) var)
 
 {-# INLINEABLE singleton #-}
 singleton ::
