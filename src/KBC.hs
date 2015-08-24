@@ -163,12 +163,15 @@ reduceCP s f (Critical top (t :=: u))
           | otherwise = Nothing
     focus _ _ = Nothing
 
-normaliseCP ::
+normaliseCPQuickly, normaliseCP ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   KBC f v -> Critical (Equation f v) -> Maybe (Critical (Equation f v))
-normaliseCP s cp@(Critical top _) =
+normaliseCPQuickly s cp@(Critical top _) =
   reduceCP s id cp >>=
-  reduceCP s (result . normaliseQuickly s) >>=
+  reduceCP s (result . normaliseQuickly s)
+
+normaliseCP s cp@(Critical top _) =
+  normaliseCPQuickly s cp >>=
   reduceCP s (result . normalise s) >>=
   reduceCP s (result . normaliseSub s top)
 
@@ -534,19 +537,16 @@ toCPs s lower upper (Labelled l new) =
 toCP ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
   KBC f v -> Label -> Label -> Critical (Equation f v) -> Maybe (CP f v)
-toCP s l1 l2 cp = fmap toCP' (norm s cp)
+toCP s l1 l2 cp = fmap toCP' (norm cp)
   where
-    norm s (Critical top (t :=: u))
-      | t   == u   = Nothing
-      | t'  == u'  = Nothing
+    norm cp = normaliseCPQuickly s cp >>= invert
+
+    invert (Critical top (t :=: u))
       | useInversionRules s,
-        Just (t'', u'') <- focus top t' u' `mplus` focus top u' t' =
-          Debug.Trace.traceShow (sep [text "Reducing", nest 2 (pPrint (t :=: u)), text "to", nest 2 (pPrint (t'' :=: u''))]) $
-          norm s (Critical top (t'' :=: u''))
-      | otherwise = Just (Critical top (t' :=: u'))
-      where
-        t' = result (normaliseQuickly s t)
-        u' = result (normaliseQuickly s u)
+        Just (t', u') <- focus top t u `mplus` focus top u t =
+          Debug.Trace.traceShow (sep [text "Reducing", nest 2 (pPrint (t :=: u)), text "to", nest 2 (pPrint (t' :=: u'))]) $
+          norm (Critical top (t' :=: u'))
+      | otherwise = Just (Critical top (t :=: u))
 
     focus top t u =
       listToMaybe $ do
@@ -578,7 +578,6 @@ toCP s l1 l2 cp = fmap toCP' (norm s cp)
               | ts == us = Just (t, u)
               | otherwise = Nothing
         focus _ _ = Nothing
-
 
     toCP' (Critical top (t :=: u)) =
       CP (CPInfo (weight t' u') 0) (Critical top' (t' :=: u')) l1 l2
