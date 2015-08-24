@@ -31,27 +31,31 @@ import Text.Printf
 
 data KBC f v =
   KBC {
-    maxSize       :: Int,
-    labelledRules :: Index (Labelled (Critical (Oriented (Rule f v)))),
-    extraRules    :: Index (Oriented (Rule f v)),
-    subRules      :: Index (Tm f v, Oriented (Rule f v)),
-    goals         :: [Tm f v],
-    totalCPs      :: Int,
-    renormaliseAt :: Int,
-    queue         :: !(Queue (Passive f v)) }
+    maxSize           :: Int,
+    labelledRules     :: Index (Labelled (Critical (Oriented (Rule f v)))),
+    extraRules        :: Index (Oriented (Rule f v)),
+    subRules          :: Index (Tm f v, Oriented (Rule f v)),
+    goals             :: [Tm f v],
+    totalCPs          :: Int,
+    renormaliseAt     :: Int,
+    queue             :: !(Queue (Passive f v)),
+    useInversionRules :: Bool,
+    useSkolemPenalty  :: Bool }
   deriving Show
 
 initialState :: Int -> [Tm f v] -> KBC f v
 initialState maxSize goals =
   KBC {
-    maxSize       = maxSize,
-    labelledRules = Index.empty,
-    extraRules    = Index.empty,
-    subRules      = Index.empty,
-    goals         = goals,
-    totalCPs      = 0,
-    renormaliseAt = 1000,
-    queue         = empty }
+    maxSize           = maxSize,
+    labelledRules     = Index.empty,
+    extraRules        = Index.empty,
+    subRules          = Index.empty,
+    goals             = goals,
+    totalCPs          = 0,
+    renormaliseAt     = 1000,
+    queue             = empty,
+    useInversionRules = False,
+    useSkolemPenalty  = True }
 
 report :: (Ord f, Ord v, Sized f, Minimal f) => KBC f v -> String
 report KBC{..} =
@@ -292,8 +296,10 @@ strengthen (Less t u:xs) p
 strengthen (x:xs) p = x:strengthen xs (\ys -> p (x:ys))
 
 newSubRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) => Oriented (Rule f v) -> State (KBC f v) ()
-newSubRule r@(MkOriented _ (Rule t u)) =
-  modify (\s -> s { subRules = foldr ins (subRules s) (properSubterms t) })
+newSubRule r@(MkOriented _ (Rule t u)) = do
+  s <- get
+  when (useInversionRules s) $
+    put s { subRules = foldr ins (subRules s) (properSubterms t) }
   where
     ins v idx
       | isFun v && not (lessEq v u) && usort (vars u) `isSubsequenceOf` usort (vars v) = Index.insert (v, r) idx
@@ -533,9 +539,10 @@ toCP s l1 l2 cp = fmap toCP' (norm s cp)
     norm s (Critical top (t :=: u))
       | t   == u   = Nothing
       | t'  == u'  = Nothing
-      {-| Just (t'', u'') <- focus top t' u' `mplus` focus top u' t' =
+      | useInversionRules s,
+        Just (t'', u'') <- focus top t' u' `mplus` focus top u' t' =
           Debug.Trace.traceShow (sep [text "Reducing", nest 2 (pPrint (t :=: u)), text "to", nest 2 (pPrint (t'' :=: u''))]) $
-          norm s (Critical top (t'' :=: u''))-}
+          norm s (Critical top (t'' :=: u''))
       | otherwise = Just (Critical top (t' :=: u'))
       where
         t' = result (normaliseQuickly s t)
@@ -579,10 +586,18 @@ toCP s l1 l2 cp = fmap toCP' (norm s cp)
         Critical top' (t' :=: u') = canonicalise (Critical top (order (t :=: u)))
 
     weight t u
-      | u `lessEq` t = f t u
-      | otherwise    = f t u `min` f u t
+      | u `lessEq` t = f t u + penalty t u
+      | otherwise    = (f t u `min` f u t) + penalty t u
       where
         f t u = size t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u)
+
+    penalty t u
+      | useSkolemPenalty s &&
+        result (normalise s (skolemise t)) == result (normalise s (skolemise u)) =
+        -- Arbitrary heuristic: assume one in three of the variables need to
+        -- be instantiated with with terms of size > 1 to not be joinable
+        (length (vars t) + length (vars u)) `div` 3
+      | otherwise = 0
 
 --------------------------------------------------------------------------------
 -- Tracing.
