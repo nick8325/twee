@@ -42,7 +42,7 @@ normaliseWith strat t =
   aux [] t
   where
     aux rs t =
-      case strat t of
+      case anywhere strat t of
         [] -> Reduction t (reverse rs)
         (r@(MkOriented _ (Rule _ u)):_) -> aux (r:rs) u
 

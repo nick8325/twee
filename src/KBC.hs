@@ -112,26 +112,26 @@ rules k =
 normaliseQuickly ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   KBC f v -> Tm f v -> Reduction f v
-normaliseQuickly s = normaliseWith (anywhere (simplify (rules s)))
+normaliseQuickly s = normaliseWith (simplify (rules s))
 
 normalise ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   KBC f v -> Tm f v -> Reduction f v
-normalise s = normaliseWith (anywhere (rewrite (rules s)))
+normalise s = normaliseWith (rewrite (rules s))
 
 normaliseIn ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   KBC f v -> [Formula f v] -> Tm f v -> Reduction f v
 normaliseIn s model =
-  normaliseWith (anywhere (rewriteInModel (rules s) model))
+  normaliseWith (rewriteInModel (rules s) model)
 
 normaliseSub ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
   KBC f v -> Tm f v -> Tm f v -> Reduction f v
 normaliseSub s top t
   | lessEq t top && isNothing (unify t top) =
-    normaliseWith (anywhere (rewriteSub (rules s) top)) t
-  | otherwise = normaliseWith (\_ -> []) t
+    normaliseWith (rewriteSub (rules s) top) t
+  | otherwise = Reduction t []
 
 reduceCP ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
