@@ -411,6 +411,7 @@ instance Symbolic a => Symbolic (Critical a) where
 data CPInfo =
   CPInfo {
     cpWeight    :: {-# UNPACK #-} !Int,
+    cpAge       :: {-# UNPACK #-} !Label,
     cpIndex     :: {-# UNPACK #-} !Int }
     deriving (Eq, Ord, Show)
 
@@ -580,9 +581,10 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
         focus _ _ = Nothing
 
     toCP' (Critical top (t :=: u)) =
-      CP (CPInfo (weight t' u') 0) (Critical top' (t' :=: u')) l1 l2
+      CP (CPInfo (weight t' u') age 0) (Critical top' (t' :=: u')) l1 l2
       where
         Critical top' (t' :=: u') = canonicalise (Critical top (order (t :=: u)))
+        age = (l1 `max` l2) + (l1 `min` l2) `div` 2
 
     weight t u
       | u `lessEq` t = f t u + penalty t u
