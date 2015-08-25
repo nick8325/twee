@@ -410,9 +410,9 @@ instance Symbolic a => Symbolic (Critical a) where
 
 data CPInfo =
   CPInfo {
-    cpWeight    :: {-# UNPACK #-} !Int,
-    cpAge       :: {-# UNPACK #-} !Label,
-    cpIndex     :: {-# UNPACK #-} !Int }
+    cpWeight :: {-# UNPACK #-} !Int,
+    cpAge1   :: {-# UNPACK #-} !Label,
+    cpAge2   :: {-# UNPACK #-} !Label }
     deriving (Eq, Ord, Show)
 
 data CP f v =
@@ -472,11 +472,21 @@ data InitialCP f v =
     cpOK :: Bool,
     cpCP :: Labelled (Critical (Equation f v)) }
 
-criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Index (Labelled (Oriented (Rule f v))) -> [Labelled [Critical (Equation f v)]]
-criticalPairs s n r idx =
-  map pick (filter (cpOK . head) (groupBy ((==) `on` cpId) (sortBy (comparing cpId) (criticalPairs1 s n r idx))))
+filterCPs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => [InitialCP f v] -> [Labelled [Critical (Equation f v)]]
+filterCPs =
+  map pick . filter (cpOK . head) . groupBy ((==) `on` cpId) . sortBy (comparing cpId)
   where
     pick xs@(x:_) = Labelled (labelOf (cpCP x)) (map (peel . cpCP) xs)
+
+criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Label -> Label -> Oriented (Rule f v) -> [InitialCP f v]
+criticalPairs s lower upper rule =
+  criticalPairs1 s (maxSize s) rule (Index.mapMonotonic (fmap critical) rules) ++
+  [ cp
+  | Labelled l' (Critical _ old) <- Index.elems rules,
+    cp <- criticalPairs1 s (maxSize s) old (Index.singleton (Labelled l' rule)) ]
+  where
+    rules = Index.filter (p . labelOf) (labelledRules s)
+    p l = lower <= l && l <= upper
 
 criticalPairs1 :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Index (Labelled (Oriented (Rule f v))) -> [InitialCP f v]
 criticalPairs1 s n (MkOriented or1 r1@(Rule t _)) idx = do
@@ -525,22 +535,11 @@ queueCPs lower upper rule = do
 toCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
   KBC f v -> Label -> Label -> Labelled (Oriented (Rule f v)) -> [CP f v]
-toCPs s lower upper (Labelled l new) =
-  [ cp { info = (info cp) { cpIndex = i } } | (i, cp) <- zip [0..] cps ]
+toCPs s lower upper (Labelled l rule) =
+  usortBy (comparing (critical . cp)) . map minimum . filter (not . null) $
+    [ catMaybes (map (toCP s l l') eqns) | Labelled l' eqns <- cps0 ]
   where
-    cps0 =
-      criticalPairs s size new (Index.mapMonotonic (fmap critical) rules) ++
-      [ cp
-      | Labelled l' (Critical _ old) <- Index.elems rules,
-        cp <- criticalPairs s size old (Index.singleton (Labelled l' new)) ]
-
-    cps =
-        usortBy (comparing (critical . cp)) . map minimum . filter (not . null) $
-          [ catMaybes (map (toCP s l l') eqns) | Labelled l' eqns <- cps0 ]
-
-    rules = Index.filter p (labelledRules s)
-    p (Labelled l' _) = lower <= l' && l' <= upper
-    size = maxSize s
+    cps0 = filterCPs (criticalPairs s lower upper rule)
 
 toCP ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
@@ -588,10 +587,9 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
         focus _ _ = Nothing
 
     toCP' (Critical top (t :=: u)) =
-      CP (CPInfo (weight t' u') age 0) (Critical top' (t' :=: u')) l1 l2
+      CP (CPInfo (weight t' u') l2 l1) (Critical top' (t' :=: u')) l1 l2
       where
         Critical top' (t' :=: u') = canonicalise (Critical top (order (t :=: u)))
-        age = (l1 `max` l2) + (l1 `min` l2) `div` 2
 
     weight t u
       | u `lessEq` t = f t u + penalty t u
