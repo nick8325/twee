@@ -131,7 +131,7 @@ normaliseSub ::
 normaliseSub s top t
   | lessEq t top && isNothing (unify t top) =
     normaliseWith (rewriteSub (rules s) top) t
-  | otherwise = Reduction t []
+  | otherwise = Reduction t Refl
 
 reduceCP ::
   (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v) =>
@@ -281,7 +281,7 @@ groundJoinable s ctx r@(Critical top (t :=: u)) =
     _ -> __
 
 valid :: (Sized f, Minimal f, Ord f, Ord v, PrettyTerm f, Pretty v) => [Formula f v] -> Reduction f v -> Bool
-valid model Reduction{..} = all valid1 steps
+valid model red = all valid1 (steps red)
   where
     valid1 orule = allowedInModel model orule
 
