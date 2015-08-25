@@ -206,7 +206,7 @@ complete1 = do
       modify (\s@KBC{..} -> s { totalCPs = totalCPs - size })
       let split l u = do
             queueCPs l ((l+u) `div` 2) rule
-            queueCPs ((l+u) `div` 2) u rule
+            queueCPs ((l+u) `div` 2 + 1) u rule
 
       split lower (l-1)
       mapM_ (enqueueM . SingleCP) (toCPs s l l rule)
