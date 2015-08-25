@@ -59,7 +59,7 @@ step :: Oriented (Rule f v) -> Reduction f v
 step r = Reduction (rhs (rule r)) (Step r)
 
 trans :: Reduction f v -> Reduction f v -> Reduction f v
-trans (Reduction _ p) (Reduction t q) = Reduction t (p `Trans` q)
+trans ~(Reduction _ p) (Reduction t q) = Reduction t (p `Trans` q)
 
 parallel :: f -> [Reduction f v] -> Reduction f v
 parallel f rs =
