@@ -546,7 +546,12 @@ toCP ::
   KBC f v -> Label -> Label -> Critical (Equation f v) -> Maybe (CP f v)
 toCP s l1 l2 cp = fmap toCP' (norm cp)
   where
-    norm cp = normaliseCPQuickly s cp >>= invert
+    norm (Critical top (t :=: u)) = do
+      guard (t /= u)
+      let t' = result (normaliseQuickly s t)
+          u' = result (normaliseQuickly s u)
+      guard (t' /= u')
+      invert (Critical top (t' :=: u'))
 
     invert (Critical top (t :=: u))
       | useInversionRules s,
