@@ -466,14 +466,19 @@ passiveCount :: Passive f v -> Int
 passiveCount SingleCP{} = 1
 passiveCount (ManyCPs x) = count x
 
+data InitialCP f v =
+  InitialCP {
+    cpId :: (Tm f v, Label),
+    cpOK :: Bool,
+    cpCP :: Labelled (Critical (Equation f v)) }
+
 criticalPairs :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Index (Labelled (Oriented (Rule f v))) -> [Labelled [Critical (Equation f v)]]
 criticalPairs s n r idx =
-  map pick (groupBy ((==) `on` f) (sortBy (comparing f) (criticalPairs1 s n r idx)))
+  map pick (filter (cpOK . head) (groupBy ((==) `on` cpId) (sortBy (comparing cpId) (criticalPairs1 s n r idx))))
   where
-    f (t, Labelled l _) = (t, l)
-    pick xs@((_, Labelled l _):_) = Labelled l (map (peel . snd) xs)
+    pick xs@(x:_) = Labelled (labelOf (cpCP x)) (map (peel . cpCP) xs)
 
-criticalPairs1 :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Index (Labelled (Oriented (Rule f v))) -> [(Tm f v, Labelled (Critical (Equation f v)))]
+criticalPairs1 :: (PrettyTerm f, Pretty v, Minimal f, Sized f, Ord f, Ord v, Numbered v, Numbered f) => KBC f v -> Int -> Oriented (Rule f v) -> Index (Labelled (Oriented (Rule f v))) -> [InitialCP f v]
 criticalPairs1 s n (MkOriented or1 r1@(Rule t _)) idx = do
   Labelled l (MkOriented or2 r2) <- Index.elems idx
   cp <- CP.cps [r2] [r1]
@@ -490,9 +495,11 @@ criticalPairs1 s n (MkOriented or1 r1@(Rule t _)) idx = do
   when (or1 == Unoriented) $ guard (not (lessEq top right))
   when (or2 == Unoriented) $ guard (not (lessEq top left))
   guard (size top <= n)
-  guard (null (nested (anywhere (rewrite (rules s))) inner))
-  return (canonicalise (fromMaybe __ (subtermAt t (CP.leftPos cp))),
-          Labelled l (Critical top (left :=: right)))
+  return $
+    InitialCP
+      (canonicalise (fromMaybe __ (subtermAt t (CP.leftPos cp))), l)
+      (null (nested (anywhere (rewrite (rules s))) inner))
+      (Labelled l (Critical top (left :=: right)))
 
 queueCP ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Ord v, Numbered f, Numbered v, Pretty v) =>
