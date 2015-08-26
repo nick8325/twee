@@ -236,7 +236,7 @@ normaliseCPs ::
   State (KBC f) ()
 normaliseCPs = do
   s@KBC{..} <- get
-  traceM (NormaliseCPs totalCPs :: Event f)
+  traceM (NormaliseCPs s)
   put s { queue = emptyFrom queue }
   forM_ (toList queue) $ \cp ->
     case cp of
@@ -661,18 +661,18 @@ data Event f =
   | Reduce (Simplification f) (Rule f)
   | Consider (Critical (Equation f))
   | Discharge (Critical (Equation f)) [Formula f]
-  | NormaliseCPs Int
+  | NormaliseCPs (KBC f)
 
-trace :: (Minimal f, PrettyTerm f) => Event f -> a -> a
+trace :: (Ord f, Sized f, Minimal f, PrettyTerm f) => Event f -> a -> a
 trace (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
 trace (ExtraRule rule) = traceIf True (hang (text "Extra rule") 2 (pPrint rule))
 trace (NewCP cp) = traceIf False (hang (text "Critical pair") 2 (pPrint cp))
 trace (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
 trace (Consider eq) = traceIf False (sep [text "Considering", nest 2 (pPrint eq)])
 trace (Discharge eq fs) = traceIf True (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
-trace (NormaliseCPs n) = traceIf True (text "Normalise unprocessed critical pairs after generating" <+> pPrint n)
+trace (NormaliseCPs s) = traceIf True (text "" $$ text "Normalising unprocessed critical pairs." $$ text (report s) $$ text "")
 
-traceM :: (Monad m, Minimal f, PrettyTerm f) => Event f -> m ()
+traceM :: (Monad m, Ord f, Sized f, Minimal f, PrettyTerm f) => Event f -> m ()
 traceM x = trace x (return ())
 
 traceIf :: Bool -> Doc -> a -> a
