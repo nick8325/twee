@@ -58,10 +58,11 @@ initialState maxSize goals =
 
 report :: (Ord f, Sized f, Minimal f) => KBC f -> String
 report KBC{..} =
-  printf "Rules: %d total, %d oriented, %d unoriented, %d weakly oriented. "
+  printf "Rules: %d total, %d oriented, %d unoriented, %d permutative, %d weakly oriented. "
     (length rs)
     (length (filter ((== Oriented) . orientation) rs))
     (length (filter ((== Unoriented) . orientation) rs))
+    (length [ r | r@(Rule (Permutative _) _ _) <- rs ])
     (length [ r | r@(Rule (WeaklyOriented _) _ _) <- rs ]) ++
   printf "%d extra. %d historical.\n"
     (length (Index.elems extraRules))

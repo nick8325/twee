@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, StandaloneDeriving, FlexibleContexts, UndecidableInstances, PartialTypeSignatures, RecordWildCards #-}
+{-# LANGUAGE TypeFamilies, StandaloneDeriving, FlexibleContexts, UndecidableInstances, PartialTypeSignatures, RecordWildCards, PatternGuards #-}
 module KBC.Rule where
 
 import KBC.Base
@@ -24,7 +24,11 @@ data Rule f =
     rhs :: Tm f }
   deriving (Eq, Ord, Show)
 
-data Orientation f = Oriented | WeaklyOriented [Tm f] | Unoriented deriving (Eq, Ord, Show)
+data Orientation f =
+    Oriented
+  | WeaklyOriented [Tm f]
+  | Permutative [(Tm f, Tm f)]
+  | Unoriented deriving (Eq, Ord, Show)
 
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
@@ -35,14 +39,17 @@ instance Symbolic (Orientation f) where
   type ConstantOf (Orientation f) = f
   termsDL Oriented = mzero
   termsDL (WeaklyOriented ts) = msum (map termsDL ts)
+  termsDL (Permutative ts) = msum (map termsDL ts)
   termsDL Unoriented = mzero
   substf sub Oriented = Oriented
   substf sub (WeaklyOriented ts) = WeaklyOriented (map (substf sub) ts)
+  substf sub (Permutative ts) = Permutative (map (substf sub) ts)
   substf sub Unoriented = Unoriented
 
 instance PrettyTerm f => Pretty (Rule f) where
   pPrint (Rule Oriented l r) = pPrintRule l r
   pPrint (Rule (WeaklyOriented ts) l r) = pPrintRule l r <+> text "(weak on" <+> pPrint ts <> text ")"
+  pPrint (Rule (Permutative ts) l r) = pPrintRule l r <+> text "(permutative on" <+> pPrint ts <> text ")"
   pPrint (Rule Unoriented l r) = pPrintRule l r <+> text "(unoriented)"
 
 pPrintRule :: PrettyTerm f => Tm f -> Tm f -> Doc
@@ -108,7 +115,16 @@ orient (l :=: r) =
                 | all (== minimalTerm) (Map.elems (Subst.toMap sub)) ->
                   WeaklyOriented (map Var (Map.keys (Subst.toMap sub)))
                 | otherwise -> Unoriented
+          | sort (vars t) == sort (vars u),
+            Just ts <- makePermutative t u =
+            Permutative (nubBy similar (filter (uncurry (/=)) ts))
           | otherwise = Unoriented
+
+    similar (x1, y1) (x2, y2) = (x1 == x2 && y1 == y2) || (x1 == y2 && y1 == x2)
+    makePermutative (Var x) (Var y) = Just [(Var x, Var y)]
+    makePermutative (Fun f ts) (Fun g us) | f == g =
+      fmap concat (zipWithM makePermutative ts us)
+    makePermutative _ _ = Nothing
 
 bothSides :: (Tm f -> Tm f') -> Equation f -> Equation f'
 bothSides f (t :=: u) = f t :=: f u
@@ -199,12 +215,20 @@ simplifies :: (Eq f, Minimal f) => Rule f -> Bool
 simplifies (Rule Oriented _ _) = True
 simplifies (Rule (WeaklyOriented ts) _ _) =
   or [ t /= minimalTerm | t <- ts ]
+simplifies (Rule (Permutative _) _ _) = False
 simplifies (Rule Unoriented _ _) = False
 
 reducesWith :: (Ord f, Sized f, Minimal f) => (Tm f -> Tm f -> Bool) -> Rule f -> Bool
 reducesWith _ (Rule Oriented _ _) = True
 reducesWith _ (Rule (WeaklyOriented ts) _ _) =
   or [ t /= minimalTerm | t <- ts ]
+reducesWith p (Rule (Permutative ts) _ _) =
+  aux ts
+  where
+    aux [] = False
+    aux ((t, u):ts)
+      | t == u = aux ts
+      | otherwise = p u t
 reducesWith p (Rule Unoriented t u) =
   p u t && u /= t
 
