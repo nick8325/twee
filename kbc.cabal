@@ -17,10 +17,9 @@ library
     KBC.Base
     KBC.Pretty
     KBC.Constraints
-    KBC.Equation
     KBC.Index
     KBC.Queue
-    KBC.Rewrite
+    KBC.Rule
     KBC.Utils
     KBC.Term
   build-depends:

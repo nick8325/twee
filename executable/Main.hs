@@ -12,9 +12,8 @@ import Data.Char
 import KBC
 import KBC.Base hiding (char)
 import KBC.Term
-import KBC.Equation
+import KBC.Rule
 import KBC.Utils
-import KBC.Rewrite
 import KBC.Queue
 import Data.Rewriting.Term(Term)
 import Text.ParserCombinators.ReadP hiding (get)

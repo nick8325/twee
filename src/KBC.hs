@@ -7,11 +7,10 @@ module KBC where
 #include "errors.h"
 import KBC.Base
 import KBC.Constraints
-import KBC.Equation
+import KBC.Rule
 import qualified KBC.Index as Index
 import KBC.Index(Index)
 import KBC.Queue hiding (queue)
-import KBC.Rewrite
 import KBC.Term
 import KBC.Utils
 import Control.Monad
@@ -131,25 +130,25 @@ rules k =
 normaliseQuickly ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
   KBC f -> Tm f -> Reduction f
-normaliseQuickly s = normaliseWith (simplify (rules s))
+normaliseQuickly s = normaliseWith (rewrite simplifies (rules s))
 
 normalise ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
   KBC f -> Tm f -> Reduction f
-normalise s = normaliseWith (rewrite (rules s))
+normalise s = normaliseWith (rewrite reduces (rules s))
 
 normaliseIn ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
   KBC f -> [Formula f] -> Tm f -> Reduction f
 normaliseIn s model =
-  normaliseWith (rewriteInModel (rules s) model)
+  normaliseWith (rewrite (reducesInModel model) (rules s))
 
 normaliseSub ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
   KBC f -> Tm f -> Tm f -> Reduction f
 normaliseSub s top t
   | lessEq t top && isNothing (unify t top) =
-    normaliseWith (rewriteSub (rules s) top) t
+    normaliseWith (rewrite (reducesSub top) (rules s)) t
   | otherwise = Reduction t Refl
 
 reduceCP ::
@@ -305,7 +304,7 @@ groundJoin s ctx r@(Critical top (t :=: u)) =
 valid :: (Sized f, Minimal f, Ord f, PrettyTerm f) => [Formula f] -> Reduction f -> Bool
 valid model red = all valid1 (steps red)
   where
-    valid1 rule = allowedInModel model rule
+    valid1 rule = reducesInModel model rule
 
 shrinkList :: [a] -> ([a] -> Bool) -> [a]
 shrinkList [] _ = []
@@ -368,7 +367,7 @@ reduceWith :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => KBC f -> 
 reduceWith s lab new old0@(Modelled model (Critical top old@(Rule _ l r)))
   | {-# SCC "reorient-normal" #-}
     not (lhs new `isInstanceOf` l) &&
-    not (null (anywhere (tryRule new) l)) =
+    not (null (anywhere (tryRule reduces new) l)) =
       Just (Reorient old0)
   | {-# SCC "reorient-ground" #-}
     not (lhs new `isInstanceOf` l) &&
@@ -377,7 +376,7 @@ reduceWith s lab new old0@(Modelled model (Critical top old@(Rule _ l r)))
     modelJoinable =
     tryGroundJoin
   | {-# SCC "simplify" #-}
-    not (null (anywhere (tryRule new) (rhs old))) =
+    not (null (anywhere (tryRule reduces new) (rhs old))) =
       Just (Simplify model old0)
   | {-# SCC "reorient-ground/ground" #-}
     orientation old == Unoriented &&
@@ -540,7 +539,7 @@ criticalPairs1 s n (Rule or1 t u) idx = do
   return $
     InitialCP
       (canonicalise (fromMaybe __ (subtermAt t (CP.leftPos cp))), l)
-      (null (nested (anywhere (rewrite (rules s))) inner))
+      (null (nested (anywhere (rewrite reduces (rules s))) inner))
       (Labelled l (Critical top (left :=: right)))
 
 queueCP ::
@@ -597,7 +596,7 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
         (_, r1) <- Index.lookup t (subRules s)
         r2 <- Index.lookup (replace t u (rhs r1)) (rules s)
 
-        guard (allowedSub top r1 && allowedSub top r2)
+        guard (reducesSub top r1 && reducesSub top r2)
         let t' = rhs r1
             u' = rhs r2
         guard (subsumes True (t', u') (t, u))
