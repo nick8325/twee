@@ -222,13 +222,10 @@ complete1 = do
     Just (ManyCPs (CPs _ l lower upper size rule)) -> do
       s <- get
       modify (\s@KBC{..} -> s { totalCPs = totalCPs - size })
-      let split l u = do
-            queueCPs l ((l+u) `div` 2) rule
-            queueCPs ((l+u) `div` 2 + 1) u rule
 
-      split lower (l-1)
+      queueCPsSplit lower (l-1) rule
       mapM_ (enqueueM . SingleCP) (toCPs s l l rule)
-      split (l+1) upper
+      queueCPsSplit (l+1) upper rule
       complete1
     Nothing ->
       return False
@@ -270,7 +267,7 @@ consider pair = do
               Left model -> do
                 traceM (NewRule (canonicalise r))
                 l <- addRule (Modelled model (Critical top r))
-                queueCPs noLabel l (Labelled l r)
+                queueCPsSplit noLabel l (Labelled l r)
                 interreduce r
 
 groundJoin :: (Numbered f, Sized f, Minimal f, Ord f, PrettyTerm f) =>
@@ -562,6 +559,13 @@ queueCPs lower upper rule = do
   else
     let best = minimum xs in
     enqueueM (ManyCPs (CPs (info best) (l2 best) lower upper (length xs) rule))
+
+queueCPsSplit ::
+  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
+  Label -> Label -> Labelled (Rule f) -> State (KBC f) ()
+queueCPsSplit l u rule = do
+  queueCPs l ((l+u) `div` 2) rule
+  queueCPs ((l+u) `div` 2 + 1) u rule
 
 toCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
