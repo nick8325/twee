@@ -6,7 +6,6 @@ import KBC.Term
 import KBC.Utils
 import KBC.Rewrite
 import Control.Monad
-import Data.Rewriting.Rule hiding (isVariantOf, vars)
 import Data.List
 import qualified Data.Map.Strict as Map
 import qualified Data.Rewriting.Substitution.Type as Subst
@@ -31,10 +30,10 @@ order (l :=: r)
       GT -> l :=: r
       EQ -> if lessEq l r then r :=: l else l :=: r
 
-unorient :: Rule f Var -> Equation f
-unorient (Rule l r) = l :=: r
+unorient :: Rule f -> Equation f
+unorient (Rule _ l r) = l :=: r
 
-orient :: (Minimal f, Sized f, Ord f) => Equation f -> [Oriented (Rule f Var)]
+orient :: (Minimal f, Sized f, Ord f) => Equation f -> [Rule f]
 orient (l :=: r) | l == r = []
 orient (l :=: r) =
   -- If we have an equation where some variables appear only on one side, e.g.:
@@ -46,8 +45,8 @@ orient (l :=: r) =
   -- where k is an arbitrary constant
   [ rule l r' | ord /= Just LT && ord /= Just EQ ] ++
   [ rule r l' | ord /= Just GT && ord /= Just EQ ] ++
-  [ MkOriented (WeaklyOriented (map Var ls)) (Rule l l') | not (null ls), ord /= Just GT ] ++
-  [ MkOriented (WeaklyOriented (map Var rs)) (Rule r r') | not (null rs), ord /= Just LT ]
+  [ Rule (WeaklyOriented (map Var ls)) l l' | not (null ls), ord /= Just GT ] ++
+  [ Rule (WeaklyOriented (map Var rs)) r r' | not (null rs), ord /= Just LT ]
   where
     ord = orientTerms l' r'
     l' = erase ls l
@@ -58,7 +57,7 @@ orient (l :=: r) =
     erase [] t = t
     erase xs t = substf (\x -> if x `elem` xs then Fun minimal [] else Var x) t
 
-    rule t u = MkOriented o (Rule t u)
+    rule t u = Rule o t u
       where
         o | lessEq u t =
             case unify t u of

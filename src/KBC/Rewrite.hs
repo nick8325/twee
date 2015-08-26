@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, StandaloneDeriving, FlexibleContexts, UndecidableInstances, PartialTypeSignatures #-}
+{-# LANGUAGE TypeFamilies, StandaloneDeriving, FlexibleContexts, UndecidableInstances, PartialTypeSignatures, RecordWildCards #-}
 module KBC.Rewrite where
 
 import KBC.Base
@@ -6,27 +6,39 @@ import KBC.Constraints
 import qualified KBC.Index as Index
 import KBC.Index(Index)
 import KBC.Term
-import Data.Rewriting.Rule
 import Control.Monad
 import Data.Maybe
 
-data Oriented a = MkOriented { orientation :: Orientation (ConstantOf a), rule :: a }
-deriving instance (Eq (ConstantOf a), Eq a) => Eq (Oriented a)
-deriving instance (Ord (ConstantOf a), Ord a) => Ord (Oriented a)
-deriving instance (Show (ConstantOf a), Show a) => Show (Oriented a)
+data Rule f =
+  Rule {
+    orientation :: Orientation f,
+    lhs :: Tm f,
+    rhs :: Tm f }
+  deriving (Eq, Ord, Show)
+
 data Orientation f = Oriented | WeaklyOriented [Tm f] | Unoriented deriving (Eq, Ord, Show)
 
-instance Symbolic a => Symbolic (Oriented a) where
-  type ConstantOf (Oriented a) = ConstantOf a
-  termsDL = termsDL . rule
-  substf sub (MkOriented Oriented x) = MkOriented Oriented (substf sub x)
-  substf sub (MkOriented (WeaklyOriented ts) x) = MkOriented (WeaklyOriented (map (substf sub) ts)) (substf sub x)
-  substf sub (MkOriented Unoriented x) = MkOriented Unoriented (substf sub x)
+instance Symbolic (Rule f) where
+  type ConstantOf (Rule f) = f
+  termsDL Rule{..} = termsDL lhs `mplus` termsDL rhs
+  substf sub (Rule or l r) = Rule (substf sub or) (substf sub l) (substf sub r)
 
-instance (PrettyTerm (ConstantOf a), Pretty a) => Pretty (Oriented a) where
-  pPrint (MkOriented Oriented x) = pPrint x
-  pPrint (MkOriented (WeaklyOriented ts) x) = pPrint x <+> text "(weak on" <+> pPrint ts <> text ")"
-  pPrint (MkOriented Unoriented x) = pPrint x <+> text "(unoriented)"
+instance Symbolic (Orientation f) where
+  type ConstantOf (Orientation f) = f
+  termsDL Oriented = mzero
+  termsDL (WeaklyOriented ts) = msum (map termsDL ts)
+  termsDL Unoriented = mzero
+  substf sub Oriented = Oriented
+  substf sub (WeaklyOriented ts) = WeaklyOriented (map (substf sub) ts)
+  substf sub Unoriented = Unoriented
+
+instance PrettyTerm f => Pretty (Rule f) where
+  pPrint (Rule Oriented l r) = pPrintRule l r
+  pPrint (Rule (WeaklyOriented ts) l r) = pPrintRule l r <+> text "(weak on" <+> pPrint ts <> text ")"
+  pPrint (Rule Unoriented l r) = pPrintRule l r <+> text "(unoriented)"
+
+pPrintRule :: PrettyTerm f => Tm f -> Tm f -> Doc
+pPrintRule l r = hang (pPrint l <+> text "->") 2 (pPrint r)
 
 type Strategy f = Tm f -> [Reduction f]
 
@@ -38,12 +50,12 @@ data Reduction f =
 
 data Proof f =
     Refl
-  | Step (Oriented (Rule f Var))
+  | Step (Rule f)
   | Trans (Proof f) (Proof f)
   | Parallel f [Proof f]
   deriving Show
 
-steps :: Reduction f -> [Oriented (Rule f Var)]
+steps :: Reduction f -> [Rule f]
 steps r = aux (proof r) []
   where
     aux Refl = id
@@ -54,8 +66,8 @@ steps r = aux (proof r) []
 refl :: Tm f -> Reduction f
 refl t = Reduction t Refl
 
-step :: Oriented (Rule f Var) -> Reduction f
-step r = Reduction (rhs (rule r)) (Step r)
+step :: Rule f -> Reduction f
+step r = Reduction (rhs r) (Step r)
 
 trans :: Reduction f -> Reduction f -> Reduction f
 trans ~(Reduction _ p) (Reduction t q) = Reduction t (p `Trans` q)
@@ -91,73 +103,73 @@ nested strat (Fun f xs) =
     p <- strat x ]
 
 allowedInModel :: (Ord f, Sized f, Minimal f, PrettyTerm f) =>
-  [Formula f] -> Oriented (Rule f Var) -> Bool
-allowedInModel _ (MkOriented Oriented _) = True
-allowedInModel _ (MkOriented (WeaklyOriented xs) _) =
+  [Formula f] -> Rule f -> Bool
+allowedInModel _ (Rule Oriented _ _) = True
+allowedInModel _ (Rule (WeaklyOriented xs) _ _) =
   or [x /= minimalTerm | x <- xs]
-allowedInModel cond (MkOriented Unoriented (Rule t u)) =
+allowedInModel cond (Rule Unoriented t u) =
   lessEqIn cond u t && t /= u
 
 allowedSkolem :: (Ord f, Sized f, Minimal f, PrettyTerm f) =>
-  Oriented (Rule f Var) -> Bool
-allowedSkolem (MkOriented Oriented _) = True
-allowedSkolem (MkOriented (WeaklyOriented xs) _) =
+  Rule f -> Bool
+allowedSkolem (Rule Oriented _ _) = True
+allowedSkolem (Rule (WeaklyOriented xs) _ _) =
   or [x /= minimalTerm | x <- xs]
-allowedSkolem (MkOriented Unoriented (Rule t u)) =
+allowedSkolem (Rule Unoriented t u) =
   lessEq (skolemise u) (skolemise t) && t /= u
 
 allowedSub :: (Ord f, Numbered f, Sized f, Minimal f, PrettyTerm f) =>
-  Tm f -> Oriented (Rule f Var) -> Bool
-allowedSub top orule =
-  allowedSkolem orule && lessEq u top && isNothing (unify u top)
+  Tm f -> Rule f -> Bool
+allowedSub top rule =
+  allowedSkolem rule && lessEq u top && isNothing (unify u top)
   where
-    u = rhs (rule orule)
+    u = rhs rule
 
 rewriteInModel :: (Ord f, Numbered f, Sized f, Minimal f, PrettyTerm f) =>
-  Index (Oriented (Rule f Var)) -> [Formula f] -> Strategy f
+  Index (Rule f) -> [Formula f] -> Strategy f
 rewriteInModel rules model t = do
-  orule <- Index.lookup t rules
-  guard (allowedInModel model orule)
-  return (step orule)
+  rule <- Index.lookup t rules
+  guard (allowedInModel model rule)
+  return (step rule)
 
 rewriteSub :: (Ord f, Numbered f, Sized f, Minimal f, PrettyTerm f) =>
-  Index (Oriented (Rule f Var)) -> Tm f -> Strategy f
+  Index (Rule f) -> Tm f -> Strategy f
 rewriteSub rules top t = do
-  orule <- Index.lookup t rules
-  guard (allowedSub top orule)
-  return (step orule)
+  rule <- Index.lookup t rules
+  guard (allowedSub top rule)
+  return (step rule)
 
-simplify :: (PrettyTerm f, Numbered f, Sized f, Minimal f, Ord f) => Index (Oriented (Rule f Var)) -> Strategy f
+simplify :: (PrettyTerm f, Numbered f, Sized f, Minimal f, Ord f) => Index (Rule f) -> Strategy f
 simplify rules t = do
-  orule <- Index.lookup t rules
-  case orientation orule of
+  rule <- Index.lookup t rules
+  case orientation rule of
     Oriented -> return ()
     WeaklyOriented ts -> guard (or [ t /= minimalTerm | t <- ts ])
     Unoriented -> mzero
-  return (step orule)
+  return (step rule)
 
-rewrite :: (PrettyTerm f, Numbered f, Sized f, Minimal f, Ord f) => Index (Oriented (Rule f Var)) -> Strategy f
+rewrite :: (PrettyTerm f, Numbered f, Sized f, Minimal f, Ord f) => Index (Rule f) -> Strategy f
 rewrite rules t = do
-  orule <- Index.lookup t rules
-  case orientation orule of
+  rule <- Index.lookup t rules
+  case orientation rule of
     Oriented -> return ()
     WeaklyOriented ts -> guard (or [ t /= minimalTerm | t <- ts ])
-    Unoriented -> guard (lessEq (rhs (rule orule)) (lhs (rule orule)) && rhs (rule orule) /= lhs (rule orule))
-  return (step orule)
+    Unoriented -> guard (lessEq (rhs rule) (lhs rule) && rhs rule /= lhs rule)
+  return (step rule)
 
-tryRule :: (Ord f, Sized f, Minimal f) => Oriented (Rule f Var) -> Strategy f
-tryRule orule t = do
-  sub <- maybeToList (match (lhs (rule orule)) t)
-  let orule' = substf (evalSubst sub) orule
-  case orientation orule' of
+tryRule :: (Ord f, Sized f, Minimal f) => Rule f -> Strategy f
+tryRule rule t = do
+  sub <- maybeToList (match (lhs rule) t)
+  let rule' = substf (evalSubst sub) rule
+  case orientation rule' of
     Oriented -> return ()
     WeaklyOriented ts -> guard (or [ t /= minimalTerm | t <- ts ])
-    Unoriented -> guard (lessEq (rhs (rule orule')) (lhs (rule orule')) && rhs (rule orule') /= lhs (rule orule'))
-  return (step orule')
+    Unoriented -> guard (lessEq (rhs rule') (lhs rule') && rhs rule' /= lhs rule')
+  return (step rule')
 
-tryRuleInModel :: (Ord f, Sized f, Minimal f, PrettyTerm f) => [Formula f] -> Oriented (Rule f Var) -> Strategy f
-tryRuleInModel model orule t = do
-  sub <- maybeToList (match (lhs (rule orule)) t)
-  let orule' = substf (evalSubst sub) orule
-  guard (allowedInModel model orule')
-  return (step orule')
+tryRuleInModel :: (Ord f, Sized f, Minimal f, PrettyTerm f) => [Formula f] -> Rule f -> Strategy f
+tryRuleInModel model rule t = do
+  sub <- maybeToList (match (lhs rule) t)
+  let rule' = substf (evalSubst sub) rule
+  guard (allowedInModel model rule')
+  return (step rule')

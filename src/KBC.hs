@@ -17,8 +17,8 @@ import KBC.Utils
 import Control.Monad
 import Data.Maybe
 import Data.Ord
+import qualified Data.Rewriting.Rule as T
 import qualified Data.Rewriting.CriticalPair as CP
-import Data.Rewriting.Rule(Rule(..))
 import qualified Debug.Trace
 import Control.Monad.Trans.State.Strict
 import Data.List
@@ -32,9 +32,9 @@ import Text.Printf
 data KBC f =
   KBC {
     maxSize           :: Int,
-    labelledRules     :: Index (Labelled (Modelled (Critical (Oriented (Rule f Var))))),
-    extraRules        :: Index (Oriented (Rule f Var)),
-    subRules          :: Index (Tm f, Oriented (Rule f Var)),
+    labelledRules     :: Index (Labelled (Modelled (Critical (Rule f)))),
+    extraRules        :: Index (Rule f),
+    subRules          :: Index (Tm f, Rule f),
     goals             :: [Tm f],
     totalCPs          :: Int,
     renormaliseAt     :: Int,
@@ -63,7 +63,7 @@ report KBC{..} =
     (length rs)
     (length (filter ((== Oriented) . orientation) rs))
     (length (filter ((== Unoriented) . orientation) rs))
-    (length [ r | r@(MkOriented (WeaklyOriented _) _) <- rs ]) ++
+    (length [ r | r@(Rule (WeaklyOriented _) _ _) <- rs ]) ++
   printf "%d extra. %d historical.\n"
     (length (Index.elems extraRules))
     n ++
@@ -123,7 +123,7 @@ instance Symbolic a => Symbolic (Modelled a) where
 -- Rewriting.
 --------------------------------------------------------------------------------
 
-rules :: Ord f => KBC f -> Index (Oriented (Rule f Var))
+rules :: Ord f => KBC f -> Index (Rule f)
 rules k =
   Index.mapMonotonic (critical . modelled . peel) (labelledRules k)
   `Index.union` extraRules k
@@ -165,8 +165,8 @@ reduceCP s f (Critical top (t :=: u))
     u' = f u
 
     subsumed s root t u =
-      or [ rhs (rule x) == u | x <- Index.lookup t rs ] ||
-      or [ rhs (rule x) == t | (x, x') <- Index.lookup' u rs, not root || not (isVariantOf (lhs (rule x')) u) ] ||
+      or [ rhs x == u | x <- Index.lookup t rs ] ||
+      or [ rhs x == t | (x, x') <- Index.lookup' u rs, not root || not (isVariantOf (lhs x') u) ] ||
       case focus t u of
         Nothing -> False
         Just (t', u') -> subsumed s False t' u'
@@ -257,7 +257,7 @@ consider pair = do
   case normaliseCP s pair of
     Nothing -> return ()
     Just (Critical top eq) ->
-      forM_ (orient eq) $ \r@(MkOriented _ (Rule t u)) -> do
+      forM_ (orient eq) $ \r@(Rule _ t u) -> do
         s <- get
         case normaliseCP s (Critical top (t :=: u)) of
           Nothing -> return ()
@@ -305,7 +305,7 @@ groundJoin s ctx r@(Critical top (t :=: u)) =
 valid :: (Sized f, Minimal f, Ord f, PrettyTerm f) => [Formula f] -> Reduction f -> Bool
 valid model red = all valid1 (steps red)
   where
-    valid1 orule = allowedInModel model orule
+    valid1 rule = allowedInModel model rule
 
 shrinkList :: [a] -> ([a] -> Bool) -> [a]
 shrinkList [] _ = []
@@ -320,8 +320,8 @@ strengthen (Less t u:xs) p
   | otherwise = Less t u:strengthen xs (\ys -> p (Less t u:ys))
 strengthen (x:xs) p = x:strengthen xs (\ys -> p (x:ys))
 
-newSubRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => Oriented (Rule f Var) -> State (KBC f) ()
-newSubRule r@(MkOriented _ (Rule t u)) = do
+newSubRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => Rule f -> State (KBC f) ()
+newSubRule r@(Rule _ t u) = do
   s <- get
   when (useInversionRules s) $
     put s { subRules = foldr ins (subRules s) (properSubterms t) }
@@ -330,26 +330,26 @@ newSubRule r@(MkOriented _ (Rule t u)) = do
       | isFun v && not (lessEq v u) && usort (vars u) `isSubsequenceOf` usort (vars v) = Index.insert (v, r) idx
       | otherwise = idx
 
-addRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => Modelled (Critical (Oriented (Rule f Var))) -> State (KBC f) Label
+addRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => Modelled (Critical (Rule f)) -> State (KBC f) Label
 addRule rule = do
   l <- newLabelM
   modify (\s -> s { labelledRules = Index.insert (Labelled l rule) (labelledRules s) })
   newSubRule (critical (modelled rule))
   return l
 
-deleteRule :: (Minimal f, Sized f, Ord f, Numbered f) => Label -> Modelled (Critical (Oriented (Rule f Var))) -> State (KBC f) ()
+deleteRule :: (Minimal f, Sized f, Ord f, Numbered f) => Label -> Modelled (Critical (Rule f)) -> State (KBC f) ()
 deleteRule l rule =
   modify $ \s ->
     s { labelledRules = Index.delete (Labelled l rule) (labelledRules s),
         queue = deleteLabel l (queue s) }
 
-data Simplification f = Simplify [Formula f] (Modelled (Critical (Oriented (Rule f Var)))) | Reorient (Modelled (Critical (Oriented (Rule f Var)))) deriving Show
+data Simplification f = Simplify [Formula f] (Modelled (Critical (Rule f))) | Reorient (Modelled (Critical (Rule f))) deriving Show
 
 instance PrettyTerm f => Pretty (Simplification f) where
   pPrint (Simplify _ rule) = text "Simplify" <+> pPrint rule
   pPrint (Reorient rule) = text "Reorient" <+> pPrint rule
 
-interreduce :: (PrettyTerm f, Ord f, Minimal f, Sized f, Numbered f) => Oriented (Rule f Var) -> State (KBC f) ()
+interreduce :: (PrettyTerm f, Ord f, Minimal f, Sized f, Numbered f) => Rule f -> State (KBC f) ()
 interreduce new = do
   rules <- gets (Index.elems . labelledRules)
   forM_ rules $ \(Labelled l old) -> do
@@ -360,29 +360,29 @@ interreduce new = do
         traceM (Reduce red new)
         case red of
           Simplify model rule -> simplifyRule l model rule
-          Reorient rule@(Modelled _ (Critical top (MkOriented _ (Rule t u)))) -> do
+          Reorient rule@(Modelled _ (Critical top (Rule _ t u))) -> do
             deleteRule l rule
             queueCP noLabel noLabel (Critical top (t :=: u))
 
-reduceWith :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => KBC f -> Label -> Oriented (Rule f Var) -> Modelled (Critical (Oriented (Rule f Var))) -> Maybe (Simplification f)
-reduceWith s lab new old0@(Modelled model (Critical top old@(MkOriented _ (Rule l r))))
+reduceWith :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => KBC f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
+reduceWith s lab new old0@(Modelled model (Critical top old@(Rule _ l r)))
   | {-# SCC "reorient-normal" #-}
-    not (lhs (rule new) `isInstanceOf` l) &&
+    not (lhs new `isInstanceOf` l) &&
     not (null (anywhere (tryRule new) l)) =
       Just (Reorient old0)
   | {-# SCC "reorient-ground" #-}
-    not (lhs (rule new) `isInstanceOf` l) &&
+    not (lhs new `isInstanceOf` l) &&
     orientation new == Unoriented &&
-    not (all isNothing [ match (lhs (rule new)) l' | l' <- subterms l ]) &&
+    not (all isNothing [ match (lhs new) l' | l' <- subterms l ]) &&
     modelJoinable =
     tryGroundJoin
   | {-# SCC "simplify" #-}
-    not (null (anywhere (tryRule new) (rhs (rule old)))) =
+    not (null (anywhere (tryRule new) (rhs old))) =
       Just (Simplify model old0)
   | {-# SCC "reorient-ground/ground" #-}
     orientation old == Unoriented &&
     orientation new == Unoriented &&
-    not (all isNothing [ match (lhs (rule new)) r' | r' <- subterms r ]) &&
+    not (all isNothing [ match (lhs new) r' | r' <- subterms r ]) &&
     modelJoinable =
     tryGroundJoin
   | otherwise = Nothing
@@ -398,14 +398,14 @@ reduceWith s lab new old0@(Modelled model (Critical top old@(MkOriented _ (Rule 
         Right _ ->
           Just (Reorient old0)
 
-simplifyRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => Label -> [Formula f] -> Modelled (Critical (Oriented (Rule f Var))) -> State (KBC f) ()
-simplifyRule l model rule@(Modelled _ (Critical top (MkOriented ctx (Rule lhs rhs)))) = do
+simplifyRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => Label -> [Formula f] -> Modelled (Critical (Rule f)) -> State (KBC f) ()
+simplifyRule l model rule@(Modelled _ (Critical top (Rule ctx lhs rhs))) = do
   modify $ \s ->
     s {
       labelledRules =
-         Index.insert (Labelled l (Modelled model (Critical top (MkOriented ctx (Rule lhs (result (normalise s rhs)))))))
+         Index.insert (Labelled l (Modelled model (Critical top (Rule ctx lhs (result (normalise s rhs))))))
            (Index.delete (Labelled l rule) (labelledRules s)) }
-  newSubRule (MkOriented ctx (Rule lhs rhs))
+  newSubRule (Rule ctx lhs rhs)
 
 newEquation ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
@@ -466,7 +466,7 @@ data CPs f =
     lower :: {-# UNPACK #-} !Label,
     upper :: {-# UNPACK #-} !Label,
     count :: {-# UNPACK #-} !Int,
-    from  :: {-# UNPACK #-} !(Labelled (Oriented (Rule f Var))) }
+    from  :: {-# UNPACK #-} !(Labelled (Rule f)) }
   deriving Show
 
 instance Eq (CPs f) where x == y = best x == best y
@@ -508,7 +508,7 @@ filterCPs =
   where
     pick xs@(x:_) = Labelled (labelOf (cpCP x)) (map (peel . cpCP) xs)
 
-criticalPairs :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => KBC f -> Label -> Label -> Oriented (Rule f Var) -> [InitialCP f]
+criticalPairs :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => KBC f -> Label -> Label -> Rule f -> [InitialCP f]
 criticalPairs s lower upper rule =
   criticalPairs1 s (maxSize s) rule (Index.mapMonotonic (fmap (critical . modelled)) rules) ++
   [ cp
@@ -518,9 +518,11 @@ criticalPairs s lower upper rule =
     rules = Index.filter (p . labelOf) (labelledRules s)
     p l = lower <= l && l <= upper
 
-criticalPairs1 :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => KBC f -> Int -> Oriented (Rule f Var) -> Index (Labelled (Oriented (Rule f Var))) -> [InitialCP f]
-criticalPairs1 s n (MkOriented or1 r1@(Rule t _)) idx = do
-  Labelled l (MkOriented or2 r2) <- Index.elems idx
+criticalPairs1 :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => KBC f -> Int -> Rule f -> Index (Labelled (Rule f)) -> [InitialCP f]
+criticalPairs1 s n (Rule or1 t u) idx = do
+  Labelled l (Rule or2 t' u') <- Index.elems idx
+  let r1 = T.Rule t u
+      r2 = T.Rule t' u'
   cp <- CP.cps [r2] [r1]
   let f (Left x)  = withNumber (number x*2) x
       f (Right x) = withNumber (number x*2+1) x
@@ -552,7 +554,7 @@ queueCP l1 l2 eq = do
 
 queueCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
-  Label -> Label -> Labelled (Oriented (Rule f Var)) -> State (KBC f) ()
+  Label -> Label -> Labelled (Rule f) -> State (KBC f) ()
 queueCPs lower upper rule = do
   s <- get
   let xs = toCPs s lower upper rule
@@ -564,7 +566,7 @@ queueCPs lower upper rule = do
 
 toCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
-  KBC f -> Label -> Label -> Labelled (Oriented (Rule f Var)) -> [CP f]
+  KBC f -> Label -> Label -> Labelled (Rule f) -> [CP f]
 toCPs s lower upper (Labelled l rule) =
   usortBy (comparing (critical . cp)) . map minimum . filter (not . null) $
     [ catMaybes (map (toCP s l l') eqns) | Labelled l' eqns <- cps0 ]
@@ -593,11 +595,11 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
     focus top t u =
       listToMaybe $ do
         (_, r1) <- Index.lookup t (subRules s)
-        r2 <- Index.lookup (replace t u (rhs (rule r1))) (rules s)
+        r2 <- Index.lookup (replace t u (rhs r1)) (rules s)
 
         guard (allowedSub top r1 && allowedSub top r2)
-        let t' = rhs (rule r1)
-            u' = rhs (rule r2)
+        let t' = rhs r1
+            u' = rhs r2
         guard (subsumes True (t', u') (t, u))
         return (t', u')
 
@@ -645,10 +647,10 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
 --------------------------------------------------------------------------------
 
 data Event f =
-    NewRule (Oriented (Rule f Var))
-  | ExtraRule (Oriented (Rule f Var))
+    NewRule (Rule f)
+  | ExtraRule (Rule f)
   | NewCP (Passive f)
-  | Reduce (Simplification f) (Oriented (Rule f Var))
+  | Reduce (Simplification f) (Rule f)
   | Consider (Critical (Equation f))
   | Discharge (Critical (Equation f)) [Formula f]
   | NormaliseCPs Int

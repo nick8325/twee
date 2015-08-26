@@ -17,7 +17,6 @@ import KBC.Utils
 import KBC.Rewrite
 import KBC.Queue
 import Data.Rewriting.Term(Term)
-import Data.Rewriting.Rule(Rule(..))
 import Text.ParserCombinators.ReadP hiding (get)
 import System.Environment
 import System.Exit
@@ -185,7 +184,7 @@ main = do
   unless (null goals2) $ do
     putStrLn "\nNormalised goal terms:"
     forM_ goals2 $ \t ->
-      prettyPrint (Rule t (result (normalise s t)))
+      prettyPrint (Rule Oriented t (result (normalise s t)))
 
   let identical xs = and (zipWith (==) xs (tail xs))
   if identical (map (result . normalise s) goals2)
