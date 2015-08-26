@@ -201,26 +201,21 @@ simplifies (Rule (WeaklyOriented ts) _ _) =
   or [ t /= minimalTerm | t <- ts ]
 simplifies (Rule Unoriented _ _) = False
 
-reduces :: (Ord f, Sized f, Minimal f) => Rule f -> Bool
-reduces (Rule Oriented _ _) = True
-reduces (Rule (WeaklyOriented ts) _ _) =
+reducesWith :: (Ord f, Sized f, Minimal f) => (Tm f -> Tm f -> Bool) -> Rule f -> Bool
+reducesWith _ (Rule Oriented _ _) = True
+reducesWith _ (Rule (WeaklyOriented ts) _ _) =
   or [ t /= minimalTerm | t <- ts ]
-reduces (Rule Unoriented t u) =
-  lessEq u t && u /= t
+reducesWith p (Rule Unoriented t u) =
+  p u t && u /= t
+
+reduces :: (Ord f, Sized f, Minimal f, PrettyTerm f) => Rule f -> Bool
+reduces rule = reducesWith lessEq rule
 
 reducesInModel :: (Ord f, Sized f, Minimal f, PrettyTerm f) => [Formula f] -> Rule f -> Bool
-reducesInModel _ (Rule Oriented _ _) = True
-reducesInModel _ (Rule (WeaklyOriented xs) _ _) =
-  or [x /= minimalTerm | x <- xs]
-reducesInModel cond (Rule Unoriented t u) =
-  lessEqIn cond u t && t /= u
+reducesInModel cond rule = reducesWith (lessEqIn cond) rule
 
 reducesSkolem :: (Ord f, Sized f, Minimal f, PrettyTerm f) => Rule f -> Bool
-reducesSkolem (Rule Oriented _ _) = True
-reducesSkolem (Rule (WeaklyOriented xs) _ _) =
-  or [x /= minimalTerm | x <- xs]
-reducesSkolem (Rule Unoriented t u) =
-  lessEq (skolemise u) (skolemise t) && t /= u
+reducesSkolem = reducesWith (\t u -> lessEq (skolemise t) (skolemise u))
 
 reducesSub :: (Ord f, Numbered f, Sized f, Minimal f, PrettyTerm f) => Tm f -> Rule f -> Bool
 reducesSub top rule =
