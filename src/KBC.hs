@@ -554,7 +554,7 @@ queueCPs ::
 queueCPs lower upper rule = do
   s <- get
   let xs = toCPs s lower upper rule
-  if length xs <= 10 then
+  if length xs <= 20 then
     mapM_ (enqueueM . SingleCP) xs
   else
     let best = minimum xs in
@@ -564,8 +564,13 @@ queueCPsSplit ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
   Label -> Label -> Labelled (Rule f) -> State (KBC f) ()
 queueCPsSplit l u rule = do
-  queueCPs l ((l+u) `div` 2) rule
-  queueCPs ((l+u) `div` 2 + 1) u rule
+  queueCPs l (l + diff `div` k) rule
+  forM_ [1..k-2] $ \i ->
+    queueCPs (l + i*diff `div` k + 1) (l + (i+1)*diff `div` k) rule
+  queueCPs (l + (k-1)*diff `div` k) u rule
+  where
+    k = 5
+    diff = u-l
 
 toCPs ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
