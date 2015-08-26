@@ -630,7 +630,7 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
 
     weight t u
       | u `lessEq` t = f t u + penalty t u
-      | otherwise    = (f t u `min` f u t) + penalty t u
+      | otherwise    = (f t u `max` f u t) + penalty t u
       where
         f t u = size t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u)
 
