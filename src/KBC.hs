@@ -66,10 +66,11 @@ report KBC{..} =
   printf "%d extra. %d historical.\n"
     (length (Index.elems extraRules))
     n ++
-  printf "Critical pairs: %d total, %d processed, %d queued."
+  printf "Critical pairs: %d total, %d processed, %d queued compressed into %d."
     totalCPs
     (totalCPs - s)
     s
+    (length (toList queue))
   where
     rs = map (critical . modelled . peel) (Index.elems labelledRules)
     Label n = nextLabel queue
