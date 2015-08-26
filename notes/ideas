@@ -39,9 +39,6 @@ Take age into account with critical pairs. Other ideas:
   * Reduce size if it matches goal term
     (subtract size of goal term from both sides?)
 
-When doing connectedness testing, pick a ground (skolemised) instance
-instead of a variable ordering - cheaper
-
 Change constraint stuff so we always have a total order
 
 When generating a critical pair s <- t -> u,
@@ -66,12 +63,6 @@ actually used in a proof.
 
 Goal-directed proving - boost CP whose RHS matches a subterm of a
 goal, once rule is added add LHS as a goal
-
-Heuristic: if a CP is joinable when skolemised, increase its weight.
-Maybe look at how many variables need to be skolemised in order to
-join it. Possible weight penalty: compute size but giving each skolem
-constant a size of 2 (to encode the idea that probably only bigger
-instances are needed).
 
 Suppose we have the rule
   x*x*x*x*x*x -> x
