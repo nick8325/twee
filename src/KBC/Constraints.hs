@@ -17,21 +17,20 @@ import Data.Graph
 -- Constrained things.
 data Constrained a =
   Constrained {
-    constraint  :: Formula (ConstantOf a) (VariableOf a),
+    constraint  :: Formula (ConstantOf a),
     constrained :: a }
 
-instance (Pretty (ConstantOf a), Minimal (ConstantOf a), Pretty (VariableOf a), Pretty a) => Pretty (Constrained a) where
+instance (Pretty (ConstantOf a), Minimal (ConstantOf a), Pretty a) => Pretty (Constrained a) where
   pPrint (Constrained (And []) x) = pPrint x
   pPrint (Constrained ctx x) =
     hang (pPrint x) 2 (text "when" <+> pPrint ctx)
 
-deriving instance (Eq a, Eq (ConstantOf a), Eq (VariableOf a)) => Eq (Constrained a)
-deriving instance (Ord a, Ord (ConstantOf a), Ord (VariableOf a)) => Ord (Constrained a)
-deriving instance (Show a, Show (VariableOf a), Show (ConstantOf a)) => Show (Constrained a)
+deriving instance (Eq a, Eq (ConstantOf a)) => Eq (Constrained a)
+deriving instance (Ord a, Ord (ConstantOf a)) => Ord (Constrained a)
+deriving instance (Show a, Show (ConstantOf a)) => Show (Constrained a)
 
-instance (Minimal (ConstantOf a), Sized (ConstantOf a), Ord (ConstantOf a), Ord (VariableOf a), Symbolic a) => Symbolic (Constrained a) where
+instance (Minimal (ConstantOf a), Sized (ConstantOf a), Ord (ConstantOf a), Symbolic a) => Symbolic (Constrained a) where
   type ConstantOf (Constrained a) = ConstantOf a
-  type VariableOf (Constrained a) = VariableOf a
 
   termsDL x =
     termsDL (constrained x) `mplus`
@@ -40,16 +39,16 @@ instance (Minimal (ConstantOf a), Sized (ConstantOf a), Ord (ConstantOf a), Ord 
   substf sub (Constrained ctx x) =
     Constrained (substf sub ctx) (substf sub x)
 
-data Formula f v =
-    Less   v v
-  | LessEq v v
-  | Minimal v
-  | Nonminimal v
-  | And [Formula f v]
-  | Or  [Formula f v]
+data Formula f =
+    Less   Var Var
+  | LessEq Var Var
+  | Minimal Var
+  | Nonminimal Var
+  | And [Formula f]
+  | Or  [Formula f]
   deriving (Eq, Ord, Show)
 
-instance (Minimal f, Pretty f, Pretty v) => Pretty (Formula f v) where
+instance (Minimal f, Pretty f) => Pretty (Formula f) where
   pPrintPrec _ _ (Less t u) = hang (pPrint t <+> text "<") 2 (pPrint u)
   pPrintPrec _ _ (LessEq t u) = hang (pPrint t <+> text "<=") 2 (pPrint u)
   pPrintPrec _ _ (Minimal t) = hang (pPrint t <+> text "=") 2 (pPrint (minimal :: f))
@@ -69,14 +68,13 @@ instance (Minimal f, Pretty f, Pretty v) => Pretty (Formula f v) where
       nest_ (x:xs) = x:map (nest 2) xs
       nest_ [] = __
 
-instance (Minimal f, Eq f, Ord v) => Symbolic (Formula f v) where
-  type ConstantOf (Formula f v) = f
-  type VariableOf (Formula f v) = v
+instance (Minimal f, Eq f) => Symbolic (Formula f) where
+  type ConstantOf (Formula f) = f
 
-  termsDL (Less t u) = termsDL (Var t, Var u :: Tm f v)
-  termsDL (LessEq t u) = termsDL (Var t, Var u :: Tm f v)
-  termsDL (Minimal t) = termsDL (Var t :: Tm f v)
-  termsDL (Nonminimal t) = termsDL (Var t :: Tm f v)
+  termsDL (Less t u) = termsDL (Var t, Var u :: Tm f)
+  termsDL (LessEq t u) = termsDL (Var t, Var u :: Tm f)
+  termsDL (Minimal t) = termsDL (Var t :: Tm f)
+  termsDL (Nonminimal t) = termsDL (Var t :: Tm f)
   termsDL (And ts) = msum (map termsDL ts)
   termsDL (Or ts) = msum (map termsDL ts)
 
@@ -107,11 +105,11 @@ instance (Minimal f, Eq f, Ord v) => Symbolic (Formula f v) where
   substf sub (And ts) = conj (map (substf sub) ts)
   substf sub (Or ts) = disj (map (substf sub) ts)
 
-unVar :: Tm f v -> v
+unVar :: Tm f -> Var
 unVar (Var x) = x
 unVar _ = ERROR("function symbol appeared in constraint substitution")
 
-negateFormula :: Formula f v -> Formula f v
+negateFormula :: Formula f -> Formula f
 negateFormula (Less t u) = LessEq u t
 negateFormula (LessEq t u) = Less u t
 negateFormula (Minimal t) = Nonminimal t
@@ -145,36 +143,36 @@ x ||| y = disj [x, y]
 true  = And []
 false = Or []
 
-data Branch f v =
+data Branch f =
   -- Branches are kept normalised wrt equals
   Branch {
-    less        :: [(v, v)],
-    equals      :: [(v, v)], -- greatest variable first
-    minimals    :: [v],
-    nonminimals :: [v] }
+    less        :: [(Var, Var)],
+    equals      :: [(Var, Var)], -- greatest variable first
+    minimals    :: [Var],
+    nonminimals :: [Var] }
   deriving (Eq, Ord)
 
-instance (Minimal f, PrettyTerm f, Pretty v) => Pretty (Branch f v) where
+instance (Minimal f, PrettyTerm f) => Pretty (Branch f) where
   pPrint Branch{..} =
     braces $ fsep $ punctuate (text ",") $
       [pPrint x <+> text "<" <+> pPrint y | (x, y) <- less ] ++
-      [pPrint x <+> text "<" <+> pPrint (minimalTerm :: Tm f v) | x <- nonminimals ] ++
+      [pPrint x <+> text "<" <+> pPrint (minimalTerm :: Tm f) | x <- nonminimals ] ++
       [pPrint x <+> text "=" <+> pPrint y | (x, y) <- equals ] ++
-      [pPrint x <+> text "=" <+> pPrint (minimalTerm :: Tm f v) | x <- minimals ]
+      [pPrint x <+> text "=" <+> pPrint (minimalTerm :: Tm f) | x <- minimals ]
 
-trueBranch :: Branch f v
+trueBranch :: Branch f
 trueBranch = Branch [] [] [] []
 
-norm :: Ord v => Branch f v -> v -> v
+norm :: Branch f -> Var -> Var
 norm Branch{..} x = fromMaybe x (lookup x equals)
 
-contradictory :: (Eq f, Eq v) => Branch f v -> Bool
+contradictory :: Eq f => Branch f -> Bool
 contradictory Branch{..} =
   or [x == y | (x, y) <- less] ||
   or [x `elem` map snd less | x <- minimals] ||
   or [x `elem` nonminimals  | x <- minimals]
 
-formAnd :: (Ord f, Ord v) => Formula f v -> [Branch f v] -> [Branch f v]
+formAnd :: Ord f => Formula f -> [Branch f] -> [Branch f]
 formAnd f bs = usort (bs >>= add f)
   where
     add (Less t u) b = addLess t u b
@@ -185,7 +183,7 @@ formAnd f bs = usort (bs >>= add f)
     add (And (f:fs)) b = add f b >>= add (And fs)
     add (Or fs) b = usort (concat [ add f b | f <- fs ])
 
-branches :: (Ord f, Ord v) => Formula f v -> [Branch f v]
+branches :: Ord f => Formula f -> [Branch f]
 branches x = aux [x]
   where
     aux [] = [Branch [] [] [] []]
@@ -199,7 +197,7 @@ branches x = aux [x]
     aux (Minimal t:xs) = usort $ concatMap (addMinimal t) (aux xs)
     aux (Nonminimal t:xs) = usort $ concatMap (addNonminimal t) (aux xs)
 
-addLess :: (Ord f, Ord v) => v -> v -> Branch f v -> [Branch f v]
+addLess :: Ord f => Var -> Var -> Branch f -> [Branch f]
 addLess t0 u0 b@Branch{..} =
   filter (not . contradictory)
     [b {
@@ -215,7 +213,7 @@ addLess t0 u0 b@Branch{..} =
     newNonminimals =
       [u | t `elem` nonminimals]
 
-addEquals :: (Ord f, Ord v) => v -> v -> Branch f v -> [Branch f v]
+addEquals :: Ord f => Var -> Var -> Branch f -> [Branch f]
 addEquals t0 u0 b@Branch{..}
   | (t, u) `elem` equals || t == u = [b]
   | otherwise =
@@ -233,7 +231,7 @@ addEquals t0 u0 b@Branch{..}
       | x == t = u
       | otherwise = x
 
-addMinimal :: (Ord f, Ord v) => v -> Branch f v -> [Branch f v]
+addMinimal :: Ord f => Var -> Branch f -> [Branch f]
 addMinimal t0 b@Branch{..}
   | t `elem` minimals = [b]
   | otherwise =
@@ -242,7 +240,7 @@ addMinimal t0 b@Branch{..}
   where
     t = norm b t0
 
-addNonminimal :: (Ord f, Ord v) => v -> Branch f v -> [Branch f v]
+addNonminimal :: Ord f => Var -> Branch f -> [Branch f]
 addNonminimal t0 b@Branch{..} =
   filter (not . contradictory)
     [b {
@@ -252,7 +250,7 @@ addNonminimal t0 b@Branch{..} =
     newNonminimals =
       [u | (t', u) <- less, t == t']
 
-solve :: (Ord v, Minimal f) => [v] -> Branch f v -> ([Formula f v], Maybe (Subst f v))
+solve :: Minimal f => [Var] -> Branch f -> ([Formula f], Maybe (Subst f))
 solve xs Branch{..}
   | null equals && null minimals = (forms', Nothing)
   | otherwise = (forms, Just sub)
@@ -268,7 +266,7 @@ solve xs Branch{..}
         [Less x y | (x:xs) <- tails vs, y <- xs] ++
         [Nonminimal x | x <- vs]
 
-lessEqIn :: (Sized f, Minimal f, Ord f, Ord v) => [Formula f v] -> Tm f v -> Tm f v -> Bool
+lessEqIn :: (Sized f, Minimal f, Ord f) => [Formula f] -> Tm f -> Tm f -> Bool
 lessEqIn _ t _       |  t == minimalTerm = True
 lessEqIn _ (Var x) (Var y) | x == y = True
 lessEqIn cond (Var x) (Var y) = Less x y `elem` cond || LessEq x y `elem` cond

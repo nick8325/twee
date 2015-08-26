@@ -61,13 +61,13 @@ filter p (Index here fun var) =
 
 {-# INLINEABLE singleton #-}
 singleton ::
-  (Symbolic a, Numbered (ConstantOf a), Ord (VariableOf a), Numbered (VariableOf a), Ord a) =>
+  (Symbolic a, Numbered (ConstantOf a), Ord a) =>
   a -> Index a
 singleton x = insert x empty
 
 {-# INLINEABLE insert #-}
 insert ::
-  (Symbolic a, Numbered (ConstantOf a), Ord (VariableOf a), Numbered (VariableOf a), Ord a) =>
+  (Symbolic a, Numbered (ConstantOf a), Ord a) =>
   a -> Index a -> Index a
 insert t = insertFlat (symbols (term u))
   where
@@ -78,7 +78,7 @@ insert t = insertFlat (symbols (term u))
 
 {-# INLINEABLE delete #-}
 delete ::
-  (Symbolic a, Numbered (ConstantOf a), Ord (VariableOf a), Numbered (VariableOf a), Ord a) =>
+  (Symbolic a, Numbered (ConstantOf a), Ord a) =>
   a -> Index a -> Index a
 delete t = deleteFlat (symbols (term u))
   where
@@ -100,8 +100,8 @@ union (Index here fun var) (Index here' fun' var') =
 -- I want to define this as a CPS monad instead, but I run into
 -- problems with inlining...
 type Partial a b =
-  (GSubst Int (ConstantOf a) (VariableOf a) -> Index a -> b -> b) ->
-   GSubst Int (ConstantOf a) (VariableOf a) -> Index a -> b -> b
+  (Subst (ConstantOf a) -> Index a -> b -> b) ->
+   Subst (ConstantOf a) -> Index a -> b -> b
 
 {-# INLINE yes #-}
 yes :: Partial a b
@@ -129,20 +129,20 @@ inIndex f = \ok sub idx err -> f idx ok sub idx err
 
 {-# INLINE partialToList #-}
 partialToList ::
-  (GSubst Int (ConstantOf a) (VariableOf a) -> Index a -> [b]) ->
+  (Subst (ConstantOf a) -> Index a -> [b]) ->
   Partial a [b] -> Index a -> [b]
 partialToList f m idx =
   m (\sub idx rest -> f sub idx ++ rest) (Subst.fromMap Map.empty) idx []
 
 {-# INLINEABLE lookup #-}
 lookup ::
-  (Symbolic a, Numbered (ConstantOf a), Numbered (VariableOf a), Eq (ConstantOf a), Eq (VariableOf a)) =>
+  (Symbolic a, Numbered (ConstantOf a), Eq (ConstantOf a)) =>
   TmOf a -> Index a -> [a]
 lookup t idx = map fst (lookup' t idx)
 
 {-# INLINEABLE lookup' #-}
 lookup' ::
-  (Symbolic a, Numbered (ConstantOf a), Numbered (VariableOf a), Eq (ConstantOf a), Eq (VariableOf a)) =>
+  (Symbolic a, Numbered (ConstantOf a), Eq (ConstantOf a)) =>
   TmOf a -> Index a -> [(a, a)]
 lookup' t idx = partialToList f (lookupPartial t) idx
   where
@@ -151,7 +151,7 @@ lookup' t idx = partialToList f (lookupPartial t) idx
       return (substf (substNumbered sub) m, m)
 
     substNumbered sub x =
-      Map.findWithDefault (Var x) (number x) (Subst.toMap sub)
+      Map.findWithDefault (Var x) x (Subst.toMap sub)
 
     lookupPartial t = lookupFun t `orElse` lookupVar t
 
@@ -161,12 +161,12 @@ lookup' t idx = partialToList f (lookupPartial t) idx
       where
         {-# INLINE tryOne #-}
         tryOne x idx err =
-          case Map.lookup x (Subst.toMap sub) of
+          case Map.lookup (MkVar x) (Subst.toMap sub) of
             Just u | t == u -> ok sub idx err
             Just _ -> err
             Nothing ->
               let
-                sub' = Subst.fromMap (Map.insert x t (Subst.toMap sub))
+                sub' = Subst.fromMap (Map.insert (MkVar x) t (Subst.toMap sub))
               in
                 ok sub' idx err
 

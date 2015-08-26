@@ -7,6 +7,7 @@ import Control.Applicative
 
 import Control.Monad
 import Control.Monad.Trans.State.Strict
+import Control.Monad.Trans.Class
 import Data.Char
 import KBC
 import KBC.Base hiding (char)
@@ -15,6 +16,7 @@ import KBC.Equation
 import KBC.Utils
 import KBC.Rewrite
 import KBC.Queue
+import Data.Rewriting.Term(Term)
 import Data.Rewriting.Rule(Rule(..))
 import Text.ParserCombinators.ReadP hiding (get)
 import System.Environment
@@ -22,6 +24,8 @@ import System.Exit
 import Data.Ord
 import qualified KBC.Index as Index
 import System.Exit
+import qualified Data.Map.Strict as Map
+import Data.Map.Strict(Map)
 
 data Constant =
   Constant {
@@ -59,13 +63,8 @@ instance PrettyTerm Constant where
         _ -> uncurried
   termStyle _ = uncurried
 
-newtype Variable = V Int deriving (Eq, Ord, Numbered)
-
-instance Pretty Variable where
-  pPrint (V x) = text "X" <> pPrint x
-
-parseDecl :: Int -> ReadP Constant
-parseDecl n = do
+parseDecl :: Int -> StateT (Int, Map String Int) ReadP Constant
+parseDecl n = lift $ do
   name <- munch1 (/= '/')
   char '/'
   arity <- readS_to_P reads
@@ -73,30 +72,46 @@ parseDecl n = do
   size <- readS_to_P reads
   return (Constant n arity size name)
 
-parseTerm :: ReadP (Tm String String)
-parseTerm = var <++ fun
+parseTerm :: StateT (Int, Map String Int) ReadP (Tm String)
+parseTerm = var `mplus` fun
   where
     fun = do
-      name <- munch1 (\c -> c `notElem` "(),=")
-      args <- args <++ return []
-      return (Fun name args)
+      x <- lift $ satisfy (\c -> c `notElem` "(),=_" && not (isUpper c))
+      xs <- lift $ munch (\c -> c `notElem` "(),=")
+      args <- args `mplus` return []
+      return (Fun (x:xs) args)
     args = between (char '(') (char ')') (sepBy parseTerm (char ','))
-
-    var = fmap Var $ do
-      x <- satisfy (\c -> isUpper c || c == '_')
-      xs <- munch isAlphaNum
+    between p q r = do
+      lift p
+      x <- r
+      lift q
+      return x
+    sepBy p q = do
+      x  <- p
+      xs <- (lift q >> sepBy p q) `mplus` return []
       return (x:xs)
 
-parseEquation :: ReadP (Equation String String)
+    var = fmap (Var . MkVar) $ do
+      x <- lift $ satisfy (\c -> isUpper c || c == '_')
+      xs <- lift $ munch isAlphaNum
+      let v = x:xs
+      (k, m) <- get
+      case Map.lookup v m of
+        Just n -> return n
+        Nothing -> do
+          put (k+1, Map.insert v k m)
+          return k
+
+parseEquation :: StateT (Int, Map String Int) ReadP (Equation String)
 parseEquation = do
   t <- parseTerm
-  string "="
+  lift $ string "="
   u <- parseTerm
   return (t :=: u)
 
-run :: ReadP a -> String -> a
+run :: StateT (Int, Map String Int) ReadP a -> String -> a
 run p xs =
-  case readP_to_S (p <* eof) xs of
+  case readP_to_S (evalStateT p (0, Map.empty) <* eof) xs of
     ((y, ""):_) -> y
     _ -> error "parse error"
 
@@ -109,7 +124,7 @@ replace xs x =
     Just y -> y
     Nothing -> error (show x ++ " not found")
 
-check :: (Symbolic a, ConstantOf a ~ Constant, VariableOf a ~ Variable) => a -> IO ()
+check :: (Symbolic a, ConstantOf a ~ Constant) => a -> IO ()
 check eq = do
   forM_ (terms eq >>= subterms) $ \t ->
     case t of
@@ -136,9 +151,8 @@ main = do
       fs = [(conName f, f) | f <- fs0]
       axioms1 = map (run parseEquation) (map tok axioms0)
       goals1 = map (run parseTerm . tok) goals0
-      vs = zip (usort (vars (axioms1, goals1))) (map V [0..])
-      axioms = map (bothSides (mapTerm (replace fs) (replace vs))) axioms1
-      goals2 = map (mapTerm (replace fs) (replace vs)) goals1
+      axioms = map (bothSides (mapTerm (replace fs))) axioms1
+      goals2 = map (mapTerm (replace fs)) goals1
 
   putStrLn "Axioms:"
   mapM_ prettyPrint axioms

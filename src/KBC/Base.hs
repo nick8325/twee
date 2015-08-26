@@ -1,9 +1,9 @@
 -- Imports the relevant parts of the term-rewriting package
 -- and provides a few things on top.
 
-{-# LANGUAGE TypeSynonymInstances, TypeFamilies, FlexibleContexts #-}
+{-# LANGUAGE TypeSynonymInstances, TypeFamilies, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving #-}
 module KBC.Base(
-  Tm, TmOf, SubstOf, CPOf, RuleOf,
+  Var(..), Tm, TmOf, Subst, SubstOf, CPOf, RuleOf,
   module Data.Rewriting.Term, foldTerm, mapTerm,
   module Data.Rewriting.Term.Ops,
   module Data.Rewriting.Substitution, evalSubst, subst, matchMany, unifyMany,
@@ -20,7 +20,7 @@ import qualified Data.Map as Map
 import qualified Data.Rewriting.CriticalPair as CP
 import Data.Rewriting.Rule hiding (varsDL, funsDL, vars, funs)
 import qualified Data.Rewriting.Substitution as T
-import Data.Rewriting.Substitution hiding (apply, fromString, parse, parseIO)
+import Data.Rewriting.Substitution hiding (apply, fromString, parse, parseIO, Subst)
 import qualified Data.Rewriting.Substitution.Type as T
 import qualified Data.Rewriting.Term as T
 import Data.Rewriting.Term hiding (Term, fold, map, fromString, parse, parseIO, parseFun, parseVar, parseWST, vars, funs, varsDL, funsDL)
@@ -29,25 +29,32 @@ import KBC.Pretty
 import Text.PrettyPrint.HughesPJClass hiding (empty)
 import Data.Ord
 
--- Renamings of functionality from term-rewriting.
-type Tm = T.Term
+-- A type of variables.
+newtype Var = MkVar Int deriving (Eq, Ord, Show, Enum, Numbered)
 
-foldTerm :: (v -> a) -> (f -> [a] -> a) -> Tm f v -> a
+instance Pretty Var where
+  pPrint (MkVar x) = text "X" <> pPrint (x+1)
+
+-- Renamings of functionality from term-rewriting.
+type Tm f = T.Term f Var
+type Subst f = T.Subst f Var
+
+foldTerm :: (Var -> a) -> (f -> [a] -> a) -> Tm f -> a
 foldTerm = T.fold
 
-mapTerm :: (f -> f') -> (v -> v') -> Tm f v -> Tm f' v'
-mapTerm = T.map
+mapTerm :: (f -> f') -> Tm f -> Tm f'
+mapTerm f = T.map f id
 
-evalSubst :: Ord v => Subst f v -> v -> Tm f v
+evalSubst :: Subst f -> Var -> Tm f
 evalSubst s = subst s . Var
 
-subst :: Ord v => Subst f v -> Tm f v -> Tm f v
+subst :: Subst f -> Tm f -> Tm f
 subst = T.apply
 
-matchMany :: (Ord f, Ord v) => f -> [(Tm f v, Tm f v)] -> Maybe (Subst f v)
+matchMany :: Ord f => f -> [(Tm f, Tm f)] -> Maybe (Subst f)
 matchMany def ts = match (Fun def (map fst ts)) (Fun def (map snd ts))
 
-unifyMany :: (Ord f, Ord v) => f -> [(Tm f v, Tm f v)] -> Maybe (Subst f v)
+unifyMany :: Ord f => f -> [(Tm f, Tm f)] -> Maybe (Subst f)
 unifyMany def ts = unify (Fun def (map fst ts)) (Fun def (map snd ts))
 
 instance (Eq f, Eq v, Eq v') => Eq (GSubst v f v') where
@@ -61,7 +68,6 @@ instance (PrettyTerm f, Pretty v, Pretty v') => Pretty (GSubst v f v') where
 class Symbolic a where
   {-# MINIMAL (term|termsDL), substf #-}
   type ConstantOf a
-  type VariableOf a
 
   term :: a -> TmOf a
   term t = DList.head (termsDL t)
@@ -69,46 +75,41 @@ class Symbolic a where
   termsDL :: a -> DList (TmOf a)
   termsDL t = return (term t)
 
-  substf :: (VariableOf a -> TmOf a) -> a -> a
+  substf :: (Var -> TmOf a) -> a -> a
 
-type TmOf a = Tm (ConstantOf a) (VariableOf a)
-type SubstOf a = Subst (ConstantOf a) (VariableOf a)
-type CPOf a = CP.CP (ConstantOf a) (VariableOf a)
-type RuleOf a = Rule (ConstantOf a) (VariableOf a)
+type TmOf a = Tm (ConstantOf a)
+type SubstOf a = Subst (ConstantOf a)
+type CPOf a = CP.CP (ConstantOf a) Var
+type RuleOf a = Rule (ConstantOf a) Var
 
 terms :: Symbolic a => a -> [TmOf a]
 terms = DList.toList . termsDL
 
-instance Symbolic (Tm f v) where
-  type ConstantOf (Tm f v) = f
-  type VariableOf (Tm f v) = v
+instance Symbolic (Tm f) where
+  type ConstantOf (Tm f) = f
   substf sub = foldTerm sub Fun
   term = id
 
-instance Symbolic (Rule f v) where
-  type ConstantOf (Rule f v) = f
-  type VariableOf (Rule f v) = v
+instance Symbolic (Rule f Var) where
+  type ConstantOf (Rule f Var) = f
   termsDL (Rule l r) = return l `mplus` return r
   substf sub (Rule l r) = Rule (substf sub l) (substf sub r)
 
 instance (ConstantOf a ~ ConstantOf b,
-          VariableOf a ~ VariableOf b,
           Symbolic a, Symbolic b) => Symbolic (a, b) where
   type ConstantOf (a, b) = ConstantOf a
-  type VariableOf (a, b) = VariableOf a
   termsDL (x, y) = termsDL x `mplus` termsDL y
   substf sub (x, y) = (substf sub x, substf sub y)
 
 instance Symbolic a => Symbolic [a] where
   type ConstantOf [a] = ConstantOf a
-  type VariableOf [a] = VariableOf a
   termsDL ts = msum (map termsDL ts)
   substf sub = map (substf sub)
 
-vars :: Symbolic a => a -> [VariableOf a]
+vars :: Symbolic a => a -> [Var]
 vars = DList.toList . varsDL
 
-varsDL :: Symbolic a => a -> DList (VariableOf a)
+varsDL :: Symbolic a => a -> DList Var
 varsDL t = termsDL t >>= aux
   where
     aux (Fun _ xs) = msum (map aux xs)
@@ -123,10 +124,10 @@ funsDL t = termsDL t >>= aux
     aux (Fun f xs) = return f `mplus` msum (map aux xs)
     aux (Var _)    = mzero
 
-symbols :: Symbolic a => a -> [Either (ConstantOf a) (VariableOf a)]
+symbols :: Symbolic a => a -> [Either (ConstantOf a) Var]
 symbols = DList.toList . symbolsDL
 
-symbolsDL :: Symbolic a => a -> DList (Either (ConstantOf a) (VariableOf a))
+symbolsDL :: Symbolic a => a -> DList (Either (ConstantOf a) Var)
 symbolsDL t = termsDL t >>= aux
   where
     aux (Fun f xs) = return (Left f) `mplus` msum (map aux xs)
@@ -145,7 +146,7 @@ instance (Numbered a, Numbered b) => Numbered (Either a b) where
   withNumber n (Right x) = Right (withNumber n x)
   number = error "Can't take number of Either"
 
-canonicalise :: (Ord (VariableOf a), Numbered (VariableOf a), Symbolic a) => a -> a
+canonicalise :: Symbolic a => a -> a
 canonicalise t = substf (evalSubst sub) t
   where
     sub = T.fromMap (Map.fromList (zipWith f vs [0..]))

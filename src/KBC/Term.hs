@@ -15,24 +15,24 @@ class Minimal a where
   minimal :: a
   skolem  :: Int -> a
 
-minimalTerm :: Minimal f => Tm f v
+minimalTerm :: Minimal f => Tm f
 minimalTerm = Fun minimal []
 
-skolemConst :: Minimal f => Int -> Tm f v
+skolemConst :: Minimal f => Int -> Tm f
 skolemConst n = Fun (skolem n) []
 
-skolemise :: (Minimal f, Numbered v) => Tm f v -> Tm f v
+skolemise :: Minimal f => Tm f -> Tm f
 skolemise = foldTerm (skolemConst . number) Fun
 
 class Sized a where
   funSize  :: a -> Int
   funArity :: a -> Int
 
-size :: Sized f => Tm f v -> Int
+size :: Sized f => Tm f -> Int
 size (Var _) = 1
 size (Fun f xs) = funSize f + sum (map size xs)
 
-orientTerms :: (Sized f, Minimal f, Ord f, Ord v) => Tm f v -> Tm f v -> Maybe Ordering
+orientTerms :: (Sized f, Minimal f, Ord f) => Tm f -> Tm f -> Maybe Ordering
 orientTerms t u
   | t == u = Just EQ
   | lessEq t u = Just LT
@@ -63,7 +63,7 @@ lessEq' (Var x) t
 lessEq' t@(Fun f ts) u@(Fun g us) =
 -}
 
-lessEq :: (Sized f, Minimal f, Ord f, Ord v) => Tm f v -> Tm f v -> Bool
+lessEq :: (Sized f, Minimal f, Ord f) => Tm f -> Tm f -> Bool
 lessEq (Fun f []) _    | f == minimal = True
 lessEq (Var x) (Var y) | x == y = True
 lessEq _ (Var _) = False
