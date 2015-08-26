@@ -166,7 +166,7 @@ reduceCP s f (Critical top (t :=: u))
 
     subsumed s root t u =
       or [ rhs x == u | x <- Index.lookup t rs ] ||
-      or [ rhs x == t | (x, x') <- Index.lookup' u rs, not root || not (isVariantOf (lhs x') u) ] ||
+      or [ subst sub (rhs x) == t | (x, sub) <- Index.matches u rs, not root || not (isVariantOf (lhs x) u) ] ||
       case focus t u of
         Nothing -> False
         Just (t', u') -> subsumed s False t' u'
