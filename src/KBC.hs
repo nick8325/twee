@@ -186,14 +186,14 @@ reduceCP s f (Critical top (t :=: u))
 normaliseCPQuickly, normaliseCP ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
   KBC f -> Critical (Equation f) -> Maybe (Critical (Equation f))
-normaliseCPQuickly s cp@(Critical top _) =
+normaliseCPQuickly s cp =
   reduceCP s id cp >>=
   reduceCP s (result . normaliseQuickly s)
 
-normaliseCP s cp@(Critical top _) =
+normaliseCP s cp@(Critical info _) =
   normaliseCPQuickly s cp >>=
   reduceCP s (result . normalise s) >>=
-  reduceCP s (result . normaliseSub s top)
+  reduceCP s (result . normaliseSub s (top info))
 
 --------------------------------------------------------------------------------
 -- Completion loop.
@@ -254,10 +254,10 @@ consider pair = do
   s <- get
   case normaliseCP s pair of
     Nothing -> return ()
-    Just (Critical top eq) ->
+    Just (Critical info eq) ->
       forM_ (orient eq) $ \r@(Rule _ t u) -> do
         s <- get
-        case normaliseCP s (Critical top (t :=: u)) of
+        case normaliseCP s (Critical info (t :=: u)) of
           Nothing -> return ()
           Just eq ->
             case groundJoin s (branches (And [])) eq of
@@ -268,21 +268,21 @@ consider pair = do
                 newSubRule r
               Left model -> do
                 traceM (NewRule (canonicalise r))
-                l <- addRule (Modelled model (Critical top r))
+                l <- addRule (Modelled model (Critical info r))
                 queueCPsSplit noLabel l (Labelled l r)
                 interreduce r
 
 groundJoin :: (Numbered f, Sized f, Minimal f, Ord f, PrettyTerm f) =>
   KBC f -> [Branch f] -> Critical (Equation f) -> Either [Formula f] [Critical (Equation f)]
-groundJoin s ctx r@(Critical top (t :=: u)) =
+groundJoin s ctx r@(Critical info (t :=: u)) =
   case partition (isNothing . snd) (map (solve (usort (vars t ++ vars u))) ctx) of
     ([], instances) ->
       let rs = [ substf (evalSubst sub) r | (_, Just sub) <- instances ] in
       Right (usort (map canonicalise rs))
     ((model, Nothing):_, _)
-      | isJust (normaliseCP s (Critical top (t' :=: u'))) -> Left model
+      | isJust (normaliseCP s (Critical info (t' :=: u'))) -> Left model
       | otherwise ->
-          let rs = shrinkList model (\fs -> isNothing (normaliseCP s (Critical top (result (normaliseIn s fs t) :=: result (normaliseIn s fs u)))))
+          let rs = shrinkList model (\fs -> isNothing (normaliseCP s (Critical info (result (normaliseIn s fs t) :=: result (normaliseIn s fs u)))))
               nt = normaliseIn s rs t
               nu = normaliseIn s rs u
               rs' = strengthen rs (\fs -> valid fs nt && valid fs nu)
@@ -358,12 +358,12 @@ interreduce new = do
         traceM (Reduce red new)
         case red of
           Simplify model rule -> simplifyRule l model rule
-          Reorient rule@(Modelled _ (Critical top (Rule _ t u))) -> do
+          Reorient rule@(Modelled _ (Critical info (Rule _ t u))) -> do
             deleteRule l rule
-            queueCP noLabel noLabel (Critical top (t :=: u))
+            queueCP noLabel noLabel (Critical info (t :=: u))
 
 reduceWith :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => KBC f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
-reduceWith s lab new old0@(Modelled model (Critical top old@(Rule _ l r)))
+reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
   | {-# SCC "reorient-normal" #-}
     not (lhs new `isInstanceOf` l) &&
     not (null (anywhere (tryRule reduces new) l)) =
@@ -386,22 +386,22 @@ reduceWith s lab new old0@(Modelled model (Critical top old@(Rule _ l r)))
   | otherwise = Nothing
   where
     s' = s { labelledRules = Index.delete (Labelled lab old0) (labelledRules s) }
-    modelJoinable = isNothing (normaliseCP s' (Critical top (lm :=: rm)))
+    modelJoinable = isNothing (normaliseCP s' (Critical info (lm :=: rm)))
     lm = result (normaliseIn s' model l)
     rm = result (normaliseIn s' model r)
     tryGroundJoin =
-      case groundJoin s' (branches (And [])) (Critical top (l :=: r)) of
+      case groundJoin s' (branches (And [])) (Critical info (l :=: r)) of
         Left model' ->
           Just (Simplify model' old0)
         Right _ ->
           Just (Reorient old0)
 
 simplifyRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => Label -> [Formula f] -> Modelled (Critical (Rule f)) -> State (KBC f) ()
-simplifyRule l model rule@(Modelled _ (Critical top (Rule ctx lhs rhs))) = do
+simplifyRule l model rule@(Modelled _ (Critical info (Rule ctx lhs rhs))) = do
   modify $ \s ->
     s {
       labelledRules =
-         Index.insert (Labelled l (Modelled model (Critical top (Rule ctx lhs (result (normalise s rhs))))))
+         Index.insert (Labelled l (Modelled model (Critical info (Rule ctx lhs (result (normalise s rhs))))))
            (Index.delete (Labelled l rule) (labelledRules s)) }
   newSubRule (Rule ctx lhs rhs)
 
@@ -409,7 +409,7 @@ newEquation ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
   Equation f -> State (KBC f) ()
 newEquation (t :=: u) = do
-  consider (Critical minimalTerm (t :=: u))
+  consider (Critical (CritInfo minimalTerm 0) (t :=: u))
   return ()
 
 --------------------------------------------------------------------------------
@@ -418,29 +418,41 @@ newEquation (t :=: u) = do
 
 data Critical a =
   Critical {
-    top      :: TmOf a,
+    critInfo :: CritInfo (ConstantOf a),
     critical :: a }
+
+data CritInfo f =
+  CritInfo {
+    top      :: Tm f,
+    overlap  :: Int }
 
 instance Eq a => Eq (Critical a) where x == y = critical x == critical y
 instance Ord a => Ord (Critical a) where compare = comparing critical
 
 instance (PrettyTerm (ConstantOf a), Pretty a) => Pretty (Critical a) where
-  pPrint Critical{..} =
-    hang (pPrint critical) 2 (text "from" <+> pPrint top)
+  pPrint Critical{..} = pPrint critical
 
 deriving instance (Show a, Show (ConstantOf a)) => Show (Critical a)
+deriving instance Show f => Show (CritInfo f)
 
 instance Symbolic a => Symbolic (Critical a) where
   type ConstantOf (Critical a) = ConstantOf a
 
-  termsDL Critical{..} = termsDL critical `mplus` termsDL top
-  substf sub Critical{..} = Critical (substf sub top) (substf sub critical)
+  termsDL Critical{..} = termsDL critical `mplus` termsDL critInfo
+  substf sub Critical{..} = Critical (substf sub critInfo) (substf sub critical)
+
+instance Symbolic (CritInfo f) where
+  type ConstantOf (CritInfo f) = f
+
+  termsDL CritInfo{..} = termsDL top
+  substf sub CritInfo{..} = CritInfo (substf sub top) overlap
 
 data CPInfo =
   CPInfo {
-    cpWeight :: {-# UNPACK #-} !Int,
-    cpAge1   :: {-# UNPACK #-} !Label,
-    cpAge2   :: {-# UNPACK #-} !Label }
+    cpWeight  :: {-# UNPACK #-} !Int,
+    cpWeight2 :: {-# UNPACK #-} !Int,
+    cpAge1    :: {-# UNPACK #-} !Label,
+    cpAge2    :: {-# UNPACK #-} !Label }
     deriving (Eq, Ord, Show)
 
 data CP f =
@@ -529,6 +541,8 @@ criticalPairs1 s n (Rule or1 t u) idx = do
       top = rename f (CP.top cp)
 
       inner = fromMaybe __ (subtermAt top (CP.leftPos cp))
+      overlap = fromMaybe __ (subtermAt t (CP.leftPos cp))
+      osz = size overlap + (size u - size t) + (size u' - size t')
       sz = size top
 
   guard (left /= top && right /= top)
@@ -539,7 +553,7 @@ criticalPairs1 s n (Rule or1 t u) idx = do
     InitialCP
       (canonicalise (fromMaybe __ (subtermAt t (CP.leftPos cp))), l)
       (null (nested (anywhere (rewrite reduces (rules s))) inner))
-      (Labelled l (Critical top (left :=: right)))
+      (Labelled l (Critical (CritInfo top osz) (left :=: right)))
 
 queueCP ::
   (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
@@ -588,19 +602,19 @@ toCP ::
   KBC f -> Label -> Label -> Critical (Equation f) -> Maybe (CP f)
 toCP s l1 l2 cp = fmap toCP' (norm cp)
   where
-    norm (Critical top (t :=: u)) = do
+    norm (Critical info (t :=: u)) = do
       guard (t /= u)
       let t' = result (normaliseQuickly s t)
           u' = result (normaliseQuickly s u)
       guard (t' /= u')
-      invert (Critical top (t' :=: u'))
+      invert (Critical info (t' :=: u'))
 
-    invert (Critical top (t :=: u))
+    invert (Critical info (t :=: u))
       | useInversionRules s,
-        Just (t', u') <- focus top t u `mplus` focus top u t =
+        Just (t', u') <- focus (top info) t u `mplus` focus (top info) u t =
           Debug.Trace.traceShow (sep [text "Reducing", nest 2 (pPrint (t :=: u)), text "to", nest 2 (pPrint (t' :=: u'))]) $
-          norm (Critical top (t' :=: u'))
-      | otherwise = Just (Critical top (t :=: u))
+          norm (Critical info (t' :=: u'))
+      | otherwise = Just (Critical info (t :=: u))
 
     focus top t u =
       listToMaybe $ do
@@ -633,10 +647,10 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
               | otherwise = Nothing
         focus _ _ = Nothing
 
-    toCP' (Critical top (t :=: u)) =
-      CP (CPInfo (weight t' u') l2 l1) (Critical top' (t' :=: u')) l1 l2
+    toCP' (Critical info (t :=: u)) =
+      CP (CPInfo (weight t' u') (-(overlap info)) l2 l1) (Critical info' (t' :=: u')) l1 l2
       where
-        Critical top' (t' :=: u') = canonicalise (Critical top (order (t :=: u)))
+        Critical info' (t' :=: u') = canonicalise (Critical info (order (t :=: u)))
 
     weight t u
       | u `lessEq` t = f t u + penalty t u
