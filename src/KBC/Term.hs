@@ -13,24 +13,30 @@ import qualified Data.Rewriting.Substitution.Type as Subst
 
 class Minimal a where
   minimal :: a
-  skolem  :: Int -> a
 
 minimalTerm :: Minimal f => Tm f
 minimalTerm = Fun minimal []
 
-skolemConst :: Minimal f => Int -> Tm f
+class Skolem a where
+  skolem  :: Int -> a
+
+skolemConst :: Skolem f => Int -> Tm f
 skolemConst n = Fun (skolem n) []
 
-skolemise :: Minimal f => Tm f -> Tm f
+skolemise :: Skolem f => Tm f -> Tm f
 skolemise = foldTerm (skolemConst . number) Fun
 
-class Sized a where
-  funSize  :: a -> Int
-  funArity :: a -> Int
+class (Ord f, PrettyTerm f, Minimal f, Numbered f, Skolem f, Arity f) => Function f
 
-size :: Sized f => Tm f -> Int
-size (Var _) = 1
-size (Fun f xs) = funSize f + sum (map size xs)
+class Sized a where
+  size  :: a -> Int
+
+class Arity a where
+  arity :: a -> Int
+
+instance Sized f => Sized (Tm f) where
+  size (Var _) = 1
+  size (Fun f xs) = size f + sum (map size xs)
 
 orientTerms :: (Sized f, Minimal f, Ord f) => Tm f -> Tm f -> Maybe Ordering
 orientTerms t u

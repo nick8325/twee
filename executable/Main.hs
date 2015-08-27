@@ -45,11 +45,13 @@ instance Numbered Constant where
 
 instance Minimal Constant where
   minimal = con0
+instance Skolem Constant where
   skolem n = Constant (-(n+1)) 0 1 ("sk" ++ show n)
   
 instance Sized Constant where
-  funSize = fromIntegral . conSize
-  funArity = conArity
+  size = fromIntegral . conSize
+instance Arity Constant where
+  arity = conArity
 
 instance Pretty Constant where pPrint = text . conName
 instance PrettyTerm Constant where
@@ -60,6 +62,8 @@ instance PrettyTerm Constant where
         2 -> infixStyle 5
         _ -> uncurried
   termStyle _ = uncurried
+
+instance Function Constant
 
 parseDecl :: Int -> StateT (Int, Map String Int) ReadP Constant
 parseDecl n = lift $ do

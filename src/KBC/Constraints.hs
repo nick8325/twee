@@ -20,7 +20,7 @@ data Constrained a =
     constraint  :: Formula (ConstantOf a),
     constrained :: a }
 
-instance (Pretty (ConstantOf a), Minimal (ConstantOf a), Pretty a) => Pretty (Constrained a) where
+instance (Function (ConstantOf a), Pretty a) => Pretty (Constrained a) where
   pPrint (Constrained (And []) x) = pPrint x
   pPrint (Constrained ctx x) =
     hang (pPrint x) 2 (text "when" <+> pPrint ctx)
@@ -29,7 +29,7 @@ deriving instance (Eq a, Eq (ConstantOf a)) => Eq (Constrained a)
 deriving instance (Ord a, Ord (ConstantOf a)) => Ord (Constrained a)
 deriving instance (Show a, Show (ConstantOf a)) => Show (Constrained a)
 
-instance (Minimal (ConstantOf a), Sized (ConstantOf a), Ord (ConstantOf a), Symbolic a) => Symbolic (Constrained a) where
+instance (Function (ConstantOf a), Symbolic a) => Symbolic (Constrained a) where
   type ConstantOf (Constrained a) = ConstantOf a
 
   termsDL x =
@@ -48,7 +48,7 @@ data Formula f =
   | Or  [Formula f]
   deriving (Eq, Ord, Show)
 
-instance (Minimal f, Pretty f) => Pretty (Formula f) where
+instance Function f => Pretty (Formula f) where
   pPrintPrec _ _ (Less t u) = hang (pPrint t <+> text "<") 2 (pPrint u)
   pPrintPrec _ _ (LessEq t u) = hang (pPrint t <+> text "<=") 2 (pPrint u)
   pPrintPrec _ _ (Minimal t) = hang (pPrint t <+> text "=") 2 (pPrint (minimal :: f))
@@ -68,7 +68,7 @@ instance (Minimal f, Pretty f) => Pretty (Formula f) where
       nest_ (x:xs) = x:map (nest 2) xs
       nest_ [] = __
 
-instance (Minimal f, Eq f) => Symbolic (Formula f) where
+instance Function f => Symbolic (Formula f) where
   type ConstantOf (Formula f) = f
 
   termsDL (Less t u) = termsDL (Var t, Var u :: Tm f)
@@ -152,7 +152,7 @@ data Branch f =
     nonminimals :: [Var] }
   deriving (Eq, Ord)
 
-instance (Minimal f, PrettyTerm f) => Pretty (Branch f) where
+instance Function f => Pretty (Branch f) where
   pPrint Branch{..} =
     braces $ fsep $ punctuate (text ",") $
       [pPrint x <+> text "<" <+> pPrint y | (x, y) <- less ] ++
@@ -250,7 +250,7 @@ addNonminimal t0 b@Branch{..} =
     newNonminimals =
       [u | (t', u) <- less, t == t']
 
-solve :: Minimal f => [Var] -> Branch f -> ([Formula f], Maybe (Subst f))
+solve :: (Function f, Sized f) => [Var] -> Branch f -> ([Formula f], Maybe (Subst f))
 solve xs Branch{..}
   | null equals && null minimals = (forms', Nothing)
   | otherwise = (forms, Just sub)
@@ -266,7 +266,7 @@ solve xs Branch{..}
         [Less x y | (x:xs) <- tails vs, y <- xs] ++
         [Nonminimal x | x <- vs]
 
-lessEqIn :: (Sized f, Minimal f, Ord f) => [Formula f] -> Tm f -> Tm f -> Bool
+lessEqIn :: (Function f, Sized f) => [Formula f] -> Tm f -> Tm f -> Bool
 lessEqIn _ t _       |  t == minimalTerm = True
 lessEqIn _ (Var x) (Var y) | x == y = True
 lessEqIn cond (Var x) (Var y) = Less x y `elem` cond || LessEq x y `elem` cond
@@ -294,7 +294,7 @@ lessEqIn cond t@(Fun f ts) u@(Fun g us)
         [FM.var x FM.>== 1 | x <- Map.keys (FM.vars (termSize t - termSize u))]
 
     termSize (Var x) = FM.var x
-    termSize (Fun f xs) = FM.scalar (fromIntegral (funSize f)) + sum (map termSize xs)
+    termSize (Fun f xs) = FM.scalar (fromIntegral (size f)) + sum (map termSize xs)
 
     lexLess [] [] = True
     lexLess (t:ts) (u:us) =

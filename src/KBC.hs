@@ -56,7 +56,7 @@ initialState maxSize goals =
     useInversionRules = False,
     useSkolemPenalty  = True }
 
-report :: (Ord f, Sized f, Minimal f) => KBC f -> String
+report :: (Function f, Sized f) => KBC f -> String
 report KBC{..} =
   printf "Rules: %d total, %d oriented, %d unoriented, %d permutative, %d weakly oriented. "
     (length rs)
@@ -77,18 +77,14 @@ report KBC{..} =
     Label n = nextLabel queue
     s = sum (map passiveCount (toList queue))
 
-enqueueM ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f) =>
-  Passive f -> State (KBC f) ()
+enqueueM :: (Function f, Sized f) => Passive f -> State (KBC f) ()
 enqueueM cps = do
   traceM (NewCP cps)
   modify' $ \s -> s {
     queue    = enqueue cps (queue s),
     totalCPs = totalCPs s + passiveCount cps }
 
-dequeueM ::
-  (Minimal f, Sized f, Ord f) =>
-  State (KBC f) (Maybe (Passive f))
+dequeueM :: (Function f, Sized f) => State (KBC f) (Maybe (Passive f))
 dequeueM =
   state $ \s ->
     case dequeue (queue s) of
@@ -129,32 +125,24 @@ rules k =
   Index.mapMonotonic (critical . modelled . peel) (labelledRules k)
   `Index.union` extraRules k
 
-normaliseQuickly ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
-  KBC f -> Tm f -> Reduction f
+normaliseQuickly :: (Function f, Sized f) => KBC f -> Tm f -> Reduction f
 normaliseQuickly s = normaliseWith (rewrite simplifies (rules s))
 
-normalise ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
-  KBC f -> Tm f -> Reduction f
+normalise :: (Function f, Sized f) => KBC f -> Tm f -> Reduction f
 normalise s = normaliseWith (rewrite reduces (rules s))
 
-normaliseIn ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
-  KBC f -> [Formula f] -> Tm f -> Reduction f
+normaliseIn :: (Function f, Sized f) => KBC f -> [Formula f] -> Tm f -> Reduction f
 normaliseIn s model =
   normaliseWith (rewrite (reducesInModel model) (rules s))
 
-normaliseSub ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
-  KBC f -> Tm f -> Tm f -> Reduction f
+normaliseSub :: (Function f, Sized f) => KBC f -> Tm f -> Tm f -> Reduction f
 normaliseSub s top t
   | lessEq t top && isNothing (unify t top) =
     normaliseWith (rewrite (reducesSub top) (rules s)) t
   | otherwise = Reduction t Refl
 
 reduceCP ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
+  (Function f, Sized f) =>
   KBC f -> (Tm f -> Tm f) ->
   Critical (Equation f) -> Maybe (Critical (Equation f))
 reduceCP s f (Critical top (t :=: u))
@@ -184,7 +172,7 @@ reduceCP s f (Critical top (t :=: u))
     focus _ _ = Nothing
 
 normaliseCPQuickly, normaliseCP ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
+  (Function f, Sized f) =>
   KBC f -> Critical (Equation f) -> Maybe (Critical (Equation f))
 normaliseCPQuickly s cp =
   reduceCP s id cp >>=
@@ -199,16 +187,12 @@ normaliseCP s cp@(Critical info _) =
 -- Completion loop.
 --------------------------------------------------------------------------------
 
-complete ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
-  State (KBC f) ()
+complete :: (Function f, Sized f) => State (KBC f) ()
 complete = do
   res <- complete1
   when res complete
 
-complete1 ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
-  State (KBC f) Bool
+complete1 :: (Function f, Sized f) => State (KBC f) Bool
 complete1 = do
   KBC{..} <- get
   when (totalCPs >= renormaliseAt) $ do
@@ -232,10 +216,7 @@ complete1 = do
     Nothing ->
       return False
 
-normaliseCPs ::
-  forall f v.
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
-  State (KBC f) ()
+normaliseCPs :: forall f v. (Function f, Sized f) => State (KBC f) ()
 normaliseCPs = do
   s@KBC{..} <- get
   traceM (NormaliseCPs s)
@@ -247,7 +228,7 @@ normaliseCPs = do
   modify (\s -> s { totalCPs = totalCPs })
 
 consider ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
+  (Function f, Sized f) =>
   Critical (Equation f) -> State (KBC f) ()
 consider pair = do
   traceM (Consider pair)
@@ -272,7 +253,7 @@ consider pair = do
                 queueCPsSplit noLabel l (Labelled l r)
                 interreduce r
 
-groundJoin :: (Numbered f, Sized f, Minimal f, Ord f, PrettyTerm f) =>
+groundJoin :: (Function f, Sized f) =>
   KBC f -> [Branch f] -> Critical (Equation f) -> Either [Formula f] [Critical (Equation f)]
 groundJoin s ctx r@(Critical info (t :=: u)) =
   case partition (isNothing . snd) (map (solve (usort (vars t ++ vars u))) ctx) of
@@ -300,7 +281,7 @@ groundJoin s ctx r@(Critical info (t :=: u)) =
         Reduction u' _ = normaliseIn s model u
     _ -> __
 
-valid :: (Sized f, Minimal f, Ord f, PrettyTerm f) => [Formula f] -> Reduction f -> Bool
+valid :: (Function f, Sized f) => [Formula f] -> Reduction f -> Bool
 valid model red = all valid1 (steps red)
   where
     valid1 rule = reducesInModel model rule
@@ -318,7 +299,7 @@ strengthen (Less t u:xs) p
   | otherwise = Less t u:strengthen xs (\ys -> p (Less t u:ys))
 strengthen (x:xs) p = x:strengthen xs (\ys -> p (x:ys))
 
-newSubRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => Rule f -> State (KBC f) ()
+newSubRule :: (Function f, Sized f) => Rule f -> State (KBC f) ()
 newSubRule r@(Rule _ t u) = do
   s <- get
   when (useInversionRules s) $
@@ -328,14 +309,14 @@ newSubRule r@(Rule _ t u) = do
       | isFun v && not (lessEq v u) && usort (vars u) `isSubsequenceOf` usort (vars v) = Index.insert (v, r) idx
       | otherwise = idx
 
-addRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => Modelled (Critical (Rule f)) -> State (KBC f) Label
+addRule :: (Function f, Sized f) => Modelled (Critical (Rule f)) -> State (KBC f) Label
 addRule rule = do
   l <- newLabelM
   modify (\s -> s { labelledRules = Index.insert (Labelled l rule) (labelledRules s) })
   newSubRule (critical (modelled rule))
   return l
 
-deleteRule :: (Minimal f, Sized f, Ord f, Numbered f) => Label -> Modelled (Critical (Rule f)) -> State (KBC f) ()
+deleteRule :: (Function f, Sized f) => Label -> Modelled (Critical (Rule f)) -> State (KBC f) ()
 deleteRule l rule =
   modify $ \s ->
     s { labelledRules = Index.delete (Labelled l rule) (labelledRules s),
@@ -347,7 +328,7 @@ instance PrettyTerm f => Pretty (Simplification f) where
   pPrint (Simplify _ rule) = text "Simplify" <+> pPrint rule
   pPrint (Reorient rule) = text "Reorient" <+> pPrint rule
 
-interreduce :: (PrettyTerm f, Ord f, Minimal f, Sized f, Numbered f) => Rule f -> State (KBC f) ()
+interreduce :: (Function f, Sized f) => Rule f -> State (KBC f) ()
 interreduce new = do
   rules <- gets (Index.elems . labelledRules)
   forM_ rules $ \(Labelled l old) -> do
@@ -362,7 +343,7 @@ interreduce new = do
             deleteRule l rule
             queueCP noLabel noLabel (Critical info (t :=: u))
 
-reduceWith :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => KBC f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
+reduceWith :: (Function f, Sized f) => KBC f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
 reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
   | {-# SCC "reorient-normal" #-}
     not (lhs new `isInstanceOf` l) &&
@@ -396,7 +377,7 @@ reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
         Right _ ->
           Just (Reorient old0)
 
-simplifyRule :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => Label -> [Formula f] -> Modelled (Critical (Rule f)) -> State (KBC f) ()
+simplifyRule :: (Function f, Sized f) => Label -> [Formula f] -> Modelled (Critical (Rule f)) -> State (KBC f) ()
 simplifyRule l model rule@(Modelled _ (Critical info (Rule ctx lhs rhs))) = do
   modify $ \s ->
     s {
@@ -405,9 +386,7 @@ simplifyRule l model rule@(Modelled _ (Critical info (Rule ctx lhs rhs))) = do
            (Index.delete (Labelled l rule) (labelledRules s)) }
   newSubRule (Rule ctx lhs rhs)
 
-newEquation ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
-  Equation f -> State (KBC f) ()
+newEquation :: (Function f, Sized f) => Equation f -> State (KBC f) ()
 newEquation (t :=: u) = do
   consider (Critical (CritInfo minimalTerm 0) (t :=: u))
   return ()
@@ -512,13 +491,13 @@ data InitialCP f =
     cpOK :: Bool,
     cpCP :: Labelled (Critical (Equation f)) }
 
-filterCPs :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => [InitialCP f] -> [Labelled [Critical (Equation f)]]
+filterCPs :: (Function f, Sized f) => [InitialCP f] -> [Labelled [Critical (Equation f)]]
 filterCPs =
   map pick . filter (cpOK . head) . groupBy ((==) `on` cpId) . sortBy (comparing cpId)
   where
     pick xs@(x:_) = Labelled (labelOf (cpCP x)) (map (peel . cpCP) xs)
 
-criticalPairs :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => KBC f -> Label -> Label -> Rule f -> [InitialCP f]
+criticalPairs :: (Function f, Sized f) => KBC f -> Label -> Label -> Rule f -> [InitialCP f]
 criticalPairs s lower upper rule =
   criticalPairs1 s (maxSize s) rule (Index.mapMonotonic (fmap (critical . modelled)) rules) ++
   [ cp
@@ -528,7 +507,7 @@ criticalPairs s lower upper rule =
     rules = Index.filter (p . labelOf) (labelledRules s)
     p l = lower <= l && l <= upper
 
-criticalPairs1 :: (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) => KBC f -> Int -> Rule f -> Index (Labelled (Rule f)) -> [InitialCP f]
+criticalPairs1 :: (Function f, Sized f) => KBC f -> Int -> Rule f -> Index (Labelled (Rule f)) -> [InitialCP f]
 criticalPairs1 s n (Rule or1 t u) idx = do
   Labelled l (Rule or2 t' u') <- Index.elems idx
   let r1 = T.Rule t u
@@ -556,7 +535,7 @@ criticalPairs1 s n (Rule or1 t u) idx = do
       (Labelled l (Critical (CritInfo top osz) (left :=: right)))
 
 queueCP ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
+  (Function f, Sized f) =>
   Label -> Label -> Critical (Equation f) -> State (KBC f) ()
 queueCP l1 l2 eq = do
   s <- get
@@ -565,7 +544,7 @@ queueCP l1 l2 eq = do
     Just cp -> enqueueM (SingleCP cp)
 
 queueCPs ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
+  (Function f, Sized f) =>
   Label -> Label -> Labelled (Rule f) -> State (KBC f) ()
 queueCPs lower upper rule = do
   s <- get
@@ -577,7 +556,7 @@ queueCPs lower upper rule = do
     enqueueM (ManyCPs (CPs (info best) (l2 best) lower upper (length xs) rule))
 
 queueCPsSplit ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
+  (Function f, Sized f) =>
   Label -> Label -> Labelled (Rule f) -> State (KBC f) ()
 queueCPsSplit l u rule = do
   queueCPs l (l + diff `div` k) rule
@@ -589,7 +568,7 @@ queueCPsSplit l u rule = do
     diff = u-l
 
 toCPs ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
+  (Function f, Sized f) =>
   KBC f -> Label -> Label -> Labelled (Rule f) -> [CP f]
 toCPs s lower upper (Labelled l rule) =
   usortBy (comparing (critical . cp)) . map minimum . filter (not . null) $
@@ -598,7 +577,7 @@ toCPs s lower upper (Labelled l rule) =
     cps0 = filterCPs (criticalPairs s lower upper rule)
 
 toCP ::
-  (PrettyTerm f, Minimal f, Sized f, Ord f, Numbered f) =>
+  (Function f, Sized f) =>
   KBC f -> Label -> Label -> Critical (Equation f) -> Maybe (CP f)
 toCP s l1 l2 cp = fmap toCP' (norm cp)
   where
@@ -679,7 +658,7 @@ data Event f =
   | Discharge (Critical (Equation f)) [Formula f]
   | NormaliseCPs (KBC f)
 
-trace :: (Ord f, Sized f, Minimal f, PrettyTerm f) => Event f -> a -> a
+trace :: (Function f, Sized f) => Event f -> a -> a
 trace (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
 trace (ExtraRule rule) = traceIf True (hang (text "Extra rule") 2 (pPrint rule))
 trace (NewCP cp) = traceIf False (hang (text "Critical pair") 2 (pPrint cp))
@@ -688,7 +667,7 @@ trace (Consider eq) = traceIf False (sep [text "Considering", nest 2 (pPrint eq)
 trace (Discharge eq fs) = traceIf True (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
 trace (NormaliseCPs s) = traceIf True (text "" $$ text "Normalising unprocessed critical pairs." $$ text (report s) $$ text "")
 
-traceM :: (Monad m, Ord f, Sized f, Minimal f, PrettyTerm f) => Event f -> m ()
+traceM :: (Monad m, Function f, Sized f) => Event f -> m ()
 traceM x = trace x (return ())
 
 traceIf :: Bool -> Doc -> a -> a
