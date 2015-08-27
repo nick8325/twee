@@ -249,7 +249,7 @@ addNonminimal t0 b@Branch{..} =
     newNonminimals =
       [u | (t', u) <- less, t == t']
 
-solve :: (Function f, Sized f) => [Var] -> Branch f -> ([Formula f], Maybe (Subst f))
+solve :: Function f => [Var] -> Branch f -> ([Formula f], Maybe (Subst f))
 solve xs Branch{..}
   | null equals && null minimals = (forms', Nothing)
   | otherwise = (forms, Just sub)

@@ -10,7 +10,7 @@ import qualified Data.Rewriting.Substitution.Type as Subst
 import qualified Solver.FourierMotzkin.Internal as FM
 import Data.Maybe
 
-lessEq :: (Sized f, Minimal f, Ord f) => Tm f -> Tm f -> Bool
+lessEq :: Function f => Tm f -> Tm f -> Bool
 lessEq (Fun f []) _    | f == minimal = True
 lessEq (Var x) (Var y) | x == y = True
 lessEq _ (Var _) = False
@@ -38,7 +38,7 @@ lessEq t@(Fun f ts) u@(Fun g us) =
     st = size t
     su = size u
 
-lessEqIn :: (Function f, Sized f) => [Formula f] -> Tm f -> Tm f -> Bool
+lessEqIn :: Function f => [Formula f] -> Tm f -> Tm f -> Bool
 lessEqIn _ t _       |  t == minimalTerm = True
 lessEqIn _ (Var x) (Var y) | x == y = True
 lessEqIn cond (Var x) (Var y) = Less x y `elem` cond || LessEq x y `elem` cond

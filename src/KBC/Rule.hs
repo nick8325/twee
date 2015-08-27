@@ -69,7 +69,7 @@ instance Symbolic (Equation f) where
 instance PrettyTerm f => Pretty (Equation f) where
   pPrint (x :=: y) = hang (pPrint x <+> text "=") 2 (pPrint y)
 
-order :: (Function f, Sized f) => Equation f -> Equation f
+order :: Function f => Equation f -> Equation f
 order (l :=: r)
   | l == r = l :=: r
   | otherwise =
@@ -81,7 +81,7 @@ order (l :=: r)
 unorient :: Rule f -> Equation f
 unorient (Rule _ l r) = l :=: r
 
-orient :: (Function f, Sized f) => Equation f -> [Rule f]
+orient :: Function f => Equation f -> [Rule f]
 orient (l :=: r) | l == r = []
 orient (l :=: r) =
   -- If we have an equation where some variables appear only on one side, e.g.:
@@ -197,13 +197,13 @@ nested strat (Fun f xs) =
   | (i, x) <- zip [0..] xs,
     p <- strat x ]
 
-rewrite :: (Function f, Sized f) => (Rule f -> Bool) -> Index (Rule f) -> Strategy f
+rewrite :: Function f => (Rule f -> Bool) -> Index (Rule f) -> Strategy f
 rewrite p rules t = do
   rule <- Index.lookup t rules
   guard (p rule)
   return (step rule)
 
-tryRule :: (Function f, Sized f) => (Rule f -> Bool) -> Rule f -> Strategy f
+tryRule :: Function f => (Rule f -> Bool) -> Rule f -> Strategy f
 tryRule p rule t = do
   sub <- maybeToList (match (lhs rule) t)
   let rule' = substf (evalSubst sub) rule
@@ -217,7 +217,7 @@ simplifies (Rule (WeaklyOriented ts) _ _) =
 simplifies (Rule (Permutative _) _ _) = False
 simplifies (Rule Unoriented _ _) = False
 
-reducesWith :: (Function f, Sized f) => (Tm f -> Tm f -> Bool) -> Rule f -> Bool
+reducesWith :: Function f => (Tm f -> Tm f -> Bool) -> Rule f -> Bool
 reducesWith _ (Rule Oriented _ _) = True
 reducesWith _ (Rule (WeaklyOriented ts) _ _) =
   or [ t /= minimalTerm | t <- ts ]
@@ -231,16 +231,16 @@ reducesWith p (Rule (Permutative ts) _ _) =
 reducesWith p (Rule Unoriented t u) =
   p u t && u /= t
 
-reduces :: (Function f, Sized f) => Rule f -> Bool
+reduces :: Function f => Rule f -> Bool
 reduces rule = reducesWith lessEq rule
 
-reducesInModel :: (Function f, Sized f) => [Formula f] -> Rule f -> Bool
+reducesInModel :: Function f => [Formula f] -> Rule f -> Bool
 reducesInModel cond rule = reducesWith (lessEqIn cond) rule
 
-reducesSkolem :: (Function f, Sized f) => Rule f -> Bool
+reducesSkolem :: Function f => Rule f -> Bool
 reducesSkolem = reducesWith (\t u -> lessEq (skolemise t) (skolemise u))
 
-reducesSub :: (Function f, Sized f) => Tm f -> Rule f -> Bool
+reducesSub :: Function f => Tm f -> Rule f -> Bool
 reducesSub top rule =
   reducesSkolem rule && lessEq u top && isNothing (unify u top)
   where
