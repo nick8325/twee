@@ -11,7 +11,6 @@ import KBC.Rule
 import qualified KBC.Index as Index
 import KBC.Index(Index)
 import KBC.Queue hiding (queue)
-import KBC.Term
 import KBC.Utils
 import Control.Monad
 import Data.Maybe

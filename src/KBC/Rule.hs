@@ -5,7 +5,6 @@ import KBC.Base
 import KBC.Constraints
 import qualified KBC.Index as Index
 import KBC.Index(Index)
-import KBC.Term
 import Control.Monad
 import Data.Maybe
 import Data.List

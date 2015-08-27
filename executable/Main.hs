@@ -11,7 +11,6 @@ import Control.Monad.Trans.Class
 import Data.Char
 import KBC
 import KBC.Base hiding (char)
-import KBC.Term
 import KBC.Rule
 import KBC.Utils
 import KBC.Queue

@@ -9,6 +9,9 @@ module KBC.Base(
   module Data.Rewriting.Substitution, evalSubst, subst, matchMany, unifyMany,
   Symbolic(..), terms, varsDL, vars, funsDL, funs, symbolsDL, symbols,
   Numbered(..), canonicalise,
+  Minimal(..), minimalTerm,
+  Skolem(..), skolemConst, skolemise,
+  Arity(..), Sized(..), Ordered(..), Function,
   module KBC.Pretty,
   module Text.PrettyPrint.HughesPJClass) where
 
@@ -28,6 +31,7 @@ import Data.Rewriting.Term.Ops(subterms)
 import KBC.Pretty
 import Text.PrettyPrint.HughesPJClass hiding (empty)
 import Data.Ord
+import {-# SOURCE #-} KBC.Constraints
 
 -- A type of variables.
 newtype Var = MkVar Int deriving (Eq, Ord, Show, Enum, Numbered)
@@ -153,3 +157,41 @@ canonicalise t = substf (evalSubst sub) t
     f x n = (x, Var (withNumber n x))
     vs  = vs' ++ (nub (concatMap vars (terms t)) \\ vs')
     vs' = nub (vars (term t))
+
+class Minimal a where
+  minimal :: a
+
+minimalTerm :: Minimal f => Tm f
+minimalTerm = Fun minimal []
+
+class Skolem a where
+  skolem  :: Int -> a
+
+skolemConst :: Skolem f => Int -> Tm f
+skolemConst n = Fun (skolem n) []
+
+skolemise :: Skolem f => Tm f -> Tm f
+skolemise = foldTerm (skolemConst . number) Fun
+
+class (PrettyTerm f, Minimal f, Numbered f, Skolem f, Arity f, Sized f, Ordered f) => Function f
+
+class Arity a where
+  arity :: a -> Int
+
+class Sized a where
+  size  :: a -> Int
+
+instance Sized f => Sized (Tm f) where
+  size (Var _) = 1
+  size (Fun f xs) = size f + sum (map size xs)
+
+class Ord f => Ordered f where
+  orientTerms :: Tm f -> Tm f -> Maybe Ordering
+  orientTerms t u
+    | t == u = Just EQ
+    | lessEq t u = Just LT
+    | lessEq u t = Just GT
+    | otherwise = Nothing
+
+  lessEq :: Tm f -> Tm f -> Bool
+  lessEqIn :: [Formula f] -> Tm f -> Tm f -> Bool

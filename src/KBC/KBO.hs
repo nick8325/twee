@@ -2,8 +2,7 @@
 module KBC.KBO where
 
 #include "errors.h"
-import KBC.Base
-import KBC.Term hiding (lessEq, lessEqIn)
+import KBC.Base hiding (lessEq, lessEqIn)
 import Data.List
 import KBC.Constraints
 import qualified Data.Map.Strict as Map

@@ -3,7 +3,6 @@ module KBC.Constraints where
 
 #include "errors.h"
 import KBC.Base hiding (equals)
-import KBC.Term
 import Control.Monad
 import qualified Data.Map.Strict as Map
 import KBC.Utils
