@@ -24,6 +24,7 @@ import qualified KBC.Index as Index
 import System.Exit
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
+import qualified KBC.KBO as KBO
 
 data Constant =
   Constant {
@@ -62,6 +63,10 @@ instance PrettyTerm Constant where
         2 -> infixStyle 5
         _ -> uncurried
   termStyle _ = uncurried
+
+instance Ordered Constant where
+  lessEq = KBO.lessEq
+  lessEqIn = KBO.lessEqIn
 
 instance Function Constant
 

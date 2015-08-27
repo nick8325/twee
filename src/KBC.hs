@@ -23,7 +23,6 @@ import Control.Monad.Trans.State.Strict
 import Data.List
 import Data.Function
 import Text.Printf
-import KBC.KBO
 
 --------------------------------------------------------------------------------
 -- Completion engine state.

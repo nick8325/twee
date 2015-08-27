@@ -3,20 +3,13 @@ module KBC.KBO where
 
 #include "errors.h"
 import KBC.Base
-import KBC.Term
+import KBC.Term hiding (lessEq, lessEqIn)
 import Data.List
 import KBC.Constraints
 import qualified Data.Map.Strict as Map
 import qualified Data.Rewriting.Substitution.Type as Subst
 import qualified Solver.FourierMotzkin.Internal as FM
 import Data.Maybe
-
-orientTerms :: (Sized f, Minimal f, Ord f) => Tm f -> Tm f -> Maybe Ordering
-orientTerms t u
-  | t == u = Just EQ
-  | lessEq t u = Just LT
-  | lessEq u t = Just GT
-  | otherwise = Nothing
 
 lessEq :: (Sized f, Minimal f, Ord f) => Tm f -> Tm f -> Bool
 lessEq (Fun f []) _    | f == minimal = True
