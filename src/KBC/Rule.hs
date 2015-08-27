@@ -10,6 +10,7 @@ import Control.Monad
 import Data.Maybe
 import Data.List
 import KBC.Utils
+import KBC.KBO
 import qualified Data.Map.Strict as Map
 import qualified Data.Rewriting.Substitution.Type as Subst
 

@@ -22,6 +22,7 @@ library
     KBC.Rule
     KBC.Utils
     KBC.Term
+    KBC.KBO
   build-depends:
     base >= 4 && < 5,
     term-rewriting,
