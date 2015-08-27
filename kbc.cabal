@@ -21,7 +21,6 @@ library
     KBC.Queue
     KBC.Rule
     KBC.Utils
-    KBC.Term
     KBC.KBO
   build-depends:
     base >= 4 && < 5,
