@@ -1,5 +1,6 @@
 -- Terms and substitutions, implemented using flatterms.
--- This module contains all the low-level representation stuff.
+-- This module contains all the low-level icky bits
+-- and provides primitives for building higher-level stuff.
 {-# LANGUAGE BangPatterns, CPP, PatternGuards, PatternSynonyms, ViewPatterns, RecordWildCards, GeneralizedNewtypeDeriving, RankNTypes, MagicHash, UnboxedTuples #-}
 module KBC.Term.Core where
 
@@ -30,8 +31,8 @@ data Symbol =
 
 instance Show Symbol where
   show Symbol{..}
-    | isFun = "f" ++ show index ++ "=" ++ show size
-    | otherwise = "x" ++ show index
+    | isFun = show (MkFun index) ++ "=" ++ show size
+    | otherwise = show (MkVar index)
 
 -- Convert symbols to/from Int64 for storage in flatterms.
 -- The encoding:
@@ -120,6 +121,8 @@ patHead t@TermList{..}
 -- * Fun :: Fun f -> TermList f -> Term f
 newtype Fun f = MkFun Int deriving (Eq, Ord)
 newtype Var   = MkVar Int deriving (Eq, Ord, Enum)
+instance Show (Fun f) where show (MkFun x) = "f" ++ show x
+instance Show Var     where show (MkVar x) = "x" ++ show x
 
 pattern Var x <- Term (patRoot -> Left x) _
 pattern Fun f ts <- Term (patRoot -> Right f) (patNext -> ts)
@@ -278,6 +281,10 @@ data Subst f =
     vars  :: {-# UNPACK #-} !Int,
     -- The bindings: an unboxed array of (Int, Int) pairs.
     subst :: {-# UNPACK #-} !ByteArray }
+
+-- The number of variables in the domain of a substitution.
+substSize :: Subst f -> Int
+substSize = vars
 
 -- Convert between slices and Word64s for storage.
 {-# INLINE toSlice #-}
