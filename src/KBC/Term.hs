@@ -154,6 +154,20 @@ fromRange (lo, hi) =
   fromIntegral lo .&. 0xffffffff +
   fromIntegral hi `unsafeShiftL` 32
 
+{-# INLINE lookup #-}
+lookup :: Subst f -> Var -> Maybe (Term f)
+lookup s x = do
+  Cons t Empty <- lookupList s x
+  return t
+
+{-# INLINE lookupList #-}
+lookupList :: Subst f -> Var -> Maybe (TermList f)
+lookupList Subst{..} (MkVar x)
+  | x >= vars = Nothing
+  | otherwise = do
+    (lo, hi) <- toRange (indexByteArray subst x)
+    return (TermList lo hi term)
+
 -- Note to self: have KBC.Term.Unsafe which exports raw versions of functions,
 -- KBC.Term which exports checked versions.
 {-# INLINE extend #-}
@@ -309,9 +323,10 @@ appendTerm :: Term f -> BuildTermListM s f ()
 appendTerm t = appendTermList (singleton t)
 
 data CompoundTerm f =
-    CFlat (Term f)
-  | CFun  (Fun f) [CompoundTerm f]
-  | CVar  Var
+    CFlat  (Term f)
+  | CFun   (Fun f) [CompoundTerm f]
+  | CVar   Var
+  | CSubst (Subst f) (Term f)
 
 flattenTerm :: CompoundTerm f -> Term f
 flattenTerm t =
@@ -332,9 +347,54 @@ flattenTerms ts =
       loop (CVar x:ts) = do
         appendVar x
         loop ts
+      loop (CSubst sub t:ts) = do
+        appendSubst sub t
+        loop ts
     loop ts
     freezeTermList
   where
     len (CFlat t) = nsymbols (singleton t)
     len (CFun _ ts) = 1 + sum (map len ts)
     len (CVar _) = 1
+    len (CSubst sub t) = substSize sub (singleton t)
+
+{-# INLINE subst_ #-}
+subst_ :: Subst f -> Term f -> Term f
+subst_ sub t =
+  case substList sub (singleton t) of
+    Cons u Empty -> u
+
+substList :: Subst f -> TermList f -> TermList f
+substList sub t =
+  buildTermList (substSize sub t) $ do
+    appendSubstList sub t
+    freezeTermList
+
+{-# INLINE substSize #-}
+substSize :: Subst f -> TermList f -> Int
+substSize !sub = aux 0
+  where
+    aux n Empty = n
+    aux n (ConsSym Fun{} t) = aux (n+1) t
+    aux n (ConsSym (Var x) t) =
+      case lookupList sub x of
+        Nothing -> aux (n+1) t
+        Just u  -> aux (n+nsymbols u) t
+
+{-# INLINE appendSubst #-}
+appendSubst :: Subst f -> Term f -> BuildTermListM s f ()
+appendSubst sub t = appendSubstList sub (singleton t)
+
+{-# INLINE appendSubstList #-}
+appendSubstList :: Subst f -> TermList f -> BuildTermListM s f ()
+appendSubstList !sub = aux
+  where
+    aux Empty = return ()
+    aux (Cons v@(Var x) ts) = do
+      case lookupList sub x of
+        Nothing -> appendVar x
+        Just u  -> appendTermList u
+      aux ts
+    aux (Cons x@(Fun f ts) us) = do
+      appendFun f (aux ts)
+      aux us
