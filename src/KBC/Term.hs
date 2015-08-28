@@ -2,14 +2,15 @@
 module KBC.Term where
 
 #include "errors.h"
+import Prelude hiding (lookup)
 import Data.Primitive
 import Control.Monad
 import Control.Monad.ST.Strict
 import Data.Bits
 import Data.Int
 import Data.Word
-import Data.List
-import GHC.Types
+import Data.List hiding (lookup)
+import GHC.Types(Int(..))
 import GHC.Prim
 import GHC.ST hiding (liftST)
 
@@ -31,9 +32,9 @@ toSymbol :: Int64 -> Symbol
 toSymbol n =
   Symbol (n < 0)
     (if n < 0 then
-       negate (fromIntegral n `unsafeShiftR` 32)
+       complement (fromIntegral (n `unsafeShiftR` 32))
      else
-       fromIntegral n `unsafeShiftR` 32)
+       fromIntegral (n `unsafeShiftR` 32))
     (fromIntegral n .&. 0xffffffff)
 
 {-# INLINE fromSymbol #-}
@@ -109,8 +110,12 @@ patRoot root
   where
     Symbol{..} = toSymbol root
 
+{-# INLINE patNext #-}
+patNext :: TermList f -> TermList f
+patNext (TermList lo hi array) = TermList (lo+1) hi array
+
 pattern Var x <- Term (patRoot -> Left x) _
-pattern Fun f ts <- Term (patRoot -> Right f) ts
+pattern Fun f ts <- Term (patRoot -> Right f) (patNext -> ts)
 
 {-# INLINE singleton #-}
 singleton :: Term f -> TermList f
@@ -124,11 +129,10 @@ data Subst f =
     subst :: {-# UNPACK #-} !ByteArray }
 
 toSubst :: Subst f -> [(Int, Term f)]
-toSubst (Subst arr n sub) =
+toSubst subst@(Subst _ n _) =
   [(i, t)
   | i <- [0..n-1],
-    Just (lo, hi) <- [toRange (indexByteArray sub i)],
-    let Cons t Empty = TermList lo hi arr]
+    Just t <- [lookup subst (MkVar i)] ]
 
 instance Show (Subst f) where
   show = show . toSubst
@@ -177,6 +181,7 @@ freezeSubst MSubst{..} = do
 newMSubst :: TermList f -> Int -> ST s (MSubst s f)
 newMSubst TermList{..} vars = do
   subst <- newByteArray (vars * sizeOf (fromRange __))
+  setByteArray subst 0 vars (0 `asTypeOf` fromRange __)
   return (MSubst array vars subst)
 
 {-# INLINE bound #-}
@@ -189,6 +194,7 @@ bound t = aux 0 t
       | x >= n = aux (x+1) t
       | otherwise = aux n t
 
+{-# INLINE match #-}
 match :: Term f -> Term f -> Maybe (Subst f)
 match pat t = matchTerms (singleton pat) (singleton t)
 
@@ -294,7 +300,8 @@ appendTermList :: TermList f -> BuildTermListM s f ()
 appendTermList (TermList lo hi array) = do
   marray <- getArray
   n <- getIndex
-  liftST $ copyByteArray marray n array lo (hi-lo)
+  let k = sizeOf (fromSymbol __)
+  liftST $ copyByteArray marray (n*k) array (lo*k) ((hi-lo)*k)
   putIndex (n + hi-lo)
 
 {-# INLINE appendTerm #-}
