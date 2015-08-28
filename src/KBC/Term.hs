@@ -64,8 +64,7 @@ matchTerms !pat !t = runST $ do
       loop _ Empty = __
       loop (ConsSym (Fun f _) pat) (ConsSym (Fun g _) t)
         | f == g = loop pat t
-      -- XXX change to Cons?
-      loop (ConsSym (Var x) pat) (Cons t u) = do
+      loop (Cons (Var x) pat) (Cons t u) = do
         res <- extend subst x t
         case res of
           Nothing -> return Nothing
