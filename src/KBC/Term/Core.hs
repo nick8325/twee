@@ -330,6 +330,17 @@ freezeSubst MutableSubst{..} = do
   subst <- unsafeFreezeByteArray msubst
   return (Subst mterm mvars subst)
 
+-- Look up a variable in a mutable substitution.
+{-# INLINE mutableLookupList #-}
+mutableLookupList :: MutableSubst s f -> Var -> ST s (Maybe (TermList f))
+mutableLookupList MutableSubst{..} (MkVar x)
+  | x >= mvars = return Nothing
+  | otherwise = do
+    slice <- readByteArray msubst x
+    return $ do
+      (lo, hi) <- toSlice slice
+      return (TermList lo hi mterm)
+
 -- Add a new binding to a substitution.
 -- Returns Just () on success or Nothing if an incompatible
 -- binding already existed.

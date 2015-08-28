@@ -31,6 +31,7 @@ import Data.List hiding (lookup)
 data CompoundTerm f =
     CFlat  (Term f)
   | CFun   (Fun f) [CompoundTerm f]
+  | CFunList (Fun f) (TermList f)
   | CVar   Var
   | CSubst (Subst f) (Term f)
 
@@ -52,6 +53,9 @@ flattenList ts =
       loop (CFun f ts:us) = do
         emitFun f (loop ts)
         loop us
+      loop (CFunList f ts:us) = do
+        emitFun f (emitTermList ts)
+        loop us
       loop (CVar x:ts) = do
         emitVar x
         loop ts
@@ -63,6 +67,7 @@ flattenList ts =
   where
     clen (CFlat t) = len (singleton t)
     clen (CFun _ ts) = 1 + sum (map clen ts)
+    clen (CFunList _ t) = 1 + len t
     clen (CVar _) = 1
     clen (CSubst sub t) = substTermSize sub (singleton t)
 
@@ -139,6 +144,65 @@ matchList !pat !t = runST $ do
   loop pat t
 
 --------------------------------------------------------------------------------
+-- Unification.
+--------------------------------------------------------------------------------
+
+{-# INLINE unify #-}
+unify :: Term f -> Term f -> Maybe (Subst f)
+unify t u = unifyList (singleton t) (singleton u)
+
+-- XXX need to compute closure of final substitution.
+unifyList :: TermList f -> TermList f -> Maybe (Subst f)
+unifyList !t !u = runST $ do
+  let
+    tu@(Cons (Fun _ t') (Cons (Fun _ u') Empty)) =
+      flattenList [CFunList (MkFun 0) t, CFunList (MkFun 0) u]
+  subst <- newMutableSubst tu (bound tu)
+
+  let
+    loop !_ !_ | False = __
+    loop Empty _ = return True
+    loop _ Empty = __
+    loop (ConsSym (Fun f _) t) (ConsSym (Fun g _) u)
+      | f == g = loop t u
+    loop (Cons (Var x) t) (Cons u v) = do
+      var x u
+      loop t v
+    loop (Cons t u) (Cons (Var x) v) = do
+      var x t
+      loop u v
+    loop _ _ = return False
+
+    var x t = do
+      res <- mutableLookupList subst x
+      case res of
+        Just u -> loop u (singleton t)
+        Nothing -> var1 x t
+
+    var1 x t@(Var y) = do
+      res <- mutableLookup subst y
+      case res of
+        Just t -> var1 x t
+        Nothing -> do
+          extend subst x t
+          return True
+
+    var1 x t
+      | occurs x (singleton t) = return False
+      | otherwise = do
+          extend subst x t
+          return True
+
+    occurs x Empty = False
+    occurs x (ConsSym Fun{} t) = occurs x t
+    occurs x (ConsSym (Var y) t) = x == y || occurs x t
+
+  res <- loop t' u'
+  case res of
+    True  -> fmap Just (freezeSubst subst)
+    False -> return Nothing
+
+--------------------------------------------------------------------------------
 -- Miscellaneous stuff.
 --------------------------------------------------------------------------------
 
@@ -166,6 +230,14 @@ lookup :: Subst f -> Var -> Maybe (Term f)
 lookup s x = do
   Cons t Empty <- lookupList s x
   return t
+
+{-# INLINE mutableLookup #-}
+mutableLookup :: MutableSubst s f -> Var -> ST s (Maybe (Term f))
+mutableLookup s x = do
+  res <- mutableLookupList s x
+  return $ do
+    Cons t Empty <- res
+    return t
 
 {-# INLINE emitTerm #-}
 emitTerm :: Term f -> BuildM s f ()
