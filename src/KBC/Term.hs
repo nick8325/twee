@@ -12,7 +12,7 @@ module KBC.Term(
   Fun(..), Var(..), pattern Var, pattern Fun, singleton,
   Builder, buildTermList, emitRoot, emitFun, emitVar, emitTermList,
   Subst, substSize, lookupList,
-  MutableSubst, newMutableSubst, freezeSubst, mutableLookupList, extendList) where
+  MutableSubst, newMutableSubst, unsafeFreezeSubst, mutableLookupList, extendList) where
 
 #include "errors.h"
 import Prelude hiding (lookup)
@@ -151,7 +151,7 @@ matchList :: TermList f -> TermList f -> Maybe (Subst f)
 matchList !pat !t = runST $ do
   subst <- newMutableSubst t (boundList pat)
   let loop !_ !_ | False = __
-      loop Empty _ = fmap Just (freezeSubst subst)
+      loop Empty _ = fmap Just (unsafeFreezeSubst subst)
       loop _ Empty = __
       loop (ConsSym (Fun f _) pat) (ConsSym (Fun g _) t)
         | f == g = loop pat t
@@ -219,7 +219,7 @@ unifyListTri !t !u = runST $ do
 
   res <- loop t' u'
   case res of
-    True  -> fmap Just (freezeSubst subst)
+    True  -> fmap Just (unsafeFreezeSubst subst)
     False -> return Nothing
 
 --------------------------------------------------------------------------------

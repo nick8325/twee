@@ -393,9 +393,9 @@ newMutableSubst TermList{..} vars = do
   return (MutableSubst array vars subst)
 
 -- Freeze a mutable substitution.
-{-# INLINE freezeSubst #-}
-freezeSubst :: MutableSubst s f -> ST s (Subst f)
-freezeSubst MutableSubst{..} = do
+{-# INLINE unsafeFreezeSubst #-}
+unsafeFreezeSubst :: MutableSubst s f -> ST s (Subst f)
+unsafeFreezeSubst MutableSubst{..} = do
   subst <- unsafeFreezeByteArray msubst
   return (Subst mterm mvars subst)
 
