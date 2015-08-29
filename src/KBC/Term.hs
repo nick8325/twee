@@ -2,7 +2,7 @@
 -- This module implements the usual term manipulation stuff
 -- (matching, unification, etc.) on top of the primitives
 -- in KBC.Term.Core.
-{-# LANGUAGE BangPatterns, CPP, PatternSynonyms #-}
+{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes #-}
 module KBC.Term(
   module KBC.Term,
   -- Stuff from KBC.Term.Core.
@@ -70,6 +70,60 @@ flattenList ts =
     clen (CFunList _ t) = 1 + len t
     clen (CVar _) = 1
     clen (CSubst sub t) = substTermSize sub (singleton t)
+
+--------------------------------------------------------------------------------
+-- A helper datatype for building substitutions.
+--------------------------------------------------------------------------------
+
+-- An algebraic data type for substitutions.
+data CompoundSubst f =
+    SFlat  (Subst f)
+  | SSingle Var (Term f)
+  | SUnion [CompoundSubst f]
+
+-- Flatten a compound substitution.
+flattenSubst :: CompoundSubst f -> Maybe (Subst f)
+flattenSubst sub = matchList pat t
+  where
+    pat = flattenSubst' (const 1)         (\x _ -> emitVar x)  [sub]
+    t   = flattenSubst' (len . singleton) (\_ t -> emitTerm t) [sub]
+
+{-# INLINE flattenSubst' #-}
+flattenSubst' ::
+  (Term f -> Int) ->
+  (forall s. Var -> Term f -> BuildM s f ()) ->
+  [CompoundSubst f] -> TermList f
+flattenSubst' size emit subs =
+  buildTermList (sum (map size' subs)) $ do
+    let
+      loop [] = freezeTermList
+      loop (SFlat sub:subs) = do
+        let
+          aux n
+            | n == substSize sub = loop subs
+            | otherwise =
+                case lookup sub (MkVar n) of
+                  Nothing -> aux (n+1)
+                  Just t  -> do
+                    emit (MkVar n) t
+                    aux (n+1)
+        aux 0
+      loop (SSingle x t:subs) = do
+        emit x t
+        loop subs
+      loop (SUnion subs:subs') = loop (subs ++ subs')
+    loop subs
+  where
+    size' (SFlat sub) = aux 0 0
+      where
+        aux n i
+          | i == substSize sub = n
+          | otherwise =
+            case lookup sub (MkVar n) of
+              Nothing -> aux n (i+1)
+              Just t  -> aux (n+size t) (i+1)
+    size' (SSingle _ t) = size t
+    size' (SUnion subs) = sum (map size' subs)
 
 --------------------------------------------------------------------------------
 -- Substitution.
