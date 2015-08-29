@@ -206,14 +206,10 @@ unifyListTri !t !u = runST $ do
           return True
 
     var1 x t
-      | occurs x (singleton t) = return False
+      | occurs x t = return False
       | otherwise = do
           extend subst x t
           return True
-
-    occurs !x Empty = False
-    occurs x (ConsSym Fun{} t) = occurs x t
-    occurs x (ConsSym (Var y) t) = x == y || occurs x t
 
   res <- loop t' u'
   case res of
@@ -313,3 +309,16 @@ shareList2 t u
       buildTermList $ do
         emitFun (MkFun 0) (emitTermList t)
         emitTermList u
+
+-- Check if a variable occurs in a term.
+{-# INLINE occurs #-}
+occurs :: Var -> Term f -> Bool
+occurs x t = occursList x (singleton t)
+
+{-# INLINE occursList #-}
+occursList :: Var -> TermList f -> Bool
+occursList !x = aux
+  where
+    aux Empty = False
+    aux (ConsSym Fun{} t) = aux t
+    aux (ConsSym (Var y) t) = x == y || aux t
