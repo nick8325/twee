@@ -192,6 +192,7 @@ newtype BuildM s f a =
       -- Returns the final position.
       MutableByteArray# s -> Int# -> State# s -> (# State# s, Int#, a #) }
 
+{-# INLINE runBuildM #-}
 runBuildM :: BuildM s f a -> MutableByteArray s -> ST s Int
 runBuildM (BuildM m) (MutableByteArray array) =
   ST $ \s ->
@@ -278,6 +279,7 @@ newtype CountM f a =
   CountM {
     unCountM :: Int# -> (# Int#, a #) }
 
+{-# INLINE runCountM #-}
 runCountM :: CountM f a -> Int
 runCountM (CountM m) =
   case m 0# of
