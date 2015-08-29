@@ -344,11 +344,9 @@ mutableLookupList MutableSubst{..} (MkVar x)
 -- Add a new binding to a substitution.
 -- Returns Just () on success or Nothing if an incompatible
 -- binding already existed.
-{-# INLINE extend #-}
-extend :: MutableSubst s f -> Var -> Term f -> ST s (Maybe ())
-extend _ x (Var y) | x == y = return (Just ())
-extend MutableSubst{..} (MkVar x) t = do
-  let TermList lo hi _ = singleton t
+{-# INLINE extendList #-}
+extendList :: MutableSubst s f -> Var -> TermList f -> ST s (Maybe ())
+extendList MutableSubst{..} (MkVar x) (TermList lo hi _) = do
   rng <- fmap toSlice (readByteArray msubst x)
   case rng of
     Nothing -> do

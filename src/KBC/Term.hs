@@ -13,7 +13,7 @@ module KBC.Term(
   BuildM, buildTermList, freezeTermList,
   emitRoot, emitFun, emitVar, emitTermList,
   Subst, substSize, lookupList,
-  MutableSubst, newMutableSubst, freezeSubst, extend) where
+  MutableSubst, newMutableSubst, freezeSubst, extendList) where
 
 #include "errors.h"
 import Prelude hiding (lookup)
@@ -135,6 +135,8 @@ matchList !pat !t = runST $ do
       loop _ Empty = __
       loop (ConsSym (Fun f _) pat) (ConsSym (Fun g _) t)
         | f == g = loop pat t
+      loop (Cons (Var x) pat) (Cons (Var y) t)
+        | x == y = loop pat t
       loop (Cons (Var x) pat) (Cons t u) = do
         res <- extend subst x t
         case res of
@@ -187,7 +189,9 @@ unifyListTri !t !u = runST $ do
       case res of
         Just t -> var1 x t
         Nothing -> do
-          extend subst x t
+          when (x /= y) $ do
+            extend subst x t
+            return ()
           return True
 
     var1 x t
@@ -246,6 +250,10 @@ mutableLookup s x = do
   return $ do
     Cons t Empty <- res
     return t
+
+{-# INLINE extend #-}
+extend :: MutableSubst s f -> Var -> Term f -> ST s (Maybe ())
+extend sub x t = extendList sub x (singleton t)
 
 {-# INLINE emitTerm #-}
 emitTerm :: Term f -> BuildM s f ()
