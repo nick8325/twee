@@ -277,7 +277,7 @@ unifyTri t u = unifyListTri (singleton t) (singleton u)
 unifyListTri :: TermList f -> TermList f -> Maybe (Subst f)
 unifyListTri !t !u = runST $ do
   let (t', u') = shareList2 t u
-  subst <- newMutableSubst t' (boundList t')
+  subst <- newMutableSubst t' (boundList t' `max` boundList u)
   let
     loop !_ !_ | False = __
     loop Empty _ = return True
