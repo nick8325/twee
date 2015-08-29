@@ -2,7 +2,7 @@
 -- This module implements the usual term manipulation stuff
 -- (matching, unification, etc.) on top of the primitives
 -- in KBC.Term.Core.
-{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes, FlexibleContexts #-}
+{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes, FlexibleContexts, ViewPatterns #-}
 {-# OPTIONS_GHC -funfolding-creation-threshold=1000000 -funfolding-use-threshold=100000 #-}
 module KBC.Term(
   module KBC.Term,
@@ -91,20 +91,39 @@ flattenSubst' emit subs =
       loop [] = return ()
       loop (CSubst sub:subs) = do
         let
-          aux n
-            | n == substSize sub = loop subs
-            | otherwise =
-                case lookup sub (MkVar n) of
-                  Nothing -> aux (n+1)
-                  Just t  -> do
-                    emit (MkVar n) t
-                    aux (n+1)
-        aux 0
+          aux EmptySubst = loop subs
+          aux (ConsSubst Nothing sub) = aux sub
+          aux (ConsSubst (Just (x, t)) sub) = do
+            emit x t
+            aux sub
+        aux (viewSubst sub)
       loop (CSingle x t:subs) = do
         emit x t
         loop subs
       loop (CUnion subs:subs') = loop (subs ++ subs')
     loop subs
+
+--------------------------------------------------------------------------------
+-- Pattern synonyms for substitutions.
+--------------------------------------------------------------------------------
+
+data SubstView f =
+  SubstView {-# UNPACK #-} !Int {-# UNPACK #-} !(Subst f)
+
+viewSubst :: Subst f -> SubstView f
+viewSubst sub = SubstView 0 sub
+
+patNextSubst :: SubstView f -> Maybe (Maybe (Var, Term f), SubstView f)
+patNextSubst (SubstView n sub)
+  | n == substSize sub = Nothing
+  | otherwise = Just (x, SubstView (n+1) sub)
+  where
+    x = do
+      t <- lookup sub (MkVar n)
+      return (MkVar n, t)
+
+pattern EmptySubst <- (patNextSubst -> Nothing)
+pattern ConsSubst x s <- (patNextSubst -> Just (x, s))
 
 --------------------------------------------------------------------------------
 -- Substitution.
@@ -185,29 +204,21 @@ substCompose !sub1 !sub2 =
     !t =
       buildTermList $ do
         let
-          loop n
-            | n == substSize sub1 = return ()
-            | otherwise =
-                case lookup sub1 (MkVar n) of
-                  Nothing -> do
-                    emitVar (MkVar n)
-                    loop (n+1)
-                  Just t -> do
-                    emitSubst sub2 t
-                    loop (n+1)
-        loop 0
+          loop EmptySubst = return ()
+          loop (ConsSubst Nothing sub) = loop sub
+          loop (ConsSubst (Just (_, t)) sub) = do
+            emitSubst sub2 t
+            loop sub
+        loop (viewSubst sub1)
 
 -- Is a substitution idempotent?
 {-# INLINE idempotent #-}
 idempotent :: Subst f -> Bool
-idempotent !sub = aux 0
+idempotent !sub = aux (viewSubst sub)
   where
-    aux n
-      | n == substSize sub = True
-      | otherwise =
-          case lookupList sub (MkVar n) of
-            Nothing -> aux (n+1)
-            Just t -> ok t && aux (n+1)
+    aux EmptySubst = True
+    aux (ConsSubst Nothing sub) = aux sub
+    aux (ConsSubst (Just (_, t)) sub) = ok (singleton t) && aux sub
     ok Empty = True
     ok (ConsSym Fun{} t) = ok t
     ok (Cons (Var x) t) =
