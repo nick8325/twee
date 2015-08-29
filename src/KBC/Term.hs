@@ -6,7 +6,7 @@
 module KBC.Term(
   module KBC.Term,
   -- Stuff from KBC.Term.Core.
-  Term, TermList, len,
+  Term, TermList, lenList,
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
   Fun(..), Var(..), pattern Var, pattern Fun, singleton,
@@ -77,8 +77,8 @@ data CompoundSubst f =
 flattenSubst :: CompoundSubst f -> Maybe (Subst f)
 flattenSubst sub = matchList pat t
   where
-    pat = flattenSubst' (const 1)         (\x _ -> emitVar x)  [sub]
-    t   = flattenSubst' (len . singleton) (\_ t -> emitTerm t) [sub]
+    pat = flattenSubst' (const 1) (\x _ -> emitVar x)  [sub]
+    t   = flattenSubst' len       (\_ t -> emitTerm t) [sub]
 
 {-# INLINE flattenSubst' #-}
 flattenSubst' ::
@@ -267,6 +267,10 @@ mutableLookup s x = do
 {-# INLINE extend #-}
 extend :: MutableSubst s f -> Var -> Term f -> ST s (Maybe ())
 extend sub x t = extendList sub x (singleton t)
+
+{-# INLINE len #-}
+len :: Term f -> Int
+len = lenList . singleton
 
 {-# INLINE emitTerm #-}
 emitTerm :: Builder f m => Term f -> m ()

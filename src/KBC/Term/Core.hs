@@ -69,10 +69,10 @@ data TermList f =
     high  :: {-# UNPACK #-} !Int,
     array :: {-# UNPACK #-} !ByteArray }
 
-{-# INLINE len #-}
+{-# INLINE lenList #-}
 -- The length (number of symbols in) a flatterm.
-len :: TermList f -> Int
-len (TermList low high _) = high - low
+lenList :: TermList f -> Int
+lenList (TermList low high _) = high - low
 
 {-# INLINE sharedList #-}
 -- Do two termlists share the same array?
@@ -161,7 +161,7 @@ singleton Term{..} = termlist
 -- comparing Int64s instead of Symbols.
 instance Eq (TermList f) where
   {-# INLINE (==) #-}
-  t == u = len t == len u && eqSameLength t u
+  t == u = lenList t == lenList u && eqSameLength t u
 
 eqSameLength :: TermList f -> TermList f -> Bool
 eqSameLength Empty !_ = True
@@ -315,7 +315,7 @@ instance Builder f (CountM f) where
   {-# INLINE emitVar #-}
   emitVar _ = advance 1
   {-# INLINE emitTermList #-}
-  emitTermList t = advance (len t)
+  emitTermList t = advance (lenList t)
 
 {-# INLINE advance #-}
 advance :: Int -> CountM f ()
