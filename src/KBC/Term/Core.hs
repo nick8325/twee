@@ -192,6 +192,12 @@ newtype BuildM s f a =
       -- Returns the final position.
       MutableByteArray# s -> Int# -> State# s -> (# State# s, Int#, a #) }
 
+runBuildM :: BuildM s f a -> MutableByteArray s -> ST s Int
+runBuildM (BuildM m) (MutableByteArray array) =
+  ST $ \s ->
+    case m array 0# s of
+      (# s, n#, _ #) -> (# s, I# n# #)
+
 instance Functor (BuildM s f) where
   {-# INLINE fmap #-}
   fmap f (BuildM m) =
@@ -218,9 +224,64 @@ instance Builder f (BuildM s f) where
   emitVar      = emitVarBuildM
   emitTermList = emitTermListBuildM
 
+{-# INLINE getArray #-}
+getArray :: BuildM s f (MutableByteArray s)
+getArray = BuildM $ \array n s -> (# s, n, MutableByteArray array #)
+
+{-# INLINE getIndex #-}
+getIndex :: BuildM s f Int
+getIndex = BuildM $ \_ n s -> (# s, n, I# n #)
+
+{-# INLINE putIndex #-}
+putIndex :: Int -> BuildM s f ()
+putIndex (I# n) = BuildM $ \_ _ s -> (# s, n, () #)
+
+{-# INLINE liftST #-}
+liftST :: ST s a -> BuildM s f a
+liftST (ST m) =
+  BuildM $ \_ n s ->
+  case m s of
+    (# s, x #) -> (# s, n, x #)
+
+{-# INLINE emitSymbolBuildM #-}
+emitSymbolBuildM :: Symbol -> BuildM s f () -> BuildM s f ()
+emitSymbolBuildM x inner = do
+  array <- getArray
+  n <- getIndex
+  putIndex (n+1)
+  inner
+  m <- getIndex
+  liftST $ writeByteArray array n (fromSymbol x { size = m - n })
+
+{-# INLINE emitRootBuildM #-}
+emitRootBuildM :: Term f -> BuildM s f () -> BuildM s f ()
+emitRootBuildM t inner = emitSymbolBuildM (toSymbol (root t)) inner
+
+{-# INLINE emitFunBuildM #-}
+emitFunBuildM :: Fun f -> BuildM s f () -> BuildM s f ()
+emitFunBuildM (MkFun f) inner = emitSymbolBuildM (Symbol True f 0) inner
+
+{-# INLINE emitVarBuildM #-}
+emitVarBuildM :: Var -> BuildM s f ()
+emitVarBuildM (MkVar x) = emitSymbolBuildM (Symbol False x 1) (return ())
+
+{-# INLINE emitTermListBuildM #-}
+emitTermListBuildM :: TermList f -> BuildM s f ()
+emitTermListBuildM (TermList lo hi array) = do
+  marray <- getArray
+  n <- getIndex
+  let k = sizeOf (fromSymbol __)
+  liftST $ copyByteArray marray (n*k) array (lo*k) ((hi-lo)*k)
+  putIndex (n + hi-lo)
+
 newtype CountM f a =
   CountM {
     unCountM :: Int# -> (# Int#, a #) }
+
+runCountM :: CountM f a -> Int
+runCountM (CountM m) =
+  case m 0# of
+    (# n#, _ #) -> I# n#
 
 instance Functor (CountM f) where
   {-# INLINE fmap #-}
@@ -260,71 +321,16 @@ instance Builder f (CountM f) where
 advance :: Int -> CountM f ()
 advance (I# n) = CountM $ \i -> (# i +# n, () #)
 
-{-# INLINE getArray #-}
-getArray :: BuildM s f (MutableByteArray s)
-getArray = BuildM $ \array n s -> (# s, n, MutableByteArray array #)
-
-{-# INLINE getIndex #-}
-getIndex :: BuildM s f Int
-getIndex = BuildM $ \_ n s -> (# s, n, I# n #)
-
-{-# INLINE putIndex #-}
-putIndex :: Int -> BuildM s f ()
-putIndex (I# n) = BuildM $ \_ _ s -> (# s, n, () #)
-
-{-# INLINE liftST #-}
-liftST :: ST s a -> BuildM s f a
-liftST (ST m) =
-  BuildM $ \_ n s ->
-  case m s of
-    (# s, x #) -> (# s, n, x #)
-
 -- Construct a term, given a builder for it.
 {-# INLINE buildTermList #-}
 buildTermList :: (forall m. Builder f m => m ()) -> TermList f
 buildTermList m =
   runST $ do
-    let !(# size#, _ #) = unCountM m 0#
-        size = I# size#
-    MutableByteArray marray <- newByteArray (size * sizeOf (fromSymbol __))
-    n <-
-      ST $ \s ->
-        case unBuildM m marray 0# s of
-          (# s, n, _ #) -> (# s, I#n #)
-    !array <- unsafeFreezeByteArray (MutableByteArray marray)
+    let !size = runCountM m
+    !marray <- newByteArray (size * sizeOf (fromSymbol __))
+    !n <- runBuildM m marray
+    !array <- unsafeFreezeByteArray marray
     return (TermList 0 n array)
-
--- Emit a single symbol (for internal use mostly).
-{-# INLINE emitSymbolBuildM #-}
-emitSymbolBuildM :: Symbol -> BuildM s f () -> BuildM s f ()
-emitSymbolBuildM x inner = do
-  array <- getArray
-  n <- getIndex
-  putIndex (n+1)
-  inner
-  m <- getIndex
-  liftST $ writeByteArray array n (fromSymbol x { size = m - n })
-
-{-# INLINE emitRootBuildM #-}
-emitRootBuildM :: Term f -> BuildM s f () -> BuildM s f ()
-emitRootBuildM t inner = emitSymbolBuildM (toSymbol (root t)) inner
-
-{-# INLINE emitFunBuildM #-}
-emitFunBuildM :: Fun f -> BuildM s f () -> BuildM s f ()
-emitFunBuildM (MkFun f) inner = emitSymbolBuildM (Symbol True f 0) inner
-
-{-# INLINE emitVarBuildM #-}
-emitVarBuildM :: Var -> BuildM s f ()
-emitVarBuildM (MkVar x) = emitSymbolBuildM (Symbol False x 1) (return ())
-
-{-# INLINE emitTermListBuildM #-}
-emitTermListBuildM :: TermList f -> BuildM s f ()
-emitTermListBuildM (TermList lo hi array) = do
-  marray <- getArray
-  n <- getIndex
-  let k = sizeOf (fromSymbol __)
-  liftST $ copyByteArray marray (n*k) array (lo*k) ((hi-lo)*k)
-  putIndex (n + hi-lo)
 
 --------------------------------------------------------------------------------
 -- Substitutions.
