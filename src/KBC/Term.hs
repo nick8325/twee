@@ -199,13 +199,12 @@ substCompose !sub1 !sub2 =
   runST $ do
     sub <- newMutableSubst t (substSize sub1)
     let
-      loop !n Empty = unsafeFreezeSubst sub
-      loop !n (Cons (Var x) t)
-        | x == MkVar n = loop (n+1) t
-      loop !n (Cons t u) = do
-        extend sub (MkVar n) t
-        loop (n+1) u
-    loop 0 t
+      loop EmptySubst !t = unsafeFreezeSubst sub
+      loop (ConsSubst Nothing sub1) t = loop sub1 t
+      loop (ConsSubst (Just (x, _)) sub1) (Cons t u) = do
+        unsafeExtendList sub x (singleton t)
+        loop sub1 u
+    loop (viewSubst sub1) t
   where
     !t =
       buildTermList $
