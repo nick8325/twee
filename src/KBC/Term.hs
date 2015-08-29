@@ -79,11 +79,11 @@ flattenSubst (CSubst sub) = Just sub
 flattenSubst sub = matchList pat t
   where
     pat = flattenSubst' (\x _ -> emitVar x)  [sub]
-    t   = flattenSubst' (\_ t -> emitTerm t) [sub]
+    t   = flattenSubst' (\_ t -> emitTermList t) [sub]
 
 {-# INLINE flattenSubst' #-}
 flattenSubst' ::
-  (forall m. Builder f m => Var -> Term f -> m ()) ->
+  (forall m. Builder f m => Var -> TermList f -> m ()) ->
   [CompoundSubst f] -> TermList f
 flattenSubst' emit subs =
   buildTermList $ do
@@ -91,7 +91,7 @@ flattenSubst' emit subs =
       loop [] = return ()
       loop (CSubst sub:subs) = forMSubst_ sub emit
       loop (CSingle x t:subs) = do
-        emit x t
+        emit x (singleton t)
         loop subs
       loop (CUnion subs:subs') = loop (subs ++ subs')
     loop subs
@@ -106,20 +106,20 @@ data SubstView f =
 viewSubst :: Subst f -> SubstView f
 viewSubst sub = SubstView 0 sub
 
-patNextSubst :: SubstView f -> Maybe (Maybe (Var, Term f), SubstView f)
+patNextSubst :: SubstView f -> Maybe (Maybe (Var, TermList f), SubstView f)
 patNextSubst (SubstView n sub)
   | n == substSize sub = Nothing
   | otherwise = Just (x, SubstView (n+1) sub)
   where
     x = do
-      t <- lookup sub (MkVar n)
+      t <- lookupList sub (MkVar n)
       return (MkVar n, t)
 
 pattern EmptySubst <- (patNextSubst -> Nothing)
 pattern ConsSubst x s <- (patNextSubst -> Just (x, s))
 
 {-# INLINE foldSubst #-}
-foldSubst :: (Var -> Term f -> b -> b) -> b -> Subst f -> b
+foldSubst :: (Var -> TermList f -> b -> b) -> b -> Subst f -> b
 foldSubst op e !sub = aux (viewSubst sub)
   where
     aux EmptySubst = e
@@ -127,7 +127,7 @@ foldSubst op e !sub = aux (viewSubst sub)
     aux (ConsSubst (Just (x, t)) sub) = op x t (aux sub)
 
 {-# INLINE forMSubst_ #-}
-forMSubst_ :: Monad m => Subst f -> (Var -> Term f -> m ()) -> m ()
+forMSubst_ :: Monad m => Subst f -> (Var -> TermList f -> m ()) -> m ()
 forMSubst_ sub f = foldSubst (\x t m -> do { f x t; m }) (return ()) sub
 
 --------------------------------------------------------------------------------
@@ -208,14 +208,14 @@ substCompose !sub1 !sub2 =
   where
     !t =
       buildTermList $
-        forMSubst_ sub1 $ \_ t -> emitSubst sub2 t
+        forMSubst_ sub1 $ \_ t -> emitSubstList sub2 t
 
 -- Is a substitution idempotent?
 {-# INLINE idempotent #-}
 idempotent :: Subst f -> Bool
 idempotent !sub = foldSubst p True sub
   where
-    p _ t x = ok (singleton t) && x
+    p _ t x = ok t && x
     ok Empty = True
     ok (ConsSym Fun{} t) = ok t
     ok (Cons (Var x) t) =
