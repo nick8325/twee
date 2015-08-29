@@ -415,14 +415,16 @@ mutableLookupList MutableSubst{..} (MkVar x)
 -- binding already existed.
 {-# INLINE extendList #-}
 extendList :: MutableSubst s f -> Var -> TermList f -> ST s (Maybe ())
-extendList MutableSubst{..} (MkVar x) (TermList lo hi _) = do
-  rng <- fmap toSlice (readByteArray msubst x)
-  case rng of
-    Nothing -> do
-      writeByteArray msubst x (fromSlice (lo, hi))
-      return (Just ())
-    Just (lo', hi')
-      | TermList lo hi mterm == TermList lo' hi' mterm ->
+extendList MutableSubst{..} (MkVar x) (TermList lo hi _)
+  | x >= mvars = __
+  | otherwise = do
+    rng <- fmap toSlice (readByteArray msubst x)
+    case rng of
+      Nothing -> do
+        writeByteArray msubst x (fromSlice (lo, hi))
         return (Just ())
-      | otherwise ->
-        return Nothing
+      Just (lo', hi')
+        | TermList lo hi mterm == TermList lo' hi' mterm ->
+          return (Just ())
+        | otherwise ->
+          return Nothing
