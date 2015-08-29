@@ -28,6 +28,7 @@ Just sub = match t u
 us = CFun (MkFun 0) (fromList (replicate 10 (CSubstTerm sub (singleton t))))
 
 Just sub' = unifyTri t1 t2
+Just csub' = unify t1 t2
 
 main = do
   print t
@@ -35,11 +36,14 @@ main = do
   print (match t u)
   print (subst sub t)
   print (unifyTri t1 t2)
+  print (close sub')
   print (iterSubst sub' t1)
   print (iterSubst sub' t2)
   print (t == t)
   print (subst sub t == u)
   print (iterSubst sub' t1 == iterSubst sub' t2)
+  print (subst csub' t1 == iterSubst sub' t1)
+  print (subst csub' t2 == iterSubst sub' t2)
   defaultMain [
     bench "eq-t" (whnf (uncurry (==)) (t, t)),
     bench "eq-u" (whnf (uncurry (==)) (u, u)),
@@ -48,8 +52,12 @@ main = do
     bench "subst10" (whnf flattenTerm us),
     bench "unifyTri" (whnf (fromJust . uncurry unifyTri) (t1, t2)),
     bench "unifyTri-shared" (whnf (fromJust . uncurry unifyTri) (st1, st2)),
-    bench "unify-subst1" (whnf (uncurry iterSubst) (sub', t1)),
-    bench "unify-subst2" (whnf (uncurry iterSubst) (sub', t2))]
+    bench "unify-close" (whnf (uncurry unify) (t1, t2)),
+    bench "unify-close-shared" (whnf (uncurry unify) (st1, st2)),
+    bench "unify-subst-iter1" (whnf (uncurry iterSubst) (sub', t1)),
+    bench "unify-subst-iter2" (whnf (uncurry iterSubst) (sub', t2)),
+    bench "unify-subst-closed1" (whnf (uncurry subst) (csub', t1)),
+    bench "unify-subst-closed2" (whnf (uncurry subst) (csub', t2))]
 
 prop :: Bool -> NonNegative (Small Int) -> NonNegative (Small Int) -> Property
 prop fun_ (NonNegative (Small index_)) (NonNegative (Small size_)) =
