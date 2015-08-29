@@ -147,13 +147,12 @@ matchList !pat !t = runST $ do
 -- Unification.
 --------------------------------------------------------------------------------
 
-{-# INLINE unify #-}
-unify :: Term f -> Term f -> Maybe (Subst f)
-unify t u = unifyList (singleton t) (singleton u)
+{-# INLINE unifyTri #-}
+unifyTri :: Term f -> Term f -> Maybe (Subst f)
+unifyTri t u = unifyListTri (singleton t) (singleton u)
 
--- XXX need to compute closure of final substitution.
-unifyList :: TermList f -> TermList f -> Maybe (Subst f)
-unifyList !t !u = runST $ do
+unifyListTri :: TermList f -> TermList f -> Maybe (Subst f)
+unifyListTri !t !u = runST $ do
   let
     tu@(Cons ft' u') =
       buildTermList (len t + len u + 1) $ do
