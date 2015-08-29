@@ -89,14 +89,7 @@ flattenSubst' emit subs =
   buildTermList $ do
     let
       loop [] = return ()
-      loop (CSubst sub:subs) = do
-        let
-          aux EmptySubst = loop subs
-          aux (ConsSubst Nothing sub) = aux sub
-          aux (ConsSubst (Just (x, t)) sub) = do
-            emit x t
-            aux sub
-        aux (viewSubst sub)
+      loop (CSubst sub:subs) = forMSubst_ sub emit
       loop (CSingle x t:subs) = do
         emit x t
         loop subs
@@ -124,6 +117,18 @@ patNextSubst (SubstView n sub)
 
 pattern EmptySubst <- (patNextSubst -> Nothing)
 pattern ConsSubst x s <- (patNextSubst -> Just (x, s))
+
+{-# INLINE foldSubst #-}
+foldSubst :: (Var -> Term f -> b -> b) -> b -> Subst f -> b
+foldSubst op e !sub = aux (viewSubst sub)
+  where
+    aux EmptySubst = e
+    aux (ConsSubst Nothing sub) = aux sub
+    aux (ConsSubst (Just (x, t)) sub) = op x t (aux sub)
+
+{-# INLINE forMSubst_ #-}
+forMSubst_ :: Monad m => Subst f -> (Var -> Term f -> m ()) -> m ()
+forMSubst_ sub f = foldSubst (\x t m -> do { f x t; m }) (return ()) sub
 
 --------------------------------------------------------------------------------
 -- Substitution.
@@ -202,23 +207,15 @@ substCompose !sub1 !sub2 =
     loop 0 t
   where
     !t =
-      buildTermList $ do
-        let
-          loop EmptySubst = return ()
-          loop (ConsSubst Nothing sub) = loop sub
-          loop (ConsSubst (Just (_, t)) sub) = do
-            emitSubst sub2 t
-            loop sub
-        loop (viewSubst sub1)
+      buildTermList $
+        forMSubst_ sub1 $ \_ t -> emitSubst sub2 t
 
 -- Is a substitution idempotent?
 {-# INLINE idempotent #-}
 idempotent :: Subst f -> Bool
-idempotent !sub = aux (viewSubst sub)
+idempotent !sub = foldSubst p True sub
   where
-    aux EmptySubst = True
-    aux (ConsSubst Nothing sub) = aux sub
-    aux (ConsSubst (Just (_, t)) sub) = ok (singleton t) && aux sub
+    p _ t x = ok (singleton t) && x
     ok Empty = True
     ok (ConsSym Fun{} t) = ok t
     ok (Cons (Var x) t) =
