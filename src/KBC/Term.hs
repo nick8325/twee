@@ -201,14 +201,15 @@ substCompose !sub1 !sub2 =
     let
       loop EmptySubst !t = unsafeFreezeSubst sub
       loop (ConsSubst Nothing sub1) t = loop sub1 t
-      loop (ConsSubst (Just (x, _)) sub1) (Cons t u) = do
-        unsafeExtendList sub x (singleton t)
+      loop (ConsSubst (Just (x, _)) sub1) (UnsafeCons (Fun _ t) u) = do
+        unsafeExtendList sub x t
         loop sub1 u
     loop (viewSubst sub1) t
   where
     !t =
       buildTermList $
-        forMSubst_ sub1 $ \_ t -> emitSubstList sub2 t
+        forMSubst_ sub1 $ \_ t ->
+          emitFun (MkFun 0) (emitSubstList sub2 t)
 
 -- Is a substitution idempotent?
 {-# INLINE idempotent #-}
