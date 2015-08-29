@@ -430,3 +430,10 @@ extendList MutableSubst{..} (MkVar x) (TermList lo hi _)
           return (Just ())
         | otherwise ->
           return Nothing
+
+-- Add a new binding to a substitution.
+-- Doesn't check bounds and overwrites any existing binding.
+{-# INLINE unsafeExtendList #-}
+unsafeExtendList :: MutableSubst s f -> Var -> TermList f -> ST s ()
+unsafeExtendList MutableSubst{..} (MkVar x) (TermList lo hi _) =
+  writeByteArray msubst x (fromSlice (lo, hi))
