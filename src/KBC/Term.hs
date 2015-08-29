@@ -77,15 +77,14 @@ flattenSubst :: CompoundSubst f -> Maybe (Subst f)
 flattenSubst (CSubst sub) = Just sub
 flattenSubst sub = matchList pat t
   where
-    pat = flattenSubst' (const 1) (\x _ -> emitVar x)  [sub]
-    t   = flattenSubst' len       (\_ t -> emitTerm t) [sub]
+    pat = flattenSubst' (\x _ -> emitVar x)  [sub]
+    t   = flattenSubst' (\_ t -> emitTerm t) [sub]
 
 {-# INLINE flattenSubst' #-}
 flattenSubst' ::
-  (Term f -> Int) ->
   (forall m. Builder f m => Var -> Term f -> m ()) ->
   [CompoundSubst f] -> TermList f
-flattenSubst' size emit subs =
+flattenSubst' emit subs =
   buildTermList $ do
     let
       loop [] = return ()
