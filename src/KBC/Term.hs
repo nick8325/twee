@@ -21,6 +21,7 @@ import KBC.Term.Core hiding (subst)
 import Control.Monad
 import Control.Monad.ST.Strict
 import Data.List hiding (lookup)
+import Data.Maybe
 
 --------------------------------------------------------------------------------
 -- A helper datatype for building terms.
@@ -167,6 +168,54 @@ emitIterSubstList !sub = aux
       emitFun f (aux ts)
       aux us
 
+-- Composition of substitutions.
+substCompose :: Subst f -> Subst f -> Subst f
+substCompose !sub1 !sub2 = fromMaybe __ (matchList pat t)
+  where
+    pat = substCompose' (\x _ -> emitVar x) sub1
+    t   = substCompose' (\_ t -> emitSubst sub2 t) sub1
+
+{-# INLINE substCompose' #-}
+substCompose' ::
+  (forall m. Builder f m => Var -> Term f -> m ()) ->
+  Subst f -> TermList f
+substCompose' emit !sub =
+  buildTermList $ do
+    let
+      loop n
+        | n == substSize sub = return ()
+        | otherwise =
+            case lookup sub (MkVar n) of
+              Nothing -> loop (n+1)
+              Just t -> do
+                emit (MkVar n) t
+                loop (n+1)
+    loop 0
+
+-- Is a substitution idempotent?
+{-# INLINE idempotent #-}
+idempotent :: Subst f -> Bool
+idempotent !sub = aux 0
+  where
+    aux n
+      | n == substSize sub = True
+      | otherwise =
+          case lookupList sub (MkVar n) of
+            Nothing -> aux (n+1)
+            Just t -> ok t && aux (n+1)
+    ok Empty = True
+    ok (ConsSym Fun{} t) = ok t
+    ok (Cons (Var x) t) =
+      case lookup sub x of
+        Nothing -> ok t
+        Just _  -> False
+
+-- Iterate a substitution to make it idempotent.
+close :: Subst f -> Subst f
+close sub
+  | idempotent sub = sub
+  | otherwise = close (substCompose sub sub)
+
 --------------------------------------------------------------------------------
 -- Matching.
 --------------------------------------------------------------------------------
@@ -194,6 +243,15 @@ matchList !pat !t = runST $ do
 --------------------------------------------------------------------------------
 -- Unification.
 --------------------------------------------------------------------------------
+
+{-# INLINE unify #-}
+unify :: Term f -> Term f -> Maybe (Subst f)
+unify t u = unifyList (singleton t) (singleton u)
+
+unifyList :: TermList f -> TermList f -> Maybe (Subst f)
+unifyList t u = do
+  sub <- unifyListTri t u
+  return $! close sub
 
 {-# INLINE unifyTri #-}
 unifyTri :: Term f -> Term f -> Maybe (Subst f)
