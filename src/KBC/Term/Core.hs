@@ -74,6 +74,18 @@ data TermList f =
 len :: TermList f -> Int
 len (TermList low high _) = high - low
 
+{-# INLINE sharedList #-}
+-- Do two termlists share the same array?
+-- Sometimes useful when generating substitutions (see below).
+sharedList :: TermList f -> TermList f -> Bool
+sharedList t u =
+  tagToEnum# (reallyUnsafePtrEquality# addr1# addr2#)
+  where
+    !(ByteArray array1#) = array t
+    !(ByteArray array2#) = array u
+    addr1# = unsafeCoerce# array1#
+    addr2# = unsafeCoerce# array2#
+
 -- A term is a special case of a termlist.
 -- We store it as the termlist together with the root symbol.
 data Term f =

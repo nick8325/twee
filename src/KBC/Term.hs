@@ -288,3 +288,28 @@ bound t = aux 0 t
     aux n (ConsSym (Var (MkVar x)) t)
       | x >= n = aux (x+1) t
       | otherwise = aux n t
+
+{-# INLINE shared #-}
+shared :: Term f -> Term f -> Bool
+shared t u = sharedList (singleton t) (singleton u)
+
+-- Make two terms share the same storage.
+share2 :: Term f -> Term f -> (Term f, Term f)
+share2 t u
+  | shared t u = (t, u)
+  | otherwise = (t', u')
+  where
+    UnsafeCons t' (UnsafeCons u' _) =
+      buildTermList $ do
+        emitTerm t
+        emitTerm u
+
+shareList2 :: TermList f -> TermList f -> (TermList f, TermList f)
+shareList2 t u
+  | sharedList t u = (t, u)
+  | otherwise = (children ft', u')
+  where
+    UnsafeCons ft' u' =
+      buildTermList $ do
+        emitFun (MkFun 0) (emitTermList t)
+        emitTermList u
