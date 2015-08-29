@@ -26,43 +26,38 @@ import Data.List hiding (lookup)
 -- A helper datatype for building terms.
 --------------------------------------------------------------------------------
 
--- An algebraic data type for terms, with flatterms or substitutions applied
--- to flatterms at the leaf.
+-- An algebraic data type for terms, with flatterms at the leaf.
 data CompoundTerm f =
-    CFlat    (Term f)
-  | CFun     (Fun f) [CompoundTerm f]
-  | CFunList (Fun f) (TermList f)
-  | CVar     Var
-  | CSubst   (Subst f) (Term f)
+    CTerm      (TermList f)
+  | CSubstTerm (Subst f) (TermList f)
+  | CVar Var
+  | CFun (Fun f) (CompoundTerm f)
+  | CNil
+  | CAppend (CompoundTerm f) (CompoundTerm f)
+
+fromList :: [CompoundTerm f] -> CompoundTerm f
+fromList = foldr CAppend CNil
 
 -- Turn a compound term into a flatterm.
 flattenTerm :: CompoundTerm f -> Term f
 flattenTerm t =
-  case flattenList [t] of
+  case flattenList t of
     Cons u Empty -> u
 
--- Turn a list of compound terms into a list of flatterms.
-flattenList :: [CompoundTerm f] -> TermList f
-flattenList ts =
+-- Turn a compound termlist into a flatterm list.
+flattenList :: CompoundTerm f -> TermList f
+flattenList t =
   buildTermList $ do
     let
-      loop [] = return ()
-      loop (CFlat t:ts) = do
-        emitTerm t
-        loop ts
-      loop (CFun f ts:us) = do
-        emitFun f (loop ts)
-        loop us
-      loop (CFunList f ts:us) = do
-        emitFun f (emitTermList ts)
-        loop us
-      loop (CVar x:ts) = do
-        emitVar x
-        loop ts
-      loop (CSubst sub t:ts) = do
-        emitSubst sub t
-        loop ts
-    loop ts
+      loop (CTerm t) = emitTermList t
+      loop (CSubstTerm sub t) = emitSubstList sub t
+      loop (CVar x) = emitVar x
+      loop (CFun f t) = emitFun f (loop t)
+      loop CNil = return ()
+      loop (CAppend t u) = do
+        loop t
+        loop u
+    loop t
 
 --------------------------------------------------------------------------------
 -- A helper datatype for building substitutions.
@@ -70,9 +65,9 @@ flattenList ts =
 
 -- An algebraic data type for substitutions.
 data CompoundSubst f =
-    SFlat  (Subst f)
-  | SSingle Var (Term f)
-  | SUnion [CompoundSubst f]
+    CSubst  (Subst f)
+  | CSingle Var (Term f)
+  | CUnion [CompoundSubst f]
 
 -- Flatten a compound substitution.
 flattenSubst :: CompoundSubst f -> Maybe (Subst f)
@@ -90,7 +85,7 @@ flattenSubst' size emit subs =
   buildTermList $ do
     let
       loop [] = return ()
-      loop (SFlat sub:subs) = do
+      loop (CSubst sub:subs) = do
         let
           aux n
             | n == substSize sub = loop subs
@@ -101,10 +96,10 @@ flattenSubst' size emit subs =
                     emit (MkVar n) t
                     aux (n+1)
         aux 0
-      loop (SSingle x t:subs) = do
+      loop (CSingle x t:subs) = do
         emit x t
         loop subs
-      loop (SUnion subs:subs') = loop (subs ++ subs')
+      loop (CUnion subs:subs') = loop (subs ++ subs')
     loop subs
 
 --------------------------------------------------------------------------------
