@@ -294,15 +294,6 @@ buildTermList m =
     !array <- unsafeFreezeByteArray (MutableByteArray marray)
     return (TermList 0 n array)
 
--- Freeze a term that's been built.
-{-# INLINE freezeTermList #-}
-freezeTermList :: BuildM s f (TermList f)
-freezeTermList = do
-  marray <- getArray
-  n <- getIndex
-  !array <- liftST $ unsafeFreezeByteArray marray
-  return (TermList 0 n array)
-
 -- Emit a single symbol (for internal use mostly).
 {-# INLINE emitSymbolBuildM #-}
 emitSymbolBuildM :: Symbol -> BuildM s f () -> BuildM s f ()

@@ -40,7 +40,7 @@ flattenTerm t =
   case flattenList [t] of
     Cons u Empty -> u
 
--- Turn a list of compound term into a list of flatterms.
+-- Turn a list of compound terms into a list of flatterms.
 flattenList :: [CompoundTerm f] -> TermList f
 flattenList ts =
   buildTermList $ do
@@ -117,7 +117,7 @@ subst sub t =
     Cons u Empty -> u
 
 substList :: Subst f -> TermList f -> TermList f
-substList sub t = buildTermList (emitSubstList sub t)
+substList !sub !t = buildTermList (emitSubstList sub t)
 
 -- Emit a substitution applied to a term.
 {-# INLINE emitSubst #-}
@@ -130,12 +130,12 @@ emitSubstList :: Builder f m => Subst f -> TermList f -> m ()
 emitSubstList !sub = aux
   where
     aux Empty = return ()
-    aux (Cons v@(Var x) ts) = do
+    aux (Cons (Var x) ts) = do
       case lookupList sub x of
         Nothing -> emitVar x
         Just u  -> emitTermList u
       aux ts
-    aux (Cons x@(Fun f ts) us) = do
+    aux (Cons (Fun f ts) us) = do
       emitFun f (aux ts)
       aux us
 
@@ -149,7 +149,7 @@ match pat t = matchList (singleton pat) (singleton t)
 
 matchList :: TermList f -> TermList f -> Maybe (Subst f)
 matchList !pat !t = runST $ do
-  subst <- newMutableSubst t (bound pat)
+  subst <- newMutableSubst t (boundList pat)
   let loop !_ !_ | False = __
       loop Empty _ = fmap Just (freezeSubst subst)
       loop _ Empty = __
@@ -175,14 +175,8 @@ unifyTri t u = unifyListTri (singleton t) (singleton u)
 
 unifyListTri :: TermList f -> TermList f -> Maybe (Subst f)
 unifyListTri !t !u = runST $ do
-  let
-    tu@(Cons ft' u') =
-      buildTermList $ do
-        emitFun (MkFun 0) (emitTermList t)
-        emitTermList u
-    t' = children ft'
-  subst <- newMutableSubst tu (bound tu)
-
+  let (t', u') = shareList2 t u
+  subst <- newMutableSubst t' (boundList t')
   let
     loop !_ !_ | False = __
     loop Empty _ = return True
@@ -280,8 +274,12 @@ emitTerm t = emitTermList (singleton t)
 
 -- Find the lowest-numbered variable that doesn't appear in a term.
 {-# INLINE bound #-}
-bound :: TermList f -> Int
-bound t = aux 0 t
+bound :: Term f -> Int
+bound t = boundList (singleton t)
+
+{-# INLINE boundList #-}
+boundList :: TermList f -> Int
+boundList t = aux 0 t
   where
     aux n Empty = n
     aux n (ConsSym Fun{} t) = aux n t
