@@ -28,11 +28,11 @@ import Data.List hiding (lookup)
 -- An algebraic data type for terms, with flatterms or substitutions applied
 -- to flatterms at the leaf.
 data CompoundTerm f =
-    CFlat  (Term f)
-  | CFun   (Fun f) [CompoundTerm f]
+    CFlat    (Term f)
+  | CFun     (Fun f) [CompoundTerm f]
   | CFunList (Fun f) (TermList f)
-  | CVar   Var
-  | CSubst (Subst f) (Term f)
+  | CVar     Var
+  | CSubst   (Subst f) (Term f)
 
 -- Turn a compound term into a flatterm.
 flattenTerm :: CompoundTerm f -> Term f
