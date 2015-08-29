@@ -30,6 +30,7 @@ import Data.List hiding (lookup)
 data CompoundTerm f =
     CTerm      (TermList f)
   | CSubstTerm (Subst f) (TermList f)
+  | CIterSubstTerm (Subst f) (TermList f)
   | CVar Var
   | CFun (Fun f) (CompoundTerm f)
   | CNil
@@ -51,6 +52,7 @@ flattenList t =
     let
       loop (CTerm t) = emitTermList t
       loop (CSubstTerm sub t) = emitSubstList sub t
+      loop (CIterSubstTerm sub t) = emitIterSubstList sub t
       loop (CVar x) = emitVar x
       loop (CFun f t) = emitFun f (loop t)
       loop CNil = return ()
@@ -130,6 +132,35 @@ emitSubstList !sub = aux
       case lookupList sub x of
         Nothing -> emitVar x
         Just u  -> emitTermList u
+      aux ts
+    aux (Cons (Fun f ts) us) = do
+      emitFun f (aux ts)
+      aux us
+
+{-# INLINE iterSubst #-}
+iterSubst :: Subst f -> Term f -> Term f
+iterSubst sub t =
+  case iterSubstList sub (singleton t) of
+    Cons u Empty -> u
+
+iterSubstList :: Subst f -> TermList f -> TermList f
+iterSubstList !sub !t = buildTermList (emitIterSubstList sub t)
+
+-- Emit a substitution repeatedly applied to a term.
+{-# INLINE emitIterSubst #-}
+emitIterSubst :: Builder f m => Subst f -> Term f -> m ()
+emitIterSubst sub t = emitIterSubstList sub (singleton t)
+
+-- Emit a substitution repeatedly applied to a term list.
+{-# INLINE emitIterSubstList #-}
+emitIterSubstList :: Builder f m => Subst f -> TermList f -> m ()
+emitIterSubstList !sub = aux
+  where
+    aux Empty = return ()
+    aux (Cons (Var x) ts) = do
+      case lookupList sub x of
+        Nothing -> emitVar x
+        Just u  -> aux u
       aux ts
     aux (Cons (Fun f ts) us) = do
       emitFun f (aux ts)
