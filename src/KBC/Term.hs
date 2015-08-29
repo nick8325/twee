@@ -3,6 +3,7 @@
 -- (matching, unification, etc.) on top of the primitives
 -- in KBC.Term.Core.
 {-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes, FlexibleContexts #-}
+{-# OPTIONS_GHC -funfolding-creation-threshold=1000000 -funfolding-use-threshold=1000000 #-}
 module KBC.Term(
   module KBC.Term,
   -- Stuff from KBC.Term.Core.
