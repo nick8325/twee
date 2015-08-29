@@ -155,8 +155,12 @@ unify t u = unifyList (singleton t) (singleton u)
 unifyList :: TermList f -> TermList f -> Maybe (Subst f)
 unifyList !t !u = runST $ do
   let
-    tu@(Cons (Fun _ t') (Cons (Fun _ u') Empty)) =
-      flattenList [CFunList (MkFun 0) t, CFunList (MkFun 0) u]
+    tu@(Cons ft' u') =
+      buildTermList (len t + len u + 1) $ do
+        emitFun (MkFun 0) (emitTermList t)
+        emitTermList u
+        freezeTermList
+    t' = children ft'
   subst <- newMutableSubst tu (bound tu)
 
   let
@@ -193,7 +197,7 @@ unifyList !t !u = runST $ do
           extend subst x t
           return True
 
-    occurs x Empty = False
+    occurs !x Empty = False
     occurs x (ConsSym Fun{} t) = occurs x t
     occurs x (ConsSym (Var y) t) = x == y || occurs x t
 
@@ -205,6 +209,11 @@ unifyList !t !u = runST $ do
 --------------------------------------------------------------------------------
 -- Miscellaneous stuff.
 --------------------------------------------------------------------------------
+
+children :: Term f -> TermList f
+children t =
+  case singleton t of
+    UnsafeConsSym _ ts -> ts
 
 toList :: TermList f -> [Term f]
 toList Empty = []
