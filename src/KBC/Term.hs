@@ -2,7 +2,7 @@
 -- This module implements the usual term manipulation stuff
 -- (matching, unification, etc.) on top of the primitives
 -- in KBC.Term.Core.
-{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes #-}
+{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes, FlexibleContexts #-}
 module KBC.Term(
   module KBC.Term,
   -- Stuff from KBC.Term.Core.
@@ -10,8 +10,7 @@ module KBC.Term(
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
   Fun(..), Var(..), pattern Var, pattern Fun, singleton,
-  BuildM, buildTermList, freezeTermList,
-  emitRoot, emitFun, emitVar, emitTermList,
+  Builder, buildTermList, emitRoot, emitFun, emitVar, emitTermList,
   Subst, substSize, lookupList,
   MutableSubst, newMutableSubst, freezeSubst, extendList) where
 
@@ -44,7 +43,7 @@ flattenTerm t =
 -- Turn a list of compound term into a list of flatterms.
 flattenList :: [CompoundTerm f] -> TermList f
 flattenList ts =
-  buildTermList (sum (map clen ts)) $ do
+  buildTermList $ do
     let
       loop [] = return ()
       loop (CFlat t:ts) = do
@@ -63,13 +62,6 @@ flattenList ts =
         emitSubst sub t
         loop ts
     loop ts
-    freezeTermList
-  where
-    clen (CFlat t) = len (singleton t)
-    clen (CFun _ ts) = 1 + sum (map clen ts)
-    clen (CFunList _ t) = 1 + len t
-    clen (CVar _) = 1
-    clen (CSubst sub t) = substTermSize sub (singleton t)
 
 --------------------------------------------------------------------------------
 -- A helper datatype for building substitutions.
@@ -91,12 +83,12 @@ flattenSubst sub = matchList pat t
 {-# INLINE flattenSubst' #-}
 flattenSubst' ::
   (Term f -> Int) ->
-  (forall s. Var -> Term f -> BuildM s f ()) ->
+  (forall m. Builder f m => Var -> Term f -> m ()) ->
   [CompoundSubst f] -> TermList f
 flattenSubst' size emit subs =
-  buildTermList (sum (map size' subs)) $ do
+  buildTermList $ do
     let
-      loop [] = freezeTermList
+      loop [] = return ()
       loop (SFlat sub:subs) = do
         let
           aux n
@@ -113,17 +105,6 @@ flattenSubst' size emit subs =
         loop subs
       loop (SUnion subs:subs') = loop (subs ++ subs')
     loop subs
-  where
-    size' (SFlat sub) = aux 0 0
-      where
-        aux n i
-          | i == substSize sub = n
-          | otherwise =
-            case lookup sub (MkVar n) of
-              Nothing -> aux n (i+1)
-              Just t  -> aux (n+size t) (i+1)
-    size' (SSingle _ t) = size t
-    size' (SUnion subs) = sum (map size' subs)
 
 --------------------------------------------------------------------------------
 -- Substitution.
@@ -136,31 +117,16 @@ subst sub t =
     Cons u Empty -> u
 
 substList :: Subst f -> TermList f -> TermList f
-substList sub t =
-  buildTermList (substTermSize sub t) $ do
-    emitSubstList sub t
-    freezeTermList
-
--- Work out the size of a term after substitution.
-{-# INLINE substTermSize #-}
-substTermSize :: Subst f -> TermList f -> Int
-substTermSize !sub = aux 0
-  where
-    aux n Empty = n
-    aux n (ConsSym Fun{} t) = aux (n+1) t
-    aux n (ConsSym (Var x) t) =
-      case lookupList sub x of
-        Nothing -> aux (n+1) t
-        Just u  -> aux (n+len u) t
+substList sub t = buildTermList (emitSubstList sub t)
 
 -- Emit a substitution applied to a term.
 {-# INLINE emitSubst #-}
-emitSubst :: Subst f -> Term f -> BuildM s f ()
+emitSubst :: Builder f m => Subst f -> Term f -> m ()
 emitSubst sub t = emitSubstList sub (singleton t)
 
 -- Emit a substitution applied to a term list.
 {-# INLINE emitSubstList #-}
-emitSubstList :: Subst f -> TermList f -> BuildM s f ()
+emitSubstList :: Builder f m => Subst f -> TermList f -> m ()
 emitSubstList !sub = aux
   where
     aux Empty = return ()
@@ -211,10 +177,9 @@ unifyListTri :: TermList f -> TermList f -> Maybe (Subst f)
 unifyListTri !t !u = runST $ do
   let
     tu@(Cons ft' u') =
-      buildTermList (len t + len u + 1) $ do
+      buildTermList $ do
         emitFun (MkFun 0) (emitTermList t)
         emitTermList u
-        freezeTermList
     t' = children ft'
   subst <- newMutableSubst tu (bound tu)
 
@@ -310,7 +275,7 @@ extend :: MutableSubst s f -> Var -> Term f -> ST s (Maybe ())
 extend sub x t = extendList sub x (singleton t)
 
 {-# INLINE emitTerm #-}
-emitTerm :: Term f -> BuildM s f ()
+emitTerm :: Builder f m => Term f -> m ()
 emitTerm t = emitTermList (singleton t)
 
 -- Find the lowest-numbered variable that doesn't appear in a term.
