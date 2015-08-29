@@ -155,8 +155,6 @@ matchList !pat !t = runST $ do
       loop _ Empty = __
       loop (ConsSym (Fun f _) pat) (ConsSym (Fun g _) t)
         | f == g = loop pat t
-      loop (Cons (Var x) pat) (Cons (Var y) t)
-        | x == y = loop pat t
       loop (Cons (Var x) pat) (Cons t u) = do
         res <- extend subst x t
         case res of
