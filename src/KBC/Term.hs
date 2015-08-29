@@ -216,13 +216,16 @@ substCompose !sub1 !sub2 =
 idempotent :: Subst f -> Bool
 idempotent !sub = foldSubst p True sub
   where
-    p _ t x = ok t && x
-    ok Empty = True
-    ok (ConsSym Fun{} t) = ok t
-    ok (Cons (Var x) t) =
-      case lookup sub x of
-        Nothing -> ok t
-        Just _  -> False
+    p _ t x = sub `idempotentOn` t && x
+
+-- Does a substitution affect a term?
+{-# INLINE idempotentOn #-}
+idempotentOn :: Subst f -> TermList f -> Bool
+idempotentOn !sub = aux
+  where
+    aux Empty = True
+    aux (ConsSym Fun{} t) = aux t
+    aux (Cons (Var x) t) = isNothing (lookupList sub x) && aux t
 
 -- Iterate a substitution to make it idempotent.
 close :: Subst f -> Subst f
