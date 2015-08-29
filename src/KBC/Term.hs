@@ -175,12 +175,11 @@ substCompose !sub1 !sub2 =
     sub <- newMutableSubst t (substSize sub1)
     let
       loop !n Empty = unsafeFreezeSubst sub
-      loop n t@(Cons u v) =
-        case lookup sub1 (MkVar n) of
-          Nothing -> loop (n+1) t
-          Just _  -> do
-            extend sub (MkVar n) u
-            loop (n+1) v
+      loop !n (Cons (Var x) t)
+        | x == MkVar n = loop (n+1) t
+      loop !n (Cons t u) = do
+        extend sub (MkVar n) t
+        loop (n+1) u
     loop 0 t
   where
     !t =
@@ -190,7 +189,9 @@ substCompose !sub1 !sub2 =
             | n == substSize sub1 = return ()
             | otherwise =
                 case lookup sub1 (MkVar n) of
-                  Nothing -> loop (n+1)
+                  Nothing -> do
+                    emitVar (MkVar n)
+                    loop (n+1)
                   Just t -> do
                     emitSubst sub2 t
                     loop (n+1)
