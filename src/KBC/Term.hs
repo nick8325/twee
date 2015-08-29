@@ -170,27 +170,31 @@ emitIterSubstList !sub = aux
 
 -- Composition of substitutions.
 substCompose :: Subst f -> Subst f -> Subst f
-substCompose !sub1 !sub2 = fromMaybe __ (matchList pat t)
-  where
-    pat = substCompose' (\x _ -> emitVar x) sub1
-    t   = substCompose' (\_ t -> emitSubst sub2 t) sub1
-
-{-# INLINE substCompose' #-}
-substCompose' ::
-  (forall m. Builder f m => Var -> Term f -> m ()) ->
-  Subst f -> TermList f
-substCompose' emit !sub =
-  buildTermList $ do
+substCompose !sub1 !sub2 =
+  runST $ do
+    sub <- newMutableSubst t (substSize sub1)
     let
-      loop n
-        | n == substSize sub = return ()
-        | otherwise =
-            case lookup sub (MkVar n) of
-              Nothing -> loop (n+1)
-              Just t -> do
-                emit (MkVar n) t
-                loop (n+1)
-    loop 0
+      loop !n Empty = unsafeFreezeSubst sub
+      loop n t@(Cons u v) =
+        case lookup sub1 (MkVar n) of
+          Nothing -> loop (n+1) t
+          Just _  -> do
+            extend sub (MkVar n) u
+            loop (n+1) v
+    loop 0 t
+  where
+    !t =
+      buildTermList $ do
+        let
+          loop n
+            | n == substSize sub1 = return ()
+            | otherwise =
+                case lookup sub1 (MkVar n) of
+                  Nothing -> loop (n+1)
+                  Just t -> do
+                    emitSubst sub2 t
+                    loop (n+1)
+        loop 0
 
 -- Is a substitution idempotent?
 {-# INLINE idempotent #-}
