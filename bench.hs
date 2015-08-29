@@ -25,6 +25,9 @@ u = u0
 
 Just sub = match t u
 
+mgu1 t u = let Just sub = unifyTri t u in iterSubst sub t
+mgu2 t u = let Just sub = unify t u in subst sub t
+
 us = CFun (MkFun 0) (fromList (replicate 10 (CSubstTerm sub (singleton t))))
 
 Just sub' = unifyTri t1 t2
@@ -39,10 +42,13 @@ main = do
   print (close sub')
   print (iterSubst sub' t1)
   print (iterSubst sub' t2)
+  print (mgu1 t1 t2)
+  print (mgu2 t1 t2)
   print (t == t)
   print (subst sub t == u)
   print (iterSubst sub' t1 == iterSubst sub' t2)
   print (subst csub' t1 == iterSubst sub' t1)
+  print (mgu1 t1 t2 == mgu2 t1 t2)
   print (subst csub' t2 == iterSubst sub' t2)
   defaultMain [
     bench "eq-t" (whnf (uncurry (==)) (t, t)),
@@ -57,7 +63,9 @@ main = do
     bench "unify-subst-iter1" (whnf (uncurry iterSubst) (sub', t1)),
     bench "unify-subst-iter2" (whnf (uncurry iterSubst) (sub', t2)),
     bench "unify-subst-closed1" (whnf (uncurry subst) (csub', t1)),
-    bench "unify-subst-closed2" (whnf (uncurry subst) (csub', t2))]
+    bench "unify-subst-closed2" (whnf (uncurry subst) (csub', t2)),
+    bench "mgu-tri" (whnf (uncurry mgu1) (t1, t2)),
+    bench "mgu-close" (whnf (uncurry mgu2) (t1, t2))]
 
 prop :: Bool -> NonNegative (Small Int) -> NonNegative (Small Int) -> Property
 prop fun_ (NonNegative (Small index_)) (NonNegative (Small size_)) =
