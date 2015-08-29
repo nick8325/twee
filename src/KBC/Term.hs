@@ -47,6 +47,7 @@ flattenTerm t =
 
 -- Turn a compound termlist into a flatterm list.
 flattenList :: CompoundTerm f -> TermList f
+flattenList (CTerm t) = t
 flattenList t =
   buildTermList $ do
     let
@@ -73,6 +74,7 @@ data CompoundSubst f =
 
 -- Flatten a compound substitution.
 flattenSubst :: CompoundSubst f -> Maybe (Subst f)
+flattenSubst (CSubst sub) = Just sub
 flattenSubst sub = matchList pat t
   where
     pat = flattenSubst' (const 1) (\x _ -> emitVar x)  [sub]
