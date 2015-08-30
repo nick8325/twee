@@ -1,139 +1,98 @@
-{-# LANGUAGE DeriveFunctor, FlexibleContexts, RankNTypes #-}
+{-# LANGUAGE BangPatterns, CPP, RankNTypes, UnboxedTuples #-}
 -- Term indexing (perfect discrimination trees).
+{-# OPTIONS_GHC -funfolding-creation-threshold=1000000 -funfolding-use-threshold=100000 #-}
 module KBC.Index where
 
+#include "errors.h"
 import Prelude hiding (filter)
-import KBC.Base
-import qualified Data.Map as Map
-import qualified Data.IntMap.Strict as IntMap
-import Data.IntMap.Strict(IntMap)
-import qualified Data.Rewriting.Substitution.Type as Subst
-import qualified Data.Set as Set
-import Data.Set(Set)
+import KBC.Term hiding (toList)
+import qualified KBC.Term as Term
+import Control.Monad.ST.Strict
+import GHC.ST
+import KBC.Array hiding (null)
+import qualified KBC.Array as Array
+import Data.Maybe
+import qualified Data.List as List
 
-data Index a =
+data Index f a =
   Index {
-    here :: Set a,
-    fun  :: IntMap (Index a),
-    var  :: IntMap (Index a) }
+    vars :: {-# UNPACK #-} !Int,
+    here :: [a],
+    fun  :: {-# UNPACK #-} !(Array (Index f a)),
+    var  :: {-# UNPACK #-} !(Array (Index f a)) }
   deriving Show
 
-updateHere :: Ord a => (Set a -> Set a) -> Index a -> Index a
+updateHere :: ([a] -> [a]) -> Index f a -> Index f a
 updateHere f idx = idx { here = f (here idx) }
 
+updateVars :: Int -> Index f a -> Index f a
+updateVars n idx = idx { vars = vars idx `max` n }
+
 updateFun ::
-  Int -> (Index a -> Index a) -> Index a -> Index a
+  Int -> (Index f a -> Index f a) -> Index f a -> Index f a
 updateFun x f idx
-  | KBC.Index.null idx' = idx { fun = IntMap.delete x (fun idx) }
-  | otherwise = idx { fun = IntMap.insert x idx' (fun idx) }
+  | KBC.Index.null idx' = idx { fun = update x Nothing (fun idx) }
+  | otherwise = idx { fun = update x (Just idx') (fun idx) }
   where
-    idx' = f (IntMap.findWithDefault KBC.Index.empty x (fun idx))
+    idx' = f (fromMaybe KBC.Index.empty (fun idx ! x))
 
 updateVar ::
-  Int -> (Index a -> Index a) -> Index a -> Index a
+  Int -> (Index f a -> Index f a) -> Index f a -> Index f a
 updateVar x f idx
-  | KBC.Index.null idx' = idx { var = IntMap.delete x (var idx) }
-  | otherwise = idx { var = IntMap.insert x idx' (var idx) }
+  | KBC.Index.null idx' = idx { var = update x Nothing (var idx) }
+  | otherwise = idx { var = update x (Just idx') (var idx) }
   where
-    idx' = f (IntMap.findWithDefault KBC.Index.empty x (var idx))
+    idx' = f (fromMaybe KBC.Index.empty (var idx ! x))
 
-empty :: Index a
-empty = Index Set.empty IntMap.empty IntMap.empty
+empty :: Index f a
+empty = Index 0 [] newArray newArray
 
-null :: Index a -> Bool
-null idx = Set.null (here idx) && IntMap.null (fun idx) && IntMap.null (var idx)
-
-mapMonotonic ::
-  (a -> b) ->
-  Index a -> Index b
-mapMonotonic f (Index here fun var) =
-  Index
-    (Set.mapMonotonic f here)
-    (fmap (mapMonotonic f) fun)
-    (fmap (mapMonotonic f) var)
-
-filter :: (a -> Bool) -> Index a -> Index a
-filter p (Index here fun var) =
-  Index
-    (Set.filter p here)
-    (fmap (filter p) fun)
-    (fmap (filter p) var)
+null :: Index f a -> Bool
+null idx = Prelude.null (here idx) && Array.null (fun idx) && Array.null (var idx)
 
 {-# INLINEABLE singleton #-}
-singleton ::
-  (Symbolic a, Numbered (ConstantOf a), Ord a) =>
-  a -> Index a
-singleton x = insert x empty
+singleton :: Term f -> a -> Index f a
+singleton t x = insert t x empty
 
-{-# INLINEABLE insert #-}
-insert ::
-  (Symbolic a, Numbered (ConstantOf a), Ord a) =>
-  a -> Index a -> Index a
-insert t = insertFlat (symbols (term u))
+{-# INLINE insert #-}
+insert :: Term f -> a -> Index f a -> Index f a
+insert t x idx = insertList (Term.singleton t) x idx
+
+-- XXX need to canonicalise
+{-# INLINEABLE insertList #-}
+insertList :: TermList f -> a -> Index f a -> Index f a
+insertList t x !idx = aux t idx
   where
-    u = canonicalise t
-    insertFlat [] = updateHere (Set.insert u)
-    insertFlat (Left x:xs) = updateFun (number x) (insertFlat xs)
-    insertFlat (Right x:xs) = updateVar (number x) (insertFlat xs)
+    aux Empty = updateVars n . updateHere (x:)
+    aux (ConsSym (Fun (MkFun f) _) t) = updateVars n . updateFun f (aux t)
+    aux (ConsSym (Var (MkVar x)) t) = updateVars n . updateVar x (aux t)
+    n = boundList t
 
-{-# INLINEABLE delete #-}
-delete ::
-  (Symbolic a, Numbered (ConstantOf a), Ord a) =>
-  a -> Index a -> Index a
-delete t = deleteFlat (symbols (term u))
+{-# INLINE delete #-}
+delete :: Eq a => Term f -> a -> Index f a -> Index f a
+delete t x idx = deleteList (Term.singleton t) x idx
+
+-- XXX really need to canonicalise
+{-# INLINEABLE deleteList #-}
+deleteList :: Eq a => TermList f -> a -> Index f a -> Index f a
+deleteList t x !idx = aux t idx
   where
-    u = canonicalise t
-    deleteFlat [] = updateHere (Set.delete u)
-    deleteFlat (Left x:xs) = updateFun (number x) (deleteFlat xs)
-    deleteFlat (Right x:xs) = updateVar (number x) (deleteFlat xs)
+    aux Empty = updateHere (List.delete x)
+    aux (ConsSym (Fun (MkFun f) _) t) = updateFun f (aux t)
+    aux (ConsSym (Var (MkVar x)) t) = updateVar x (aux t)
 
+{-
 {-# INLINEABLE union #-}
 union ::
   (Symbolic a, Ord a) =>
   Index a -> Index a -> Index a
 union (Index here fun var) (Index here' fun' var') =
   Index
-    (Set.union here here')
+    (here ++ here')
     (IntMap.unionWith union fun fun')
     (IntMap.unionWith union var var')
-
--- I want to define this as a CPS monad instead, but I run into
--- problems with inlining...
-type Partial a b =
-  (Subst (ConstantOf a) -> Index a -> b -> b) ->
-   Subst (ConstantOf a) -> Index a -> b -> b
-
-{-# INLINE yes #-}
-yes :: Partial a b
-yes ok sub idx err = ok sub idx err
-
-{-# INLINE no #-}
-no :: Partial a b
-no _ _ _ err = err
-
-{-# INLINE orElse #-}
-orElse :: Partial a b -> Partial a b -> Partial a b
-f `orElse` g = \ok sub idx err -> f ok sub idx (g ok sub idx err)
-
-{-# INLINE andThen #-}
-andThen :: Partial a b -> Partial a b -> Partial a b
-f `andThen` g = \ok sub idx err -> f (\sub idx err -> g ok sub idx err) sub idx err
-
-{-# INLINE withIndex #-}
-withIndex :: Index a -> Partial a b -> Partial a b
-withIndex idx f = \ok sub _ err -> f ok sub idx err
-
-{-# INLINE inIndex #-}
-inIndex :: (Index a -> Partial a b) -> Partial a b
-inIndex f = \ok sub idx err -> f idx ok sub idx err
-
-{-# INLINE partialToList #-}
-partialToList ::
-  (Subst (ConstantOf a) -> Index a -> [b]) ->
-  Partial a [b] -> Index a -> [b]
-partialToList f m idx =
-  m (\sub idx rest -> f sub idx ++ rest) (Subst.fromMap Map.empty) idx []
-
+-}
+{-
 {-# INLINEABLE lookup #-}
 lookup ::
   (Symbolic a, Numbered (ConstantOf a), Eq (ConstantOf a)) =>
@@ -141,49 +100,67 @@ lookup ::
 lookup t idx = do
   (x, sub) <- matches t idx
   return (substf (evalSubst sub) x)
+-}
 
-{-# INLINEABLE matches #-}
-matches ::
-  (Symbolic a, Numbered (ConstantOf a), Eq (ConstantOf a)) =>
-  TmOf a -> Index a -> [(a, Subst (ConstantOf a))]
-matches t idx = partialToList f (lookupPartial t) idx
-  where
-    f sub idx = do
-      m <- Set.toList (here idx)
-      return (m, sub)
+data Match f a =
+  Match {
+    matchResult :: [a],
+    matchSubst  :: Subst f }
 
-    lookupPartial t = lookupFun t `orElse` lookupVar t
+{-# INLINE matches #-}
+matches :: Term f -> Index f a -> [Match f a]
+matches t idx = matchesList (Term.singleton t) idx
 
-    {-# INLINE lookupVar #-}
-    lookupVar t ok sub idx err =
-      IntMap.foldrWithKey tryOne err (var idx)
+matchesList :: TermList f -> Index f a -> [Match f a]
+matchesList !t !idx = runST $ do
+  msub <- newMutableSubst t (vars idx)
+  let
+    loop !_ !_ | False = __
+    loop Empty idx
+      | Prelude.null (here idx) = return []
+      | otherwise = do
+        sub <- unsafeFreezeSubst msub
+        return [Match (here idx) sub]
+    loop t@(ConsSym (Fun f _) ts) idx =
+      tryFun f ts (fun idx) (tryVar u us (var idx))
       where
-        {-# INLINE tryOne #-}
-        tryOne x idx err =
-          case Map.lookup (MkVar x) (Subst.toMap sub) of
-            Just u | t == u -> ok sub idx err
-            Just _ -> err
-            Nothing ->
-              let
-                sub' = Subst.fromMap (Map.insert (MkVar x) t (Subst.toMap sub))
-              in
-                ok sub' idx err
+        Cons u us = t
+    loop (Cons t ts) idx = tryVar t ts (var idx)
 
-    {-# INLINE lookupFun #-}
-    lookupFun (Fun f ts) =
-      inIndex $ \idx ->
-        case IntMap.lookup (number f) (fun idx) of
-          Nothing -> no
-          Just idx ->
-            let
-              loop [] = yes
-              loop (t:ts) = lookupPartial t `andThen` loop ts
-            in
-              withIndex idx (loop ts)
-    lookupFun _ = no
+    tryFun (MkFun f) !t !fun rest =
+      tryIn (fun ! f) rest (loop t)
+    tryVar !t !ts !var =
+      aux 0
+      where
+        aux n
+          | n >= arraySize var = return []
+          | otherwise =
+            tryIn (var ! n) (aux (n+1)) $ \idx -> do
+              extend msub (MkVar n) t
+              ms <- loop ts idx
+              retract msub (MkVar n)
+              return ms
 
-elems :: Index a -> [a]
+    tryIn Nothing rest _ = rest
+    tryIn (Just idx) rest f = do
+      ms <- f idx
+      case ms of
+        [] -> rest
+        m:ms -> escape ((m:) . (ms ++)) rest
+
+  loop t idx
+
+elems :: Index f a -> [a]
 elems idx =
-  Set.toList (here idx) ++
-  concatMap elems (IntMap.elems (fun idx)) ++
-  concatMap elems (IntMap.elems (var idx))
+  here idx ++
+  concatMap elems (map snd (toList (fun idx))) ++
+  concatMap elems (map snd (toList (var idx)))
+
+-- A rather scary little function for producing lazy values
+-- in the strict ST monad. I hope it's sound...
+-- Has a rather unsafeInterleaveST feel to it.
+{-# INLINE escape #-}
+escape :: (a -> b) -> ST s a -> ST s b
+escape f (ST m) =
+  ST $ \s ->
+    (# s, f (case m s of (# _, x #) -> x) #)
