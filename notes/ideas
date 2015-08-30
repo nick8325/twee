@@ -78,3 +78,7 @@ simplification step.
 Look at size of overlap when weighting CPs (big overlap - better?)
 Look at repeated variables (more repeated variables - better because
 harder to form a small critical pair?)
+
+When joining CPs, try (as a last resort) exploring the entire
+reduction tree. Perhaps still using subconnectedness+Skolemised terms
+for direction.
