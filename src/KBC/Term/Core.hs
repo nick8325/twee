@@ -431,9 +431,22 @@ extendList MutableSubst{..} (MkVar x) (TermList lo hi _)
         | otherwise ->
           return Nothing
 
+-- Remove a binding from a substitution.
+{-# INLINE retract #-}
+retract :: MutableSubst s f -> Var -> ST s ()
+retract MutableSubst{..} (MkVar x)
+  | x >= mvars = __
+  | otherwise = writeByteArray msubst x (0 `asTypeOf` fromSlice __)
+
 -- Add a new binding to a substitution.
 -- Doesn't check bounds and overwrites any existing binding.
 {-# INLINE unsafeExtendList #-}
 unsafeExtendList :: MutableSubst s f -> Var -> TermList f -> ST s ()
 unsafeExtendList MutableSubst{..} (MkVar x) (TermList lo hi _) =
   writeByteArray msubst x (fromSlice (lo, hi))
+
+-- Remove a binding from a substitution. Doesn't check bounds.
+{-# INLINE unsafeRetract #-}
+unsafeRetract :: MutableSubst s f -> Var -> ST s ()
+unsafeRetract MutableSubst{..} (MkVar x) =
+  writeByteArray msubst x (0 `asTypeOf` fromSlice __)

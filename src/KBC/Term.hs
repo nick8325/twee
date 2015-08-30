@@ -14,7 +14,7 @@ module KBC.Term(
   Builder, buildTermList, emitRoot, emitFun, emitVar, emitTermList,
   Subst, substSize, lookupList,
   MutableSubst, newMutableSubst, unsafeFreezeSubst, mutableLookupList,
-  extendList, unsafeExtendList) where
+  extendList, unsafeExtendList, retract, unsafeRetract) where
 
 #include "errors.h"
 import Prelude hiding (lookup)
