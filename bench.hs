@@ -1,6 +1,7 @@
 {-# LANGUAGE PatternGuards #-}
 import Criterion.Main
-import KBC.Term
+import KBC.Term hiding (var, fun)
+import qualified KBC.Term
 import Test.QuickCheck
 import Data.Int
 import Data.Maybe
@@ -66,7 +67,10 @@ main = do
     bench "unify-subst-closed1" (whnf (uncurry subst) (csub', t2)),
     bench "unify-subst-closed2" (whnf (uncurry subst) (csub', u2)),
     bench "mgu-tri" (whnf (uncurry mgu1) (t2, u2)),
-    bench "mgu-close" (whnf (uncurry mgu2) (t2, u2))]
+    bench "mgu-close" (whnf (uncurry mgu2) (t2, u2)),
+    bench "make-constant" (whnf (uncurry KBC.Term.fun) (MkFun 0, [])),
+    bench "make-constant-cfun" (whnf (uncurry CFun) (MkFun 0, CNil)),
+    bench "baseline" (whnf (uncurry (+)) (0 :: Int, 0))]
 
 prop :: Bool -> NonNegative (Small Int) -> NonNegative (Small Int) -> Property
 prop fun_ (NonNegative (Small index_)) (NonNegative (Small size_)) =
