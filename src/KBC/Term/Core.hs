@@ -1,7 +1,7 @@
 -- Terms and substitutions, implemented using flatterms.
 -- This module contains all the low-level icky bits
 -- and provides primitives for building higher-level stuff.
-{-# LANGUAGE BangPatterns, CPP, PatternGuards, PatternSynonyms, ViewPatterns, RecordWildCards, GeneralizedNewtypeDeriving, RankNTypes, MagicHash, UnboxedTuples, MultiParamTypeClasses, FlexibleInstances, FunctionalDependencies #-}
+{-# LANGUAGE BangPatterns, CPP, PatternGuards, PatternSynonyms, ViewPatterns, RecordWildCards, GeneralizedNewtypeDeriving, RankNTypes, MagicHash, UnboxedTuples, MultiParamTypeClasses, FlexibleInstances, FunctionalDependencies, ScopedTypeVariables #-}
 module KBC.Term.Core where
 
 #include "errors.h"
@@ -137,7 +137,7 @@ instance Show (Fun f) where show (MkFun x) = "f" ++ show x
 instance Show Var     where show (MkVar x) = "x" ++ show x
 
 pattern Var x <- Term (patRoot -> Left x) _
-pattern Fun f ts <- Term (patRoot -> Right f) (patNext -> ts)
+pattern Fun f ts <- Term (patRoot -> Right (f :: Fun f)) (patNext -> (ts :: TermList f))
 
 {-# INLINE patRoot #-}
 patRoot :: Int64 -> Either Var (Fun f)

@@ -1,197 +1,139 @@
--- Imports the relevant parts of the term-rewriting package
--- and provides a few things on top.
-
-{-# LANGUAGE TypeSynonymInstances, TypeFamilies, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeSynonymInstances, TypeFamilies, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, CPP #-}
 module KBC.Base(
-  Var(..), Tm, TmOf, Subst, SubstOf, CPOf, RuleOf,
-  module Data.Rewriting.Term, foldTerm, mapTerm,
-  module Data.Rewriting.Term.Ops,
-  module Data.Rewriting.Substitution, evalSubst, subst, matchMany, unifyMany,
-  Symbolic(..), terms, varsDL, vars, funsDL, funs, symbolsDL, symbols,
-  Numbered(..), canonicalise,
+  Symbolic(..), term, termLists, varsDL, vars, funsDL, funs,
+  canonicalise,
   Minimal(..), minimalTerm,
   Skolem(..), skolemConst, skolemise,
-  Arity(..), Sized(..), Ordered(..), Function,
-  module KBC.Pretty,
-  module Text.PrettyPrint.HughesPJClass) where
+  Arity(..), Sized(..), SizedFun(..), Ordered(..), Function,
+  module KBC.Term, module KBC.Pretty) where
 
+#include "errors.h"
 import Control.Monad
 import qualified Data.DList as DList
 import Data.DList(DList)
 import Data.List
 import qualified Data.Map as Map
-import qualified Data.Rewriting.CriticalPair as CP
-import Data.Rewriting.Rule hiding (varsDL, funsDL, vars, funs)
-import qualified Data.Rewriting.Substitution as T
-import Data.Rewriting.Substitution hiding (apply, fromString, parse, parseIO, Subst)
-import qualified Data.Rewriting.Substitution.Type as T
-import qualified Data.Rewriting.Term as T
-import Data.Rewriting.Term hiding (Term, fold, map, fromString, parse, parseIO, parseFun, parseVar, parseWST, vars, funs, varsDL, funsDL)
-import Data.Rewriting.Term.Ops(subterms)
+import KBC.Term hiding (subst, canonicalise)
+import qualified KBC.Term as Term
 import KBC.Pretty
 import Text.PrettyPrint.HughesPJClass hiding (empty)
 import Data.Ord
 import {-# SOURCE #-} KBC.Constraints
 
--- A type of variables.
-newtype Var = MkVar Int deriving (Eq, Ord, Show, Enum, Numbered)
-
-instance Pretty Var where
-  pPrint (MkVar x) = text "X" <> pPrint (x+1)
-
--- Renamings of functionality from term-rewriting.
-type Tm f = T.Term f Var
-type Subst f = T.Subst f Var
-
-foldTerm :: (Var -> a) -> (f -> [a] -> a) -> Tm f -> a
-foldTerm = T.fold
-
-mapTerm :: (f -> f') -> Tm f -> Tm f'
-mapTerm f = T.map f id
-
-evalSubst :: Subst f -> Var -> Tm f
-evalSubst s = subst s . Var
-
-subst :: Subst f -> Tm f -> Tm f
-subst = T.apply
-
-matchMany :: Ord f => f -> [(Tm f, Tm f)] -> Maybe (Subst f)
-matchMany def ts = match (Fun def (map fst ts)) (Fun def (map snd ts))
-
-unifyMany :: Ord f => f -> [(Tm f, Tm f)] -> Maybe (Subst f)
-unifyMany def ts = unify (Fun def (map fst ts)) (Fun def (map snd ts))
-
-instance (Eq f, Eq v, Eq v') => Eq (GSubst v f v') where
-  x == y = T.toMap x == T.toMap y
-instance (Ord f, Ord v, Ord v') => Ord (GSubst v f v') where
-  compare = comparing T.toMap
-instance (PrettyTerm f, Pretty v, Pretty v') => Pretty (GSubst v f v') where
-  pPrintPrec l p = pPrintPrec l p . T.toMap
-
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where
-  {-# MINIMAL (term|termsDL), substf #-}
+  {-# MINIMAL (termList|termListsDL), subst #-}
   type ConstantOf a
 
-  term :: a -> TmOf a
-  term t = DList.head (termsDL t)
+  termList :: a -> TermListOf a
+  termList t = DList.head (termListsDL t)
 
-  termsDL :: a -> DList (TmOf a)
-  termsDL t = return (term t)
+  termListsDL :: a -> DList (TermListOf a)
+  termListsDL t = return (termList t)
 
-  substf :: (Var -> TmOf a) -> a -> a
+  subst :: Subst (ConstantOf a) -> a -> a
 
-type TmOf a = Tm (ConstantOf a)
+term :: Symbolic a => a -> TermOf a
+term x = t
+  where
+    Cons t Empty = termList x
+
+termLists :: Symbolic a => a -> [TermListOf a]
+termLists = DList.toList . termListsDL
+
+type TermOf a = Term (ConstantOf a)
+type TermListOf a = TermList (ConstantOf a)
 type SubstOf a = Subst (ConstantOf a)
-type CPOf a = CP.CP (ConstantOf a) Var
-type RuleOf a = Rule (ConstantOf a) Var
 
-terms :: Symbolic a => a -> [TmOf a]
-terms = DList.toList . termsDL
-
-instance Symbolic (Tm f) where
-  type ConstantOf (Tm f) = f
-  substf sub = foldTerm sub Fun
-  term = id
-
-instance Symbolic (Rule f Var) where
-  type ConstantOf (Rule f Var) = f
-  termsDL (Rule l r) = return l `mplus` return r
-  substf sub (Rule l r) = Rule (substf sub l) (substf sub r)
+instance Symbolic (Term f) where
+  type ConstantOf (Term f) = f
+  termList = singleton
+  subst    = Term.subst
 
 instance (ConstantOf a ~ ConstantOf b,
           Symbolic a, Symbolic b) => Symbolic (a, b) where
   type ConstantOf (a, b) = ConstantOf a
-  termsDL (x, y) = termsDL x `mplus` termsDL y
-  substf sub (x, y) = (substf sub x, substf sub y)
+  termListsDL (x, y) = termListsDL x `mplus` termListsDL y
+  subst sub (x, y) = (subst sub x, subst sub y)
 
 instance Symbolic a => Symbolic [a] where
   type ConstantOf [a] = ConstantOf a
-  termsDL ts = msum (map termsDL ts)
-  substf sub = map (substf sub)
+  termListsDL ts = msum (map termListsDL ts)
+  subst sub = map (subst sub)
 
 vars :: Symbolic a => a -> [Var]
 vars = DList.toList . varsDL
 
 varsDL :: Symbolic a => a -> DList Var
-varsDL t = termsDL t >>= aux
+varsDL t = termListsDL t >>= aux
   where
-    aux (Fun _ xs) = msum (map aux xs)
-    aux (Var x)    = return x
+    aux Empty = mzero
+    aux (ConsSym Fun{} t) = aux t
+    aux (Cons (Var x) t) = return x `mplus` aux t
 
-funs :: Symbolic a => a -> [ConstantOf a]
+funs :: Symbolic a => a -> [Fun (ConstantOf a)]
 funs = DList.toList . funsDL
 
-funsDL :: Symbolic a => a -> DList (ConstantOf a)
-funsDL t = termsDL t >>= aux
+funsDL :: Symbolic a => a -> DList (Fun (ConstantOf a))
+funsDL t = termListsDL t >>= aux
   where
-    aux (Fun f xs) = return f `mplus` msum (map aux xs)
-    aux (Var _)    = mzero
-
-symbols :: Symbolic a => a -> [Either (ConstantOf a) Var]
-symbols = DList.toList . symbolsDL
-
-symbolsDL :: Symbolic a => a -> DList (Either (ConstantOf a) Var)
-symbolsDL t = termsDL t >>= aux
-  where
-    aux (Fun f xs) = return (Left f) `mplus` msum (map aux xs)
-    aux (Var x)    = return (Right x)
-
-class Numbered a where
-  withNumber :: Int -> a -> a
-  number :: a -> Int
-
-instance Numbered Int where
-  withNumber = const
-  number = id
-
-instance (Numbered a, Numbered b) => Numbered (Either a b) where
-  withNumber n (Left x)  = Left  (withNumber n x)
-  withNumber n (Right x) = Right (withNumber n x)
-  number = error "Can't take number of Either"
+    aux Empty = mzero
+    aux (ConsSym (Fun f _) t) = return f `mplus` aux t
+    aux (Cons Var{} t) = aux t
 
 canonicalise :: Symbolic a => a -> a
-canonicalise t = substf (evalSubst sub) t
-  where
-    sub = T.fromMap (Map.fromList (zipWith f vs [0..]))
-    f x n = (x, Var (withNumber n x))
-    vs  = vs' ++ (nub (concatMap vars (terms t)) \\ vs')
-    vs' = nub (vars (term t))
+canonicalise t = subst (Term.canonicalise (termLists t)) t
 
 class Minimal a where
-  minimal :: a
+  minimal :: Fun a
 
-minimalTerm :: Minimal f => Tm f
-minimalTerm = Fun minimal []
+isMinimal :: Minimal f => Term f -> Bool
+isMinimal (Fun f Empty) | f == minimal = True
+isMinimal _ = False
 
-class Skolem a where
-  skolem  :: Int -> a
+minimalTerm :: Minimal f => Term f
+minimalTerm = ERROR("try and eliminate as many uses of this as possible first")
 
-skolemConst :: Skolem f => Int -> Tm f
-skolemConst n = Fun (skolem n) []
+class Skolem f where
+  skolem  :: Int -> Fun f
 
-skolemise :: Skolem f => Tm f -> Tm f
-skolemise = foldTerm (skolemConst . number) Fun
+skolemConst :: Skolem f => Int -> Term f
+skolemConst n = fun (skolem n) []
 
-class (PrettyTerm f, Minimal f, Numbered f, Skolem f, Arity f, Sized f, Ordered f) => Function f
+skolemise :: Skolem f => Term f -> Term f
+skolemise t = subst sub t
+  where
+    -- XXX export a (Var -> Term) substitution function
+    Just sub =
+      flattenSubst . CUnion $
+        [CSingle (MkVar x) (skolemConst x) | MkVar x <- vars t]
 
-class Arity a where
-  arity :: a -> Int
+class (PrettyTerm f, Minimal f, Skolem f, Arity f, SizedFun f, Ordered f) => Function f
 
+class Arity f where
+  arity :: Fun f -> Int
+
+class Sized (Fun f) => SizedFun f
 class Sized a where
   size  :: a -> Int
 
-instance Sized f => Sized (Tm f) where
-  size (Var _) = 1
-  size (Fun f xs) = size f + sum (map size xs)
+instance SizedFun f => Sized (TermList f) where
+  size = aux 0
+    where
+      aux n Empty = n
+      aux n (ConsSym (Fun f _) t) = aux (n+size f) t
+      aux n (Cons (Var _) t) = aux (n+1) t
+
+instance SizedFun f => Sized (Term f) where
+  size = size . singleton
 
 class Ord f => Ordered f where
-  orientTerms :: Tm f -> Tm f -> Maybe Ordering
+  orientTerms :: Term f -> Term f -> Maybe Ordering
   orientTerms t u
     | t == u = Just EQ
     | lessEq t u = Just LT
     | lessEq u t = Just GT
     | otherwise = Nothing
 
-  lessEq :: Tm f -> Tm f -> Bool
-  lessEqIn :: [Formula f] -> Tm f -> Tm f -> Bool
+  lessEq :: Term f -> Term f -> Bool
+  lessEqIn :: [Formula f] -> Term f -> Term f -> Bool

@@ -1,7 +1,7 @@
 -- | Pretty-printing of terms and assorted other values.
 
-{-# LANGUAGE Rank2Types #-}
-module KBC.Pretty(module KBC.Pretty, Pretty(..), prettyShow) where
+{-# LANGUAGE Rank2Types, FlexibleContexts #-}
+module KBC.Pretty(module KBC.Pretty, module Text.PrettyPrint.HughesPJClass, Pretty(..)) where
 
 import Text.PrettyPrint.HughesPJClass
 import qualified Data.Map as Map
@@ -9,8 +9,7 @@ import Data.Map(Map)
 import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.Ratio
-import Data.Rewriting.Rule(Rule(..))
-import Data.Rewriting.Term(Term(..))
+import KBC.Term
 
 -- * Miscellaneous 'Pretty' instances and utilities.
 
@@ -32,6 +31,9 @@ instance Pretty a => Pretty (Set a) where
 pPrintSet :: [Doc] -> Doc
 pPrintSet = braces . fsep . punctuate comma
 
+instance Pretty Var where
+  pPrint (MkVar x) = text "X" <> pPrint (x+1)
+
 instance (Pretty k, Pretty v) => Pretty (Map k v) where
   pPrint = pPrintSet . map binding . Map.toList
     where
@@ -42,10 +44,6 @@ instance (Eq a, Integral a, Pretty a) => Pretty (Ratio a) where
     | denominator a == 1 = pPrint (numerator a)
     | otherwise = text "(" <+> pPrint (numerator a) <> text "/" <> pPrint (denominator a) <+> text ")"
 
-instance (PrettyTerm f, Pretty v) => Pretty (Rule f v) where
-  pPrint (Rule l r) =
-    hang (pPrint l <+> text "->") 2 (pPrint r)
-
 -- | Generate a list of candidate names for pretty-printing.
 supply :: [String] -> [String]
 supply names =
@@ -54,13 +52,24 @@ supply names =
 
 -- * Pretty-printing of terms.
 
-instance (PrettyTerm f, Pretty v) => Pretty (Term f v) where
+instance PrettyTerm f => Pretty (Term f) where
   pPrintPrec l p (Var x) = pPrintPrec l p x
-  pPrintPrec l p (Fun f xs) = pPrintTerm (termStyle f) l p (pPrint f) xs
+  pPrintPrec l p (Fun f xs) =
+    pPrintTerm (termStyle f) l p (pPrint f) (termListToList xs)
+
+instance PrettyTerm f => Pretty (TermList f) where
+  pPrintPrec l p = pPrint . termListToList
+
+instance PrettyTerm f => Pretty (Subst f) where
+  pPrint sub = text "{" <> fsep (punctuate (text ",") docs) <> text "}"
+    where
+      docs =
+        [ hang (pPrint x <+> text "->") 2 (pPrint t)
+        | (x, t) <- substToList sub ]
 
 -- | A class for customising the printing of function symbols.
-class Pretty a => PrettyTerm a where
-  termStyle :: a -> TermStyle
+class Pretty (Fun f) => PrettyTerm f where
+  termStyle :: Fun f -> TermStyle
   termStyle _ = curried
 
 -- | Defines how to print out a function symbol.

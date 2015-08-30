@@ -64,6 +64,17 @@ flattenList t =
         loop u
     loop t
 
+-- Functions for building terms.
+var :: Var -> Term f
+var x =
+  case buildTermList (emitVar x) of
+    Cons t Empty -> t
+
+fun :: Fun f -> [Term f] -> Term f
+fun f ts =
+  case buildTermList (emitFun f (mapM_ emitTerm ts)) of
+    Cons t Empty -> t
+
 --------------------------------------------------------------------------------
 -- A helper datatype for building substitutions.
 --------------------------------------------------------------------------------
@@ -130,6 +141,10 @@ foldSubst op e !sub = aux (viewSubst sub)
 {-# INLINE forMSubst_ #-}
 forMSubst_ :: Monad m => Subst f -> (Var -> TermList f -> m ()) -> m ()
 forMSubst_ sub f = foldSubst (\x t m -> do { f x t; m }) (return ()) sub
+
+{-# INLINE substToList #-}
+substToList :: Subst f -> [(Var, TermList f)]
+substToList = foldSubst (\x t xs -> (x,t):xs) []
 
 --------------------------------------------------------------------------------
 -- Substitution.
@@ -232,6 +247,30 @@ close :: Subst f -> Subst f
 close sub
   | idempotent sub = sub
   | otherwise = close (substCompose sub sub)
+
+-- Return a substitution for canonicalising a list of terms.
+canonicalise :: [TermList f] -> Subst f
+canonicalise (t:ts) = runST $ do
+  msub <- newMutableSubst vars n
+  let
+    loop !_ !_ !_ | False = __
+    loop _ Empty [] = return ()
+    loop vs Empty (t:ts) = loop vs t ts
+    loop vs (ConsSym Fun{} t) ts = loop vs t ts
+    loop vs0@(Cons v vs) (Cons (Var x) t) ts = do
+      res <- extend msub x v
+      case res of
+        Just () -> loop vs  t ts
+        Nothing -> loop vs0 t ts
+
+  loop vars t ts
+  unsafeFreezeSubst msub
+  where
+    n = maximum (0:map boundList ts)
+    vars =
+      buildTermList $ do
+        forM_ [0..n] $ \i ->
+          emitVar (MkVar i)
 
 --------------------------------------------------------------------------------
 -- Matching.
@@ -425,3 +464,8 @@ occursList !x = aux
     aux Empty = False
     aux (ConsSym Fun{} t) = aux t
     aux (ConsSym (Var y) t) = x == y || aux t
+
+{-# INLINE termListToList #-}
+termListToList :: TermList f -> [Term f]
+termListToList Empty = []
+termListToList (Cons t ts) = t:termListToList ts
