@@ -23,6 +23,7 @@ import Data.List
 import Data.Function
 import Text.Printf
 import qualified Data.Set as Set
+import Data.Set(Set)
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
@@ -34,7 +35,7 @@ data KBC f =
     labelledRules     :: Index (Labelled (Modelled (Critical (Rule f)))),
     extraRules        :: Index (Rule f),
     subRules          :: Index (Tm f, Rule f),
-    goals             :: [Tm f],
+    goals             :: [Set (Tm f)],
     totalCPs          :: Int,
     renormaliseAt     :: Int,
     queue             :: !(Queue (Passive f)),
@@ -42,7 +43,7 @@ data KBC f =
     useSkolemPenalty  :: Bool }
   deriving Show
 
-initialState :: Int -> [Tm f] -> KBC f
+initialState :: Int -> [Set (Tm f)] -> KBC f
 initialState maxSize goals =
   KBC {
     maxSize           = maxSize,
@@ -201,7 +202,7 @@ normaliseCP s cp@(Critical info _) =
       where
         norm t
           | lessEq t (top info) && isNothing (unify t (top info)) =
-            normalForms (rewrite (reducesSub (top info)) (rules s)) t
+            normalForms (rewrite (reducesSub (top info)) (rules s)) [t]
           | otherwise = Set.singleton t
         v = Set.findMin (norm t `Set.intersection` norm u)
 
@@ -225,7 +226,7 @@ complete1 = do
   case res of
     Just (SingleCP (CP _ cp _ _)) -> do
       consider cp
-      modify $ \s -> s { goals = map (result . normalise s) goals }
+      modify $ \s -> s { goals = map (normalForms (rewrite reduces (rules s)) . Set.toList) goals }
       return True
     Just (ManyCPs (CPs _ l lower upper size rule)) -> do
       s <- get

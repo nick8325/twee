@@ -189,8 +189,8 @@ normaliseWith strat t =
   where
     continue p = p `trans` normaliseWith strat (result p)
 
-normalForms :: Function f => Strategy f -> Tm f -> Set (Tm f)
-normalForms strat t = go Set.empty Set.empty [t]
+normalForms :: Function f => Strategy f -> [Tm f] -> Set (Tm f)
+normalForms strat ts = go Set.empty Set.empty ts
   where
     go dead norm [] = norm
     go dead norm (t:ts)
