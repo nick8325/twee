@@ -11,6 +11,8 @@ import Data.List
 import KBC.Utils
 import qualified Data.Map.Strict as Map
 import qualified Data.Rewriting.Substitution.Type as Subst
+import qualified Data.Set as Set
+import Data.Set(Set)
 
 --------------------------------------------------------------------------------
 -- Rewrite rules.
@@ -187,13 +189,26 @@ normaliseWith strat t =
   where
     continue p = p `trans` normaliseWith strat (result p)
 
+normalForms :: Function f => Strategy f -> [Tm f] -> Set (Tm f)
+normalForms strat ts = go Set.empty Set.empty ts
+  where
+    go dead norm [] = norm
+    go dead norm (t:ts)
+      | t `Set.member` dead = go dead norm ts
+      | t `Set.member` norm = go dead norm ts
+      | null us = go dead (Set.insert t norm) ts
+      | otherwise =
+        go (Set.insert t dead) norm (us ++ ts)
+      where
+        us = map result (anywhere strat t)
+
 anywhere :: Strategy f -> Strategy f
 anywhere strat t = strat t ++ nested (anywhere strat) t
 
 nested _ Var{} = []
 nested strat (Fun f xs) =
   [ parallel f $
-      map refl (take (i-1) xs) ++ [p] ++ map refl (drop i xs)
+      map refl (take i xs) ++ [p] ++ map refl (drop (i+1) xs)
   | (i, x) <- zip [0..] xs,
     p <- strat x ]
 

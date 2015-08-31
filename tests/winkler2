@@ -1,19 +1,15 @@
+% Needs case split on X < c.
 a/0=1
 b/0=1
 c/0=1
 d/0=1
 plus/2=1
 neg/1=0
-false/0=-1
-true/0=-1
-equal/2=-1
 --
 plus(X, Y) = plus(Y, X)
 plus(X, plus(Y, Z)) = plus(plus(X, Y), Z)
 plus(c, d) = c
 neg(plus(neg(plus(X, Y)), neg(plus(X, neg(Y))))) = X
-equal(X,X) = true
-equal(plus(X, X), X) = false
 --
-false
-true
+plus(neg(plus(neg(a), b)), neg(plus(neg(a), neg(b))))
+a

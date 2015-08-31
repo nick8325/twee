@@ -24,6 +24,7 @@ import System.Exit
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
 import qualified KBC.KBO as KBO
+import qualified Data.Set as Set
 
 data Constant =
   Constant {
@@ -168,7 +169,7 @@ main = do
   putStrLn "\nGo!"
 
   let
-    identical xs = and (zipWith (==) xs (tail xs))
+    identical xs = not (Set.null (foldr1 Set.intersection xs))
 
     loop = do
       res <- complete1
@@ -176,7 +177,7 @@ main = do
       when (res && (length goals <= 1 || not (identical goals))) loop
 
     s =
-      flip execState (initialState (read size) goals2) $ do
+      flip execState (initialState (read size) (map Set.singleton goals2)) $ do
         mapM_ newEquation axioms
         loop
 
@@ -193,7 +194,6 @@ main = do
     forM_ goals2 $ \t ->
       prettyPrint (Rule Oriented t (result (normalise s t)))
 
-  let identical xs = and (zipWith (==) xs (tail xs))
-  if identical (map (result . normalise s) goals2)
+  if identical (goals s)
     then exitWith ExitSuccess
     else exitWith (ExitFailure 1)
