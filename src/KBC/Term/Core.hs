@@ -78,11 +78,13 @@ lenList (TermList low high _) = high - low
 -- Do two termlists share the same array?
 -- Sometimes useful when generating substitutions (see below).
 sharedList :: TermList f -> TermList f -> Bool
-sharedList t u =
+sharedList t u = sameArray (array t) (array u)
+
+{-# INLINE sameArray #-}
+sameArray :: ByteArray -> ByteArray -> Bool
+sameArray (ByteArray array1#) (ByteArray array2#) =
   tagToEnum# (reallyUnsafePtrEquality# addr1# addr2#)
   where
-    !(ByteArray array1#) = array t
-    !(ByteArray array2#) = array u
     addr1# = unsafeCoerce# array1#
     addr2# = unsafeCoerce# array2#
 
@@ -417,8 +419,9 @@ mutableLookupList MutableSubst{..} (MkVar x)
 -- binding already existed.
 {-# INLINE extendList #-}
 extendList :: MutableSubst s f -> Var -> TermList f -> ST s (Maybe ())
-extendList MutableSubst{..} (MkVar x) (TermList lo hi _)
+extendList MutableSubst{..} (MkVar x) (TermList lo hi arr)
   | x >= mvars = __
+  | not (sameArray arr mterm) = __
   | otherwise = do
     rng <- fmap toSlice (readByteArray msubst x)
     case rng of
