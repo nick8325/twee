@@ -250,6 +250,7 @@ close sub
 
 -- Return a substitution for canonicalising a list of terms.
 canonicalise :: [TermList f] -> Subst f
+canonicalise [] = emptySubst
 canonicalise (t:ts) = runST $ do
   msub <- newMutableSubst vars n
   let
@@ -271,6 +272,13 @@ canonicalise (t:ts) = runST $ do
       buildTermList $ do
         forM_ [0..n] $ \i ->
           emitVar (MkVar i)
+
+-- The empty substitution.
+{-# NOINLINE emptySubst #-}
+emptySubst =
+  runST $ do
+    msub <- newMutableSubst emptyTermList 0
+    unsafeFreezeSubst msub
 
 --------------------------------------------------------------------------------
 -- Matching.
@@ -469,3 +477,8 @@ occursList !x = aux
 termListToList :: TermList f -> [Term f]
 termListToList Empty = []
 termListToList (Cons t ts) = t:termListToList ts
+
+-- The empty term list.
+{-# NOINLINE emptyTermList #-}
+emptyTermList :: TermList f
+emptyTermList = buildTermList (return ())
