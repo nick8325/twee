@@ -22,6 +22,7 @@ import Control.Monad.Trans.State.Strict
 import Data.List
 import Data.Function
 import Text.Printf
+import qualified Data.Set as Set
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
@@ -178,9 +179,31 @@ normaliseCPQuickly s cp =
   reduceCP s (result . normaliseQuickly s)
 
 normaliseCP s cp@(Critical info _) =
-  normaliseCPQuickly s cp >>=
-  reduceCP s (result . normalise s) >>=
-  reduceCP s (result . normaliseSub s (top info))
+  case (cp1, cp2, cp3) of
+    (Just cp, Just _, Just _) -> Just cp
+    _ -> Nothing
+  where
+    cp1 =
+      normaliseCPQuickly s cp >>=
+      reduceCP s (result . normalise s) >>=
+      reduceCP s (result . normaliseSub s (top info))
+
+    cp2 = setJoin cp
+    cp3 = setJoin (flipCP cp)
+    flipCP = substf (\(MkVar x) -> Var (MkVar (negate x)))
+
+    setJoin (Critical info (t :=: u))
+      | Set.null (norm t `Set.intersection` norm u) =
+        Just (Critical info (t :=: u))
+      | otherwise =
+        Debug.Trace.traceShow (sep [text "Joined", nest 2 (pPrint (Critical info (t :=: u))), text "to", nest 2 (pPrint v)])
+        Nothing
+      where
+        norm t
+          | lessEq t (top info) && isNothing (unify t (top info)) =
+            normalForms (rewrite (reducesSub (top info)) (rules s)) t
+          | otherwise = Set.singleton t
+        v = Set.findMin (norm t `Set.intersection` norm u)
 
 --------------------------------------------------------------------------------
 -- Completion loop.
