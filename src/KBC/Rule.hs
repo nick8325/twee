@@ -208,7 +208,7 @@ anywhere strat t = strat t ++ nested (anywhere strat) t
 nested _ Var{} = []
 nested strat (Fun f xs) =
   [ parallel f $
-      map refl (take (i-1) xs) ++ [p] ++ map refl (drop i xs)
+      map refl (take i xs) ++ [p] ++ map refl (drop (i+1) xs)
   | (i, x) <- zip [0..] xs,
     p <- strat x ]
 
