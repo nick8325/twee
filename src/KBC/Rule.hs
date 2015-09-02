@@ -6,6 +6,7 @@ import KBC.Constraints
 import qualified KBC.Index as Index
 import KBC.Index(Index)
 import Control.Monad
+import Control.Monad.Trans.State
 import Data.Maybe
 import Data.List
 import KBC.Utils
@@ -116,19 +117,26 @@ orient (l :=: r) =
                 | all (== minimalTerm) (Map.elems (Subst.toMap sub)) ->
                   WeaklyOriented (map Var (Map.keys (Subst.toMap sub)))
                 | otherwise -> Unoriented
-          | sort (vars t) == sort (vars u),
-            Just ts <- makePermutative t u =
-            Permutative (reduce (filter (uncurry (/=)) ts))
+          | Just ts <- evalStateT (makePermutative t u) (Subst.fromMap Map.empty) =
+            Permutative ts
           | otherwise = Unoriented
 
-    makePermutative (Var x) (Var y) = Just [(Var x, Var y)]
-    makePermutative (Fun f ts) (Fun g us) | f == g =
-      fmap concat (zipWithM makePermutative ts us)
-    makePermutative _ _ = Nothing
-    reduce [] = []
-    reduce ((x,y):xs)
-      | x == y = reduce xs
-      | otherwise = (x,y):reduce (substf (\z -> if Var z == y then x else Var z) xs)
+    makePermutative t u = do
+      sub <- get
+      aux (subst sub t) (subst sub u)
+        where
+          aux (Var x) (Var y)
+            | x == y = return []
+            | otherwise = do
+              modify (Subst.fromMap . Map.insert x (Var y) . Subst.toMap)
+              return [(Var x, Var y)]
+
+          aux (Fun f ts) (Fun g us)
+            | f == g &&
+              sort (vars ts) `isSubsequenceOf` sort (vars us) =
+              fmap concat (zipWithM makePermutative ts us)
+
+          aux _ _ = mzero
 
 bothSides :: (Tm f -> Tm f') -> Equation f -> Equation f'
 bothSides f (t :=: u) = f t :=: f u
