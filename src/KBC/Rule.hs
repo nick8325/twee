@@ -148,12 +148,22 @@ data Reduction f =
     proof  :: Proof f }
   deriving Show
 
+instance PrettyTerm f => Pretty (Reduction f) where
+  pPrint Reduction{..} = hang (pPrint result <+> text "by") 2 (pPrint proof)
+
 data Proof f =
     Refl
   | Step (Rule f)
   | Trans (Proof f) (Proof f)
   | Parallel f [Proof f]
   deriving Show
+
+instance PrettyTerm f => Pretty (Proof f) where
+  pPrint Refl = text "_"
+  pPrint (Step rule) = pPrint rule
+  pPrint (Trans p q) = hang (pPrint p <+> text "then") 2 (pPrint q)
+  pPrint (Parallel f ps) =
+    pPrint f <> parens (sep (punctuate (text ",") (map pPrint ps)))
 
 steps :: Reduction f -> [Rule f]
 steps r = aux (proof r) []
