@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, StandaloneDeriving, FlexibleContexts, UndecidableInstances, PartialTypeSignatures, RecordWildCards, PatternGuards #-}
+{-# LANGUAGE TypeFamilies, StandaloneDeriving, FlexibleContexts, UndecidableInstances, RecordWildCards, PatternGuards #-}
 module KBC.Rule where
 
 import KBC.Base
