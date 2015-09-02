@@ -118,14 +118,17 @@ orient (l :=: r) =
                 | otherwise -> Unoriented
           | sort (vars t) == sort (vars u),
             Just ts <- makePermutative t u =
-            Permutative (nubBy similar (filter (uncurry (/=)) ts))
+            Permutative (reduce (filter (uncurry (/=)) ts))
           | otherwise = Unoriented
 
-    similar (x1, y1) (x2, y2) = (x1 == x2 && y1 == y2) || (x1 == y2 && y1 == x2)
     makePermutative (Var x) (Var y) = Just [(Var x, Var y)]
     makePermutative (Fun f ts) (Fun g us) | f == g =
       fmap concat (zipWithM makePermutative ts us)
     makePermutative _ _ = Nothing
+    reduce [] = []
+    reduce ((x,y):xs)
+      | x == y = xs
+      | otherwise = (x,y):reduce (substf (\z -> if Var z == y then x else Var z) xs)
 
 bothSides :: (Tm f -> Tm f') -> Equation f -> Equation f'
 bothSides f (t :=: u) = f t :=: f u
