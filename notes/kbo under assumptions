@@ -1,0 +1,163 @@
+Given:
+  a1 ? a2 ? ... ? an
+  where each ? is either <= or <,
+  and each ai is either a variable x or a constant c,
+is t <= u? Is t < u?
+
+We will define a comparison function that takes t and u and
+returns either <=, < or incomparable.
+
+Split into two parts: compare the size, compare lexicographically.
+
+Checking lexicographically
+--------------------------
+
+This is the easy bit, so we define it first:
+  * If t == u then the answer is <=
+  * If t and u are atoms and t <= u is given then the answer is <=
+  * If t is an atom, v is an atomic proper subterm of u and t <= u
+    is given then the answer is <
+  * If t and u are functions then recurse (see note below)
+  * If t is minimal then the answer is <=
+
+Note on lexicographic ordering on lists of terms:
+  If we are comparing t:ts with u:us,
+  if t < u then the answer is <,
+  if t <= u then unify t and u and compare ts and us under that substitution
+  (this is the only case where we'd look into ts and us when comparing ground terms)
+
+Checking size
+-------------
+
+We want to check if #t <= #u or #t < #u or neither.
+We reduce this to calculating the minimum value of a linear term.
+Let k be the minimum value of #u - #t, which may be -infinity.
+  * If k > 0 then #t <  #u.
+  * If k = 0 then #t <= #u.
+  * Otherwise neither holds.
+
+Now we have a term which is a linear combination of variables (plus a
+constant). From the ordering constraints
+  a1 ? a2 ? ... ? an
+we deduce size constraints
+  #a1 <= #a2 <= ... <= #an
+so each #ai is either a number or a variable in our size term. E.g.
+  1 <= #x <= #y <= 2 <= #z.
+
+Computing the minimum value step 1
+----------------------------------
+
+Let's gradually build up from special cases to the general algorithm.
+Suppose that the size constraint is of the form
+  a <= x1 <= x2 <= ... <= xn
+where all the xi are variables and a is a constant. (If the size
+constraint has a variable x at the start we can put 1 <= x at the
+front.)
+
+Suppose as well that all variables in the size term appear in the
+constraint. That is,
+  t = a0 + a1x1 + a2x2 + ... + anxn.
+The idea is that if a coefficient ai is negative, it must be balanced
+out by a later term which has a positive coefficient, otherwise the
+minimum value is -infinity. E.g.:
+  -3*x1 + x2 + x3
+has a minimum value of -infinity by making x1 small enough, but
+  -3*x1 + x2 + 2*x3
+has a minimum of 0 since x2 + 2*x3 >= 3*x1.
+
+If we let as = [ai | i <- [1..n]], then we look at scanr1 (+) as.
+  * If scanr1 (+) as contains a negative number, then the minimum
+    value is -infinity.
+  * Otherwise, the minimum value is a0 + a * sum as.
+    (This is the value of t when x1 = x2 = ... = a.)
+
+Computing the minimum value step 1a
+-----------------------------------
+
+Let's solve this problem in a slightly more mathematical way.
+Take our term
+  t = a0 + a1 x1 + a2 x2 + ... + an xn.
+and constraint
+  a <= x1 <= x2 <= ... <= xn.
+
+We simplify the constraint by introducing variables y1...yn >= 0 and
+defining
+  x1 = a + y1 
+  x2 = a + y1 + y2
+  x3 = a + y1 + y2 + y3
+  ...
+Note that because of the constraints y1...yn >= 0 these definitions
+imply the constraints we had before. We then substitute into t to get
+a term in the variables y1...yn:
+  t = k + sum_{i=1 to n}(bi yi).
+Minimising t under the constraints y1...yn >= 0 is dead easy: 
+if any coefficient bi is negative then the minimum is -infinity,
+otherwise it's k.
+
+As it happens, the sequences of coefficients bs = [b1...bn] and as =
+[a1...an] are related by bs = scanr1 (+) as, and k is a0 + a * sum as.
+So this coincides with what we did before.
+
+Computing the minimum value step 2
+----------------------------------
+
+Let's now solve a slightly harder problem: the variables now have an
+upper bound as well as a lower bound.
+  a <= x1 <= x2 <= ... <= xn <= b.
+We assume as before that all t's variables occur in the constraint.
+
+To solve this, we do exactly the same trick as before of introducing
+variables y1...yn >= 0 and defining xi = a + y1 + ... + yi.
+The constraint xn <= b becomes
+  a + y1 + ... + yn <= b
+or
+  y1 + ... + yn <= b-a.
+
+Again t = k + sum{i=1 to n}(bi yi).
+
+If all coefficients bi are non-negative, then the answer is before.
+The difference is that we can find a finite lower bound for t even
+if a coefficient bi is negative.
+
+Suppose wlog that b_1 is negative and is the smallest coefficient in t.
+We have:
+   y1 + ... + yn <= b-a
+=> y1 <= b - a - y2 - ... - yn
+=> {since b_1 is negative}
+   b1 y1 >= -b1(y2 + ... + yn) + b1(b - a).
+It follows that:
+   t
+ = k + b1 y1 + sum{i=2 to n}(bi yi)
+>= k + -b1(y2 + ... + yn) + sum{i=2 to n}(bi yi) + b1(b - a)
+
+The coefficient of each yi is bi - b1. Since b1 was the smallest
+coefficient, each coefficient is now non-negative. Hence the part
+contributed by the "yi"s is non-negative and we have
+  t >= k + b1(b-a).
+Thus the minimum value of t is k + b1(b-a).
+
+As before, k = a0 + a * sum as, and bs = scanr1 (+) as. So the
+minimum value of t = a0 + a1x1 + ... + anxn is:
+  * a0 + a*sum as,
+    if all coefficients in scanr1 (+) as are non-negative,
+  * a0 + a*sum as + bmin(b-a), otherwise,
+    where bmin = minimum (scanr1 (+) as).
+
+Computing the minimum value step 3
+----------------------------------
+
+That was the hard bit. Now we are given a general constraint in which
+variables and constants are mixed, e.g. 1 <= x <= y <= 2 <= z.
+
+We split the constraint into groups of variables, each bounded below
+and possibly above by a constant, e.g.:
+  1 <= x <= y <= 2
+  2 <= z.
+
+We take the term, and for each group of variables, we compute the
+minimum value of the term restricted to those variables, and add up
+all the minimum values. We also compute the minimum value of any
+variable that does not occur in the constraint, and add it to the
+total:
+  minimum(a * x) = -infinity if a < 0, a otherwise
+Finally we add on the constant part of the term. That's it!
