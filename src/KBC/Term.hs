@@ -289,20 +289,22 @@ match :: Term f -> Term f -> Maybe (Subst f)
 match pat t = matchList (singleton pat) (singleton t)
 
 matchList :: TermList f -> TermList f -> Maybe (Subst f)
-matchList !pat !t = runST $ do
-  subst <- newMutableSubst t (boundList pat)
-  let loop !_ !_ | False = __
-      loop Empty _ = fmap Just (unsafeFreezeSubst subst)
-      loop _ Empty = __
-      loop (ConsSym (Fun f _) pat) (ConsSym (Fun g _) t)
-        | f == g = loop pat t
-      loop (Cons (Var x) pat) (Cons t u) = do
-        res <- extend subst x t
-        case res of
-          Nothing -> return Nothing
-          Just () -> loop pat u
-      loop _ _ = return Nothing
-  loop pat t
+matchList !pat !t
+  | lenList t < lenList pat = Nothing
+  | otherwise = runST $ do
+    subst <- newMutableSubst t (boundList pat)
+    let loop !_ !_ | False = __
+        loop Empty _ = fmap Just (unsafeFreezeSubst subst)
+        loop _ Empty = __
+        loop (ConsSym (Fun f _) pat) (ConsSym (Fun g _) t)
+          | f == g = loop pat t
+        loop (Cons (Var x) pat) (Cons t u) = do
+          res <- extend subst x t
+          case res of
+            Nothing -> return Nothing
+            Just () -> loop pat u
+        loop _ _ = return Nothing
+    loop pat t
 
 --------------------------------------------------------------------------------
 -- Unification.
