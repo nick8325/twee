@@ -127,7 +127,7 @@ orient (l :=: r) =
     makePermutative _ _ = Nothing
     reduce [] = []
     reduce ((x,y):xs)
-      | x == y = xs
+      | x == y = reduce xs
       | otherwise = (x,y):reduce (substf (\z -> if Var z == y then x else Var z) xs)
 
 bothSides :: (Tm f -> Tm f') -> Equation f -> Equation f'
