@@ -30,11 +30,11 @@ import Data.Maybe
 
 -- An algebraic data type for terms, with flatterms at the leaf.
 data CompoundTerm f =
-    CTerm      (TermList f)
-  | CSubstTerm (Subst f) (TermList f)
-  | CIterSubstTerm (Subst f) (TermList f)
-  | CVar Var
-  | CFun (Fun f) (CompoundTerm f)
+    CTerm {-# UNPACK #-} !(TermList f)
+  | CSubstTerm {-# UNPACK #-} !(Subst f) {-# UNPACK #-} !(TermList f)
+  | CIterSubstTerm {-# UNPACK #-} !(Subst f) {-# UNPACK #-} !(TermList f)
+  | CVar {-# UNPACK #-} !Var
+  | CFun {-# UNPACK #-} !(Fun f) (CompoundTerm f)
   | CNil
   | CAppend (CompoundTerm f) (CompoundTerm f)
 
