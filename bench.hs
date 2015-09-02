@@ -23,8 +23,6 @@ var = CVar . MkVar
 t = t0
 u = u0
 
-(st2, su2) = share2 t2 u2
-
 Just sub = match t u
 
 mgu1 t u = let Just sub = unifyTri t u in iterSubst sub t
@@ -59,9 +57,7 @@ main = do
     bench "subst" (whnf (uncurry subst) (sub, t)),
     bench "subst10" (whnf flattenTerm us),
     bench "unifyTri" (whnf (fromJust . uncurry unifyTri) (t2, u2)),
-    bench "unifyTri-shared" (whnf (fromJust . uncurry unifyTri) (st2, su2)),
     bench "unify-close" (whnf (uncurry unify) (t2, u2)),
-    bench "unify-close-shared" (whnf (uncurry unify) (st2, su2)),
     bench "unify-subst-iter1" (whnf (uncurry iterSubst) (sub', t2)),
     bench "unify-subst-iter2" (whnf (uncurry iterSubst) (sub', u2)),
     bench "unify-subst-closed1" (whnf (uncurry subst) (csub', t2)),

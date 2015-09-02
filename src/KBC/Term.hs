@@ -212,7 +212,7 @@ emitIterSubstList !sub = aux
 substCompose :: Subst f -> Subst f -> Subst f
 substCompose !sub1 !sub2 =
   runST $ do
-    sub <- newMutableSubst t (substSize sub1)
+    sub <- newMutableSubst (substSize sub1)
     let
       loop EmptySubst !t = unsafeFreezeSubst sub
       loop (ConsSubst Nothing sub1) t = loop sub1 t
@@ -252,7 +252,7 @@ close sub
 canonicalise :: [TermList f] -> Subst f
 canonicalise [] = emptySubst
 canonicalise (t:ts) = runST $ do
-  msub <- newMutableSubst vars n
+  msub <- newMutableSubst n
   let
     loop !_ !_ !_ | False = __
     loop _ Empty [] = return ()
@@ -277,7 +277,7 @@ canonicalise (t:ts) = runST $ do
 {-# NOINLINE emptySubst #-}
 emptySubst =
   runST $ do
-    msub <- newMutableSubst emptyTermList 0
+    msub <- newMutableSubst 0
     unsafeFreezeSubst msub
 
 --------------------------------------------------------------------------------
@@ -292,7 +292,7 @@ matchList :: TermList f -> TermList f -> Maybe (Subst f)
 matchList !pat !t
   | lenList t < lenList pat = Nothing
   | otherwise = runST $ do
-    subst <- newMutableSubst t (boundList pat)
+    subst <- newMutableSubst (boundList pat)
     let loop !_ !_ | False = __
         loop Empty _ = fmap Just (unsafeFreezeSubst subst)
         loop _ Empty = __
@@ -325,8 +325,7 @@ unifyTri t u = unifyListTri (singleton t) (singleton u)
 
 unifyListTri :: TermList f -> TermList f -> Maybe (Subst f)
 unifyListTri !t !u = runST $ do
-  let (t', u') = shareList2 t u
-  subst <- newMutableSubst t' (boundList t' `max` boundList u)
+  subst <- newMutableSubst (boundList t `max` boundList u)
   let
     loop !_ !_ | False = __
     loop Empty _ = return True
@@ -363,7 +362,7 @@ unifyListTri !t !u = runST $ do
           extend subst x t
           return True
 
-  res <- loop t' u'
+  res <- loop t u
   case res of
     True  -> fmap Just (unsafeFreezeSubst subst)
     False -> return Nothing
@@ -436,31 +435,6 @@ boundList t = aux 0 t
     aux n (ConsSym (Var (MkVar x)) t)
       | x >= n = aux (x+1) t
       | otherwise = aux n t
-
-{-# INLINE shared #-}
-shared :: Term f -> Term f -> Bool
-shared t u = sharedList (singleton t) (singleton u)
-
--- Make two terms share the same storage.
-share2 :: Term f -> Term f -> (Term f, Term f)
-share2 t u
-  | shared t u = (t, u)
-  | otherwise = (t', u')
-  where
-    UnsafeCons t' (UnsafeCons u' _) =
-      buildTermList $ do
-        emitTerm t
-        emitTerm u
-
-shareList2 :: TermList f -> TermList f -> (TermList f, TermList f)
-shareList2 t u
-  | sharedList t u = (t, u)
-  | otherwise = (children ft', u')
-  where
-    UnsafeCons ft' u' =
-      buildTermList $ do
-        emitFun (MkFun 0) (emitTermList t)
-        emitTermList u
 
 -- Check if a variable occurs in a term.
 {-# INLINE occurs #-}
