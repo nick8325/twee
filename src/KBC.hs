@@ -56,7 +56,7 @@ initialState maxSize goals =
     renormaliseAt     = 1000,
     queue             = empty,
     useInversionRules = False,
-    useSkolemPenalty  = True }
+    useSkolemPenalty  = False }
 
 report :: Function f => KBC f -> String
 report KBC{..} =
