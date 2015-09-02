@@ -6,6 +6,7 @@ import KBC.Constraints
 import qualified KBC.Index as Index
 import KBC.Index(Index)
 import Control.Monad
+import Control.Monad.Trans.State
 import Data.Maybe
 import Data.List
 import KBC.Utils
@@ -116,16 +117,26 @@ orient (l :=: r) =
                 | all (== minimalTerm) (Map.elems (Subst.toMap sub)) ->
                   WeaklyOriented (map Var (Map.keys (Subst.toMap sub)))
                 | otherwise -> Unoriented
-          | sort (vars t) == sort (vars u),
-            Just ts <- makePermutative t u =
-            Permutative (nubBy similar (filter (uncurry (/=)) ts))
+          | Just ts <- evalStateT (makePermutative t u) (Subst.fromMap Map.empty) =
+            Permutative ts
           | otherwise = Unoriented
 
-    similar (x1, y1) (x2, y2) = (x1 == x2 && y1 == y2) || (x1 == y2 && y1 == x2)
-    makePermutative (Var x) (Var y) = Just [(Var x, Var y)]
-    makePermutative (Fun f ts) (Fun g us) | f == g =
-      fmap concat (zipWithM makePermutative ts us)
-    makePermutative _ _ = Nothing
+    makePermutative t u = do
+      sub <- get
+      aux (subst sub t) (subst sub u)
+        where
+          aux (Var x) (Var y)
+            | x == y = return []
+            | otherwise = do
+              modify (Subst.fromMap . Map.insert x (Var y) . Subst.toMap)
+              return [(Var x, Var y)]
+
+          aux (Fun f ts) (Fun g us)
+            | f == g &&
+              sort (vars ts) `isSubsequenceOf` sort (vars us) =
+              fmap concat (zipWithM makePermutative ts us)
+
+          aux _ _ = mzero
 
 bothSides :: (Tm f -> Tm f') -> Equation f -> Equation f'
 bothSides f (t :=: u) = f t :=: f u
@@ -145,12 +156,22 @@ data Reduction f =
     proof  :: Proof f }
   deriving Show
 
+instance PrettyTerm f => Pretty (Reduction f) where
+  pPrint Reduction{..} = hang (pPrint result <+> text "by") 2 (pPrint proof)
+
 data Proof f =
     Refl
   | Step (Rule f)
   | Trans (Proof f) (Proof f)
   | Parallel f [Proof f]
   deriving Show
+
+instance PrettyTerm f => Pretty (Proof f) where
+  pPrint Refl = text "_"
+  pPrint (Step rule) = pPrint rule
+  pPrint (Trans p q) = hang (pPrint p <+> text "then") 2 (pPrint q)
+  pPrint (Parallel f ps) =
+    pPrint f <> parens (sep (punctuate (text ",") (map pPrint ps)))
 
 steps :: Reduction f -> [Rule f]
 steps r = aux (proof r) []
@@ -249,8 +270,8 @@ reducesWith p (Rule Unoriented t u) =
 reduces :: Function f => Rule f -> Bool
 reduces rule = reducesWith lessEq rule
 
-reducesInModel :: Function f => [Formula f] -> Rule f -> Bool
-reducesInModel cond rule = reducesWith (lessEqIn cond) rule
+reducesInModel :: Function f => Model f -> Rule f -> Bool
+reducesInModel cond rule = reducesWith (\t u -> isJust (lessIn cond t u)) rule
 
 reducesSkolem :: Function f => Rule f -> Bool
 reducesSkolem = reducesWith (\t u -> lessEq (skolemise t) (skolemise u))

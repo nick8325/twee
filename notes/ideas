@@ -79,6 +79,11 @@ Look at size of overlap when weighting CPs (big overlap - better?)
 Look at repeated variables (more repeated variables - better because
 harder to form a small critical pair?)
 
-When joining CPs, try (as a last resort) exploring the entire
-reduction tree. Perhaps still using subconnectedness+Skolemised terms
-for direction.
+Do we really need to rule out the case old `isInstanceOf` new in
+subsumption checking? Doesn't it amount to doing case split on
+direction of old rule.
+
+For QuickSpec-style "only generate laws up to this size": when a
+critical pair is this size, join it under the constraint X <= c for
+all variables X where c is a maximal constant of size 1. This effectively
+forces all variables to have size one.

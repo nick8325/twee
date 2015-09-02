@@ -4,7 +4,7 @@ module KBC.Base(
   canonicalise,
   Minimal(..), minimalTerm,
   Skolem(..), skolemConst, skolemise,
-  Arity(..), Sized(..), SizedFun(..), Ordered(..), Function,
+  Arity(..), Sized(..), SizedFun(..), Ordered(..), Strictness(..), Function,
   module KBC.Term, module KBC.Pretty) where
 
 #include "errors.h"
@@ -136,4 +136,6 @@ class Ord f => Ordered f where
     | otherwise = Nothing
 
   lessEq :: Term f -> Term f -> Bool
-  lessEqIn :: [Formula f] -> Term f -> Term f -> Bool
+  lessIn :: Model f -> Term f -> Term f -> Bool
+
+data Strictness = Strict | Nonstrict deriving (Eq, Show)
