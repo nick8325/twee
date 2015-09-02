@@ -9,7 +9,7 @@ import Data.Map(Map)
 import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.Ratio
-import KBC.Term
+import KBC.Term.Flat
 
 -- * Miscellaneous 'Pretty' instances and utilities.
 

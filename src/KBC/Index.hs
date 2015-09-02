@@ -5,7 +5,7 @@ module KBC.Index where
 
 #include "errors.h"
 import Prelude hiding (filter)
-import KBC.Term hiding (toList)
+import KBC.Term.Flat hiding (toList)
 import qualified KBC.Term as Term
 import Control.Monad.ST.Strict
 import GHC.ST

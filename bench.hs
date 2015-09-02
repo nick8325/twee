@@ -1,11 +1,11 @@
 {-# LANGUAGE PatternGuards #-}
 import Criterion.Main
-import KBC.Term hiding (var, fun)
-import qualified KBC.Term
+import KBC.Term.Flat hiding (var, fun)
+import qualified KBC.Term.Flat
 import Test.QuickCheck
 import Data.Int
 import Data.Maybe
-import KBC.Term.Core hiding (subst)
+import KBC.Term.Flat.Core hiding (subst)
 
 t0, t1, u0, u1, t2, t, u :: Term Int
 t0 = flattenTerm $ fun 0 [var 0, fun 0 [var 0, fun 0 [fun 0 [var 0, var 1], var 2]]]
@@ -64,7 +64,7 @@ main = do
     bench "unify-subst-closed2" (whnf (uncurry subst) (csub', u2)),
     bench "mgu-tri" (whnf (uncurry mgu1) (t2, u2)),
     bench "mgu-close" (whnf (uncurry mgu2) (t2, u2)),
-    bench "make-constant" (whnf (uncurry KBC.Term.fun) (MkFun 0, [])),
+    bench "make-constant" (whnf (uncurry KBC.Term.Flat.fun) (MkFun 0, [])),
     bench "make-constant-cfun" (whnf (uncurry CFun) (MkFun 0, CNil)),
     bench "baseline" (whnf (uncurry (+)) (0 :: Int, 0))]
 
