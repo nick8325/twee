@@ -49,8 +49,8 @@ sizeLessIn :: Function f => Model f -> Tm f -> Tm f -> Maybe Strictness
 sizeLessIn model t u =
   case minimumIn model m of
     Just l
-      | l < k  -> Just Strict
-      | l == k -> Just Nonstrict
+      | l >  -k -> Just Strict
+      | l == -k -> Just Nonstrict
     _ -> Nothing
   where
     (k, m) =
