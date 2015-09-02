@@ -249,8 +249,8 @@ reducesWith p (Rule Unoriented t u) =
 reduces :: Function f => Rule f -> Bool
 reduces rule = reducesWith lessEq rule
 
-reducesInModel :: Function f => [Formula f] -> Rule f -> Bool
-reducesInModel cond rule = reducesWith (lessEqIn cond) rule
+reducesInModel :: Function f => Model f -> Rule f -> Bool
+reducesInModel cond rule = reducesWith (\t u -> isJust (lessIn cond t u)) rule
 
 reducesSkolem :: Function f => Rule f -> Bool
 reducesSkolem = reducesWith (\t u -> lessEq (skolemise t) (skolemise u))

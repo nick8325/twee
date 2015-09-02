@@ -24,6 +24,7 @@ import Data.Function
 import Text.Printf
 import qualified Data.Set as Set
 import Data.Set(Set)
+import Data.Either
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
@@ -100,7 +101,7 @@ newLabelM =
 
 data Modelled a =
   Modelled {
-    model    :: [Formula (ConstantOf a)],
+    model    :: Model (ConstantOf a),
     modelled :: a }
 
 instance Eq a => Eq (Modelled a) where x == y = modelled x == modelled y
@@ -132,7 +133,7 @@ normaliseQuickly s = normaliseWith (rewrite simplifies (rules s))
 normalise :: Function f => KBC f -> Tm f -> Reduction f
 normalise s = normaliseWith (rewrite reduces (rules s))
 
-normaliseIn :: Function f => KBC f -> [Formula f] -> Tm f -> Reduction f
+normaliseIn :: Function f => KBC f -> Model f -> Tm f -> Reduction f
 normaliseIn s model =
   normaliseWith (rewrite (reducesInModel model) (rules s))
 
@@ -277,50 +278,43 @@ consider pair = do
                 interreduce r
 
 groundJoin :: Function f =>
-  KBC f -> [Branch f] -> Critical (Equation f) -> Either [Formula f] [Critical (Equation f)]
+  KBC f -> [Branch f] -> Critical (Equation f) -> Either (Model f) [Critical (Equation f)]
 groundJoin s ctx r@(Critical info (t :=: u)) =
-  case partition (isNothing . snd) (map (solve (usort (vars t ++ vars u))) ctx) of
+  case partitionEithers (map (solve (usort (vars t ++ vars u))) ctx) of
     ([], instances) ->
-      let rs = [ substf (evalSubst sub) r | (_, Just sub) <- instances ] in
+      let rs = [ substf (evalSubst sub) r | sub <- instances ] in
       Right (usort (map canonicalise rs))
-    ((model, Nothing):_, _)
+    (model:_, _)
       | isJust (normaliseCP s (Critical info (t' :=: u'))) -> Left model
       | otherwise ->
-          let rs = shrinkList model (\fs -> isNothing (normaliseCP s (Critical info (result (normaliseIn s fs t) :=: result (normaliseIn s fs u)))))
-              nt = normaliseIn s rs t
-              nu = normaliseIn s rs u
-              rs' = strengthen rs (\fs -> valid fs nt && valid fs nu)
+          let model1 = optimise model pruneModel (\m -> valid m nt && valid m nu)
+              model2 = optimise model1 pruneModel (\m -> isNothing (normaliseCP s (Critical info (result (normaliseIn s m t) :=: result (normaliseIn s m u)))))
+              nt' = normaliseIn s model2 t
+              nu' = normaliseIn s model2 u
+              model3 = optimise model2 weakenModel (\m -> valid m nt' && valid m nu')
 
               diag [] = Or []
               diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
               weaken (LessEq t u) = Less t u
               weaken x = x
-              ctx' = formAnd (diag rs') ctx in
+              ctx' = formAnd (diag (modelToLiterals model3)) ctx in
 
-          trace (Discharge r rs') $
+          trace (Discharge r model3) $
           groundJoin s ctx' r
       where
-        Reduction t' _ = normaliseIn s model t
-        Reduction u' _ = normaliseIn s model u
-    _ -> __
+        nt@(Reduction t' _) = normaliseIn s model t
+        nu@(Reduction u' _) = normaliseIn s model u
 
-valid :: Function f => [Formula f] -> Reduction f -> Bool
+valid :: Function f => Model f -> Reduction f -> Bool
 valid model red = all valid1 (steps red)
   where
     valid1 rule = reducesInModel model rule
 
-shrinkList :: [a] -> ([a] -> Bool) -> [a]
-shrinkList [] _ = []
-shrinkList (x:xs) p
-  | p xs = shrinkList xs p
-  | otherwise = x:shrinkList xs (\ys -> p (x:ys))
-
-strengthen :: [Formula f] -> ([Formula f] -> Bool) -> [Formula f]
-strengthen [] _ = []
-strengthen (Less t u:xs) p
-  | p (LessEq t u:xs) = strengthen (LessEq t u:xs) p
-  | otherwise = Less t u:strengthen xs (\ys -> p (Less t u:ys))
-strengthen (x:xs) p = x:strengthen xs (\ys -> p (x:ys))
+optimise :: a -> (a -> [a]) -> (a -> Bool) -> a
+optimise x f p =
+  case filter p (f x) of
+    y:_ -> optimise y f p
+    _   -> x
 
 newSubRule :: Function f => Rule f -> State (KBC f) ()
 newSubRule r@(Rule _ t u) = do
@@ -345,7 +339,7 @@ deleteRule l rule =
     s { labelledRules = Index.delete (Labelled l rule) (labelledRules s),
         queue = deleteLabel l (queue s) }
 
-data Simplification f = Simplify [Formula f] (Modelled (Critical (Rule f))) | Reorient (Modelled (Critical (Rule f))) deriving Show
+data Simplification f = Simplify (Model f) (Modelled (Critical (Rule f))) | Reorient (Modelled (Critical (Rule f))) deriving Show
 
 instance PrettyTerm f => Pretty (Simplification f) where
   pPrint (Simplify _ rule) = text "Simplify" <+> pPrint rule
@@ -400,7 +394,7 @@ reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
         Right _ ->
           Just (Reorient old0)
 
-simplifyRule :: Function f => Label -> [Formula f] -> Modelled (Critical (Rule f)) -> State (KBC f) ()
+simplifyRule :: Function f => Label -> Model f -> Modelled (Critical (Rule f)) -> State (KBC f) ()
 simplifyRule l model rule@(Modelled _ (Critical info (Rule ctx lhs rhs))) = do
   modify $ \s ->
     s {
@@ -678,7 +672,7 @@ data Event f =
   | NewCP (Passive f)
   | Reduce (Simplification f) (Rule f)
   | Consider (Critical (Equation f))
-  | Discharge (Critical (Equation f)) [Formula f]
+  | Discharge (Critical (Equation f)) (Model f)
   | NormaliseCPs (KBC f)
 
 trace :: Function f => Event f -> a -> a

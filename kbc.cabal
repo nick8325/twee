@@ -29,8 +29,7 @@ library
     transformers,
     dlist,
     pretty,
-    heaps,
-    fourier-motzkin
+    heaps
   hs-source-dirs:      src
   include-dirs:        src
   ghc-options:         -W

@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, CPP, FlexibleContexts, UndecidableInstances, StandaloneDeriving, RecordWildCards, GADTs, ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies, CPP, FlexibleContexts, UndecidableInstances, StandaloneDeriving, RecordWildCards, GADTs, ScopedTypeVariables, PatternGuards #-}
 module KBC.Constraints where
 
 #include "errors.h"
@@ -9,40 +9,29 @@ import KBC.Utils
 import Data.Maybe
 import Data.List
 import qualified Data.Rewriting.Substitution.Type as Subst
-import qualified Solver.FourierMotzkin as FM
-import qualified Solver.FourierMotzkin.Internal as FM
 import Data.Graph
+import qualified Data.Map.Strict as Map
+import Data.Map.Strict(Map)
+import Debug.Trace
+import Data.Ord
 
--- Constrained things.
-data Constrained a =
-  Constrained {
-    constraint  :: Formula (ConstantOf a),
-    constrained :: a }
+data Atom f = Constant f | Variable Var deriving (Eq, Ord, Show)
 
-instance (Function (ConstantOf a), Pretty a) => Pretty (Constrained a) where
-  pPrint (Constrained (And []) x) = pPrint x
-  pPrint (Constrained ctx x) =
-    hang (pPrint x) 2 (text "when" <+> pPrint ctx)
+toTerm :: Atom f -> Tm f
+toTerm (Constant f) = Fun f []
+toTerm (Variable x) = Var x
 
-deriving instance (Eq a, Eq (ConstantOf a)) => Eq (Constrained a)
-deriving instance (Ord a, Ord (ConstantOf a)) => Ord (Constrained a)
-deriving instance (Show a, Show (ConstantOf a)) => Show (Constrained a)
+fromTerm :: Tm f -> Maybe (Atom f)
+fromTerm (Fun f []) = Just (Constant f)
+fromTerm (Var x) = Just (Variable x)
+fromTerm _ = Nothing
 
-instance (Function (ConstantOf a), Symbolic a) => Symbolic (Constrained a) where
-  type ConstantOf (Constrained a) = ConstantOf a
-
-  termsDL x =
-    termsDL (constrained x) `mplus`
-    termsDL (constraint x)
-
-  substf sub (Constrained ctx x) =
-    Constrained (substf sub ctx) (substf sub x)
+instance Function f => Pretty (Atom f) where
+  pPrint = pPrint . toTerm
 
 data Formula f =
-    Less   Var Var
-  | LessEq Var Var
-  | Minimal Var
-  | Nonminimal Var
+    Less   (Atom f) (Atom f)
+  | LessEq (Atom f) (Atom f)
   | And [Formula f]
   | Or  [Formula f]
   deriving (Eq, Ord, Show)
@@ -50,8 +39,6 @@ data Formula f =
 instance Function f => Pretty (Formula f) where
   pPrintPrec _ _ (Less t u) = hang (pPrint t <+> text "<") 2 (pPrint u)
   pPrintPrec _ _ (LessEq t u) = hang (pPrint t <+> text "<=") 2 (pPrint u)
-  pPrintPrec _ _ (Minimal t) = hang (pPrint t <+> text "=") 2 (pPrint (minimal :: f))
-  pPrintPrec _ _ (Nonminimal u) = hang (pPrint (minimal :: f) <+> text "<") 2 (pPrint u)
   pPrintPrec _ _ (And []) = text "true"
   pPrintPrec _ _ (Or []) = text "false"
   pPrintPrec l p (And xs) =
@@ -67,52 +54,9 @@ instance Function f => Pretty (Formula f) where
       nest_ (x:xs) = x:map (nest 2) xs
       nest_ [] = __
 
-instance Function f => Symbolic (Formula f) where
-  type ConstantOf (Formula f) = f
-
-  termsDL (Less t u) = termsDL (Var t, Var u :: Tm f)
-  termsDL (LessEq t u) = termsDL (Var t, Var u :: Tm f)
-  termsDL (Minimal t) = termsDL (Var t :: Tm f)
-  termsDL (Nonminimal t) = termsDL (Var t :: Tm f)
-  termsDL (And ts) = msum (map termsDL ts)
-  termsDL (Or ts) = msum (map termsDL ts)
-
-  substf sub (Less t u)
-    | su == minimalTerm = Or []
-    | st == minimalTerm = Nonminimal (unVar su)
-    | otherwise = Less (unVar st) (unVar su)
-    where
-      st = sub t
-      su = sub u
-  substf sub (LessEq t u)
-    | st == minimalTerm = And []
-    | su == minimalTerm = Minimal (unVar st)
-    | otherwise = LessEq (unVar st) (unVar su)
-    where
-      st = sub t
-      su = sub u
-  substf sub (Minimal t)
-    | st == minimalTerm = And []
-    | otherwise = Minimal (unVar st)
-    where
-      st = sub t
-  substf sub (Nonminimal t)
-    | st == minimalTerm = Or []
-    | otherwise = Nonminimal (unVar st)
-    where
-      st = sub t
-  substf sub (And ts) = conj (map (substf sub) ts)
-  substf sub (Or ts) = disj (map (substf sub) ts)
-
-unVar :: Tm f -> Var
-unVar (Var x) = x
-unVar _ = ERROR("function symbol appeared in constraint substitution")
-
 negateFormula :: Formula f -> Formula f
 negateFormula (Less t u) = LessEq u t
 negateFormula (LessEq t u) = Less u t
-negateFormula (Minimal t) = Nonminimal t
-negateFormula (Nonminimal t) = Minimal t
 negateFormula (And ts) = Or (map negateFormula ts)
 negateFormula (Or ts) = And (map negateFormula ts)
 
@@ -145,47 +89,42 @@ false = Or []
 data Branch f =
   -- Branches are kept normalised wrt equals
   Branch {
-    less        :: [(Var, Var)],
-    equals      :: [(Var, Var)], -- greatest variable first
-    minimals    :: [Var],
-    nonminimals :: [Var] }
+    less        :: [(Atom f, Atom f)],
+    equals      :: [(Atom f, Atom f)] } -- greatest atom first
   deriving (Eq, Ord)
 
 instance Function f => Pretty (Branch f) where
   pPrint Branch{..} =
     braces $ fsep $ punctuate (text ",") $
       [pPrint x <+> text "<" <+> pPrint y | (x, y) <- less ] ++
-      [pPrint x <+> text "<" <+> pPrint (minimalTerm :: Tm f) | x <- nonminimals ] ++
-      [pPrint x <+> text "=" <+> pPrint y | (x, y) <- equals ] ++
-      [pPrint x <+> text "=" <+> pPrint (minimalTerm :: Tm f) | x <- minimals ]
+      [pPrint x <+> text "=" <+> pPrint y | (x, y) <- equals ]
 
 trueBranch :: Branch f
-trueBranch = Branch [] [] [] []
+trueBranch = Branch [] []
 
-norm :: Branch f -> Var -> Var
+norm :: Eq f => Branch f -> Atom f -> Atom f
 norm Branch{..} x = fromMaybe x (lookup x equals)
 
-contradictory :: Eq f => Branch f -> Bool
+contradictory :: Function f => Branch f -> Bool
 contradictory Branch{..} =
   or [x == y | (x, y) <- less] ||
-  or [x `elem` map snd less | x <- minimals] ||
-  or [x `elem` nonminimals  | x <- minimals]
+  or [Fun g [] `lessEq` Fun f [] | (Constant f, Constant g) <- less] ||
+  or [f == minimal | (_, Constant f) <- less] ||
+  or [f /= g | (Constant f, Constant g) <- equals]
 
-formAnd :: Ord f => Formula f -> [Branch f] -> [Branch f]
+formAnd :: Function f => Formula f -> [Branch f] -> [Branch f]
 formAnd f bs = usort (bs >>= add f)
   where
     add (Less t u) b = addLess t u b
     add (LessEq t u) b = addLess t u b ++ addEquals t u b
-    add (Minimal t) b = addMinimal t b
-    add (Nonminimal t) b = addNonminimal t b
     add (And []) b = [b]
     add (And (f:fs)) b = add f b >>= add (And fs)
     add (Or fs) b = usort (concat [ add f b | f <- fs ])
 
-branches :: Ord f => Formula f -> [Branch f]
+branches :: Function f => Formula f -> [Branch f]
 branches x = aux [x]
   where
-    aux [] = [Branch [] [] [] []]
+    aux [] = [Branch [] []]
     aux (And xs:ys) = aux (xs ++ ys)
     aux (Or xs:ys) = usort $ concat [aux (x:ys) | x <- xs]
     aux (Less t u:xs) = usort $ concatMap (addLess t u) (aux xs)
@@ -193,15 +132,12 @@ branches x = aux [x]
       usort $
       concatMap (addLess t u) (aux xs) ++
       concatMap (addEquals u t) (aux xs)
-    aux (Minimal t:xs) = usort $ concatMap (addMinimal t) (aux xs)
-    aux (Nonminimal t:xs) = usort $ concatMap (addNonminimal t) (aux xs)
 
-addLess :: Ord f => Var -> Var -> Branch f -> [Branch f]
+addLess :: Function f => Atom f -> Atom f -> Branch f -> [Branch f]
 addLess t0 u0 b@Branch{..} =
   filter (not . contradictory)
     [b {
-      less = usort $ newLess ++ less,
-      nonminimals = usort $ newNonminimals ++ nonminimals }]
+      less = usort $ newLess ++ less }]
   where
     t = norm b t0
     u = norm b u0
@@ -209,19 +145,15 @@ addLess t0 u0 b@Branch{..} =
       (t, u):
       [(t, v) | (u', v) <- less, u == u'] ++
       [(v, u) | (v, t') <- less, t == t']
-    newNonminimals =
-      [u | t `elem` nonminimals]
 
-addEquals :: Ord f => Var -> Var -> Branch f -> [Branch f]
+addEquals :: Function f => Atom f -> Atom f -> Branch f -> [Branch f]
 addEquals t0 u0 b@Branch{..}
-  | (t, u) `elem` equals || t == u = [b]
+  | t == u || (t, u) `elem` equals = [b]
   | otherwise =
     filter (not . contradictory)
       [b {
          equals      = usort $ (t, u):[(x', y') | (x, y) <- equals, let (y', x') = sort2 (sub x, sub y), x' /= y'],
-         less        = usort $ [(sub x, sub y) | (x, y) <- less],
-         minimals    = usort $ map sub minimals,
-         nonminimals = usort $ map sub nonminimals }]
+         less        = usort $ [(sub x, sub y) | (x, y) <- less] }]
   where
     sort2 (x, y) = (min x y, max x y)
     (u, t) = sort2 (norm b t0, norm b u0)
@@ -230,37 +162,86 @@ addEquals t0 u0 b@Branch{..}
       | x == t = u
       | otherwise = x
 
-addMinimal :: Ord f => Var -> Branch f -> [Branch f]
-addMinimal t0 b@Branch{..}
-  | t `elem` minimals = [b]
-  | otherwise =
-    filter (not . contradictory)
-      [b { minimals = t:minimals }]
-  where
-    t = norm b t0
+newtype Model f = Model (Map (Atom f) (Int, Int))
+  deriving Show
+-- Representation: map from atom to (major, minor)
+-- x <  y if major x < major y
+-- x <= y if major x = major y and minor x < minor y
 
-addNonminimal :: Ord f => Var -> Branch f -> [Branch f]
-addNonminimal t0 b@Branch{..} =
-  filter (not . contradictory)
-    [b {
-      nonminimals = usort $ newNonminimals ++ nonminimals }]
-  where
-    t = norm b t0
-    newNonminimals =
-      [u | (t', u) <- less, t == t']
+instance Function f => Pretty (Model f) where
+  pPrint (Model m)
+    | Map.size m <= 1 = text "empty"
+    | otherwise = fsep (go (sortBy (comparing snd) (Map.toList m)))
+      where
+        go [(x, _)] = [pPrint x]
+        go ((x, (i, _)):xs@((_, (j, _)):_)) =
+          (pPrint x <+> text rel):go xs
+          where
+            rel = if i == j then "<=" else "<"
 
-solve :: Function f => [Var] -> Branch f -> ([Formula f], Maybe (Subst f))
-solve xs Branch{..}
-  | null equals && null minimals = (forms', Nothing)
-  | otherwise = (forms, Just sub)
+modelToLiterals :: Model f -> [Formula f]
+modelToLiterals (Model m) = go (sortBy (comparing snd) (Map.toList m))
+  where
+    go []  = []
+    go [_] = []
+    go ((x, (i, _)):xs@((y, (j, _)):_)) =
+      rel x y:go xs
+      where
+        rel = if i == j then LessEq else Less
+
+modelFromOrder :: Function f => [Atom f] -> Model f
+modelFromOrder xs =
+  Model (Map.fromList [(x, (i, i)) | (x, i) <- zip xs [0..]])
+
+pruneModel :: Ord f => Model f -> [Model f]
+pruneModel (Model m) =
+  [ Model (Map.delete x m)  | x <- Map.keys m ]
+
+weakenModel :: Ord f => Model f -> [Model f]
+weakenModel (Model m) =
+  [ Model (Map.fromList xs) | xs <- glue (sortBy (comparing snd) (Map.toList m)) ]
+  where
+    glue [] = []
+    glue [_] = []
+    glue (a@(x, (i1, j1)):b@(y, (i2, _)):xs) =
+      [ (a:(y, (i1, j1+1)):xs) | i1 < i2 ] ++
+      map (a:) (glue (b:xs))
+
+varInModel :: Function f => Model f -> Var -> Bool
+varInModel (Model m) x = Variable x `Map.member` m
+
+varGroups :: Function f => Model f -> [(f, [Var], Maybe f)]
+varGroups (Model m) = filter nonempty (go minimal (map fst (sortBy (comparing snd) (Map.toList m))))
+  where
+    go f xs =
+      case span isVariable xs of
+        (_, []) -> [(f, map unVariable xs, Nothing)]
+        (ys, Constant g:zs) ->
+          (f, map unVariable ys, Just g):go g zs
+    isVariable (Constant _) = False
+    isVariable (Variable _) = True
+    unVariable (Variable x) = x
+    nonempty (_, [], _) = False
+    nonempty _ = True
+
+lessEqInModel :: Ord f => Model f -> Atom f -> Atom f -> Maybe Strictness
+lessEqInModel (Model m) x y
+  | Just (a, _) <- Map.lookup x m,
+    Just (b, _) <- Map.lookup y m,
+    a < b = Just Strict
+  | Just a <- Map.lookup x m,
+    Just b <- Map.lookup y m,
+    a < b = Just Nonstrict
+  | otherwise = Nothing
+
+solve :: Function f => [Var] -> Branch f -> Either (Model f) (Subst f)
+solve xs b@Branch{..}
+  | null equals = Left model
+  | otherwise = Right sub
     where
       sub = Subst.fromMap . Map.fromList $
-        [(x, minimalTerm) | x <- minimals] ++
-        [(x, Var y) | (x, y) <- equals]
-      forms =
-        [Less x y | (x, y) <- less] ++
-        [Nonminimal x | x <- nonminimals]
-      vs = reverse (flattenSCCs (stronglyConnComp [(x, x, [y | (x', y) <- less, x == x']) | x <- xs]))
-      forms' =
-        [Less x y | (x:xs) <- tails vs, y <- xs] ++
-        [Nonminimal x | x <- vs]
+        [(x, toTerm y) | (Variable x, y) <- equals] ++
+        [(y, toTerm x) | (x@Constant{}, Variable y) <- equals]
+      vs = reverse (flattenSCCs (stronglyConnComp [(x, x, [y | (x', y) <- less, x == x']) | x <- as]))
+      as = usort $ map Variable xs ++ filter (/= Constant minimal) (map fst less ++ map snd less)
+      model = modelFromOrder vs

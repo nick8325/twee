@@ -66,7 +66,7 @@ instance PrettyTerm Constant where
 
 instance Ordered Constant where
   lessEq = KBO.lessEq
-  lessEqIn = KBO.lessEqIn
+  lessIn = KBO.lessIn
 
 instance Function Constant
 

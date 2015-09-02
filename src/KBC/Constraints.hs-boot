@@ -1,5 +1,5 @@
 {-# LANGUAGE RoleAnnotations #-}
 module KBC.Constraints where
 
-type role Formula phantom
-data Formula f
+data Model f
+type role Model nominal

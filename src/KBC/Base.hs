@@ -11,7 +11,7 @@ module KBC.Base(
   Numbered(..), canonicalise,
   Minimal(..), minimalTerm,
   Skolem(..), skolemConst, skolemise,
-  Arity(..), Sized(..), Ordered(..), Function,
+  Arity(..), Sized(..), Ordered(..), Strictness(..), Function,
   module KBC.Pretty,
   module Text.PrettyPrint.HughesPJClass) where
 
@@ -194,4 +194,6 @@ class Ord f => Ordered f where
     | otherwise = Nothing
 
   lessEq :: Tm f -> Tm f -> Bool
-  lessEqIn :: [Formula f] -> Tm f -> Tm f -> Bool
+  lessIn :: Model f -> Tm f -> Tm f -> Maybe Strictness
+
+data Strictness = Strict | Nonstrict deriving (Eq, Show)
