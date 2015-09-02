@@ -194,6 +194,6 @@ main = do
     forM_ goals2 $ \t ->
       prettyPrint (Rule Oriented t (result (normalise s t)))
 
-  if identical (goals s)
+  if length (goals s) <= 1 || identical (goals s)
     then exitWith ExitSuccess
     else exitWith (ExitFailure 1)
