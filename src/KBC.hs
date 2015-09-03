@@ -605,7 +605,7 @@ queueCPsSplit l u rule = do
   queueCPs l (l + diff `div` k) rule
   forM_ [1..k-2] $ \i ->
     queueCPs (l + i*diff `div` k + 1) (l + (i+1)*diff `div` k) rule
-  queueCPs (l + (k-1)*diff `div` k) u rule
+  queueCPs (l + (k-1)*diff `div` k+1) u rule
   where
     k = 5
     diff = u-l
