@@ -678,7 +678,18 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
       | u `lessEq` t = f t u + penalty t u
       | otherwise    = (f t u `max` f u t) + penalty t u
       where
-        f t u = size t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u)
+        f t u = size' t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u)
+        size' t =
+          size t +
+          -- Lots of different constants are probably bad
+          length (usort [ x | x <- funs t, arity x == 0 ]) +
+          -- Lots of (maybe the same) constants are probably slightly bad
+          ilog (length [ x | x <- funs t, arity x == 0 ]) +
+          -- Expressions of the form f(f(f(f(f(...))))) where f is size 0
+          -- are definitely bad!
+          ilog (length [ x | (x,y) <- zip (funs t) (tail (funs t)), x == y, arity x == 1 && size x == 0 ])
+        ilog n | n < 4 = 0
+        ilog n = 1 + ilog (n `div` 4)
 
     penalty t u
       | useSkolemPenalty s &&
