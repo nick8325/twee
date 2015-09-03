@@ -25,6 +25,8 @@ import Text.Printf
 import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.Either
+import qualified Data.Map.Strict as Map
+import Data.Map.Strict(Map)
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
@@ -41,7 +43,8 @@ data KBC f =
     renormaliseAt     :: Int,
     queue             :: !(Queue (Passive f)),
     useInversionRules :: Bool,
-    useSkolemPenalty  :: Bool }
+    useSkolemPenalty  :: Bool,
+    joinStatistics    :: Map JoinReason Int }
   deriving Show
 
 initialState :: Int -> [Set (Tm f)] -> KBC f
@@ -56,7 +59,8 @@ initialState maxSize goals =
     renormaliseAt     = 1000,
     queue             = empty,
     useInversionRules = False,
-    useSkolemPenalty  = False }
+    useSkolemPenalty  = False,
+    joinStatistics    = Map.empty }
 
 report :: Function f => KBC f -> String
 report KBC{..} =
@@ -69,11 +73,13 @@ report KBC{..} =
   printf "%d extra. %d historical.\n"
     (length (Index.elems extraRules))
     n ++
-  printf "Critical pairs: %d total, %d processed, %d queued compressed into %d."
+  printf "Critical pairs: %d total, %d processed, %d queued compressed into %d.\n\n"
     totalCPs
     (totalCPs - s)
     s
-    (length (toList queue))
+    (length (toList queue)) ++
+  printf "Critical pairs joined:\n" ++
+  concat [printf "%6d %s.\n" n (prettyShow x) | (x, n) <- Map.toList joinStatistics]
   where
     rs = map (critical . modelled . peel) (Index.elems labelledRules)
     Label n = nextLabel queue
@@ -145,12 +151,12 @@ normaliseSub s top t
 
 reduceCP ::
   Function f =>
-  KBC f -> (Tm f -> Tm f) ->
-  Critical (Equation f) -> Maybe (Critical (Equation f))
-reduceCP s f (Critical top (t :=: u))
-  | t' == u' = Nothing
-  | subsumed s True t' u' = Nothing
-  | otherwise = Just (Critical top (t' :=: u'))
+  KBC f -> JoinStage -> (Tm f -> Tm f) ->
+  Critical (Equation f) -> Either JoinReason (Critical (Equation f))
+reduceCP s stage f (Critical top (t :=: u))
+  | t' == u' = Left (Trivial stage)
+  | subsumed s True t' u' = Left (Subsumed stage)
+  | otherwise = Right (Critical top (t' :=: u'))
   where
     t' = f t
     u' = f u
@@ -173,33 +179,51 @@ reduceCP s f (Critical top (t :=: u))
           | otherwise = Nothing
     focus _ _ = Nothing
 
+data JoinStage = Initial | Simplification | Reducing | Subjoining deriving (Eq, Ord, Show)
+data JoinReason = Trivial JoinStage | Subsumed JoinStage | SetJoining | GroundJoined deriving (Eq, Ord, Show)
+
+instance Pretty JoinStage where
+  pPrint Initial        = text "no rewriting"
+  pPrint Simplification = text "simplification"
+  pPrint Reducing       = text "reduction"
+  pPrint Subjoining     = text "connectedness testing"
+
+instance Pretty JoinReason where
+  pPrint (Trivial stage)  = text "joined after" <+> pPrint stage
+  pPrint (Subsumed stage) = text "subsumed after" <+> pPrint stage
+  pPrint SetJoining       = text "joined with set of normal forms"
+  pPrint GroundJoined     = text "ground joined"
+
 normaliseCPQuickly, normaliseCP ::
   Function f =>
-  KBC f -> Critical (Equation f) -> Maybe (Critical (Equation f))
+  KBC f -> Critical (Equation f) -> Either JoinReason (Critical (Equation f))
 normaliseCPQuickly s cp =
-  reduceCP s id cp >>=
-  reduceCP s (result . normaliseQuickly s)
+  reduceCP s Initial id cp >>=
+  reduceCP s Simplification (result . normaliseQuickly s)
 
 normaliseCP s cp@(Critical info _) =
   case (cp1, cp2, cp3) of
-    (Just cp, Just _, Just _) -> Just cp
-    _ -> Nothing
+    (Right cp, Right _, Right _) -> Right cp
+    (Right _, Right _, Left x) -> Left x
+    (Right _, Left x, _) -> Left x
+    (Left x, _, _) -> Left x
   where
     cp1 =
       normaliseCPQuickly s cp >>=
-      reduceCP s (result . normalise s) >>=
-      reduceCP s (result . normaliseSub s (top info))
+      reduceCP s Reducing (result . normalise s) >>=
+      reduceCP s Subjoining (result . normaliseSub s (top info))
 
     cp2 = setJoin cp
     cp3 = setJoin (flipCP cp)
     flipCP = substf (\(MkVar x) -> Var (MkVar (negate x)))
 
+    -- XXX shouldn't this also check subsumption?
     setJoin (Critical info (t :=: u))
       | Set.null (norm t `Set.intersection` norm u) =
-        Just (Critical info (t :=: u))
+        Right (Critical info (t :=: u))
       | otherwise =
         Debug.Trace.traceShow (sep [text "Joined", nest 2 (pPrint (Critical info (t :=: u))), text "to", nest 2 (pPrint v)])
-        Nothing
+        Left SetJoining
       where
         norm t
           | lessEq t (top info) && isNothing (unify t (top info)) =
@@ -257,16 +281,18 @@ consider ::
 consider pair = do
   traceM (Consider pair)
   s <- get
+  let record reason = modify' (\s -> s { joinStatistics = Map.insertWith (+) reason 1 (joinStatistics s) })
   case normaliseCP s pair of
-    Nothing -> return ()
-    Just (Critical info eq) ->
+    Left reason -> record reason
+    Right (Critical info eq) ->
       forM_ (orient eq) $ \r@(Rule _ t u) -> do
         s <- get
         case normaliseCP s (Critical info (t :=: u)) of
-          Nothing -> return ()
-          Just eq ->
+          Left reason -> record reason
+          Right eq ->
             case groundJoin s (branches (And [])) eq of
               Right eqs -> do
+                record GroundJoined
                 mapM_ consider eqs
                 traceM (ExtraRule (canonicalise r))
                 modify (\s -> s { extraRules = Index.insert r (extraRules s) })
@@ -285,10 +311,10 @@ groundJoin s ctx r@(Critical info (t :=: u)) =
       let rs = [ substf (evalSubst sub) r | sub <- instances ] in
       Right (usort (map canonicalise rs))
     (model:_, _)
-      | isJust (normaliseCP s (Critical info (t' :=: u'))) -> Left model
+      | isRight (normaliseCP s (Critical info (t' :=: u'))) -> Left model
       | otherwise ->
           let model1 = optimise model weakenModel (\m -> valid m nt && valid m nu)
-              model2 = optimise model1 weakenModel (\m -> isNothing (normaliseCP s (Critical info (result (normaliseIn s m t) :=: result (normaliseIn s m u)))))
+              model2 = optimise model1 weakenModel (\m -> isLeft (normaliseCP s (Critical info (result (normaliseIn s m t) :=: result (normaliseIn s m u)))))
 
               diag [] = Or []
               diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
@@ -381,7 +407,7 @@ reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
   | otherwise = Nothing
   where
     s' = s { labelledRules = Index.delete (Labelled lab old0) (labelledRules s) }
-    modelJoinable = isNothing (normaliseCP s' (Critical info (lm :=: rm)))
+    modelJoinable = isLeft (normaliseCP s' (Critical info (lm :=: rm)))
     lm = result (normaliseIn s' model l)
     rm = result (normaliseIn s' model r)
     tryGroundJoin =
