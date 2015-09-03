@@ -81,7 +81,12 @@ harder to form a small critical pair?)
 
 Do we really need to rule out the case old `isInstanceOf` new in
 subsumption checking? Doesn't it amount to doing case split on
-direction of old rule.
+direction of old rule. Possibly, but then we need to be more careful
+when doing interreduction - at the moment we can interreduce two rules
+using each other if we're not careful.
+
+Also, it should be sound to do parallel subsumption (subsume
+f(x,y)=f(z,w) by x=z and y=r).
 
 For QuickSpec-style "only generate laws up to this size": when a
 critical pair is this size, join it under the constraint X <= c for
