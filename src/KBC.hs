@@ -163,14 +163,14 @@ reduceCP s stage f (Critical top (t :=: u))
     t' = f t
     u' = f u
 
-    subsumed s root t u =
-      t == u ||
-      or [ rhs x == u | x <- Index.lookup t rs ] ||
-      or [ subst sub (rhs x) == t | (x, sub) <- Index.matches u rs, not root || not (isVariantOf (lhs x) u) ] ||
-      case (t, u) of
-        (Fun f ts, Fun g us) | f == g -> and (zipWith (subsumed s False) ts us)
-        _ -> False
+    subsumed s root t u = here || there t u
       where
+        here =
+          or [ rhs x == u | x <- Index.lookup t rs ] ||
+          or [ subst sub (rhs x) == t | (x, sub) <- Index.matches u rs, not root || not (isVariantOf (lhs x) u) ]
+        there (Var x) (Var y) | x == y = True
+        there (Fun f ts) (Fun g us) | f == g = and (zipWith (subsumed s False) ts us)
+        there _ _ = False
         rs = rules s
 
 data JoinStage = Initial | Simplification | Reducing | Subjoining deriving (Eq, Ord, Show)
