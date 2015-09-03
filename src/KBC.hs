@@ -40,6 +40,7 @@ data KBC f =
     subRules          :: Index (Tm f, Rule f),
     goals             :: [Set (Tm f)],
     totalCPs          :: Int,
+    processedCPs      :: Int,
     renormaliseAt     :: Int,
     queue             :: !(Queue (Passive f)),
     useInversionRules :: Bool,
@@ -56,6 +57,7 @@ initialState maxSize goals =
     subRules          = Index.empty,
     goals             = goals,
     totalCPs          = 0,
+    processedCPs      = 0,
     renormaliseAt     = 1000,
     queue             = empty,
     useInversionRules = False,
@@ -75,7 +77,7 @@ report KBC{..} =
     n ++
   printf "Critical pairs: %d total, %d processed, %d queued compressed into %d.\n\n"
     totalCPs
-    (totalCPs - s)
+    processedCPs
     s
     (length (toList queue)) ++
   printf "Critical pairs joined:\n" ++
@@ -280,6 +282,7 @@ consider ::
   Critical (Equation f) -> State (KBC f) ()
 consider pair = do
   traceM (Consider pair)
+  modify' (\s -> s { processedCPs = processedCPs s + 1 })
   s <- get
   let record reason = modify' (\s -> s { joinStatistics = Map.insertWith (+) reason 1 (joinStatistics s) })
   case normaliseCP s pair of
