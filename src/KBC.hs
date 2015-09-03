@@ -58,7 +58,7 @@ initialState maxSize goals =
     goals             = goals,
     totalCPs          = 0,
     processedCPs      = 0,
-    renormaliseAt     = 1000,
+    renormaliseAt     = 50,
     queue             = empty,
     useInversionRules = False,
     useSkolemPenalty  = False,
@@ -237,9 +237,10 @@ complete = do
 complete1 :: Function f => State (KBC f) Bool
 complete1 = do
   KBC{..} <- get
-  when (totalCPs >= renormaliseAt) $ do
+  let Label n = nextLabel queue
+  when (n >= renormaliseAt) $ do
     normaliseCPs
-    modify (\s -> s { renormaliseAt = renormaliseAt * 3 })
+    modify (\s -> s { renormaliseAt = renormaliseAt * 3 `div` 2 })
 
   res <- dequeueM
   case res of
