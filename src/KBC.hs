@@ -274,7 +274,7 @@ normaliseCPs = do
   forM_ (toList queue) $ \cp ->
     case cp of
       SingleCP (CP _ cp l1 l2) -> queueCP l1 l2 cp
-      ManyCPs (CPs _ _ lower upper _ rule) -> queueCPs lower upper rule
+      ManyCPs (CPs _ _ lower upper _ rule) -> queueCPs lower upper (const ()) rule
   modify (\s -> s { totalCPs = totalCPs })
 
 consider ::
@@ -587,28 +587,27 @@ queueCP l1 l2 eq = do
     Just cp -> enqueueM (SingleCP cp)
 
 queueCPs ::
-  Function f =>
-  Label -> Label -> Labelled (Rule f) -> State (KBC f) ()
-queueCPs lower upper rule = do
+  (Function f, Ord a) =>
+  Label -> Label -> (Label -> a) -> Labelled (Rule f) -> State (KBC f) ()
+queueCPs lower upper f rule = do
   s <- get
-  let xs = toCPs s lower upper rule
-  if length xs <= 20 then
-    mapM_ (enqueueM . SingleCP) xs
-  else
-    let best = minimum xs in
-    enqueueM (ManyCPs (CPs (info best) (l2 best) lower upper (length xs) rule))
+  let cps = toCPs s lower upper rule
+      cpss = partitionBy (f . l2) cps
+  forM_ cpss $ \xs -> do
+    if length xs <= 20 then
+      mapM_ (enqueueM . SingleCP) xs
+    else
+      let best = minimum xs
+          l1' = minimum (map l1 xs)
+          l2' = minimum (map l2 xs) in
+      enqueueM (ManyCPs (CPs (info best) (l2 best) l1' l2' (length xs) rule))
 
 queueCPsSplit ::
   Function f =>
   Label -> Label -> Labelled (Rule f) -> State (KBC f) ()
-queueCPsSplit l u rule = do
-  queueCPs l (l + diff `div` k) rule
-  forM_ [1..k-2] $ \i ->
-    queueCPs (l + i*diff `div` k + 1) (l + (i+1)*diff `div` k) rule
-  queueCPs (l + (k-1)*diff `div` k+1) u rule
+queueCPsSplit l u rule = queueCPs l u f rule
   where
-    k = 5
-    diff = u-l
+    f x = 5*(x-l) `div` (u-l+1)
 
 toCPs ::
   Function f =>
