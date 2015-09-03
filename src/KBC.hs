@@ -283,7 +283,16 @@ consider pair = do
       forM_ (orient eq) $ \r@(Rule _ t u) -> do
         s <- get
         case normaliseCP s (Critical info (t :=: u)) of
-          Left reason -> record reason
+          Left reason -> do
+            let hard (Trivial Subjoining) = True
+                hard (Subsumed Subjoining) = True
+                hard (Trivial Reducing) | lessEq u t = True
+                hard (Subsumed Reducing) | lessEq u t = True
+                hard SetJoining = True
+                hard _ = False
+            when (hard reason) $ do
+              traceM (ExtraRule (canonicalise r))
+              modify (\s -> s { extraRules = Index.insert r (extraRules s) })
           Right eq ->
             case groundJoin s (branches (And [])) eq of
               Right eqs -> do
