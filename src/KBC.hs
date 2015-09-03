@@ -287,19 +287,16 @@ groundJoin s ctx r@(Critical info (t :=: u)) =
     (model:_, _)
       | isJust (normaliseCP s (Critical info (t' :=: u'))) -> Left model
       | otherwise ->
-          let model1 = optimise model pruneModel (\m -> valid m nt && valid m nu)
-              model2 = optimise model1 pruneModel (\m -> isNothing (normaliseCP s (Critical info (result (normaliseIn s m t) :=: result (normaliseIn s m u)))))
-              nt' = normaliseIn s model2 t
-              nu' = normaliseIn s model2 u
-              model3 = optimise model2 weakenModel (\m -> valid m nt' && valid m nu')
+          let model1 = optimise model weakenModel (\m -> valid m nt && valid m nu)
+              model2 = optimise model1 weakenModel (\m -> isNothing (normaliseCP s (Critical info (result (normaliseIn s m t) :=: result (normaliseIn s m u)))))
 
               diag [] = Or []
               diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
               weaken (LessEq t u) = Less t u
               weaken x = x
-              ctx' = formAnd (diag (modelToLiterals model3)) ctx in
+              ctx' = formAnd (diag (modelToLiterals model2)) ctx in
 
-          trace (Discharge r model3) $
+          trace (Discharge r model2) $
           groundJoin s ctx' r
       where
         nt@(Reduction t' _) = normaliseIn s model t

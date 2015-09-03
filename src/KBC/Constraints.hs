@@ -193,12 +193,9 @@ modelFromOrder :: Function f => [Atom f] -> Model f
 modelFromOrder xs =
   Model (Map.fromList [(x, (i, i)) | (x, i) <- zip xs [0..]])
 
-pruneModel :: Ord f => Model f -> [Model f]
-pruneModel (Model m) =
-  [ Model (Map.delete x m)  | x <- Map.keys m ]
-
 weakenModel :: Ord f => Model f -> [Model f]
 weakenModel (Model m) =
+  [ Model (Map.delete x m)  | x <- Map.keys m ] ++
   [ Model (Map.fromList xs) | xs <- glue (sortBy (comparing snd) (Map.toList m)) ]
   where
     glue [] = []
