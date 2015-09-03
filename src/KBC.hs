@@ -164,22 +164,14 @@ reduceCP s stage f (Critical top (t :=: u))
     u' = f u
 
     subsumed s root t u =
+      t == u ||
       or [ rhs x == u | x <- Index.lookup t rs ] ||
       or [ subst sub (rhs x) == t | (x, sub) <- Index.matches u rs, not root || not (isVariantOf (lhs x) u) ] ||
-      case focus t u of
-        Nothing -> False
-        Just (t', u') -> subsumed s False t' u'
+      case (t, u) of
+        (Fun f ts, Fun g us) | f == g -> and (zipWith (subsumed s False) ts us)
+        _ -> False
       where
         rs = rules s
-
-    focus (Fun f ts) (Fun g us) | f == g = aux ts us
-      where
-        aux [] [] = Nothing
-        aux (t:ts) (u:us)
-          | t == u = aux ts us
-          | ts == us = Just (t, u)
-          | otherwise = Nothing
-    focus _ _ = Nothing
 
 data JoinStage = Initial | Simplification | Reducing | Subjoining deriving (Eq, Ord, Show)
 data JoinReason = Trivial JoinStage | Subsumed JoinStage | SetJoining | GroundJoined deriving (Eq, Ord, Show)
