@@ -89,3 +89,8 @@ For QuickSpec-style "only generate laws up to this size": when a
 critical pair is this size, join it under the constraint X <= c for
 all variables X where c is a maximal constant of size 1. This effectively
 forces all variables to have size one.
+
+When we discover the crucial lemma, it causes bajillions of existing
+rules to be discarded. Can we somehow use this as a similar/boringness
+metric on these existing rules? (The fact that there is a single rule
+which will generalise them all.)
