@@ -9,7 +9,7 @@ import KBC.Base
 import KBC.Constraints
 import KBC.Rule
 import qualified KBC.Index as Index
-import KBC.Index(Index)
+import KBC.Index(Index, Frozen)
 import KBC.Queue hiding (queue)
 import KBC.Utils
 import Control.Monad
@@ -130,10 +130,10 @@ instance Symbolic a => Symbolic (Modelled a) where
 -- Rewriting.
 --------------------------------------------------------------------------------
 
-rules :: Ord f => KBC f -> Index (Rule f)
+rules :: Function f => KBC f -> Frozen (Rule f)
 rules k =
-  Index.mapMonotonic (critical . modelled . peel) (labelledRules k)
-  `Index.union` extraRules k
+  Index.map (critical . modelled . peel) (Index.freeze (labelledRules k))
+  `Index.union` Index.freeze (extraRules k)
 
 normaliseQuickly :: Function f => KBC f -> Tm f -> Reduction f
 normaliseQuickly s = normaliseWith (rewrite simplifies (rules s))
@@ -542,17 +542,17 @@ filterCPs =
 
 criticalPairs :: Function f => KBC f -> Label -> Label -> Rule f -> [InitialCP f]
 criticalPairs s lower upper rule =
-  criticalPairs1 s (maxSize s) rule (Index.mapMonotonic (fmap (critical . modelled)) rules) ++
+  criticalPairs1 s (maxSize s) rule (map (fmap (critical . modelled)) rules) ++
   [ cp
-  | Labelled l' (Modelled _ (Critical _ old)) <- Index.elems rules,
-    cp <- criticalPairs1 s (maxSize s) old (Index.singleton (Labelled l' rule)) ]
+  | Labelled l' (Modelled _ (Critical _ old)) <- rules,
+    cp <- criticalPairs1 s (maxSize s) old [Labelled l' rule] ]
   where
-    rules = Index.filter (p . labelOf) (labelledRules s)
+    rules = filter (p . labelOf) (Index.elems (labelledRules s))
     p l = lower <= l && l <= upper
 
-criticalPairs1 :: Function f => KBC f -> Int -> Rule f -> Index (Labelled (Rule f)) -> [InitialCP f]
+criticalPairs1 :: Function f => KBC f -> Int -> Rule f -> [Labelled (Rule f)] -> [InitialCP f]
 criticalPairs1 s n (Rule or1 t u) idx = do
-  Labelled l (Rule or2 t' u') <- Index.elems idx
+  Labelled l (Rule or2 t' u') <- idx
   let r1 = T.Rule t u
       r2 = T.Rule t' u'
   cp <- CP.cps [r2] [r1]
@@ -640,7 +640,7 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
 
     focus top t u =
       listToMaybe $ do
-        (_, r1) <- Index.lookup t (subRules s)
+        (_, r1) <- Index.lookup t (Index.freeze (subRules s))
         r2 <- Index.lookup (replace t u (rhs r1)) (rules s)
 
         guard (reducesSub top r1 && reducesSub top r2)

@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveFunctor, FlexibleContexts, RankNTypes #-}
+{-# LANGUAGE DeriveFunctor, FlexibleContexts, RankNTypes, GADTs #-}
 -- Term indexing (perfect discrimination trees).
 module KBC.Index where
 
@@ -43,22 +43,6 @@ empty = Index Set.empty IntMap.empty IntMap.empty
 null :: Index a -> Bool
 null idx = Set.null (here idx) && IntMap.null (fun idx) && IntMap.null (var idx)
 
-mapMonotonic ::
-  (a -> b) ->
-  Index a -> Index b
-mapMonotonic f (Index here fun var) =
-  Index
-    (Set.mapMonotonic f here)
-    (fmap (mapMonotonic f) fun)
-    (fmap (mapMonotonic f) var)
-
-filter :: (a -> Bool) -> Index a -> Index a
-filter p (Index here fun var) =
-  Index
-    (Set.filter p here)
-    (fmap (filter p) fun)
-    (fmap (filter p) var)
-
 {-# INLINEABLE singleton #-}
 singleton ::
   (Symbolic a, Numbered (ConstantOf a), Ord a) =>
@@ -86,16 +70,6 @@ delete t = deleteFlat (symbols (term u))
     deleteFlat [] = updateHere (Set.delete u)
     deleteFlat (Left x:xs) = updateFun (number x) (deleteFlat xs)
     deleteFlat (Right x:xs) = updateVar (number x) (deleteFlat xs)
-
-{-# INLINEABLE union #-}
-union ::
-  (Symbolic a, Ord a) =>
-  Index a -> Index a -> Index a
-union (Index here fun var) (Index here' fun' var') =
-  Index
-    (Set.union here here')
-    (IntMap.unionWith union fun fun')
-    (IntMap.unionWith union var var')
 
 -- I want to define this as a CPS monad instead, but I run into
 -- problems with inlining...
@@ -134,19 +108,21 @@ partialToList ::
 partialToList f m idx =
   m (\sub idx rest -> f sub idx ++ rest) (Subst.fromMap Map.empty) idx []
 
+newtype Frozen a = Frozen { matches_ :: TmOf a -> [(a, Subst (ConstantOf a))] }
+
+matches = flip matches_
+
 {-# INLINEABLE lookup #-}
-lookup ::
-  (Symbolic a, Numbered (ConstantOf a), Eq (ConstantOf a)) =>
-  TmOf a -> Index a -> [a]
-lookup t idx = do
-  (x, sub) <- matches t idx
+lookup :: Symbolic a => TmOf a -> Frozen a -> [a]
+lookup t (Frozen matches) = do
+  (x, sub) <- matches t
   return (substf (evalSubst sub) x)
 
-{-# INLINEABLE matches #-}
-matches ::
+{-# INLINEABLE freeze #-}
+freeze ::
   (Symbolic a, Numbered (ConstantOf a), Eq (ConstantOf a)) =>
-  TmOf a -> Index a -> [(a, Subst (ConstantOf a))]
-matches t idx = partialToList f (lookupPartial t) idx
+  Index a -> Frozen a
+freeze idx = Frozen $ \t -> partialToList f (lookupPartial t) idx
   where
     f sub idx = do
       m <- Set.toList (here idx)
@@ -181,6 +157,16 @@ matches t idx = partialToList f (lookupPartial t) idx
             in
               withIndex idx (loop ts)
     lookupFun _ = no
+
+map:: ConstantOf a ~ ConstantOf b => (a -> b) -> Frozen a -> Frozen b
+map f (Frozen matches) = Frozen $ \t -> [(f x, sub) | (x, sub) <- matches t]
+
+filter :: (a -> Bool) -> Frozen a -> Frozen a
+filter p (Frozen matches) = Frozen $ \t -> [ x | x <- matches t, p (fst x) ]
+
+{-# INLINE union #-}
+union :: Frozen a -> Frozen a -> Frozen a
+union (Frozen f1) (Frozen f2) = Frozen $ \t -> f1 t ++ f2 t
 
 elems :: Index a -> [a]
 elems idx =
