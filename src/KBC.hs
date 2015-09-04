@@ -281,8 +281,10 @@ consider pair = do
   case normaliseCP s pair of
     Left reason -> record reason
     Right (Critical info eq) ->
-      forM_ (orient eq) $ \r@(Rule _ t u) -> do
+      forM_ (map canonicalise (orient eq)) $ \(Rule orientation t u0) -> do
         s <- get
+        let u = result (normaliseSub s t u0)
+            r = Rule orientation t u
         case normaliseCP s (Critical info (t :=: u)) of
           Left reason -> do
             let hard (Trivial Subjoining) = True
@@ -292,18 +294,18 @@ consider pair = do
                 hard SetJoining = True
                 hard _ = False
             when (hard reason) $ do
-              traceM (ExtraRule (canonicalise r))
+              traceM (ExtraRule r)
               modify (\s -> s { extraRules = Index.insert r (extraRules s) })
           Right eq ->
             case groundJoin s (branches (And [])) eq of
               Right eqs -> do
                 record GroundJoined
                 mapM_ consider eqs
-                traceM (ExtraRule (canonicalise r))
+                traceM (ExtraRule r)
                 modify (\s -> s { extraRules = Index.insert r (extraRules s) })
                 newSubRule r
               Left model -> do
-                traceM (NewRule (canonicalise r))
+                traceM (NewRule r)
                 l <- addRule (Modelled model (Critical info r))
                 queueCPsSplit noLabel l (Labelled l r)
                 interreduce r
