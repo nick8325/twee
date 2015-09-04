@@ -196,19 +196,25 @@ normaliseCPQuickly s cp =
   reduceCP s Simplification (result . normaliseQuickly s)
 
 normaliseCP s cp@(Critical info _) =
-  case (cp1, cp2, cp3) of
-    (Right cp, Right _, Right _) -> Right cp
-    (Right _, Right _, Left x) -> Left x
-    (Right _, Left x, _) -> Left x
-    (Left x, _, _) -> Left x
+  case (cp1, cp2, cp3, cp4) of
+    (Right cp, Right _, Right _, Right _) -> Right cp
+    (Right _, Right _, Right _, Left x) -> Left x
+    (Right _, Right _, Left x, _) -> Left x
+    (Right _, Left x, _, _) -> Left x
+    (Left x, _, _, _) -> Left x
   where
     cp1 =
       normaliseCPQuickly s cp >>=
       reduceCP s Reducing (result . normalise s) >>=
       reduceCP s Subjoining (result . normaliseSub s (top info))
 
-    cp2 = setJoin cp
-    cp3 = setJoin (flipCP cp)
+    cp2 =
+      reduceCP s Subjoining (result . normaliseSub s (flipCP (top info))) (flipCP cp)
+
+    cp3 = setJoin cp
+    cp4 = setJoin (flipCP cp)
+
+    flipCP :: Symbolic a => a -> a
     flipCP = substf (\(MkVar x) -> Var (MkVar (negate x)))
 
     -- XXX shouldn't this also check subsumption?
