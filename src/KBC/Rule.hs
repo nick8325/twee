@@ -1,10 +1,10 @@
-{-# LANGUAGE TypeFamilies, StandaloneDeriving, FlexibleContexts, UndecidableInstances, PartialTypeSignatures, RecordWildCards, PatternGuards #-}
+{-# LANGUAGE TypeFamilies, StandaloneDeriving, FlexibleContexts, UndecidableInstances, RecordWildCards, PatternGuards #-}
 module KBC.Rule where
 
 import KBC.Base
 import KBC.Constraints
 import qualified KBC.Index as Index
-import KBC.Index(Index)
+import KBC.Index(Frozen)
 import Control.Monad
 import Control.Monad.Trans.State
 import Data.Maybe
@@ -233,7 +233,8 @@ nested strat (Fun f xs) =
   | (i, x) <- zip [0..] xs,
     p <- strat x ]
 
-rewrite :: Function f => (Rule f -> Bool) -> Index (Rule f) -> Strategy f
+{-# INLINE rewrite #-}
+rewrite :: Function f => (Rule f -> Bool) -> Frozen (Rule f) -> Strategy f
 rewrite p rules t = do
   rule <- Index.lookup t rules
   guard (p rule)

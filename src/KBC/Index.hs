@@ -4,15 +4,17 @@
 module KBC.Index where
 
 #include "errors.h"
-import Prelude hiding (filter)
-import KBC.Term.Flat hiding (toList)
-import qualified KBC.Term as Term
+import qualified Prelude
+import Prelude hiding (filter, map)
+import KBC.Term.Flat hiding (toList, var, fun)
+import qualified KBC.Term.Flat as Term
 import Control.Monad.ST.Strict
 import GHC.ST
 import KBC.Array hiding (null)
 import qualified KBC.Array as Array
 import Data.Maybe
 import qualified Data.List as List
+import Control.Monad
 
 data Index f a =
   Index {
@@ -81,39 +83,23 @@ deleteList t x !idx = aux t idx
     aux (ConsSym (Fun (MkFun f) _) t) = updateFun f (aux t)
     aux (ConsSym (Var (MkVar x)) t) = updateVar x (aux t)
 
-{-
-{-# INLINEABLE union #-}
-union ::
-  (Symbolic a, Ord a) =>
-  Index a -> Index a -> Index a
-union (Index here fun var) (Index here' fun' var') =
-  Index
-    (here ++ here')
-    (IntMap.unionWith union fun fun')
-    (IntMap.unionWith union var var')
--}
-{-
-{-# INLINEABLE lookup #-}
-lookup ::
-  (Symbolic a, Numbered (ConstantOf a), Eq (ConstantOf a)) =>
-  TmOf a -> Index a -> [a]
-lookup t idx = do
-  (x, sub) <- matches t idx
-  return (substf (evalSubst sub) x)
--}
-
 data Match f a =
   Match {
     matchResult :: [a],
     matchSubst  :: Subst f }
 
+newtype Frozen f a = Frozen { matchesList_ :: TermList f -> [Match f a] }
+
+matchesList :: TermList f -> Frozen f a -> [Match f a]
+matchesList = flip matchesList_
+
 {-# INLINE matches #-}
-matches :: Term f -> Index f a -> [Match f a]
+matches :: Term f -> Frozen f a -> [Match f a]
 matches t idx = matchesList (Term.singleton t) idx
 
-matchesList :: TermList f -> Index f a -> [Match f a]
-matchesList !t !idx = runST $ do
-  msub <- newMutableSubst t (vars idx)
+freeze :: Index f a -> Frozen f a
+freeze !idx = Frozen $ \(!t) -> runST $ do
+  msub <- newMutableSubst (vars idx)
   let
     loop !_ !_ | False = __
     loop Empty idx
@@ -153,8 +139,24 @@ matchesList !t !idx = runST $ do
 elems :: Index f a -> [a]
 elems idx =
   here idx ++
-  concatMap elems (map snd (toList (fun idx))) ++
-  concatMap elems (map snd (toList (var idx)))
+  concatMap elems (Prelude.map snd (toList (fun idx))) ++
+  concatMap elems (Prelude.map snd (toList (var idx)))
+
+{-# INLINE map #-}
+map :: (a -> b) -> Frozen f a -> Frozen f b
+map f (Frozen matches) = Frozen $ \t -> [Match (Prelude.map f x) sub | Match x sub <- matches t]
+
+{-# INLINE filter #-}
+filter :: (a -> Bool) -> Frozen f a -> Frozen f a
+filter p (Frozen matches) = Frozen $ \t -> do
+  Match xs sub <- matches t
+  let ys = [ x | x <- xs, p x ]
+  guard (not (Prelude.null ys))
+  return (Match ys sub)
+
+{-# INLINE union #-}
+union :: Frozen f a -> Frozen f a -> Frozen f a
+union (Frozen f1) (Frozen f2) = Frozen $ \t -> f1 t ++ f2 t
 
 -- A rather scary little function for producing lazy values
 -- in the strict ST monad. I hope it's sound...

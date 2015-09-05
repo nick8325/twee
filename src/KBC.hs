@@ -9,7 +9,7 @@ import KBC.Base
 import KBC.Constraints
 import KBC.Rule
 import qualified KBC.Index as Index
-import KBC.Index(Index)
+import KBC.Index(Index, Frozen)
 import KBC.Queue hiding (queue)
 import KBC.Utils
 import Control.Monad
@@ -25,6 +25,8 @@ import Text.Printf
 import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.Either
+import qualified Data.Map.Strict as Map
+import Data.Map.Strict(Map)
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
@@ -38,10 +40,12 @@ data KBC f =
     subRules          :: Index (Tm f, Rule f),
     goals             :: [Set (Tm f)],
     totalCPs          :: Int,
+    processedCPs      :: Int,
     renormaliseAt     :: Int,
     queue             :: !(Queue (Passive f)),
     useInversionRules :: Bool,
-    useSkolemPenalty  :: Bool }
+    useSkolemPenalty  :: Bool,
+    joinStatistics    :: Map JoinReason Int }
   deriving Show
 
 initialState :: Int -> [Set (Tm f)] -> KBC f
@@ -53,10 +57,12 @@ initialState maxSize goals =
     subRules          = Index.empty,
     goals             = goals,
     totalCPs          = 0,
-    renormaliseAt     = 1000,
+    processedCPs      = 0,
+    renormaliseAt     = 50,
     queue             = empty,
     useInversionRules = False,
-    useSkolemPenalty  = False }
+    useSkolemPenalty  = False,
+    joinStatistics    = Map.empty }
 
 report :: Function f => KBC f -> String
 report KBC{..} =
@@ -69,11 +75,13 @@ report KBC{..} =
   printf "%d extra. %d historical.\n"
     (length (Index.elems extraRules))
     n ++
-  printf "Critical pairs: %d total, %d processed, %d queued compressed into %d."
+  printf "Critical pairs: %d total, %d processed, %d queued compressed into %d.\n\n"
     totalCPs
-    (totalCPs - s)
+    processedCPs
     s
-    (length (toList queue))
+    (length (toList queue)) ++
+  printf "Critical pairs joined:\n" ++
+  concat [printf "%6d %s.\n" n (prettyShow x) | (x, n) <- Map.toList joinStatistics]
   where
     rs = map (critical . modelled . peel) (Index.elems labelledRules)
     Label n = nextLabel queue
@@ -122,10 +130,10 @@ instance Symbolic a => Symbolic (Modelled a) where
 -- Rewriting.
 --------------------------------------------------------------------------------
 
-rules :: Ord f => KBC f -> Index (Rule f)
+rules :: Function f => KBC f -> Frozen (Rule f)
 rules k =
-  Index.mapMonotonic (critical . modelled . peel) (labelledRules k)
-  `Index.union` extraRules k
+  Index.map (critical . modelled . peel) (Index.freeze (labelledRules k))
+  `Index.union` Index.freeze (extraRules k)
 
 normaliseQuickly :: Function f => KBC f -> Tm f -> Reduction f
 normaliseQuickly s = normaliseWith (rewrite simplifies (rules s))
@@ -145,61 +153,77 @@ normaliseSub s top t
 
 reduceCP ::
   Function f =>
-  KBC f -> (Tm f -> Tm f) ->
-  Critical (Equation f) -> Maybe (Critical (Equation f))
-reduceCP s f (Critical top (t :=: u))
-  | t' == u' = Nothing
-  | subsumed s True t' u' = Nothing
-  | otherwise = Just (Critical top (t' :=: u'))
+  KBC f -> JoinStage -> (Tm f -> Tm f) ->
+  Critical (Equation f) -> Either JoinReason (Critical (Equation f))
+reduceCP s stage f (Critical top (t :=: u))
+  | t' == u' = Left (Trivial stage)
+  | subsumed s True t' u' = Left (Subsumed stage)
+  | otherwise = Right (Critical top (t' :=: u'))
   where
     t' = f t
     u' = f u
 
-    subsumed s root t u =
-      or [ rhs x == u | x <- Index.lookup t rs ] ||
-      or [ subst sub (rhs x) == t | (x, sub) <- Index.matches u rs, not root || not (isVariantOf (lhs x) u) ] ||
-      case focus t u of
-        Nothing -> False
-        Just (t', u') -> subsumed s False t' u'
+    subsumed s root t u = here || there t u
       where
+        here =
+          or [ rhs x == u | x <- Index.lookup t rs ] ||
+          or [ subst sub (rhs x) == t | (x, sub) <- Index.matches u rs, not root || not (isVariantOf (lhs x) u) ]
+        there (Var x) (Var y) | x == y = True
+        there (Fun f ts) (Fun g us) | f == g = and (zipWith (subsumed s False) ts us)
+        there _ _ = False
         rs = rules s
 
-    focus (Fun f ts) (Fun g us) | f == g = aux ts us
-      where
-        aux [] [] = Nothing
-        aux (t:ts) (u:us)
-          | t == u = aux ts us
-          | ts == us = Just (t, u)
-          | otherwise = Nothing
-    focus _ _ = Nothing
+data JoinStage = Initial | Simplification | Reducing | Subjoining deriving (Eq, Ord, Show)
+data JoinReason = Trivial JoinStage | Subsumed JoinStage | SetJoining | GroundJoined deriving (Eq, Ord, Show)
+
+instance Pretty JoinStage where
+  pPrint Initial        = text "no rewriting"
+  pPrint Simplification = text "simplification"
+  pPrint Reducing       = text "reduction"
+  pPrint Subjoining     = text "connectedness testing"
+
+instance Pretty JoinReason where
+  pPrint (Trivial stage)  = text "joined after" <+> pPrint stage
+  pPrint (Subsumed stage) = text "subsumed after" <+> pPrint stage
+  pPrint SetJoining       = text "joined with set of normal forms"
+  pPrint GroundJoined     = text "ground joined"
 
 normaliseCPQuickly, normaliseCP ::
   Function f =>
-  KBC f -> Critical (Equation f) -> Maybe (Critical (Equation f))
+  KBC f -> Critical (Equation f) -> Either JoinReason (Critical (Equation f))
 normaliseCPQuickly s cp =
-  reduceCP s id cp >>=
-  reduceCP s (result . normaliseQuickly s)
+  reduceCP s Initial id cp >>=
+  reduceCP s Simplification (result . normaliseQuickly s)
 
 normaliseCP s cp@(Critical info _) =
-  case (cp1, cp2, cp3) of
-    (Just cp, Just _, Just _) -> Just cp
-    _ -> Nothing
+  case (cp1, cp2, cp3, cp4) of
+    (Right cp, Right _, Right _, Right _) -> Right cp
+    (Right _, Right _, Right _, Left x) -> Left x
+    (Right _, Right _, Left x, _) -> Left x
+    (Right _, Left x, _, _) -> Left x
+    (Left x, _, _, _) -> Left x
   where
     cp1 =
       normaliseCPQuickly s cp >>=
-      reduceCP s (result . normalise s) >>=
-      reduceCP s (result . normaliseSub s (top info))
+      reduceCP s Reducing (result . normalise s) >>=
+      reduceCP s Subjoining (result . normaliseSub s (top info))
 
-    cp2 = setJoin cp
-    cp3 = setJoin (flipCP cp)
+    cp2 =
+      reduceCP s Subjoining (result . normaliseSub s (flipCP (top info))) (flipCP cp)
+
+    cp3 = setJoin cp
+    cp4 = setJoin (flipCP cp)
+
+    flipCP :: Symbolic a => a -> a
     flipCP = substf (\(MkVar x) -> Var (MkVar (negate x)))
 
+    -- XXX shouldn't this also check subsumption?
     setJoin (Critical info (t :=: u))
       | Set.null (norm t `Set.intersection` norm u) =
-        Just (Critical info (t :=: u))
+        Right (Critical info (t :=: u))
       | otherwise =
         Debug.Trace.traceShow (sep [text "Joined", nest 2 (pPrint (Critical info (t :=: u))), text "to", nest 2 (pPrint v)])
-        Nothing
+        Left SetJoining
       where
         norm t
           | lessEq t (top info) && isNothing (unify t (top info)) =
@@ -219,9 +243,10 @@ complete = do
 complete1 :: Function f => State (KBC f) Bool
 complete1 = do
   KBC{..} <- get
-  when (totalCPs >= renormaliseAt) $ do
+  let Label n = nextLabel queue
+  when (n >= renormaliseAt) $ do
     normaliseCPs
-    modify (\s -> s { renormaliseAt = renormaliseAt * 3 })
+    modify (\s -> s { renormaliseAt = renormaliseAt * 3 `div` 2 })
 
   res <- dequeueM
   case res of
@@ -248,7 +273,7 @@ normaliseCPs = do
   forM_ (toList queue) $ \cp ->
     case cp of
       SingleCP (CP _ cp l1 l2) -> queueCP l1 l2 cp
-      ManyCPs (CPs _ _ lower upper _ rule) -> queueCPs lower upper rule
+      ManyCPs (CPs _ _ lower upper _ rule) -> queueCPs lower upper (const ()) rule
   modify (\s -> s { totalCPs = totalCPs })
 
 consider ::
@@ -256,23 +281,37 @@ consider ::
   Critical (Equation f) -> State (KBC f) ()
 consider pair = do
   traceM (Consider pair)
+  modify' (\s -> s { processedCPs = processedCPs s + 1 })
   s <- get
+  let record reason = modify' (\s -> s { joinStatistics = Map.insertWith (+) reason 1 (joinStatistics s) })
   case normaliseCP s pair of
-    Nothing -> return ()
-    Just (Critical info eq) ->
-      forM_ (orient eq) $ \r@(Rule _ t u) -> do
+    Left reason -> record reason
+    Right (Critical info eq) ->
+      forM_ (map canonicalise (orient eq)) $ \(Rule orientation t u0) -> do
         s <- get
+        let u = result (normaliseSub s t u0)
+            r = Rule orientation t u
         case normaliseCP s (Critical info (t :=: u)) of
-          Nothing -> return ()
-          Just eq ->
+          Left reason -> do
+            let hard (Trivial Subjoining) = True
+                hard (Subsumed Subjoining) = True
+                hard (Trivial Reducing) | lessEq u t = True
+                hard (Subsumed Reducing) | lessEq u t = True
+                hard SetJoining = True
+                hard _ = False
+            when (hard reason) $ do
+              traceM (ExtraRule r)
+              modify (\s -> s { extraRules = Index.insert r (extraRules s) })
+          Right eq ->
             case groundJoin s (branches (And [])) eq of
               Right eqs -> do
+                record GroundJoined
                 mapM_ consider eqs
-                traceM (ExtraRule (canonicalise r))
+                traceM (ExtraRule r)
                 modify (\s -> s { extraRules = Index.insert r (extraRules s) })
                 newSubRule r
               Left model -> do
-                traceM (NewRule (canonicalise r))
+                traceM (NewRule r)
                 l <- addRule (Modelled model (Critical info r))
                 queueCPsSplit noLabel l (Labelled l r)
                 interreduce r
@@ -285,21 +324,18 @@ groundJoin s ctx r@(Critical info (t :=: u)) =
       let rs = [ substf (evalSubst sub) r | sub <- instances ] in
       Right (usort (map canonicalise rs))
     (model:_, _)
-      | isJust (normaliseCP s (Critical info (t' :=: u'))) -> Left model
+      | isRight (normaliseCP s (Critical info (t' :=: u'))) -> Left model
       | otherwise ->
-          let model1 = optimise model pruneModel (\m -> valid m nt && valid m nu)
-              model2 = optimise model1 pruneModel (\m -> isNothing (normaliseCP s (Critical info (result (normaliseIn s m t) :=: result (normaliseIn s m u)))))
-              nt' = normaliseIn s model2 t
-              nu' = normaliseIn s model2 u
-              model3 = optimise model2 weakenModel (\m -> valid m nt' && valid m nu')
+          let model1 = optimise model weakenModel (\m -> valid m nt && valid m nu)
+              model2 = optimise model1 weakenModel (\m -> isLeft (normaliseCP s (Critical info (result (normaliseIn s m t) :=: result (normaliseIn s m u)))))
 
               diag [] = Or []
               diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
               weaken (LessEq t u) = Less t u
               weaken x = x
-              ctx' = formAnd (diag (modelToLiterals model3)) ctx in
+              ctx' = formAnd (diag (modelToLiterals model2)) ctx in
 
-          trace (Discharge r model3) $
+          trace (Discharge r model2) $
           groundJoin s ctx' r
       where
         nt@(Reduction t' _) = normaliseIn s model t
@@ -384,7 +420,7 @@ reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
   | otherwise = Nothing
   where
     s' = s { labelledRules = Index.delete (Labelled lab old0) (labelledRules s) }
-    modelJoinable = isNothing (normaliseCP s' (Critical info (lm :=: rm)))
+    modelJoinable = isLeft (normaliseCP s' (Critical info (lm :=: rm)))
     lm = result (normaliseIn s' model l)
     rm = result (normaliseIn s' model r)
     tryGroundJoin =
@@ -516,17 +552,17 @@ filterCPs =
 
 criticalPairs :: Function f => KBC f -> Label -> Label -> Rule f -> [InitialCP f]
 criticalPairs s lower upper rule =
-  criticalPairs1 s (maxSize s) rule (Index.mapMonotonic (fmap (critical . modelled)) rules) ++
+  criticalPairs1 s (maxSize s) rule (map (fmap (critical . modelled)) rules) ++
   [ cp
-  | Labelled l' (Modelled _ (Critical _ old)) <- Index.elems rules,
-    cp <- criticalPairs1 s (maxSize s) old (Index.singleton (Labelled l' rule)) ]
+  | Labelled l' (Modelled _ (Critical _ old)) <- rules,
+    cp <- criticalPairs1 s (maxSize s) old [Labelled l' rule] ]
   where
-    rules = Index.filter (p . labelOf) (labelledRules s)
+    rules = filter (p . labelOf) (Index.elems (labelledRules s))
     p l = lower <= l && l <= upper
 
-criticalPairs1 :: Function f => KBC f -> Int -> Rule f -> Index (Labelled (Rule f)) -> [InitialCP f]
+criticalPairs1 :: Function f => KBC f -> Int -> Rule f -> [Labelled (Rule f)] -> [InitialCP f]
 criticalPairs1 s n (Rule or1 t u) idx = do
-  Labelled l (Rule or2 t' u') <- Index.elems idx
+  Labelled l (Rule or2 t' u') <- idx
   let r1 = T.Rule t u
       r2 = T.Rule t' u'
   cp <- CP.cps [r2] [r1]
@@ -561,28 +597,27 @@ queueCP l1 l2 eq = do
     Just cp -> enqueueM (SingleCP cp)
 
 queueCPs ::
-  Function f =>
-  Label -> Label -> Labelled (Rule f) -> State (KBC f) ()
-queueCPs lower upper rule = do
+  (Function f, Ord a) =>
+  Label -> Label -> (Label -> a) -> Labelled (Rule f) -> State (KBC f) ()
+queueCPs lower upper f rule = do
   s <- get
-  let xs = toCPs s lower upper rule
-  if length xs <= 20 then
-    mapM_ (enqueueM . SingleCP) xs
-  else
-    let best = minimum xs in
-    enqueueM (ManyCPs (CPs (info best) (l2 best) lower upper (length xs) rule))
+  let cps = toCPs s lower upper rule
+      cpss = partitionBy (f . l2) cps
+  forM_ cpss $ \xs -> do
+    if length xs <= 20 then
+      mapM_ (enqueueM . SingleCP) xs
+    else
+      let best = minimum xs
+          l1' = minimum (map l1 xs)
+          l2' = minimum (map l2 xs) in
+      enqueueM (ManyCPs (CPs (info best) (l2 best) l1' l2' (length xs) rule))
 
 queueCPsSplit ::
   Function f =>
   Label -> Label -> Labelled (Rule f) -> State (KBC f) ()
-queueCPsSplit l u rule = do
-  queueCPs l (l + diff `div` k) rule
-  forM_ [1..k-2] $ \i ->
-    queueCPs (l + i*diff `div` k + 1) (l + (i+1)*diff `div` k) rule
-  queueCPs (l + (k-1)*diff `div` k) u rule
+queueCPsSplit l u rule = queueCPs l u f rule
   where
-    k = 5
-    diff = u-l
+    f x = 5*(x-l) `div` (u-l+1)
 
 toCPs ::
   Function f =>
@@ -614,7 +649,7 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
 
     focus top t u =
       listToMaybe $ do
-        (_, r1) <- Index.lookup t (subRules s)
+        (_, r1) <- Index.lookup t (Index.freeze (subRules s))
         r2 <- Index.lookup (replace t u (rhs r1)) (rules s)
 
         guard (reducesSub top r1 && reducesSub top r2)
@@ -652,7 +687,18 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
       | u `lessEq` t = f t u + penalty t u
       | otherwise    = (f t u `max` f u t) + penalty t u
       where
-        f t u = size t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u)
+        f t u = size' t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u)
+        size' t =
+          size t +
+          -- Lots of different constants are probably bad
+          length (usort [ x | x <- funs t, arity x == 0 ]) +
+          -- Lots of (maybe the same) constants are probably slightly bad
+          ilog (length [ x | x <- funs t, arity x == 0 ]) +
+          -- Expressions of the form f(f(f(f(f(...))))) where f is size 0
+          -- are definitely bad!
+          ilog (length [ x | (x,y) <- zip (funs t) (tail (funs t)), x == y, arity x == 1 && size x == 0 ])
+        ilog n | n < 4 = 0
+        ilog n = 1 + ilog (n `div` 4)
 
     penalty t u
       | useSkolemPenalty s &&

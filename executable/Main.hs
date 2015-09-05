@@ -190,7 +190,7 @@ main = do
   putStrLn (report s)
 
   unless (null goals2) $ do
-    putStrLn "\nNormalised goal terms:"
+    putStrLn "Normalised goal terms:"
     forM_ goals2 $ \t ->
       prettyPrint (Rule Oriented t (result (normalise s t)))
 
