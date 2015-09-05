@@ -1,7 +1,7 @@
 {-# OPTIONS_GHC -funfolding-creation-threshold=1000000 -funfolding-use-threshold=100000 #-}
 module KBC.Term.Nested where
 
-import qualified KBC.Term.Flat as Flat
+import qualified KBC.Term as Flat
 
 --------------------------------------------------------------------------------
 -- A helper datatype for building terms.

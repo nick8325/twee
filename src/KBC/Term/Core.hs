@@ -2,7 +2,7 @@
 -- This module contains all the low-level icky bits
 -- and provides primitives for building higher-level stuff.
 {-# LANGUAGE BangPatterns, CPP, PatternGuards, PatternSynonyms, ViewPatterns, RecordWildCards, GeneralizedNewtypeDeriving, RankNTypes, MagicHash, UnboxedTuples, MultiParamTypeClasses, FlexibleInstances, FunctionalDependencies, ScopedTypeVariables #-}
-module KBC.Term.Flat.Core where
+module KBC.Term.Core where
 
 #include "errors.h"
 import Data.Primitive

@@ -1,14 +1,14 @@
 {-# LANGUAGE PatternGuards #-}
 import Criterion.Main
-import KBC.Term.Flat hiding (var, fun)
-import qualified KBC.Term.Flat
+import KBC.Term hiding (var, fun)
+import qualified KBC.Term
 import Test.QuickCheck
 import Data.Int
 import Data.Maybe
-import KBC.Term.Flat.Core hiding (subst)
+import KBC.Term.Core hiding (subst)
 import KBC.Term.Nested
 
-t0, t1, u0, u1, t2, t, u :: KBC.Term.Flat.Term Int
+t0, t1, u0, u1, t2, t, u :: KBC.Term.Term Int
 t0 = flatten $ fun 0 [var 0, fun 0 [var 0, fun 0 [fun 0 [var 0, var 1], var 2]]]
 u0 = flatten $ fun 0 [fun 0 [fun 2 [fun 2 [var 2, var 2], var 1], fun 0 [fun 2 [var 2, var 2], var 3]], fun 0 [fun 0 [fun 2 [fun 2 [var 2, var 2], var 1], fun 0 [fun 2 [var 2, var 2], var 3]], fun 0 [fun 0 [fun 0 [fun 2 [fun 2 [var 2, var 2], var 1], fun 0 [fun 2 [var 2, var 2], var 3]], fun 2 [fun 2 [var 2, var 2], var 1]], fun 2 [var 2, var 2]]]]
 
@@ -62,7 +62,7 @@ main = do
     bench "unify-subst-closed2" (whnf (uncurry subst) (csub', u2)),
     bench "mgu-tri" (whnf (uncurry mgu1) (t2, u2)),
     bench "mgu-close" (whnf (uncurry mgu2) (t2, u2)),
-    bench "make-constant" (whnf (uncurry KBC.Term.Flat.fun) (MkFun 0, [])),
+    bench "make-constant" (whnf (uncurry KBC.Term.fun) (MkFun 0, [])),
     bench "make-constant-cfun" (whnf (uncurry KBC.Term.Nested.Fun) (MkFun 0, Nil)),
     bench "baseline" (whnf (uncurry (+)) (0 :: Int, 0))]
 

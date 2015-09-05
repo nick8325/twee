@@ -13,8 +13,8 @@ import qualified Data.DList as DList
 import Data.DList(DList)
 import Data.List
 import qualified Data.Map as Map
-import KBC.Term.Flat hiding (subst, canonicalise)
-import qualified KBC.Term.Flat as Term
+import KBC.Term hiding (subst, canonicalise)
+import qualified KBC.Term as Term
 import KBC.Pretty
 import Text.PrettyPrint.HughesPJClass hiding (empty)
 import Data.Ord
