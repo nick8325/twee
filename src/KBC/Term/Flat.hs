@@ -25,90 +25,6 @@ import Data.List hiding (lookup)
 import Data.Maybe
 
 --------------------------------------------------------------------------------
--- A helper datatype for building terms.
---------------------------------------------------------------------------------
-
--- An algebraic data type for terms, with flatterms at the leaf.
-data CompoundTerm f =
-    CTerm {-# UNPACK #-} !(TermList f)
-  | CSubstTerm {-# UNPACK #-} !(Subst f) {-# UNPACK #-} !(TermList f)
-  | CIterSubstTerm {-# UNPACK #-} !(Subst f) {-# UNPACK #-} !(TermList f)
-  | CVar {-# UNPACK #-} !Var
-  | CFun {-# UNPACK #-} !(Fun f) (CompoundTerm f)
-  | CNil
-  | CAppend (CompoundTerm f) (CompoundTerm f)
-
-fromList :: [CompoundTerm f] -> CompoundTerm f
-fromList = foldr CAppend CNil
-
--- Turn a compound term into a flatterm.
-flattenTerm :: CompoundTerm f -> Term f
-flattenTerm t =
-  case flattenList t of
-    Cons u Empty -> u
-
--- Turn a compound termlist into a flatterm list.
-flattenList :: CompoundTerm f -> TermList f
-flattenList (CTerm t) = t
-flattenList t =
-  buildTermList $ do
-    let
-      loop (CTerm t) = emitTermList t
-      loop (CSubstTerm sub t) = emitSubstList sub t
-      loop (CIterSubstTerm sub t) = emitIterSubstList sub t
-      loop (CVar x) = emitVar x
-      loop (CFun f t) = emitFun f (loop t)
-      loop CNil = return ()
-      loop (CAppend t u) = do
-        loop t
-        loop u
-    loop t
-
--- Functions for building terms.
-var :: Var -> Term f
-var x =
-  case buildTermList (emitVar x) of
-    Cons t Empty -> t
-
-fun :: Fun f -> [Term f] -> Term f
-fun f ts =
-  case buildTermList (emitFun f (mapM_ emitTerm ts)) of
-    Cons t Empty -> t
-
---------------------------------------------------------------------------------
--- A helper datatype for building substitutions.
---------------------------------------------------------------------------------
-
--- An algebraic data type for substitutions.
-data CompoundSubst f =
-    CSubst  (Subst f)
-  | CSingle Var (Term f)
-  | CUnion [CompoundSubst f]
-
--- Flatten a compound substitution.
-flattenSubst :: CompoundSubst f -> Maybe (Subst f)
-flattenSubst (CSubst sub) = Just sub
-flattenSubst sub = matchList pat t
-  where
-    pat = flattenSubst' (\x _ -> emitVar x)  [sub]
-    t   = flattenSubst' (\_ t -> emitTermList t) [sub]
-
-{-# INLINE flattenSubst' #-}
-flattenSubst' ::
-  (forall m. Builder f m => Var -> TermList f -> m ()) ->
-  [CompoundSubst f] -> TermList f
-flattenSubst' emit subs =
-  buildTermList $ do
-    let
-      loop [] = return ()
-      loop (CSubst sub:subs) = forMSubst_ sub emit
-      loop (CSingle x t:subs) = do
-        emit x (singleton t)
-        loop subs
-      loop (CUnion subs:subs') = loop (subs ++ subs')
-    loop subs
-
---------------------------------------------------------------------------------
 -- Pattern synonyms for substitutions.
 --------------------------------------------------------------------------------
 
@@ -458,3 +374,14 @@ termListToList (Cons t ts) = t:termListToList ts
 {-# NOINLINE emptyTermList #-}
 emptyTermList :: TermList f
 emptyTermList = buildTermList (return ())
+
+-- Functions for building terms.
+var :: Var -> Term f
+var x =
+  case buildTermList (emitVar x) of
+    Cons t Empty -> t
+
+fun :: Fun f -> [Term f] -> Term f
+fun f ts =
+  case buildTermList (emitFun f (mapM_ emitTerm ts)) of
+    Cons t Empty -> t
