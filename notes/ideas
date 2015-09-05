@@ -94,3 +94,5 @@ When we discover the crucial lemma, it causes bajillions of existing
 rules to be discarded. Can we somehow use this as a similar/boringness
 metric on these existing rules? (The fact that there is a single rule
 which will generalise them all.)
+
+Prioritise rules that allow us to simplify other rules.
