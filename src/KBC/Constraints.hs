@@ -3,6 +3,7 @@ module KBC.Constraints where
 
 #include "errors.h"
 import KBC.Base hiding (equals, Term(..), pattern Fun, pattern Var, lookup)
+import qualified KBC.Term as Flat
 import KBC.Term.Nested
 import qualified KBC.Term.Nested as Nested
 import Control.Monad
@@ -21,9 +22,9 @@ toTerm :: Atom f -> Term f
 toTerm (Constant f) = Fun f []
 toTerm (Variable x) = Var x
 
-fromTerm :: Term f -> Maybe (Atom f)
-fromTerm (Fun f []) = Just (Constant f)
-fromTerm (Var x) = Just (Variable x)
+fromTerm :: Flat.Term f -> Maybe (Atom f)
+fromTerm (Flat.Fun f Empty) = Just (Constant f)
+fromTerm (Flat.Var x) = Just (Variable x)
 fromTerm _ = Nothing
 
 instance Function f => Pretty (Atom f) where

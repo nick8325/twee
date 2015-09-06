@@ -390,3 +390,10 @@ buildTerm :: (forall m. Builder f m => m ()) -> Term f
 buildTerm m =
   case buildTermList m of
     Cons t Empty -> t
+
+subterms :: Term f -> [Term f]
+subterms t = t:properSubterms t
+
+properSubterms :: Term f -> [Term f]
+properSubterms Var{} = []
+properSubterms (Fun f ts) = concatMap subterms (fromTermList ts)

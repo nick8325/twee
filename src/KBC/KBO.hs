@@ -7,12 +7,11 @@ import Data.List
 import KBC.Constraints
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
-import qualified Data.Rewriting.Substitution.Type as Subst
 import Data.Maybe
 import Control.Monad
 
-lessEq :: Function f => Tm f -> Tm f -> Bool
-lessEq (Fun f []) _    | f == minimal = True
+lessEq :: Function f => Term f -> Term f -> Bool
+lessEq (Fun f Empty) _    | f == minimal = True
 lessEq (Var x) (Var y) | x == y = True
 lessEq _ (Var _) = False
 lessEq (Var x) t = x `elem` vars t
@@ -22,30 +21,30 @@ lessEq t@(Fun f ts) u@(Fun g us) =
    (st == su && f == g && lexLess ts us)) &&
   xs `isSubsequenceOf` ys
   where
-    lexLess [] [] = True
-    lexLess (t:ts) (u:us)
+    lexLess Empty Empty = True
+    lexLess (Cons t ts) (Cons u us)
       | t == u = lexLess ts us
       | otherwise =
         lessEq t u &&
         case unify t u of
           Nothing -> True
           Just sub
-            | or [t /= minimalTerm | t <- Map.elems (Subst.toMap sub)] -> ERROR("weird term inequality")
-            | otherwise -> lexLess (substf (evalSubst sub) ts) (substf (evalSubst sub) us)
+            | not (allSubst (\_ (Cons t Empty) -> isMinimal t) sub) -> ERROR("weird term inequality")
+            | otherwise -> lexLess (subst sub ts) (subst sub us)
     lexLess _ _ = ERROR("incorrect function arity")
     xs = sort (vars t)
     ys = sort (vars u)
     st = size t
     su = size u
 
-lessIn :: Function f => Model f -> Tm f -> Tm f -> Maybe Strictness
+lessIn :: Function f => Model f -> Term f -> Term f -> Maybe Strictness
 lessIn model t u =
   case sizeLessIn model t u of
     Nothing -> Nothing
     Just Strict -> Just Strict
     Just Nonstrict -> lexLessIn model t u
 
-sizeLessIn :: Function f => Model f -> Tm f -> Tm f -> Maybe Strictness
+sizeLessIn :: Function f => Model f -> Term f -> Term f -> Maybe Strictness
 sizeLessIn model t u =
   case minimumIn model m of
     Just l
@@ -55,8 +54,10 @@ sizeLessIn model t u =
   where
     (k, m) =
       foldr (addSize id)
-        (foldr (addSize negate) (0, Map.empty) (symbols t))
-        (symbols u)
+        (foldr (addSize negate) (0, Map.empty) (syms t))
+        (syms u)
+    syms :: Term f -> [Either (Fun f) Var]
+    syms = symbols (return . Left) (return . Right)
     addSize op (Left f) (k, m) = (k + op (size f), m)
     addSize op (Right x) (k, m) = (k, Map.insertWith (+) x (op 1) m)
 
@@ -85,7 +86,7 @@ minimumIn model t =
       | k < 0 = Nothing
       | otherwise = Just k
 
-lexLessIn :: Function f => Model f -> Tm f -> Tm f -> Maybe Strictness
+lexLessIn :: Function f => Model f -> Term f -> Term f -> Maybe Strictness
 lexLessIn _ t u | t == u = Just Nonstrict
 lexLessIn cond t u
   | Just a <- fromTerm t,
@@ -102,8 +103,8 @@ lexLessIn cond (Fun f ts) (Fun g us) =
     GT -> Nothing
     EQ -> loop ts us
   where
-    loop [] [] = Just Nonstrict
-    loop (t:ts) (u:us)
+    loop Empty Empty = Just Nonstrict
+    loop (Cons t ts) (Cons u us)
       | t == u = loop ts us
       | otherwise =
         case lessIn cond t u of
@@ -111,7 +112,7 @@ lexLessIn cond (Fun f ts) (Fun g us) =
           Just Strict -> Just Strict
           Just Nonstrict ->
             let Just sub = unify t u in
-            loop (substf (evalSubst sub) ts) (substf (evalSubst sub) us)
+            loop (subst sub ts) (subst sub us)
     loop _ _ = ERROR("incorrect function arity")
-lexLessIn model t _ | t == minimalTerm = Just Nonstrict
+lexLessIn model t _ | isMinimal t = Just Nonstrict
 lexLessIn model _ _ = Nothing
