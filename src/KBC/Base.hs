@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances, TypeFamilies, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, CPP #-}
 module KBC.Base(
-  Symbolic(..), term, termLists, varsDL, vars, funsDL, funs,
-  canonicalise,
+  Symbolic(..), TermOf, TermListOf, SubstOf,
+  term, termLists, varsDL, vars, funsDL, funs, canonicalise,
   Minimal(..), minimalTerm,
   Skolem(..), skolemConst, skolemise,
   Arity(..), Sized(..), SizedFun(..), Ordered(..), Strictness(..), Function,
