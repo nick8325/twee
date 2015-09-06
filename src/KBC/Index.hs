@@ -87,6 +87,10 @@ newtype Frozen a = Frozen { matchesList_ :: TermListOf a -> [Match a] }
 matchesList :: TermListOf a -> Frozen a -> [Match a]
 matchesList = flip matchesList_
 
+{-# INLINEABLE lookup #-}
+lookup :: Symbolic a => TermOf a -> Frozen a -> [a]
+lookup t idx = concat [Prelude.map (subst sub) xs | Match xs sub <- matches t idx]
+
 {-# INLINE matches #-}
 matches :: TermOf a -> Frozen a -> [Match a]
 matches t idx = matchesList (Term.singleton t) idx
