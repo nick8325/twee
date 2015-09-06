@@ -64,7 +64,7 @@ insert x0 !idx = aux t idx
     aux (ConsSym (Fun (MkFun f) _) t) = updateVars n . updateFun f (aux t)
     aux (ConsSym (Var (MkVar x)) t) = updateVars n . updateVar x (aux t)
     n = boundList t
-    x = subst (canonicalise x) x
+    x = canonicalise x0
     t = Term.singleton (term x)
 
 {-# INLINEABLE delete #-}
@@ -74,7 +74,7 @@ delete x0 !idx = aux t idx
     aux Empty = updateHere (List.delete x)
     aux (ConsSym (Fun (MkFun f) _) t) = updateFun f (aux t)
     aux (ConsSym (Var (MkVar x)) t) = updateVar x (aux t)
-    x = subst (canonicalise x) x
+    x = canonicalise x0
     t = Term.singleton (term x)
 
 data Match a =

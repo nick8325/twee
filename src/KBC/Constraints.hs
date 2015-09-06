@@ -194,7 +194,7 @@ modelFromOrder :: Function f => [Atom f] -> Model f
 modelFromOrder xs =
   Model (Map.fromList [(x, (i, i)) | (x, i) <- zip xs [0..]])
 
-weakenModel :: Ord f => Model f -> [Model f]
+weakenModel :: OrdFun f => Model f -> [Model f]
 weakenModel (Model m) =
   [ Model (Map.delete x m)  | x <- Map.keys m ] ++
   [ Model (Map.fromList xs) | xs <- glue (sortBy (comparing snd) (Map.toList m)) ]
@@ -222,7 +222,7 @@ varGroups (Model m) = filter nonempty (go minimal (map fst (sortBy (comparing sn
     nonempty (_, [], _) = False
     nonempty _ = True
 
-lessEqInModel :: Ord f => Model f -> Atom f -> Atom f -> Maybe Strictness
+lessEqInModel :: OrdFun f => Model f -> Atom f -> Atom f -> Maybe Strictness
 lessEqInModel (Model m) x y
   | Just (a, _) <- Map.lookup x m,
     Just (b, _) <- Map.lookup y m,

@@ -10,7 +10,7 @@ module KBC.Term(
   Term, TermList, lenList,
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
-  Fun(..), Var(..), pattern Var, pattern Fun, singleton,
+  Fun(..), OrdFun(..), Var(..), pattern Var, pattern Fun, singleton,
   Builder, buildTermList, emitRoot, emitFun, emitVar, emitTermList,
   Subst, substSize, lookupList,
   MutableSubst, newMutableSubst, unsafeFreezeSubst, mutableLookupList,
@@ -183,7 +183,7 @@ canonicalise (t:ts) = runST $ do
   loop vars t ts
   unsafeFreezeSubst msub
   where
-    n = maximum (0:map boundList ts)
+    n = maximum (0:map boundList (t:ts))
     vars =
       buildTermList $ do
         forM_ [0..n] $ \i ->
@@ -385,6 +385,9 @@ var x = buildTerm (emitVar x)
 fun :: Fun f -> [Term f] -> Term f
 fun f ts = buildTerm (emitFun f (mapM_ emitTerm ts))
 
+concatTerms :: [TermList f] -> TermList f
+concatTerms ts = buildTermList (mapM_ emitTermList ts)
+
 {-# INLINE buildTerm #-}
 buildTerm :: (forall m. Builder f m => m ()) -> Term f
 buildTerm m =
@@ -397,3 +400,17 @@ subterms t = t:properSubterms t
 properSubterms :: Term f -> [Term f]
 properSubterms Var{} = []
 properSubterms (Fun f ts) = concatMap subterms (fromTermList ts)
+
+isFun :: Term f -> Bool
+isFun Fun{} = True
+isFun _     = False
+
+isVar :: Term f -> Bool
+isVar Var{} = True
+isVar _     = False
+
+isInstanceOf :: Term f -> Term f -> Bool
+t `isInstanceOf` pat = isJust (match pat t)
+
+isVariantOf :: Term f -> Term f -> Bool
+t `isVariantOf` u = t `isInstanceOf` u && u `isInstanceOf` t

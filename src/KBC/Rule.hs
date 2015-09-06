@@ -25,7 +25,7 @@ data Rule f =
     orientation :: Orientation f,
     lhs :: Term f,
     rhs :: Term f }
-  deriving Show
+  deriving (Eq, Show)
 
 data Orientation f =
     Oriented
@@ -33,6 +33,8 @@ data Orientation f =
   | Permutative [(Nested.Term f, Nested.Term f)]
   | Unoriented
   deriving Show
+
+instance Eq (Orientation f) where _ == _ = True
 
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
@@ -65,7 +67,7 @@ pPrintRule l r = hang (pPrint l <+> text "->") 2 (pPrint r)
 -- Equations.
 --------------------------------------------------------------------------------
 
-data Equation f = Term f :=: Term f deriving Show
+data Equation f = Term f :=: Term f deriving (Eq, Ord, Show)
 type EquationOf a = Equation (ConstantOf a)
 
 instance Symbolic (Equation f) where

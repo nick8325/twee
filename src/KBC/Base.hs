@@ -109,9 +109,10 @@ vars = DList.toList . symbols (const mzero) return
 funs :: Symbolic a => a -> [Fun (ConstantOf a)]
 funs = DList.toList . symbols return (const mzero)
 
-canonicalise :: Symbolic a => a -> SubstOf a
-canonicalise t =
-  Term.canonicalise [Nested.flattenList (map Nested.Var (vars t))]
+canonicalise :: Symbolic a => a -> a
+canonicalise t = subst sub t
+  where
+    sub = Term.canonicalise [Nested.flattenList (map Nested.Var (vars t))]
 
 class Minimal a where
   minimal :: Fun a
@@ -133,7 +134,7 @@ skolemise :: (Symbolic a, Skolem (ConstantOf a)) => a -> SubstOf a
 skolemise t =
   Nested.flattenSubst [(x, skolemConst x) | x <- vars t]
 
-class (PrettyTerm f, Minimal f, Skolem f, Arity f, SizedFun f, Ordered f) => Function f
+class (OrdFun f, PrettyTerm f, Minimal f, Skolem f, Arity f, SizedFun f, Ordered f) => Function f
 
 class Arity f where
   arity :: Fun f -> Int

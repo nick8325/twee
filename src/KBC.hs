@@ -5,7 +5,8 @@
 module KBC where
 
 #include "errors.h"
-import KBC.Base
+import KBC.Base hiding (empty)
+import qualified KBC.Term.Nested as Nested
 import KBC.Constraints
 import KBC.Rule
 import qualified KBC.Index as Index
@@ -37,8 +38,8 @@ data KBC f =
     maxSize           :: Int,
     labelledRules     :: Index (Labelled (Modelled (Critical (Rule f)))),
     extraRules        :: Index (Rule f),
-    subRules          :: Index (Tm f, Rule f),
-    goals             :: [Set (Tm f)],
+    subRules          :: Index (Term f, Rule f),
+    goals             :: [Set (Term f)],
     totalCPs          :: Int,
     processedCPs      :: Int,
     renormaliseAt     :: Int,
@@ -48,7 +49,7 @@ data KBC f =
     joinStatistics    :: Map JoinReason Int }
   deriving Show
 
-initialState :: Int -> [Set (Tm f)] -> KBC f
+initialState :: Int -> [Set (Term f)] -> KBC f
 initialState maxSize goals =
   KBC {
     maxSize           = maxSize,
@@ -68,10 +69,10 @@ report :: Function f => KBC f -> String
 report KBC{..} =
   printf "Rules: %d total, %d oriented, %d unoriented, %d permutative, %d weakly oriented. "
     (length rs)
-    (length (filter ((== Oriented) . orientation) rs))
-    (length (filter ((== Unoriented) . orientation) rs))
-    (length [ r | r@(Rule (Permutative _) _ _) <- rs ])
-    (length [ r | r@(Rule (WeaklyOriented _) _ _) <- rs ]) ++
+    (length [ () | Rule Oriented _ _ <- rs ])
+    (length [ () | Rule Unoriented _ _ <- rs ])
+    (length [ () | (Rule (Permutative _) _ _) <- rs ])
+    (length [ () | (Rule (WeaklyOriented _) _ _) <- rs ]) ++
   printf "%d extra. %d historical.\n"
     (length (Index.elems extraRules))
     n ++
@@ -123,8 +124,9 @@ deriving instance (Show a, Show (ConstantOf a)) => Show (Modelled a)
 instance Symbolic a => Symbolic (Modelled a) where
   type ConstantOf (Modelled a) = ConstantOf a
 
-  termsDL Modelled{..} = termsDL modelled
-  substf sub Modelled{..} = Modelled model (substf sub modelled)
+  term = term . modelled
+  symbols fun var = symbols fun var . modelled
+  subst sub Modelled{..} = Modelled model (subst sub modelled)
 
 --------------------------------------------------------------------------------
 -- Rewriting.
@@ -135,25 +137,28 @@ rules k =
   Index.map (critical . modelled . peel) (Index.freeze (labelledRules k))
   `Index.union` Index.freeze (extraRules k)
 
-normaliseQuickly :: Function f => KBC f -> Tm f -> Reduction f
+normaliseQuickly :: Function f => KBC f -> Term f -> Reduction f
 normaliseQuickly s = normaliseWith (rewrite simplifies (rules s))
 
-normalise :: Function f => KBC f -> Tm f -> Reduction f
+normalise :: Function f => KBC f -> Term f -> Reduction f
 normalise s = normaliseWith (rewrite reduces (rules s))
 
-normaliseIn :: Function f => KBC f -> Model f -> Tm f -> Reduction f
+normaliseIn :: Function f => KBC f -> Model f -> Term f -> Reduction f
 normaliseIn s model =
   normaliseWith (rewrite (reducesInModel model) (rules s))
 
-normaliseSub :: Function f => KBC f -> Tm f -> Tm f -> Reduction f
+normaliseSub :: Function f => KBC f -> Term f -> Term f -> Reduction f
 normaliseSub s top t
   | lessEq t top && isNothing (unify t top) =
     normaliseWith (rewrite (reducesSub top) (rules s)) t
-  | otherwise = Reduction t Refl
+  | otherwise = Reduction (Nested.Flat t) Refl
+
+normaliseSkolem :: Function f => KBC f -> Term f -> Reduction f
+normaliseSkolem s = normaliseWith (rewrite reducesSkolem (rules s))
 
 reduceCP ::
   Function f =>
-  KBC f -> JoinStage -> (Tm f -> Tm f) ->
+  KBC f -> JoinStage -> (Term f -> Term f) ->
   Critical (Equation f) -> Either JoinReason (Critical (Equation f))
 reduceCP s stage f (Critical top (t :=: u))
   | t' == u' = Left (Trivial stage)
@@ -167,9 +172,9 @@ reduceCP s stage f (Critical top (t :=: u))
       where
         here =
           or [ rhs x == u | x <- Index.lookup t rs ] ||
-          or [ subst sub (rhs x) == t | (x, sub) <- Index.matches u rs, not root || not (isVariantOf (lhs x) u) ]
+          or [ subst sub (rhs x) == t | Index.Match xs sub <- Index.matches u rs, x <- xs, not root || not (isVariantOf (lhs x) u) ]
         there (Var x) (Var y) | x == y = True
-        there (Fun f ts) (Fun g us) | f == g = and (zipWith (subsumed s False) ts us)
+        there (Fun f ts) (Fun g us) | f == g = and (zipWith (subsumed s False) (fromTermList ts) (fromTermList us))
         there _ _ = False
         rs = rules s
 
@@ -193,7 +198,7 @@ normaliseCPQuickly, normaliseCP ::
   KBC f -> Critical (Equation f) -> Either JoinReason (Critical (Equation f))
 normaliseCPQuickly s cp =
   reduceCP s Initial id cp >>=
-  reduceCP s Simplification (result . normaliseQuickly s)
+  reduceCP s Simplification (Nested.flatten . result . normaliseQuickly s)
 
 normaliseCP s cp@(Critical info _) =
   case (cp1, cp2, cp3, cp4) of
@@ -205,17 +210,19 @@ normaliseCP s cp@(Critical info _) =
   where
     cp1 =
       normaliseCPQuickly s cp >>=
-      reduceCP s Reducing (result . normalise s) >>=
-      reduceCP s Subjoining (result . normaliseSub s (top info))
+      reduceCP s Reducing (Nested.flatten . result . normalise s) >>=
+      reduceCP s Subjoining (Nested.flatten . result . normaliseSub s (top info))
 
     cp2 =
-      reduceCP s Subjoining (result . normaliseSub s (flipCP (top info))) (flipCP cp)
+      reduceCP s Subjoining (Nested.flatten . result . normaliseSub s (flipCP (top info))) (flipCP cp)
 
     cp3 = setJoin cp
     cp4 = setJoin (flipCP cp)
 
     flipCP :: Symbolic a => a -> a
-    flipCP = substf (\(MkVar x) -> Var (MkVar (negate x)))
+    flipCP t = subst sub t
+      where
+        sub = Nested.flattenSubst [(MkVar x, Nested.Var (MkVar (negate x))) | MkVar x <- vars t]
 
     -- XXX shouldn't this also check subsumption?
     setJoin (Critical info (t :=: u))
@@ -289,7 +296,7 @@ consider pair = do
     Right (Critical info eq) ->
       forM_ (map canonicalise (orient eq)) $ \(Rule orientation t u0) -> do
         s <- get
-        let u = result (normaliseSub s t u0)
+        let u = Nested.flatten (result (normaliseSub s t u0))
             r = Rule orientation t u
         case normaliseCP s (Critical info (t :=: u)) of
           Left reason -> do
@@ -321,13 +328,13 @@ groundJoin :: Function f =>
 groundJoin s ctx r@(Critical info (t :=: u)) =
   case partitionEithers (map (solve (usort (vars t ++ vars u))) ctx) of
     ([], instances) ->
-      let rs = [ substf (evalSubst sub) r | sub <- instances ] in
+      let rs = [ subst sub r | sub <- instances ] in
       Right (usort (map canonicalise rs))
     (model:_, _)
-      | isRight (normaliseCP s (Critical info (t' :=: u'))) -> Left model
+      | isRight (normaliseCP s (Critical info (Nested.flatten t' :=: Nested.flatten u'))) -> Left model
       | otherwise ->
           let model1 = optimise model weakenModel (\m -> valid m nt && valid m nu)
-              model2 = optimise model1 weakenModel (\m -> isLeft (normaliseCP s (Critical info (result (normaliseIn s m t) :=: result (normaliseIn s m u)))))
+              model2 = optimise model1 weakenModel (\m -> isLeft (normaliseCP s (Critical info (Nested.flatten (result (normaliseIn s m t)) :=: Nested.flatten (result (normaliseIn s m u))))))
 
               diag [] = Or []
               diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
@@ -421,8 +428,8 @@ reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
   where
     s' = s { labelledRules = Index.delete (Labelled lab old0) (labelledRules s) }
     modelJoinable = isLeft (normaliseCP s' (Critical info (lm :=: rm)))
-    lm = result (normaliseIn s' model l)
-    rm = result (normaliseIn s' model r)
+    lm = Nested.flatten (result (normaliseIn s' model l))
+    rm = Nested.flatten (result (normaliseIn s' model r))
     tryGroundJoin =
       case groundJoin s' (branches (And [])) (Critical info (l :=: r)) of
         Left model' ->
@@ -435,13 +442,13 @@ simplifyRule l model rule@(Modelled _ (Critical info (Rule ctx lhs rhs))) = do
   modify $ \s ->
     s {
       labelledRules =
-         Index.insert (Labelled l (Modelled model (Critical info (Rule ctx lhs (result (normalise s rhs))))))
+         Index.insert (Labelled l (Modelled model (Critical info (Rule ctx lhs (Nested.flatten (result (normalise s rhs)))))))
            (Index.delete (Labelled l rule) (labelledRules s)) }
   newSubRule (Rule ctx lhs rhs)
 
 newEquation :: Function f => Equation f -> State (KBC f) ()
 newEquation (t :=: u) = do
-  consider (Critical (CritInfo minimalTerm 0) (t :=: u))
+  consider (Critical (CritInfo (Nested.flatten minimalTerm) 0) (t :=: u))
   return ()
 
 --------------------------------------------------------------------------------
@@ -455,7 +462,7 @@ data Critical a =
 
 data CritInfo f =
   CritInfo {
-    top      :: Tm f,
+    top      :: Term f,
     overlap  :: Int }
 
 instance Eq a => Eq (Critical a) where x == y = critical x == critical y
@@ -470,14 +477,16 @@ deriving instance Show f => Show (CritInfo f)
 instance Symbolic a => Symbolic (Critical a) where
   type ConstantOf (Critical a) = ConstantOf a
 
-  termsDL Critical{..} = termsDL critical `mplus` termsDL critInfo
-  substf sub Critical{..} = Critical (substf sub critInfo) (substf sub critical)
+  term = term . critical
+  symbols fun var Critical{..} = symbols fun var (critical, critInfo)
+  subst sub Critical{..} = Critical (subst sub critInfo) (subst sub critical)
 
 instance Symbolic (CritInfo f) where
   type ConstantOf (CritInfo f) = f
 
-  termsDL CritInfo{..} = termsDL top
-  substf sub CritInfo{..} = CritInfo (substf sub top) overlap
+  term = __
+  symbols fun var = symbols fun var . top
+  subst sub CritInfo{..} = CritInfo (subst sub top) overlap
 
 data CPInfo =
   CPInfo {
@@ -540,7 +549,7 @@ passiveCount (ManyCPs x) = count x
 
 data InitialCP f =
   InitialCP {
-    cpId :: (Tm f, Label),
+    cpId :: (Term f, Label),
     cpOK :: Bool,
     cpCP :: Labelled (Critical (Equation f)) }
 
@@ -561,7 +570,8 @@ criticalPairs s lower upper rule =
     p l = lower <= l && l <= upper
 
 criticalPairs1 :: Function f => KBC f -> Int -> Rule f -> [Labelled (Rule f)] -> [InitialCP f]
-criticalPairs1 s n (Rule or1 t u) idx = do
+criticalPairs1 s n (Rule or1 t u) idx = undefined
+{-
   Labelled l (Rule or2 t' u') <- idx
   let r1 = T.Rule t u
       r2 = T.Rule t' u'
@@ -586,7 +596,7 @@ criticalPairs1 s n (Rule or1 t u) idx = do
       (canonicalise (fromMaybe __ (subtermAt t (CP.leftPos cp))), l)
       (null (nested (anywhere (rewrite reduces (rules s))) inner))
       (Labelled l (Critical (CritInfo top osz) (left :=: right)))
-
+-}
 queueCP ::
   Function f =>
   Label -> Label -> Critical (Equation f) -> State (KBC f) ()
@@ -635,8 +645,8 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
   where
     norm (Critical info (t :=: u)) = do
       guard (t /= u)
-      let t' = result (normaliseQuickly s t)
-          u' = result (normaliseQuickly s u)
+      let t' = Nested.flatten (result (normaliseQuickly s t))
+          u' = Nested.flatten (result (normaliseQuickly s u))
       guard (t' /= u')
       invert (Critical info (t' :=: u'))
 
@@ -659,20 +669,20 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
         return (t', u')
 
     replace t u v | v == t = u
-    replace t u (Fun f ts) = Fun f (map (replace t u) ts)
+    replace t u (Fun f ts) = fun f (map (replace t u) (fromTermList ts))
     replace _ _ t = t
 
     subsumes strict (t', u') (t, u) =
-      (isJust (matchMany minimal [(t', t), (u', u)]) &&
-       (not strict || isNothing (matchMany minimal [(t, t'), (u, u')]))) ||
+      (isJust (matchList (concatTerms [singleton t', singleton t]) (concatTerms [singleton u', singleton u]))) &&
+       (not strict || isNothing (matchList (concatTerms [singleton t, singleton t']) (concatTerms [singleton u, singleton u']))) ||
       case focus t u of
         Just (t'', u'') -> subsumes False (t', u') (t'', u'')
         _ -> False
       where
         focus (Fun f ts) (Fun g us) | f == g = aux ts us
           where
-            aux [] [] = Nothing
-            aux (t:ts) (u:us)
+            aux Empty Empty = Nothing
+            aux (Cons t ts) (Cons u us)
               | t == u = aux ts us
               | ts == us = Just (t, u)
               | otherwise = Nothing
@@ -702,7 +712,7 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
 
     penalty t u
       | useSkolemPenalty s &&
-        result (normalise s (skolemise t)) == result (normalise s (skolemise u)) =
+        Nested.flatten (result (normaliseSkolem s t)) == Nested.flatten (result (normaliseSkolem s u)) =
         -- Arbitrary heuristic: assume one in three of the variables need to
         -- be instantiated with with terms of size > 1 to not be joinable
         (length (vars t) + length (vars u)) `div` 3

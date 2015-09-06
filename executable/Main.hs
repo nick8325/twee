@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, CPP, GeneralizedNewtypeDeriving, TypeFamilies #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, CPP, GeneralizedNewtypeDeriving, TypeFamilies, RecordWildCards, FlexibleContexts, UndecidableInstances #-}
 #include "errors.h"
 
 #if __GLASGOW_HASKELL__ < 710
@@ -10,11 +10,11 @@ import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Class
 import Data.Char
 import KBC
-import KBC.Base hiding (char)
+import KBC.Base hiding (char, lookup)
+import qualified KBC.Term.Nested as Nested
 import KBC.Rule
 import KBC.Utils
 import KBC.Queue
-import Data.Rewriting.Term(Term)
 import Text.ParserCombinators.ReadP hiding (get)
 import System.Environment
 import System.Exit
@@ -25,6 +25,8 @@ import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
 import qualified KBC.KBO as KBO
 import qualified Data.Set as Set
+import Data.Reflection
+import Data.Array
 
 data Constant =
   Constant {
@@ -40,35 +42,58 @@ instance Eq Constant where
 instance Ord Constant where
   -- Skolem constants are smallest, except for minimal constant.
   compare = comparing (\c -> (conIndex c > 0, abs (conIndex c)))
-instance Numbered Constant where
+{-instance Numbered Constant where
   number = conIndex
-  withNumber = __
+  withNumber = __-}
+
+toFun :: Constant -> Fun Constant
+toFun Constant{..}
+  | conIndex >= 0 = MkFun (conIndex*2)
+  | otherwise     = MkFun (negate conIndex*2-1)
+
+newtype Context = Context (Array Int Constant)
+
+fromFun :: Given Context => Fun Constant -> Constant
+fromFun (MkFun n)
+  | even n    = arr ! (n `div` 2)
+  | otherwise = skolemFun (negate n `div` 2)
+  where
+    Context arr = given
 
 instance Minimal Constant where
-  minimal = con0
+  minimal = toFun con0
 instance Skolem Constant where
-  skolem n = Constant (-(n+1)) 0 1 ("sk" ++ show n)
-  
-instance Sized Constant where
-  size = fromIntegral . conSize
-instance Arity Constant where
-  arity = conArity
+  skolem (MkVar n) = toFun (skolemFun n)
+
+skolemFun n =  Constant (-(n+1)) 0 1 ("sk" ++ show n)
+
+instance Given Context => Sized (Fun Constant) where
+  size = fromIntegral . conSize . fromFun
+instance Given Context => SizedFun Constant
+instance Given Context => Arity Constant where
+  arity = conArity . fromFun
 
 instance Pretty Constant where pPrint = text . conName
-instance PrettyTerm Constant where
-  termStyle con
+instance Given Context => Pretty (Fun Constant) where
+  pPrint = pPrint . fromFun
+instance Given Context => PrettyTerm Constant where
+  termStyle con0
     | not (any isAlphaNum (conName con)) =
       case conArity con of
         1 -> prefix
         2 -> infixStyle 5
         _ -> uncurried
+    where
+      con = fromFun con0
   termStyle _ = uncurried
 
-instance Ordered Constant where
+instance Given Context => Ordered Constant where
   lessEq = KBO.lessEq
   lessIn = KBO.lessIn
 
-instance Function Constant
+instance Given Context => OrdFun Constant where
+  compareFun = comparing fromFun
+instance Given Context => Function Constant
 
 parseDecl :: Int -> StateT (Int, Map String Int) ReadP Constant
 parseDecl n = lift $ do
@@ -79,14 +104,16 @@ parseDecl n = lift $ do
   size <- readS_to_P reads
   return (Constant n arity size name)
 
-parseTerm :: StateT (Int, Map String Int) ReadP (Tm String)
+data Tm = App String [Tm] | VarTm Var
+
+parseTerm :: StateT (Int, Map String Int) ReadP Tm
 parseTerm = var `mplus` fun
   where
     fun = do
       x <- lift $ satisfy (\c -> c `notElem` "(),=_" && not (isUpper c))
       xs <- lift $ munch (\c -> c `notElem` "(),=")
       args <- args `mplus` return []
-      return (Fun (x:xs) args)
+      return (App (x:xs) args)
     args = between (char '(') (char ')') (sepBy parseTerm (char ','))
     between p q r = do
       lift p
@@ -98,7 +125,7 @@ parseTerm = var `mplus` fun
       xs <- (lift q >> sepBy p q) `mplus` return []
       return (x:xs)
 
-    var = fmap (Var . MkVar) $ do
+    var = fmap (VarTm . MkVar) $ do
       x <- lift $ satisfy (\c -> isUpper c || c == '_')
       xs <- lift $ munch isAlphaNum
       let v = x:xs
@@ -109,12 +136,12 @@ parseTerm = var `mplus` fun
           put (k+1, Map.insert v k m)
           return k
 
-parseEquation :: StateT (Int, Map String Int) ReadP (Equation String)
+parseEquation :: StateT (Int, Map String Int) ReadP (Tm, Tm)
 parseEquation = do
   t <- parseTerm
   lift $ string "="
   u <- parseTerm
-  return (t :=: u)
+  return (t, u)
 
 run :: StateT (Int, Map String Int) ReadP a -> String -> a
 run p xs =
@@ -131,19 +158,19 @@ replace xs x =
     Just y -> y
     Nothing -> error (show x ++ " not found")
 
-check :: (Symbolic a, ConstantOf a ~ Constant) => a -> IO ()
-check eq = do
-  forM_ (terms eq >>= subterms) $ \t ->
+check :: Given Context => Term Constant -> IO ()
+check t = do
+  forM_ (subterms t) $ \t ->
     case t of
-      Fun f xs | conArity f /= length xs -> do
+      Fun f xs | conArity (fromFun f) /= length (fromTermList xs) -> do
           print $
             fsep [
             text "Function",
             nest 2 (pPrint f),
             text "has arity",
-            nest 2 (pPrint (conArity f)),
+            nest 2 (pPrint (conArity (fromFun f))),
             text "but called as",
-            nest 2 (pPrint (Fun f xs))]
+            nest 2 (pPrint t)]
           exitWith (ExitFailure 1)
       _ -> return ()
 
@@ -155,45 +182,57 @@ main = do
       comment _ = False
       (axioms0, ("--":goals0)) = break (== "--") eqs1
       fs0 = zipWith (run . parseDecl) [1..] (map tok sig)
-      fs = [(conName f, f) | f <- fs0]
+      fs1 = con0:fs0
+      fs = [(conName f, toFun f) | f <- fs0]
+      context =
+        Context $
+        array (0, maximum (map conIndex fs1))
+          [(conIndex f, f) | f <- fs1]
+
+      translate = Nested.flatten . translate1
+      translate1 (VarTm x) = Nested.Var x
+      translate1 (App f ts) = Nested.Fun (replace fs f) (map translate1 ts)
+
       axioms1 = map (run parseEquation) (map tok axioms0)
       goals1 = map (run parseTerm . tok) goals0
-      axioms = map (bothSides (mapTerm (replace fs))) axioms1
-      goals2 = map (mapTerm (replace fs)) goals1
+      axioms = [translate t :=: translate u | (t, u) <- axioms1]
+      goals2 = map translate goals1
 
-  putStrLn "Axioms:"
-  mapM_ prettyPrint axioms
-  putStrLn "\nGoals:"
-  mapM_ prettyPrint goals2
-  check (axioms, goals2)
-  putStrLn "\nGo!"
+  give context $ do
+    putStrLn "Axioms:"
+    mapM_ prettyPrint axioms
+    putStrLn "\nGoals:"
+    mapM_ prettyPrint goals2
+    mapM_ check goals2
+    forM_ axioms $ \(t :=: u) -> do { check t; check u }
+    putStrLn "\nGo!"
 
-  let
-    identical xs = not (Set.null (foldr1 Set.intersection xs))
+    let
+      identical xs = not (Set.null (foldr1 Set.intersection xs))
 
-    loop = do
-      res <- complete1
-      goals <- gets goals
-      when (res && (length goals <= 1 || not (identical goals))) loop
+      loop = do
+        res <- complete1
+        goals <- gets goals
+        when (res && (length goals <= 1 || not (identical goals))) loop
 
-    s =
-      flip execState (initialState (read size) (map Set.singleton goals2)) $ do
-        mapM_ newEquation axioms
-        loop
+      s =
+        flip execState (initialState (read size) (map Set.singleton goals2)) $ do
+          mapM_ newEquation axioms
+          loop
 
-    rs = map (critical . modelled . peel) (Index.elems (labelledRules s))
+      rs = map (critical . modelled . peel) (Index.elems (labelledRules s))
 
-  putStrLn "\nFinal rules:"
-  mapM_ prettyPrint rs
-  putStrLn ""
+    putStrLn "\nFinal rules:"
+    mapM_ prettyPrint rs
+    putStrLn ""
 
-  putStrLn (report s)
+    putStrLn (report s)
 
-  unless (null goals2) $ do
-    putStrLn "Normalised goal terms:"
-    forM_ goals2 $ \t ->
-      prettyPrint (Rule Oriented t (result (normalise s t)))
+    unless (null goals2) $ do
+      putStrLn "Normalised goal terms:"
+      forM_ goals2 $ \t ->
+        prettyPrint (Rule Oriented t (Nested.flatten (result (normalise s t))))
 
-  if length (goals s) <= 1 || identical (goals s)
-    then exitWith ExitSuccess
-    else exitWith (ExitFailure 1)
+    if length (goals s) <= 1 || identical (goals s)
+      then exitWith ExitSuccess
+      else exitWith (ExitFailure 1)
