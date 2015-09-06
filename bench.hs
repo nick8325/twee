@@ -18,7 +18,7 @@ u1 = flatten $ fun 0 [fun 1 [fun 0 [fun 2 [], fun 3 []]], fun 1 [fun 0 [fun 4 []
 t2 = flatten $ fun 0 [var 0, fun 1 [var 1, fun 1 [var 1, var 1]]]
 u2 = flatten $ fun 0 [fun 0 [var 2, var 2], var 2]
 
-fun f ts = KBC.Term.Nested.Fun (MkFun f) (fromList ts)
+fun f ts = KBC.Term.Nested.Fun (MkFun f) ts
 var = KBC.Term.Nested.Var . MkVar
 
 t = t0
@@ -63,7 +63,7 @@ main = do
     bench "mgu-tri" (whnf (uncurry mgu1) (t2, u2)),
     bench "mgu-close" (whnf (uncurry mgu2) (t2, u2)),
     bench "make-constant" (whnf (uncurry KBC.Term.fun) (MkFun 0, [])),
-    bench "make-constant-cfun" (whnf (uncurry KBC.Term.Nested.Fun) (MkFun 0, Nil)),
+    bench "make-constant-cfun" (whnf (uncurry KBC.Term.Nested.Fun) (MkFun 0, [])),
     bench "baseline" (whnf (uncurry (+)) (0 :: Int, 0))]
 
 prop :: Bool -> NonNegative (Small Int) -> NonNegative (Small Int) -> Property

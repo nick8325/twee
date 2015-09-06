@@ -375,11 +375,13 @@ emptyTermList = buildTermList (return ())
 
 -- Functions for building terms.
 var :: Var -> Term f
-var x =
-  case buildTermList (emitVar x) of
-    Cons t Empty -> t
+var x = buildTerm (emitVar x)
 
 fun :: Fun f -> [Term f] -> Term f
-fun f ts =
-  case buildTermList (emitFun f (mapM_ emitTerm ts)) of
+fun f ts = buildTerm (emitFun f (mapM_ emitTerm ts))
+
+{-# INLINE buildTerm #-}
+buildTerm :: (forall m. Builder f m => m ()) -> Term f
+buildTerm m =
+  case buildTermList m of
     Cons t Empty -> t
