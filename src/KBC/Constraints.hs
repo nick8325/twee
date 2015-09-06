@@ -1,27 +1,27 @@
-{-# LANGUAGE TypeFamilies, CPP, FlexibleContexts, UndecidableInstances, StandaloneDeriving, RecordWildCards, GADTs, ScopedTypeVariables, PatternGuards #-}
+{-# LANGUAGE TypeFamilies, CPP, FlexibleContexts, UndecidableInstances, StandaloneDeriving, RecordWildCards, GADTs, ScopedTypeVariables, PatternGuards, PatternSynonyms #-}
 module KBC.Constraints where
 
 #include "errors.h"
-import KBC.Base hiding (equals)
+import KBC.Base hiding (equals, Term(..), pattern Fun, pattern Var, lookup)
+import KBC.Term.Nested
+import qualified KBC.Term.Nested as Nested
 import Control.Monad
 import qualified Data.Map.Strict as Map
 import KBC.Utils
 import Data.Maybe
 import Data.List
-import qualified Data.Rewriting.Substitution.Type as Subst
 import Data.Graph
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
-import Debug.Trace
 import Data.Ord
 
-data Atom f = Constant f | Variable Var deriving (Eq, Ord, Show)
+data Atom f = Constant (Fun f) | Variable Var deriving (Eq, Ord, Show)
 
-toTerm :: Atom f -> Tm f
+toTerm :: Atom f -> Term f
 toTerm (Constant f) = Fun f []
 toTerm (Variable x) = Var x
 
-fromTerm :: Tm f -> Maybe (Atom f)
+fromTerm :: Term f -> Maybe (Atom f)
 fromTerm (Fun f []) = Just (Constant f)
 fromTerm (Var x) = Just (Variable x)
 fromTerm _ = Nothing
@@ -108,7 +108,7 @@ norm Branch{..} x = fromMaybe x (lookup x equals)
 contradictory :: Function f => Branch f -> Bool
 contradictory Branch{..} =
   or [x == y | (x, y) <- less] ||
-  or [Fun g [] `lessEq` Fun f [] | (Constant f, Constant g) <- less] ||
+  or [fun g [] `lessEq` fun f [] | (Constant f, Constant g) <- less] ||
   or [f == minimal | (_, Constant f) <- less] ||
   or [f /= g | (Constant f, Constant g) <- equals]
 
@@ -207,7 +207,7 @@ weakenModel (Model m) =
 varInModel :: Function f => Model f -> Var -> Bool
 varInModel (Model m) x = Variable x `Map.member` m
 
-varGroups :: Function f => Model f -> [(f, [Var], Maybe f)]
+varGroups :: Function f => Model f -> [(Fun f, [Var], Maybe (Fun f))]
 varGroups (Model m) = filter nonempty (go minimal (map fst (sortBy (comparing snd) (Map.toList m))))
   where
     go f xs =
@@ -236,7 +236,7 @@ solve xs b@Branch{..}
   | null equals = Left model
   | otherwise = Right sub
     where
-      sub = Subst.fromMap . Map.fromList $
+      sub = Nested.flattenSubst $
         [(x, toTerm y) | (Variable x, y) <- equals] ++
         [(y, toTerm x) | (x@Constant{}, Variable y) <- equals]
       vs = reverse (flattenSCCs (stronglyConnComp [(x, x, [y | (x', y) <- less, x == x']) | x <- as]))

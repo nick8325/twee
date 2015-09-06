@@ -15,6 +15,7 @@ import Data.List
 import qualified Data.Map as Map
 import KBC.Term hiding (subst, canonicalise)
 import qualified KBC.Term as Term
+import qualified KBC.Term.Nested as Nested
 import KBC.Pretty
 import Text.PrettyPrint.HughesPJClass hiding (empty)
 import Data.Ord
@@ -81,8 +82,8 @@ funsDL t = termListsDL t >>= aux
     aux (ConsSym (Fun f _) t) = return f `mplus` aux t
     aux (Cons Var{} t) = aux t
 
-canonicalise :: Symbolic a => a -> a
-canonicalise t = subst (Term.canonicalise (termLists t)) t
+canonicalise :: Symbolic a => a -> SubstOf a
+canonicalise t = Term.canonicalise (termLists t)
 
 class Minimal a where
   minimal :: Fun a
@@ -91,22 +92,18 @@ isMinimal :: Minimal f => Term f -> Bool
 isMinimal (Fun f Empty) | f == minimal = True
 isMinimal _ = False
 
-minimalTerm :: Minimal f => Term f
-minimalTerm = ERROR("try and eliminate as many uses of this as possible first")
+minimalTerm :: Minimal f => Nested.Term f
+minimalTerm = Nested.Fun minimal []
 
 class Skolem f where
-  skolem  :: Int -> Fun f
+  skolem  :: Var -> Fun f
 
-skolemConst :: Skolem f => Int -> Term f
-skolemConst n = fun (skolem n) []
+skolemConst :: Skolem f => Var -> Nested.Term f
+skolemConst x = Nested.Fun (skolem x) []
 
-skolemise :: Skolem f => Term f -> Term f
-skolemise t = subst sub t
-  where
-    -- XXX export a (Var -> Term) substitution function
-    Just sub =
-      flattenSubst . CUnion $
-        [CSingle (MkVar x) (skolemConst x) | MkVar x <- vars t]
+skolemise :: (Symbolic a, Skolem (ConstantOf a)) => a -> SubstOf a
+skolemise t =
+  Nested.flattenSubst [(x, skolemConst x) | x <- vars t]
 
 class (PrettyTerm f, Minimal f, Skolem f, Arity f, SizedFun f, Ordered f) => Function f
 

@@ -1,8 +1,11 @@
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -funfolding-creation-threshold=1000000 -funfolding-use-threshold=100000 #-}
 module KBC.Term.Nested where
 
+#include "errors.h"
 import qualified KBC.Term as Flat
 import Data.Either
+import Data.Maybe
 
 --------------------------------------------------------------------------------
 -- A helper datatype for building terms.
@@ -18,9 +21,15 @@ data Term f =
 
 -- Turn a compound term into a flatterm.
 flatten :: Term f -> Flat.Term f
-flatten (Flat t) = t
 flatten t =
-  Flat.buildTerm $ do
+  case flattenList [t] of
+    Flat.Cons u Flat.Empty -> u
+
+-- Turn a compound term list into a flatterm list.
+flattenList :: [Term f] -> Flat.TermList f
+flattenList [Flat t] = Flat.singleton t
+flattenList ts =
+  Flat.buildTermList $ do
     let
       -- Nothing: no substitution
       -- Just (Left sub): a substitution
@@ -45,4 +54,12 @@ flatten t =
       toSub (Left sub) = sub
       toSub (Right sub) = Flat.close sub
 
-    loop Nothing t
+    mapM_ (loop Nothing) ts
+
+-- Turn a substitution list into a substitution.
+flattenSubst :: [(Flat.Var, Term f)] -> Flat.Subst f
+flattenSubst sub = fromMaybe err (Flat.matchList pat t)
+  where
+    pat = flattenList (map (Var . fst) sub)
+    t   = flattenList (map snd sub)
+    err = ERROR("variable bound to two different terms")
