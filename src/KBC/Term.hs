@@ -293,17 +293,17 @@ children t =
   case singleton t of
     UnsafeConsSym _ ts -> ts
 
-toList :: TermList f -> [Term f]
-toList Empty = []
-toList (Cons t ts) = t:toList ts
+fromTermList :: TermList f -> [Term f]
+fromTermList Empty = []
+fromTermList (Cons t ts) = t:fromTermList ts
 
 instance Show (Term f) where
   show (Var x) = show x
   show (Fun f Empty) = show f
-  show (Fun f ts) = show f ++ "(" ++ intercalate "," (map show (toList ts)) ++ ")"
+  show (Fun f ts) = show f ++ "(" ++ intercalate "," (map show (fromTermList ts)) ++ ")"
 
 instance Show (TermList f) where
-  show = show . toList
+  show = show . fromTermList
 
 instance Show (Subst f) where
   show subst =
