@@ -54,6 +54,10 @@ foldSubst op e !sub = aux (viewSubst sub)
     aux (ConsSubst Nothing sub) = aux sub
     aux (ConsSubst (Just (x, t)) sub) = op x t (aux sub)
 
+{-# INLINE allSubst #-}
+allSubst :: (Var -> TermList f -> Bool) -> Subst f -> Bool
+allSubst p = foldSubst (\x t y -> p x t && y) True
+
 {-# INLINE forMSubst_ #-}
 forMSubst_ :: Monad m => Subst f -> (Var -> TermList f -> m ()) -> m ()
 forMSubst_ sub f = foldSubst (\x t m -> do { f x t; m }) (return ()) sub
@@ -143,9 +147,7 @@ substCompose !sub1 !sub2 =
 -- Is a substitution idempotent?
 {-# INLINE idempotent #-}
 idempotent :: Subst f -> Bool
-idempotent !sub = foldSubst p True sub
-  where
-    p _ t x = sub `idempotentOn` t && x
+idempotent !sub = allSubst (\_ t -> sub `idempotentOn` t) sub
 
 -- Does a substitution affect a term?
 {-# INLINE idempotentOn #-}

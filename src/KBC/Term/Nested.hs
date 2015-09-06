@@ -19,6 +19,8 @@ data Term f =
   | Var {-# UNPACK #-} !Flat.Var
   | Fun {-# UNPACK #-} !(Flat.Fun f) [Term f]
 
+instance Show f => Show (Term f) where show = show . flatten
+
 -- Turn a compound term into a flatterm.
 flatten :: Term f -> Flat.Term f
 flatten t =

@@ -8,6 +8,7 @@ module KBC.Base(
   module KBC.Term, module KBC.Pretty) where
 
 #include "errors.h"
+import Prelude hiding (lookup)
 import Control.Monad
 import qualified Data.DList as DList
 import Data.DList(DList)
@@ -20,6 +21,7 @@ import KBC.Pretty
 import Text.PrettyPrint.HughesPJClass hiding (empty)
 import Data.Ord
 import Data.Monoid
+import Data.Either
 import {-# SOURCE #-} KBC.Constraints
 
 -- Generalisation of term functionality to things that contain terms.
@@ -53,6 +55,38 @@ termListSymbols fun var = aux
     aux Empty = mempty
     aux (ConsSym (Fun f _) t) = fun f `mappend` aux t
     aux (ConsSym (Var x) t) = var x `mappend` aux t
+
+instance Symbolic (Nested.Term f) where
+  type ConstantOf (Nested.Term f) = f
+  term    = Nested.flatten
+  symbols = nestedTermSymbols
+  subst   = Nested.Subst
+
+{-# INLINE nestedTermSymbols #-}
+nestedTermSymbols :: Monoid w => (Fun f -> w) -> (Var -> w) -> Nested.Term f -> w
+nestedTermSymbols fun var = aux []
+  where
+    aux subs (Nested.Flat t) = go subs (singleton t)
+    aux subs (Nested.Subst sub t) = aux (Left sub:subs) t
+    aux subs (Nested.IterSubst sub t) = aux (Right sub:subs) t
+    aux subs (Nested.Var x) = goVar subs x
+    aux subs (Nested.Fun f ts) = fun f `mappend` mconcat (map (aux subs) ts)
+
+    goVar [] x = var x
+    goVar subs0@(sub0:subs) x =
+      case lookupList sub x of
+        Nothing -> goVar subs x
+        Just t  ->
+          case sub0 of
+            Left{}  -> go subs  t
+            Right{} -> go subs0 t
+      where
+        sub = either id unTriangle sub0
+
+    go _ Empty = mempty
+    go [] t = symbols fun var t
+    go subs (ConsSym (Fun f _) t) = fun f `mappend` go subs t
+    go subs (Cons (Var x) t) = goVar subs x `mappend` go subs t
 
 instance (ConstantOf a ~ ConstantOf b,
           Symbolic a, Symbolic b) => Symbolic (a, b) where
@@ -127,6 +161,6 @@ class Ord f => Ordered f where
     | otherwise = Nothing
 
   lessEq :: Term f -> Term f -> Bool
-  lessIn :: Model f -> Term f -> Term f -> Bool
+  lessIn :: Model f -> Term f -> Term f -> Maybe Strictness
 
 data Strictness = Strict | Nonstrict deriving (Eq, Show)

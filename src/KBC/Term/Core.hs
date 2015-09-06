@@ -16,6 +16,7 @@ import GHC.Types(Int(..))
 import GHC.Prim
 import GHC.ST hiding (liftST)
 import Data.Primitive.ArrayArray
+import Data.Ord
 
 --------------------------------------------------------------------------------
 -- Symbols. A symbol is a single function or variable in a flatterm.
@@ -99,6 +100,9 @@ data Term f =
 instance Eq (Term f) where
   x == y = termlist x == termlist y
 
+instance Ord (Term f) where
+  compare = comparing termlist
+
 -- Pattern synonyms for termlists:
 -- * Empty :: TermList f
 --   Empty is the empty termlist.
@@ -170,6 +174,20 @@ eqSameLength :: TermList f -> TermList f -> Bool
 eqSameLength Empty !_ = True
 eqSameLength (ConsSym s1 t) (UnsafeConsSym s2 u) =
   root s1 == root s2 && eqSameLength t u
+
+instance Ord (TermList f) where
+  {-# INLINE compare #-}
+  compare t u =
+    case compare (lenList t) (lenList u) of
+      EQ -> compareContents t u
+      x  -> x
+
+compareContents :: TermList f -> TermList f -> Ordering
+compareContents Empty !_ = EQ
+compareContents (ConsSym s1 t) (UnsafeConsSym s2 u) =
+  case compare (root s1) (root s2) of
+    EQ -> compareContents t u
+    x  -> x
 
 --------------------------------------------------------------------------------
 -- Building terms imperatively.
