@@ -1,8 +1,8 @@
 {-# LANGUAGE TypeSynonymInstances, TypeFamilies, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, CPP #-}
 module KBC.Base(
   Symbolic(..), TermOf, TermListOf, SubstOf,
-  term, termLists, varsDL, vars, funsDL, funs, canonicalise,
-  Minimal(..), minimalTerm,
+  vars, funs, canonicalise,
+  Minimal(..), minimalTerm, isMinimal,
   Skolem(..), skolemConst, skolemise,
   Arity(..), Sized(..), SizedFun(..), Ordered(..), Strictness(..), Function,
   module KBC.Term, module KBC.Pretty) where
@@ -19,28 +19,16 @@ import qualified KBC.Term.Nested as Nested
 import KBC.Pretty
 import Text.PrettyPrint.HughesPJClass hiding (empty)
 import Data.Ord
+import Data.Monoid
 import {-# SOURCE #-} KBC.Constraints
 
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where
-  {-# MINIMAL (termList|termListsDL), subst #-}
   type ConstantOf a
 
-  termList :: a -> TermListOf a
-  termList t = DList.head (termListsDL t)
-
-  termListsDL :: a -> DList (TermListOf a)
-  termListsDL t = return (termList t)
-
-  subst :: Subst (ConstantOf a) -> a -> a
-
-term :: Symbolic a => a -> TermOf a
-term x = t
-  where
-    Cons t Empty = termList x
-
-termLists :: Symbolic a => a -> [TermListOf a]
-termLists = DList.toList . termListsDL
+  term    :: a -> TermOf a
+  symbols :: Monoid w => (Fun (ConstantOf a) -> w) -> (Var -> w) -> a -> w
+  subst   :: Subst (ConstantOf a) -> a -> a
 
 type TermOf a = Term (ConstantOf a)
 type TermListOf a = TermList (ConstantOf a)
@@ -48,42 +36,48 @@ type SubstOf a = Subst (ConstantOf a)
 
 instance Symbolic (Term f) where
   type ConstantOf (Term f) = f
-  termList = singleton
-  subst    = Term.subst
+  term            = id
+  symbols fun var = symbols fun var . singleton
+  subst           = Term.subst
+
+instance Symbolic (TermList f) where
+  type ConstantOf (TermList f) = f
+  term    = __
+  symbols = termListSymbols
+  subst   = Term.substList
+
+{-# INLINE termListSymbols #-}
+termListSymbols :: Monoid w => (Fun f -> w) -> (Var -> w) -> TermList f -> w
+termListSymbols fun var = aux
+  where
+    aux Empty = mempty
+    aux (ConsSym (Fun f _) t) = fun f `mappend` aux t
+    aux (ConsSym (Var x) t) = var x `mappend` aux t
 
 instance (ConstantOf a ~ ConstantOf b,
           Symbolic a, Symbolic b) => Symbolic (a, b) where
   type ConstantOf (a, b) = ConstantOf a
-  termListsDL (x, y) = termListsDL x `mplus` termListsDL y
+  term (x, _) = term x
+  symbols fun var (x, y) = symbols fun var x `mappend` symbols fun var y
   subst sub (x, y) = (subst sub x, subst sub y)
 
 instance Symbolic a => Symbolic [a] where
   type ConstantOf [a] = ConstantOf a
-  termListsDL ts = msum (map termListsDL ts)
+  term _ = __
+  symbols fun var ts = mconcat (map (symbols fun var) ts)
   subst sub = map (subst sub)
 
+{-# INLINE vars #-}
 vars :: Symbolic a => a -> [Var]
-vars = DList.toList . varsDL
+vars = DList.toList . symbols (const mzero) return
 
-varsDL :: Symbolic a => a -> DList Var
-varsDL t = termListsDL t >>= aux
-  where
-    aux Empty = mzero
-    aux (ConsSym Fun{} t) = aux t
-    aux (Cons (Var x) t) = return x `mplus` aux t
-
+{-# INLINE funs #-}
 funs :: Symbolic a => a -> [Fun (ConstantOf a)]
-funs = DList.toList . funsDL
-
-funsDL :: Symbolic a => a -> DList (Fun (ConstantOf a))
-funsDL t = termListsDL t >>= aux
-  where
-    aux Empty = mzero
-    aux (ConsSym (Fun f _) t) = return f `mplus` aux t
-    aux (Cons Var{} t) = aux t
+funs = DList.toList . symbols return (const mzero)
 
 canonicalise :: Symbolic a => a -> SubstOf a
-canonicalise t = Term.canonicalise (termLists t)
+canonicalise t =
+  Term.canonicalise [Nested.flattenList (map Nested.Var (vars t))]
 
 class Minimal a where
   minimal :: Fun a
