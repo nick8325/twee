@@ -83,13 +83,19 @@ emitSubst sub t = emitSubstList sub (singleton t)
 -- Emit a substitution applied to a term list.
 {-# INLINE emitSubstList #-}
 emitSubstList :: Builder f m => Subst f -> TermList f -> m ()
-emitSubstList !sub = aux
+emitSubstList !sub = emitTransSubstList emitTermList sub
+
+-- Emit a substitution applied to a term list, with some transformation
+-- applied to the result of the substitution.
+{-# INLINE emitTransSubstList #-}
+emitTransSubstList :: Builder f m => (TermList f -> m ()) -> Subst f -> TermList f -> m ()
+emitTransSubstList f !sub = aux
   where
     aux Empty = return ()
     aux (Cons (Var x) ts) = do
       case lookupList sub x of
         Nothing -> emitVar x
-        Just u  -> emitTermList u
+        Just u  -> f u
       aux ts
     aux (Cons (Fun f ts) us) = do
       emitFun f (aux ts)
@@ -114,15 +120,7 @@ emitIterSubst sub t = emitIterSubstList sub (singleton t)
 emitIterSubstList :: Builder f m => Subst f -> TermList f -> m ()
 emitIterSubstList !sub = aux
   where
-    aux Empty = return ()
-    aux (Cons (Var x) ts) = do
-      case lookupList sub x of
-        Nothing -> emitVar x
-        Just u  -> aux u
-      aux ts
-    aux (Cons (Fun f ts) us) = do
-      emitFun f (aux ts)
-      aux us
+    aux !t = emitTransSubstList aux sub t
 
 -- Composition of substitutions.
 substCompose :: Subst f -> Subst f -> Subst f
