@@ -12,7 +12,7 @@ import Data.Either
 data Term f =
     Flat {-# UNPACK #-} !(Flat.Term f)
   | Subst {-# UNPACK #-} !(Flat.Subst f) (Term f)
-  | IterSubst {-# UNPACK #-} !(Flat.Subst f) (Term f)
+  | IterSubst {-# UNPACK #-} !(Flat.TriangleSubst f) (Term f)
   | Var {-# UNPACK #-} !Flat.Var
   | Fun {-# UNPACK #-} !(Flat.Fun f) [Term f]
 
@@ -31,7 +31,7 @@ flatten t =
       loop sub (IterSubst sub' t) = loop (combine sub (Right sub')) t
       loop Nothing (Var x) = Flat.emitVar x
       loop (Just sub) (Var x)
-        | Just t <- Flat.lookupList (either id id sub) x =
+        | Just t <- Flat.lookupList (either id Flat.unTriangle sub) x =
           emitSubst sub t
       loop sub (Fun f ts) = Flat.emitFun f (mapM_ (loop sub) ts)
 

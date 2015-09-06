@@ -102,23 +102,23 @@ emitTransSubstList f !sub = aux
       aux us
 
 {-# INLINE iterSubst #-}
-iterSubst :: Subst f -> Term f -> Term f
+iterSubst :: TriangleSubst f -> Term f -> Term f
 iterSubst sub t =
   case iterSubstList sub (singleton t) of
     Cons u Empty -> u
 
-iterSubstList :: Subst f -> TermList f -> TermList f
+iterSubstList :: TriangleSubst f -> TermList f -> TermList f
 iterSubstList !sub !t = buildTermList (emitIterSubstList sub t)
 
 -- Emit a substitution repeatedly applied to a term.
 {-# INLINE emitIterSubst #-}
-emitIterSubst :: Builder f m => Subst f -> Term f -> m ()
+emitIterSubst :: Builder f m => TriangleSubst f -> Term f -> m ()
 emitIterSubst sub t = emitIterSubstList sub (singleton t)
 
 -- Emit a substitution repeatedly applied to a term list.
 {-# INLINE emitIterSubstList #-}
-emitIterSubstList :: Builder f m => Subst f -> TermList f -> m ()
-emitIterSubstList !sub = aux
+emitIterSubstList :: Builder f m => TriangleSubst f -> TermList f -> m ()
+emitIterSubstList (Triangle !sub) = aux
   where
     aux !t = emitTransSubstList aux sub t
 
@@ -157,10 +157,10 @@ idempotentOn !sub = aux
     aux (Cons (Var x) t) = isNothing (lookupList sub x) && aux t
 
 -- Iterate a substitution to make it idempotent.
-close :: Subst f -> Subst f
-close sub
+close :: TriangleSubst f -> Subst f
+close (Triangle sub)
   | idempotent sub = sub
-  | otherwise = close (substCompose sub sub)
+  | otherwise = close (Triangle (substCompose sub sub))
 
 -- Return a substitution for canonicalising a list of terms.
 canonicalise :: [TermList f] -> Subst f
@@ -224,6 +224,9 @@ matchList !pat !t
 -- Unification.
 --------------------------------------------------------------------------------
 
+newtype TriangleSubst f = Triangle { unTriangle :: Subst f }
+  deriving Show
+
 {-# INLINE unify #-}
 unify :: Term f -> Term f -> Maybe (Subst f)
 unify t u = unifyList (singleton t) (singleton u)
@@ -234,10 +237,10 @@ unifyList t u = do
   return $! close sub
 
 {-# INLINE unifyTri #-}
-unifyTri :: Term f -> Term f -> Maybe (Subst f)
+unifyTri :: Term f -> Term f -> Maybe (TriangleSubst f)
 unifyTri t u = unifyListTri (singleton t) (singleton u)
 
-unifyListTri :: TermList f -> TermList f -> Maybe (Subst f)
+unifyListTri :: TermList f -> TermList f -> Maybe (TriangleSubst f)
 unifyListTri !t !u = runST $ do
   subst <- newMutableSubst (boundList t `max` boundList u)
   let
@@ -278,7 +281,7 @@ unifyListTri !t !u = runST $ do
 
   res <- loop t u
   case res of
-    True  -> fmap Just (unsafeFreezeSubst subst)
+    True  -> fmap (Just . Triangle) (unsafeFreezeSubst subst)
     False -> return Nothing
 
 --------------------------------------------------------------------------------
