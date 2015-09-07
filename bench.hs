@@ -1,6 +1,6 @@
 {-# LANGUAGE PatternGuards #-}
 import Criterion.Main
-import KBC.Term hiding (var, fun)
+import KBC.Term hiding (var, fun, isFun)
 import qualified KBC.Term
 import Test.QuickCheck
 import Data.Int
