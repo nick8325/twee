@@ -248,7 +248,7 @@ complete = do
   when res complete
 
 complete1 :: Function f => State (KBC f) Bool
-complete1 = do
+complete1 = {-# SCC complete1 #-} do
   KBC{..} <- get
   let Label n = nextLabel queue
   when (n >= renormaliseAt) $ do
@@ -273,7 +273,7 @@ complete1 = do
       return False
 
 normaliseCPs :: forall f v. Function f => State (KBC f) ()
-normaliseCPs = do
+normaliseCPs = {-# SCC normaliseCPs #-} do
   s@KBC{..} <- get
   traceM (NormaliseCPs s)
   put s { queue = emptyFrom queue }
@@ -286,19 +286,19 @@ normaliseCPs = do
 consider ::
   Function f =>
   Critical (Equation f) -> State (KBC f) ()
-consider pair = do
+consider pair = {-# SCC consider #-} do
   traceM (Consider pair)
   modify' (\s -> s { processedCPs = processedCPs s + 1 })
   s <- get
   let record reason = modify' (\s -> s { joinStatistics = Map.insertWith (+) reason 1 (joinStatistics s) })
-  case normaliseCP s pair of
+  case {-# SCC normalise1 #-} normaliseCP s pair of
     Left reason -> record reason
     Right (Critical info eq) ->
       forM_ (map canonicalise (orient eq)) $ \(Rule orientation t u0) -> do
         s <- get
         let u = Nested.flatten (result (normaliseSub s t u0))
             r = Rule orientation t u
-        case normaliseCP s (Critical info (t :=: u)) of
+        case {-# SCC normalise2 #-} normaliseCP s (Critical info (t :=: u)) of
           Left reason -> do
             let hard (Trivial Subjoining) = True
                 hard (Subsumed Subjoining) = True
@@ -311,13 +311,13 @@ consider pair = do
               modify (\s -> s { extraRules = Index.insert r (extraRules s) })
           Right eq ->
             case groundJoin s (branches (And [])) eq of
-              Right eqs -> do
+              Right eqs -> {-# SCC "GroundJoined" #-} do
                 record GroundJoined
                 mapM_ consider eqs
                 traceM (ExtraRule r)
                 modify (\s -> s { extraRules = Index.insert r (extraRules s) })
                 newSubRule r
-              Left model -> do
+              Left model -> {-# SCC "NewRule" #-} do
                 traceM (NewRule r)
                 l <- addRule (Modelled model (Critical info r))
                 queueCPsSplit noLabel l (Labelled l r)
@@ -325,7 +325,7 @@ consider pair = do
 
 groundJoin :: Function f =>
   KBC f -> [Branch f] -> Critical (Equation f) -> Either (Model f) [Critical (Equation f)]
-groundJoin s ctx r@(Critical info (t :=: u)) =
+groundJoin s ctx r@(Critical info (t :=: u)) = {-# SCC groundJoin #-}
   case partitionEithers (map (solve (usort (vars t ++ vars u))) ctx) of
     ([], instances) ->
       let rs = [ subst sub r | sub <- instances ] in
@@ -389,7 +389,7 @@ instance PrettyTerm f => Pretty (Simplification f) where
   pPrint (Reorient rule) = text "Reorient" <+> pPrint rule
 
 interreduce :: Function f => Rule f -> State (KBC f) ()
-interreduce new = do
+interreduce new = {-# SCC interreduce #-} do
   rules <- gets (Index.elems . labelledRules)
   forM_ rules $ \(Labelled l old) -> do
     s <- get
@@ -560,7 +560,7 @@ filterCPs =
     pick xs@(x:_) = Labelled (labelOf (cpCP x)) (map (peel . cpCP) xs)
 
 criticalPairs :: Function f => KBC f -> Label -> Label -> Rule f -> [InitialCP f]
-criticalPairs s lower upper rule =
+criticalPairs s lower upper rule = {-# SCC criticalPairs #-}
   criticalPairs1 s (maxSize s) rule (map (fmap (critical . modelled)) rules) ++
   [ cp
   | Labelled l' (Modelled _ (Critical _ old)) <- rules,
@@ -571,7 +571,7 @@ criticalPairs s lower upper rule =
 
 cps :: Rule f -> Rule f -> [(Subst f, Term f, Term f)]
 cps _ (Rule _ (Var _) _) = []
-cps (Rule _ t1 _) (Rule _ t2 u2) =
+cps (Rule _ t1 _) (Rule _ t2 u2) = {-# SCC cps #-}
   -- t1 -> u1 at root
   -- returns substitution and position and t1[u2].
   DList.toList (fmap (\(sub, t0, t) -> (sub, t0, Nested.flatten t)) (go t1 id))
@@ -590,8 +590,8 @@ cps (Rule _ t1 _) (Rule _ t2 u2) =
         go x (\y -> k (Nested.Fun f (map Nested.Flat us ++ [y] ++ map Nested.Flat vs)))
 
 criticalPairs1 :: Function f => KBC f -> Int -> Rule f -> [Labelled (Rule f)] -> [InitialCP f]
-criticalPairs1 s n r1@(Rule or1 t u) idx = do
-  let b = bound t
+criticalPairs1 s n r1@(Rule or1 t u) idx = {-# SCC criticalPairs1 #-} do
+  let b = {-# SCC bound #-} bound t
   Labelled l r <- idx
   let sub = Nested.flattenSubst [(x, Nested.Var (toEnum (fromEnum x+b))) | x <- vars r]
       r2@(Rule or2 t' u') = subst sub r
@@ -605,13 +605,13 @@ criticalPairs1 s n r1@(Rule or1 t u) idx = do
       sz = size top
 
   guard (left /= top && right /= top && left /= right)
-  when (or1 == Unoriented) $ guard (not (lessEq top right))
-  when (or2 == Unoriented) $ guard (not (lessEq top left))
+  when (or1 == Unoriented) $ guard ({-# SCC lessEq #-} not (lessEq top right))
+  when (or2 == Unoriented) $ guard ({-# SCC lessEq #-} not (lessEq top left))
   guard (size top <= n)
   return $
     InitialCP
-      (canonicalise overlap, l)
-      (null (nested (anywhere (rewrite reduces (rules s))) inner))
+      ({-# SCC "label" #-} (canonicalise overlap, l))
+      ({-# SCC condition #-} null (nested (anywhere (rewrite simplifies (rules s))) inner))
       (Labelled l (Critical (CritInfo top osz) (left :=: right)))
 
 queueCP ::
@@ -626,7 +626,7 @@ queueCP l1 l2 eq = do
 queueCPs ::
   (Function f, Ord a) =>
   Label -> Label -> (Label -> a) -> Labelled (Rule f) -> State (KBC f) ()
-queueCPs lower upper f rule = do
+queueCPs lower upper f rule = {-# SCC queueCPs #-} do
   s <- get
   let cps = toCPs s lower upper rule
       cpss = partitionBy (f . l2) cps
@@ -649,7 +649,7 @@ queueCPsSplit l u rule = queueCPs l u f rule
 toCPs ::
   Function f =>
   KBC f -> Label -> Label -> Labelled (Rule f) -> [CP f]
-toCPs s lower upper (Labelled l rule) =
+toCPs s lower upper (Labelled l rule) = {-# SCC toCPs #-}
   usortBy (comparing (critical . cp)) . map minimum . filter (not . null) $
     [ catMaybes (map (toCP s l l') eqns) | Labelled l' eqns <- cps0 ]
   where
@@ -658,7 +658,7 @@ toCPs s lower upper (Labelled l rule) =
 toCP ::
   Function f =>
   KBC f -> Label -> Label -> Critical (Equation f) -> Maybe (CP f)
-toCP s l1 l2 cp = fmap toCP' (norm cp)
+toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
   where
     norm (Critical info (t :=: u)) = do
       guard (t /= u)

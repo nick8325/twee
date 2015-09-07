@@ -76,7 +76,7 @@ subst sub t =
     Cons u Empty -> u
 
 substList :: Subst f -> TermList f -> TermList f
-substList !sub !t = buildTermList (2*lenList t) (emitSubstList sub t)
+substList !sub !t = {-# SCC substList #-} buildTermList (2*lenList t) (emitSubstList sub t)
 
 -- Emit a substitution applied to a term.
 {-# INLINE emitSubst #-}
