@@ -5,7 +5,7 @@ module KBC.Index where
 #include "errors.h"
 import qualified Prelude
 import Prelude hiding (filter, map)
-import KBC.Base hiding (var, fun, empty, vars)
+import KBC.Base hiding (var, fun, empty, vars, size)
 import qualified KBC.Term as Term
 import Control.Monad.ST.Strict
 import GHC.ST
@@ -17,6 +17,7 @@ import Control.Monad
 
 data Index a =
   Index {
+    size :: {-# UNPACK #-} !Int,
     vars :: {-# UNPACK #-} !Int,
     here :: [a],
     fun  :: {-# UNPACK #-} !(Array (Index a)),
@@ -28,6 +29,9 @@ updateHere f idx = idx { here = f (here idx) }
 
 updateVars :: Int -> Index a -> Index a
 updateVars n idx = idx { vars = vars idx `max` n }
+
+updateSize :: Int -> Index a -> Index a
+updateSize n idx = idx { size = size idx `min` n }
 
 updateFun ::
   Int -> (Index a -> Index a) -> Index a -> Index a
@@ -46,7 +50,7 @@ updateVar x f idx
     idx' = f (fromMaybe KBC.Index.empty (var idx ! x))
 
 empty :: Index a
-empty = Index 0 [] newArray newArray
+empty = Index maxBound 0 [] newArray newArray
 
 null :: Index a -> Bool
 null idx = Prelude.null (here idx) && Array.null (fun idx) && Array.null (var idx)
@@ -59,9 +63,9 @@ singleton x = insert x empty
 insert :: Symbolic a => a -> Index a -> Index a
 insert x0 !idx = aux t idx
   where
-    aux Empty = updateVars n . updateHere (x:)
-    aux (ConsSym (Fun (MkFun f) _) t) = updateVars n . updateFun f (aux t)
-    aux (ConsSym (Var (MkVar x)) t) = updateVars n . updateVar x (aux t)
+    aux Empty = updateSize 0 . updateVars n . updateHere (x:)
+    aux t0@(ConsSym (Fun (MkFun f) _) t) = updateSize (lenList t0) . updateVars n . updateFun f (aux t)
+    aux t0@(ConsSym (Var (MkVar x)) t) = updateSize (lenList t0) . updateVars n . updateVar x (aux t)
     n = boundList t
     x = canonicalise x0
     t = Term.singleton (term x)
@@ -104,6 +108,7 @@ freeze !idx = {-# SCC freeze #-} Frozen $ \(!t) -> runST $ do
       | otherwise = do
         sub <- freezeSubst msub
         escape (Match (here idx) sub:) rest
+    loop t idx rest | lenList t < size idx = rest
     loop t@(ConsSym (Fun f _) ts) idx rest =
       tryFun f ts (fun idx) (tryVar u us (var idx) rest)
       where
