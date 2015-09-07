@@ -427,6 +427,21 @@ unsafeFreezeSubst MutableSubst{..} = do
   subst <- unsafeFreezeByteArray msubst
   return (Subst terms mvars subst)
 
+-- Copy a mutable substitution.
+{-# INLINE copySubst #-}
+copySubst :: MutableSubst s f -> ST s (MutableSubst s f)
+copySubst MutableSubst{..} = do
+  terms <- newArrayArray mvars
+  subst <- newByteArray (mvars * sizeOf (fromSlice __))
+  copyMutableByteArray subst 0 msubst 0 (mvars * sizeOf (fromSlice __))
+  copyMutableArrayArray terms 0 mterms 0 mvars
+  return (MutableSubst terms mvars subst)
+
+-- Freeze a mutable substitution, making a copy.
+{-# INLINE freezeSubst #-}
+freezeSubst :: MutableSubst s f -> ST s (Subst f)
+freezeSubst msub = copySubst msub >>= unsafeFreezeSubst
+
 -- Look up a variable in a mutable substitution.
 {-# INLINE mutableLookupList #-}
 mutableLookupList :: MutableSubst s f -> Var -> ST s (Maybe (TermList f))

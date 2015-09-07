@@ -44,3 +44,8 @@ writeByteArrayArray (MutableArrayArray marray#) (I# n#) (ByteArray byteArray#) =
 writeMutableArrayArrayArray :: PrimMonad m => MutableArrayArray (PrimState m) -> Int -> MutableArrayArray (PrimState m) -> m ()
 writeMutableArrayArrayArray (MutableArrayArray marray#) (I# n#) (MutableArrayArray marray'#) =
   primitive_ (writeMutableArrayArrayArray# marray# n# marray'#)
+
+{-# INLINE copyMutableArrayArray #-}
+copyMutableArrayArray :: PrimMonad m => MutableArrayArray (PrimState m) -> Int -> MutableArrayArray (PrimState m) -> Int -> Int -> m ()
+copyMutableArrayArray (MutableArrayArray dest#) (I# n#) (MutableArrayArray src#) (I# m#) (I# x#) =
+  primitive_ (copyMutableArrayArray# src# m# dest# n# x#)

@@ -99,40 +99,40 @@ freeze :: Index a -> Frozen a
 freeze !idx = Frozen $ \(!t) -> runST $ do
   msub <- newMutableSubst (vars idx)
   let
-    loop !_ !_ | False = __
-    loop Empty idx
-      | Prelude.null (here idx) = return []
+    loop !_ !_ _ | False = __
+    loop Empty idx rest
+      | Prelude.null (here idx) = rest
       | otherwise = do
-        sub <- unsafeFreezeSubst msub
-        return [Match (here idx) sub]
-    loop t@(ConsSym (Fun f _) ts) idx =
-      tryFun f ts (fun idx) (tryVar u us (var idx))
+        sub <- freezeSubst msub
+        escape (Match (here idx) sub:) rest
+    loop t@(ConsSym (Fun f _) ts) idx rest =
+      tryFun f ts (fun idx) (tryVar u us (var idx) rest)
       where
         Cons u us = t
-    loop (Cons t ts) idx = tryVar t ts (var idx)
+    loop (Cons t ts) idx rest = tryVar t ts (var idx) rest
 
     tryFun (MkFun f) !t !fun rest =
-      tryIn (fun ! f) rest (loop t)
-    tryVar !t !ts !var =
+      tryIn (fun ! f) rest (\idx -> loop t idx rest)
+    tryVar !t !ts !var rest =
       aux 0
       where
         aux n
-          | n >= arraySize var = return []
+          | n >= arraySize var = rest
           | otherwise =
             tryIn (var ! n) (aux (n+1)) $ \idx -> do
-              extend msub (MkVar n) t
-              ms <- loop ts idx
-              retract msub (MkVar n)
-              return ms
+              mu <- mutableLookupList msub (MkVar n)
+              case mu of
+                Nothing -> do
+                  extend msub (MkVar n) t
+                  loop ts idx (retract msub (MkVar n) >> aux (n+1))
+                Just u
+                  | Term.singleton t == u -> loop ts idx (aux (n+1))
+                  | otherwise -> (aux (n+1))
 
     tryIn Nothing rest _ = rest
-    tryIn (Just idx) rest f = do
-      ms <- f idx
-      case ms of
-        [] -> rest
-        m:ms -> escape ((m:) . (ms ++)) rest
+    tryIn (Just idx) rest f = f idx
 
-  loop t idx
+  loop t idx (return [])
 
 elems :: Index a -> [a]
 elems idx =
