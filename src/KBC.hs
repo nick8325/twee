@@ -16,8 +16,6 @@ import KBC.Utils
 import Control.Monad
 import Data.Maybe
 import Data.Ord
-import qualified Data.Rewriting.Rule as T
-import qualified Data.Rewriting.CriticalPair as CP
 import qualified Debug.Trace
 import Control.Monad.Trans.State.Strict
 import Data.List
@@ -28,6 +26,7 @@ import Data.Set(Set)
 import Data.Either
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
+import qualified Data.DList as DList
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
@@ -222,7 +221,8 @@ normaliseCP s cp@(Critical info _) =
     flipCP :: Symbolic a => a -> a
     flipCP t = subst sub t
       where
-        sub = Nested.flattenSubst [(MkVar x, Nested.Var (MkVar (negate x))) | MkVar x <- vars t]
+        n = maximum (0:map fromEnum (vars t))
+        sub = Nested.flattenSubst [(MkVar x, Nested.Var (MkVar (n - x))) | MkVar x <- vars t]
 
     -- XXX shouldn't this also check subsumption?
     setJoin (Critical info (t :=: u))
@@ -569,34 +569,51 @@ criticalPairs s lower upper rule =
     rules = filter (p . labelOf) (Index.elems (labelledRules s))
     p l = lower <= l && l <= upper
 
-criticalPairs1 :: Function f => KBC f -> Int -> Rule f -> [Labelled (Rule f)] -> [InitialCP f]
-criticalPairs1 s n (Rule or1 t u) idx = undefined
-{-
-  Labelled l (Rule or2 t' u') <- idx
-  let r1 = T.Rule t u
-      r2 = T.Rule t' u'
-  cp <- CP.cps [r2] [r1]
-  let f (Left x)  = withNumber (number x*2) x
-      f (Right x) = withNumber (number x*2+1) x
-      left = rename f (CP.left cp)
-      right = rename f (CP.right cp)
-      top = rename f (CP.top cp)
+cps :: Rule f -> Rule f -> [(Subst f, Term f, Term f)]
+cps _ (Rule _ (Var _) _) = []
+cps (Rule _ t1 _) (Rule _ t2 u2) =
+  -- t1 -> u1 at root
+  -- returns substitution and position and t1[u2].
+  DList.toList (fmap (\(sub, t0, t) -> (sub, t0, Nested.flatten t)) (go t1 id))
+    where
+      go (Var _) _ = mzero
+      go t@(Fun f ts) k = here t k `mplus` there f (fromTermList ts) k
 
-      inner = fromMaybe __ (subtermAt top (CP.leftPos cp))
-      overlap = fromMaybe __ (subtermAt t (CP.leftPos cp))
+      here t k =
+        case unify t t2 of
+          Nothing  -> mzero
+          Just sub -> return (sub, t, k (Nested.Flat u2))
+
+      there f ts k = do
+        n <- DList.fromList [0..length ts-1]
+        let (us, x:vs) = splitAt n ts
+        go x (\y -> k (Nested.Fun f (map Nested.Flat us ++ [y] ++ map Nested.Flat vs)))
+
+criticalPairs1 :: Function f => KBC f -> Int -> Rule f -> [Labelled (Rule f)] -> [InitialCP f]
+criticalPairs1 s n r1@(Rule or1 t u) idx = do
+  let b = bound t
+  Labelled l r <- idx
+  let sub = Nested.flattenSubst [(x, Nested.Var (toEnum (fromEnum x+b))) | x <- vars r]
+      r2@(Rule or2 t' u') = subst sub r
+  (sub, overlap, right0) <- cps r1 r2
+  let left = subst sub u
+      right = subst sub right0
+      top = subst sub t
+
+      inner = subst sub overlap
       osz = size overlap + (size u - size t) + (size u' - size t')
       sz = size top
 
-  guard (left /= top && right /= top)
+  guard (left /= top && right /= top && left /= right)
   when (or1 == Unoriented) $ guard (not (lessEq top right))
   when (or2 == Unoriented) $ guard (not (lessEq top left))
   guard (size top <= n)
   return $
     InitialCP
-      (canonicalise (fromMaybe __ (subtermAt t (CP.leftPos cp))), l)
+      (canonicalise overlap, l)
       (null (nested (anywhere (rewrite reduces (rules s))) inner))
       (Labelled l (Critical (CritInfo top osz) (left :=: right)))
--}
+
 queueCP ::
   Function f =>
   Label -> Label -> Critical (Equation f) -> State (KBC f) ()

@@ -247,17 +247,23 @@ unifyListTri !t !u = runST $ do
   subst <- newMutableSubst (boundList t `max` boundList u)
   let
     loop !_ !_ | False = __
-    loop Empty _ = return True
+    loop Empty t = return True
     loop _ Empty = __
     loop (ConsSym (Fun f _) t) (ConsSym (Fun g _) u)
       | f == g = loop t u
-    loop (Cons (Var x) t) (Cons u v) = do
-      var x u
-      loop t v
-    loop (Cons t u) (Cons (Var x) v) = do
-      var x t
-      loop u v
+    loop (Cons (Var x) t) (Cons u v) =
+      both (var x u) (loop t v)
+    loop (Cons t u) (Cons (Var x) v) =
+      both (var x t) (loop u v)
     loop _ _ = return False
+
+    both mx my = do
+      x <- mx
+      if x then my else return False
+
+    either mx my = do
+      x <- mx
+      if x then return True else my
 
     var x t = do
       res <- mutableLookupList subst x
@@ -275,11 +281,21 @@ unifyListTri !t !u = runST $ do
             return ()
           return True
 
-    var1 x t
-      | occurs x t = return False
-      | otherwise = do
-          extend subst x t
-          return True
+    var1 x t = do
+      res <- occurs x (singleton t)
+      if res then return False else do
+        extend subst x t
+        return True
+
+    occurs !x Empty = return False
+    occurs x (ConsSym Fun{} t) = occurs x t
+    occurs x (ConsSym (Var y) t)
+      | x == y = return True
+      | otherwise = either (occurs x t) $ do
+          mu <- mutableLookupList subst y
+          case mu of
+            Nothing -> return False
+            Just u  -> occurs x u
 
   res <- loop t u
   case res of

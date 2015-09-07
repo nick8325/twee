@@ -37,17 +37,20 @@ flattenList ts =
       -- Just (Left sub): a substitution
       -- Just (Right sub): a triangle substitution
       loop Nothing (Flat t) = Flat.emitTerm t
-      loop (Just sub) (Flat t) = emitSubst sub (Flat.singleton t)
+      loop (Just (Left sub)) (Flat t) = Flat.emitSubst sub t
+      loop (Just (Right sub)) (Flat t) = Flat.emitIterSubst sub t
       loop sub (Subst sub' t) = loop (combine sub (Left sub')) t
       loop sub (IterSubst sub' t) = loop (combine sub (Right sub')) t
       loop Nothing (Var x) = Flat.emitVar x
-      loop (Just sub) (Var x)
-        | Just t <- Flat.lookupList (either id Flat.unTriangle sub) x =
-          emitSubst sub t
+      loop (Just (Left sub)) (Var x) =
+        case Flat.lookupList sub x of
+          Nothing -> Flat.emitVar x
+          Just t  -> Flat.emitTermList t
+      loop (Just (Right sub)) (Var x) =
+        case Flat.lookupList (Flat.unTriangle sub) x of
+          Nothing -> Flat.emitVar x
+          Just t  -> Flat.emitIterSubstList sub t
       loop sub (Fun f ts) = Flat.emitFun f (mapM_ (loop sub) ts)
-
-      emitSubst (Left sub) t = Flat.emitSubstList sub t
-      emitSubst (Right sub) t = Flat.emitIterSubstList sub t
 
       combine Nothing sub = Just sub
       combine (Just sub) sub' =
