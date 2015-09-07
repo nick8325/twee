@@ -299,19 +299,18 @@ emitTermList (TermList lo hi array) = checked (hi-lo) $ do
 -- Substitutions.
 --------------------------------------------------------------------------------
 
--- Substitutions are optimised for matching, where all of the bindings
--- are subterms of a single term (the one we are matching against).
--- A substitution consists of:
--- * A term, the backing term. All of the bindings are subterms of this.
--- * An array, mapping variable numbers to slices of the backing term
---   (pairs of positions).
+-- A substitution is an array of terms, where term number i is the
+-- term bound to variable i, or the empty termlist if the variable
+-- is unbound. For efficiency we unpack this array into two components:
+-- * An ArrayArray containing the ByteArray for each term
+-- * A ByteArray containing the (lo, hi) indices for each term
 data Subst f =
   Subst {
-    -- The backing terms
-    terms :: {-# UNPACK #-} !ArrayArray,
-    -- The number of variables in the bindings array.
+    -- The number of variables in the term array.
     vars  :: {-# UNPACK #-} !Int,
-    -- The bindings: an unboxed array of (Int, Int) pairs.
+    -- The ByteArray for each term in the substitution.
+    terms :: {-# UNPACK #-} !ArrayArray,
+    -- The (lo, hi) pair for each term in the substitution.
     subst :: {-# UNPACK #-} !ByteArray }
 
 -- The number of variables in the domain of a substitution.
@@ -342,8 +341,8 @@ lookupList Subst{..} (MkVar x)
 -- Mutable substitutions, used for building substitutions.
 data MutableSubst s f =
   MutableSubst {
-    mterms :: {-# UNPACK #-} !(MutableArrayArray s),
     mvars  :: {-# UNPACK #-} !Int,
+    mterms :: {-# UNPACK #-} !(MutableArrayArray s),
     msubst :: {-# UNPACK #-} !(MutableByteArray s) }
 
 -- Create an empty substitution, given the backing term
@@ -354,7 +353,7 @@ newMutableSubst vars = do
   terms <- newArrayArray vars
   subst <- newByteArray (vars * sizeOf (fromSlice __))
   setByteArray subst 0 vars (0 `asTypeOf` fromSlice __)
-  return (MutableSubst terms vars subst)
+  return (MutableSubst vars terms subst)
 
 -- Freeze a mutable substitution.
 {-# INLINE unsafeFreezeSubst #-}
@@ -362,7 +361,7 @@ unsafeFreezeSubst :: MutableSubst s f -> ST s (Subst f)
 unsafeFreezeSubst MutableSubst{..} = do
   terms <- unsafeFreezeArrayArray mterms
   subst <- unsafeFreezeByteArray msubst
-  return (Subst terms mvars subst)
+  return (Subst mvars terms subst)
 
 -- Copy a mutable substitution.
 {-# INLINE copySubst #-}
@@ -372,7 +371,7 @@ copySubst MutableSubst{..} = do
   subst <- newByteArray (mvars * sizeOf (fromSlice __))
   copyMutableByteArray subst 0 msubst 0 (mvars * sizeOf (fromSlice __))
   copyMutableArrayArray terms 0 mterms 0 mvars
-  return (MutableSubst terms mvars subst)
+  return (MutableSubst mvars terms subst)
 
 -- Freeze a mutable substitution, making a copy.
 {-# INLINE freezeSubst #-}

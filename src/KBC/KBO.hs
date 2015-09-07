@@ -11,7 +11,7 @@ import Data.Maybe
 import Control.Monad
 
 lessEq :: Function f => Term f -> Term f -> Bool
-lessEq (Fun f Empty) _    | f == minimal = True
+lessEq (Fun f Empty) _ | f == minimal = True
 lessEq (Var x) (Var y) | x == y = True
 lessEq _ (Var _) = False
 lessEq (Var x) t = x `elem` vars t
