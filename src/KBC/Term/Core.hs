@@ -76,20 +76,6 @@ data TermList f =
 lenList :: TermList f -> Int
 lenList (TermList low high _) = high - low
 
-{-# INLINE sharedList #-}
--- Do two termlists share the same array?
--- Sometimes useful when generating substitutions (see below).
-sharedList :: TermList f -> TermList f -> Bool
-sharedList t u = sameArray (array t) (array u)
-
-{-# INLINE sameArray #-}
-sameArray :: ByteArray -> ByteArray -> Bool
-sameArray (ByteArray array1#) (ByteArray array2#) =
-  tagToEnum# (reallyUnsafePtrEquality# addr1# addr2#)
-  where
-    addr1# = unsafeCoerce# array1#
-    addr2# = unsafeCoerce# array2#
-
 -- A term is a special case of a termlist.
 -- We store it as the termlist together with the root symbol.
 data Term f =
