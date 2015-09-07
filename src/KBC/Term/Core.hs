@@ -196,38 +196,19 @@ compareContents (ConsSym s1 t) (UnsafeConsSym s2 u) =
 -- Building terms imperatively.
 --------------------------------------------------------------------------------
 
-class Monad m => Builder f m | m -> f where
-  -- Emit the root of a term.
-  -- The second argument is called to emit the children.
-  emitRoot :: Term f -> m () -> m ()
-  -- Emit a function symbol.
-  -- The second argument is called to emit the function's arguments.
-  emitFun :: Fun f -> m () -> m ()
-  -- Emit a variable.
-  emitVar :: Var -> m ()
-  -- Emit a whole termlist.
-  emitTermList :: TermList f -> m ()
-
 -- A monad for building terms.
 newtype BuildM s f a =
   BuildM {
     unBuildM ::
-      -- Takes: the term array, and current position in the term.
-      -- Returns the final position.
-      MutableByteArray# s -> Int# -> State# s -> (# State# s, Int#, a #) }
-
-{-# INLINE runBuildM #-}
-runBuildM :: BuildM s f a -> MutableByteArray s -> ST s Int
-runBuildM (BuildM m) (MutableByteArray array) =
-  ST $ \s ->
-    case m array 0# s of
-      (# s, n#, _ #) -> (# s, I# n# #)
+      -- Takes: the term array and size, and current position in the term.
+      -- Returns the final position, which may be out of bounds.
+      State# s -> MutableByteArray# s -> Int# -> Int# -> (# State# s, Int#, a #) }
 
 instance Functor (BuildM s f) where
   {-# INLINE fmap #-}
   fmap f (BuildM m) =
-    BuildM $ \array i s ->
-      case m array i s of
+    BuildM $ \s array n i ->
+      case m s array n i of
         (# s, j, x #) -> (# s, j, f x #)
 
 instance Applicative (BuildM s f) where
@@ -236,41 +217,64 @@ instance Applicative (BuildM s f) where
 
 instance Monad (BuildM s f) where
   {-# INLINE return #-}
-  return x = BuildM (\_ i s -> (# s, i, x #))
+  return x = BuildM (\s _ _ i -> (# s, i, x #))
   {-# INLINE (>>=) #-}
   BuildM m >>= f =
-    BuildM $ \array i s ->
-      case m array i s of
-        (# s, j, x #) -> unBuildM (f x) array j s
+    BuildM $ \s array n i ->
+      case m s array n i of
+        (# s, j, x #) -> unBuildM (f x) s array n j
 
-instance Builder f (BuildM s f) where
-  emitRoot     = emitRootBuildM
-  emitFun      = emitFunBuildM
-  emitVar      = emitVarBuildM
-  emitTermList = emitTermListBuildM
+{-# INLINE buildTermList #-}
+buildTermList :: Int -> (forall s. BuildM s f ()) -> TermList f
+buildTermList n0 builder = runST $ do
+  let
+    BuildM m = builder
+    loop n@(I# n#) = do
+      MutableByteArray marray# <-
+        newByteArray (n * sizeOf (fromSymbol __))
+      n' <-
+        ST $ \s ->
+          case m s marray# n# 0# of
+            (# s, n#, _ #) -> (# s, I# n# #)
+      if n' <= n then do
+        !array <- unsafeFreezeByteArray (MutableByteArray marray#)
+        return (TermList 0 n' array)
+       else loop (n'*2)
+  loop n0
 
 {-# INLINE getArray #-}
 getArray :: BuildM s f (MutableByteArray s)
-getArray = BuildM $ \array n s -> (# s, n, MutableByteArray array #)
+getArray = BuildM $ \s array _ i -> (# s, i, MutableByteArray array #)
+
+{-# INLINE getSize #-}
+getSize :: BuildM s f Int
+getSize = BuildM $ \s _ n i -> (# s, i, I# n #)
 
 {-# INLINE getIndex #-}
 getIndex :: BuildM s f Int
-getIndex = BuildM $ \_ n s -> (# s, n, I# n #)
+getIndex = BuildM $ \s _ _ i -> (# s, i, I# i #)
 
 {-# INLINE putIndex #-}
 putIndex :: Int -> BuildM s f ()
-putIndex (I# n) = BuildM $ \_ _ s -> (# s, n, () #)
+putIndex (I# i) = BuildM $ \s _ _ _ -> (# s, i, () #)
 
 {-# INLINE liftST #-}
 liftST :: ST s a -> BuildM s f a
 liftST (ST m) =
-  BuildM $ \_ n s ->
+  BuildM $ \s _ _ i ->
   case m s of
-    (# s, x #) -> (# s, n, x #)
+    (# s, x #) -> (# s, i, x #)
+
+{-# INLINE checked #-}
+checked :: Int -> BuildM s f () -> BuildM s f ()
+checked j m = do
+  n <- getSize
+  i <- getIndex
+  if i + j <= n then m else putIndex (i + j)
 
 {-# INLINE emitSymbolBuildM #-}
 emitSymbolBuildM :: Symbol -> BuildM s f () -> BuildM s f ()
-emitSymbolBuildM x inner = do
+emitSymbolBuildM x inner = checked 1 $ do
   array <- getArray
   n <- getIndex
   putIndex (n+1)
@@ -278,85 +282,32 @@ emitSymbolBuildM x inner = do
   m <- getIndex
   liftST $ writeByteArray array n (fromSymbol x { size = m - n })
 
-{-# INLINE emitRootBuildM #-}
-emitRootBuildM :: Term f -> BuildM s f () -> BuildM s f ()
-emitRootBuildM t inner = emitSymbolBuildM (toSymbol (root t)) inner
+-- Emit the root of a term.
+-- The second argument is called to emit the children.
+{-# INLINE emitRoot #-}
+emitRoot :: Term f -> BuildM s f () -> BuildM s f ()
+emitRoot t inner = emitSymbolBuildM (toSymbol (root t)) inner
 
-{-# INLINE emitFunBuildM #-}
-emitFunBuildM :: Fun f -> BuildM s f () -> BuildM s f ()
-emitFunBuildM (MkFun f) inner = emitSymbolBuildM (Symbol True f 0) inner
+-- Emit a function symbol.
+-- The second argument is called to emit the function's arguments.
+{-# INLINE emitFun #-}
+emitFun :: Fun f -> BuildM s f () -> BuildM s f ()
+emitFun (MkFun f) inner = emitSymbolBuildM (Symbol True f 0) inner
 
-{-# INLINE emitVarBuildM #-}
-emitVarBuildM :: Var -> BuildM s f ()
-emitVarBuildM (MkVar x) = emitSymbolBuildM (Symbol False x 1) (return ())
+-- Emit a variable.
+{-# INLINE emitVar #-}
+emitVar :: Var -> BuildM s f ()
+emitVar (MkVar x) = emitSymbolBuildM (Symbol False x 1) (return ())
 
-{-# INLINE emitTermListBuildM #-}
-emitTermListBuildM :: TermList f -> BuildM s f ()
-emitTermListBuildM (TermList lo hi array) = do
+-- Emit a whole termlist.
+{-# INLINE emitTermList #-}
+emitTermList :: TermList f -> BuildM s f ()
+emitTermList (TermList lo hi array) = checked (hi-lo) $ do
   marray <- getArray
   n <- getIndex
   let k = sizeOf (fromSymbol __)
   liftST $ copyByteArray marray (n*k) array (lo*k) ((hi-lo)*k)
   putIndex (n + hi-lo)
-
-newtype CountM f a =
-  CountM {
-    unCountM :: Int# -> (# Int#, a #) }
-
-{-# INLINE runCountM #-}
-runCountM :: CountM f a -> Int
-runCountM (CountM m) =
-  case m 0# of
-    (# n#, _ #) -> I# n#
-
-instance Functor (CountM f) where
-  {-# INLINE fmap #-}
-  fmap f (CountM m) =
-    CountM $ \i ->
-      case m i of
-        (# j, x #) -> (# j, f x #)
-
-instance Applicative (CountM f) where
-  pure  = return
-  (<*>) = ap
-
-instance Monad (CountM f) where
-  {-# INLINE return #-}
-  return x = CountM $ \i -> (# i, x #)
-  {-# INLINE (>>=) #-}
-  CountM m >>= f =
-    CountM $ \i ->
-      case m i of
-        (# j, x #) -> unCountM (f x) j
-
-instance Builder f (CountM f) where
-  {-# INLINE emitRoot #-}
-  emitRoot _ inner = do
-    advance 1
-    inner
-  {-# INLINE emitFun #-}
-  emitFun _ inner = do
-    advance 1
-    inner
-  {-# INLINE emitVar #-}
-  emitVar _ = advance 1
-  {-# INLINE emitTermList #-}
-  emitTermList t = advance (lenList t)
-
-{-# INLINE advance #-}
-advance :: Int -> CountM f ()
-advance (I# n) = CountM $ \i -> (# i +# n, () #)
-
--- Construct a term, given a builder for it.
-{-# INLINE buildTermList #-}
-buildTermList :: (forall m. Builder f m => m ()) -> TermList f
-buildTermList m =
-  runST $ do
-    let !size = runCountM m
-    !marray <- newByteArray (size * sizeOf (fromSymbol __))
-    !n <- runBuildM m marray
-    !array <- unsafeFreezeByteArray marray
-    return (TermList 0 n array)
 
 --------------------------------------------------------------------------------
 -- Substitutions.

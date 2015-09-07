@@ -1,6 +1,5 @@
 {-# LANGUAGE BangPatterns, CPP, UnboxedTuples, TypeFamilies #-}
 -- Term indexing (perfect discrimination trees).
-{-# OPTIONS_GHC -funfolding-creation-threshold=1000000 -funfolding-use-threshold=100000 #-}
 module KBC.Index where
 
 #include "errors.h"

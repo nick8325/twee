@@ -1,5 +1,4 @@
 {-# LANGUAGE CPP #-}
-{-# OPTIONS_GHC -funfolding-creation-threshold=1000000 -funfolding-use-threshold=100000 #-}
 module KBC.Term.Nested where
 
 #include "errors.h"
@@ -31,7 +30,7 @@ flatten t =
 flattenList :: [Term f] -> Flat.TermList f
 flattenList [Flat t] = Flat.singleton t
 flattenList ts =
-  Flat.buildTermList $ do
+  Flat.buildTermList 32 $ do
     let
       -- Nothing: no substitution
       -- Just (Left sub): a substitution
