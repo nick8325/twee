@@ -133,6 +133,7 @@ instance Symbolic a => Symbolic (Modelled a) where
 
 rules :: Function f => KBC f -> Frozen (Rule f)
 rules k =
+  {-# SCC rules #-}
   Index.map (critical . modelled . peel) (Index.freeze (labelledRules k))
   `Index.union` Index.freeze (extraRules k)
 

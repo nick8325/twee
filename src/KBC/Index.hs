@@ -95,7 +95,7 @@ matches :: TermOf a -> Frozen a -> [Match a]
 matches t idx = matchesList (Term.singleton t) idx
 
 freeze :: Index a -> Frozen a
-freeze !idx = Frozen $ \(!t) -> runST $ do
+freeze !idx = {-# SCC freeze #-} Frozen $ \(!t) -> runST $ do
   msub <- newMutableSubst (vars idx)
   let
     loop !_ !_ _ | False = __

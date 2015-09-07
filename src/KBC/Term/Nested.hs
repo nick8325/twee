@@ -30,6 +30,7 @@ flatten t =
 flattenList :: [Term f] -> Flat.TermList f
 flattenList [Flat t] = Flat.singleton t
 flattenList ts =
+  {-# SCC flattenList #-}
   Flat.buildTermList 32 $ do
     let
       -- Nothing: no substitution

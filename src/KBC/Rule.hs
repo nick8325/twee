@@ -207,6 +207,7 @@ parallel f rs =
 
 normaliseWith :: PrettyTerm f => Strategy f -> Term f -> Reduction f
 normaliseWith strat t =
+  {-# SCC normaliseWith #-}
   case strat t of
     p:_ -> continue p
     [] ->
