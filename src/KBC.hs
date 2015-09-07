@@ -660,7 +660,7 @@ toCP ::
   KBC f -> Label -> Label -> Critical (Equation f) -> Maybe (CP f)
 toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
   where
-    norm (Critical info (t :=: u)) = do
+    norm (Critical info (t :=: u)) = {-# SCC norm #-} do
       guard (t /= u)
       let t' = Nested.flatten (result (normaliseQuickly s t))
           u' = Nested.flatten (result (normaliseQuickly s u))
@@ -705,7 +705,7 @@ toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
               | otherwise = Nothing
         focus _ _ = Nothing
 
-    toCP' (Critical info (t :=: u)) =
+    toCP' (Critical info (t :=: u)) = {-# SCC toCP' #-}
       CP (CPInfo (weight t' u') (-(overlap info)) l2 l1) (Critical info' (t' :=: u')) l1 l2
       where
         Critical info' (t' :=: u') = canonicalise (Critical info (order (t :=: u)))
