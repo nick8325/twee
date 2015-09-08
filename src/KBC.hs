@@ -382,17 +382,10 @@ newSubRule r@(Rule _ t u) = do
       | isFun v && not (lessEq v u) && usort (vars u) `isSubsequenceOf` usort (vars v) = Index.insert (v, r) idx
       | otherwise = idx
 
-easy :: Rule f -> Bool
-easy rule =
-  case orientation rule of
-    Oriented         -> True
-    WeaklyOriented _ -> True
-    _                -> False
-
 addRule :: Function f => Modelled (Critical (Rule f)) -> State (KBC f) Label
 addRule rule = do
   l <- newLabelM
-  if easy (critical (modelled rule)) then
+  if simplifies (critical (modelled rule)) then
     modify (\s -> s { labelledEasyRules = Index.insert (Labelled l rule) (labelledEasyRules s) })
   else
     modify (\s -> s { labelledHardRules = Index.insert (Labelled l rule) (labelledHardRules s) })
@@ -401,7 +394,7 @@ addRule rule = do
 
 addExtraRule :: Function f => Rule f -> State (KBC f) ()
 addExtraRule rule
-  | easy rule = modify (\s -> s { extraEasyRules = Index.insert rule (extraEasyRules s) })
+  | simplifies rule = modify (\s -> s { extraEasyRules = Index.insert rule (extraEasyRules s) })
   | otherwise = modify (\s -> s { extraHardRules = Index.insert rule (extraHardRules s) })
 
 deleteRule :: Function f => Label -> Modelled (Critical (Rule f)) -> State (KBC f) ()
@@ -470,7 +463,7 @@ reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
 simplifyRule :: Function f => Label -> Model f -> Modelled (Critical (Rule f)) -> State (KBC f) ()
 simplifyRule l model rule@(Modelled _ (Critical info (Rule ctx lhs rhs))) = do
   modify $ \s ->
-    if easy (Rule ctx lhs rhs) then
+    if simplifies (Rule ctx lhs rhs) then
       s {
         labelledEasyRules =
            Index.insert (Labelled l (Modelled model (Critical info (Rule ctx lhs (Nested.flatten (result (normalise s rhs)))))))
