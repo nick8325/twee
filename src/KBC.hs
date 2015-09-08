@@ -9,6 +9,8 @@ import KBC.Base hiding (empty)
 import qualified KBC.Term.Nested as Nested
 import KBC.Constraints
 import KBC.Rule
+import qualified KBC.Indexes as Indexes
+import KBC.Indexes(Indexes, Rated(..))
 import qualified KBC.Index as Index
 import KBC.Index(Index, Frozen)
 import KBC.Queue hiding (queue)
@@ -35,10 +37,8 @@ import qualified Data.DList as DList
 data KBC f =
   KBC {
     maxSize           :: Int,
-    labelledEasyRules :: Index (Labelled (Modelled (Critical (Rule f)))),
-    labelledHardRules :: Index (Labelled (Modelled (Critical (Rule f)))),
-    extraEasyRules    :: Index (Rule f),
-    extraHardRules    :: Index (Rule f),
+    labelledRules     :: {-# UNPACK #-} !(Indexes (Labelled (Modelled (Critical (Rule f))))),
+    extraRules        :: {-# UNPACK #-} !(Indexes (Rule f)),
     subRules          :: Index (Term f, Rule f),
     goals             :: [Set (Term f)],
     totalCPs          :: Int,
@@ -54,10 +54,8 @@ initialState :: Int -> [Set (Term f)] -> KBC f
 initialState maxSize goals =
   KBC {
     maxSize           = maxSize,
-    labelledEasyRules = Index.empty,
-    labelledHardRules = Index.empty,
-    extraEasyRules    = Index.empty,
-    extraHardRules    = Index.empty,
+    labelledRules     = Indexes.empty,
+    extraRules        = Indexes.empty,
     subRules          = Index.empty,
     goals             = goals,
     totalCPs          = 0,
@@ -77,7 +75,7 @@ report KBC{..} =
     (length [ () | (Rule (Permutative _) _ _) <- rs ])
     (length [ () | (Rule (WeaklyOriented _) _ _) <- rs ]) ++
   printf "%d extra. %d historical.\n"
-    (length (Index.elems extraEasyRules ++ Index.elems extraHardRules))
+    (length (Indexes.elems extraRules))
     n ++
   printf "Critical pairs: %d total, %d processed, %d queued compressed into %d.\n\n"
     totalCPs
@@ -87,7 +85,7 @@ report KBC{..} =
   printf "Critical pairs joined:\n" ++
   concat [printf "%6d %s.\n" n (prettyShow x) | (x, n) <- Map.toList joinStatistics]
   where
-    rs = map (critical . modelled . peel) (Index.elems labelledEasyRules ++ Index.elems labelledHardRules)
+    rs = map (critical . modelled . peel) (Indexes.elems labelledRules)
     Label n = nextLabel queue
     s = sum (map passiveCount (toList queue))
 
@@ -135,19 +133,31 @@ instance Symbolic a => Symbolic (Modelled a) where
 -- Rewriting.
 --------------------------------------------------------------------------------
 
-rules :: Function f => KBC f -> Frozen (Rule f)
-rules k =
-  {-# SCC rules #-}
-  Index.map (critical . modelled . peel) (Index.freeze (labelledEasyRules k)) `Index.union`
-  Index.map (critical . modelled . peel) (Index.freeze (labelledHardRules k)) `Index.union`
-  Index.freeze (extraEasyRules k) `Index.union`
-  Index.freeze (extraHardRules k)
+instance Rated a => Rated (Labelled a) where
+  rating = rating . peel
+  maxRating = maxRating . peel
+instance Rated a => Rated (Modelled a) where
+  rating = rating . modelled
+  maxRating = maxRating . modelled
+instance Rated a => Rated (Critical a) where
+  rating = rating . critical
+  maxRating = maxRating . critical
+instance Rated (Rule f) where
+  rating (Rule Oriented _ _) = 0
+  rating (Rule WeaklyOriented{} _ _) = 0
+  rating _ = 1
+  maxRating _ = 1
 
-easyRules :: Function f => KBC f -> Frozen (Rule f)
-easyRules k =
-  {-# SCC easyRules #-}
-  Index.map (critical . modelled . peel) (Index.freeze (labelledEasyRules k)) `Index.union`
-  Index.freeze (extraEasyRules k)
+{-# INLINE rulesFor #-}
+rulesFor :: Function f => Int -> KBC f -> Frozen (Rule f)
+rulesFor n k =
+  {-# SCC rules #-}
+  Index.map (critical . modelled . peel) (Indexes.freeze n (labelledRules k)) `Index.union`
+  Indexes.freeze n (extraRules k)
+
+easyRules, rules :: Function f => KBC f -> Frozen (Rule f)
+easyRules k = rulesFor 0 k
+rules k = rulesFor 1 k
 
 normaliseQuickly :: Function f => KBC f -> Term f -> Reduction f
 normaliseQuickly s = normaliseWith (rewrite "simplify" simplifies (easyRules s))
@@ -385,23 +395,18 @@ newSubRule r@(Rule _ t u) = do
 addRule :: Function f => Modelled (Critical (Rule f)) -> State (KBC f) Label
 addRule rule = do
   l <- newLabelM
-  if simplifies (critical (modelled rule)) then
-    modify (\s -> s { labelledEasyRules = Index.insert (Labelled l rule) (labelledEasyRules s) })
-  else
-    modify (\s -> s { labelledHardRules = Index.insert (Labelled l rule) (labelledHardRules s) })
+  modify (\s -> s { labelledRules = Indexes.insert (Labelled l rule) (labelledRules s) })
   newSubRule (critical (modelled rule))
   return l
 
 addExtraRule :: Function f => Rule f -> State (KBC f) ()
-addExtraRule rule
-  | simplifies rule = modify (\s -> s { extraEasyRules = Index.insert rule (extraEasyRules s) })
-  | otherwise = modify (\s -> s { extraHardRules = Index.insert rule (extraHardRules s) })
+addExtraRule rule =
+  modify (\s -> s { extraRules = Indexes.insert rule (extraRules s) })
 
 deleteRule :: Function f => Label -> Modelled (Critical (Rule f)) -> State (KBC f) ()
 deleteRule l rule =
   modify $ \s ->
-    s { labelledEasyRules = Index.delete (Labelled l rule) (labelledEasyRules s),
-        labelledHardRules = Index.delete (Labelled l rule) (labelledHardRules s),
+    s { labelledRules = Indexes.delete (Labelled l rule) (labelledRules s),
         queue = deleteLabel l (queue s) }
 
 data Simplification f = Simplify (Model f) (Modelled (Critical (Rule f))) | Reorient (Modelled (Critical (Rule f))) deriving Show
@@ -412,7 +417,7 @@ instance PrettyTerm f => Pretty (Simplification f) where
 
 interreduce :: Function f => Rule f -> State (KBC f) ()
 interreduce new = {-# SCC interreduce #-} do
-  rules <- gets (\s -> Index.elems (labelledEasyRules s) ++ Index.elems (labelledHardRules s))
+  rules <- gets (\s -> Indexes.elems (labelledRules s))
   forM_ rules $ \(Labelled l old) -> do
     s <- get
     case reduceWith s l new old of
@@ -448,8 +453,7 @@ reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
     tryGroundJoin
   | otherwise = Nothing
   where
-    s' = s { labelledEasyRules = Index.delete (Labelled lab old0) (labelledEasyRules s),
-             labelledHardRules = Index.delete (Labelled lab old0) (labelledHardRules s) }
+    s' = s { labelledRules = Indexes.delete (Labelled lab old0) (labelledRules s) }
     modelJoinable = isLeft (normaliseCP s' (Critical info (lm :=: rm)))
     lm = Nested.flatten (result (normaliseIn s' model l))
     rm = Nested.flatten (result (normaliseIn s' model r))
@@ -463,16 +467,10 @@ reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
 simplifyRule :: Function f => Label -> Model f -> Modelled (Critical (Rule f)) -> State (KBC f) ()
 simplifyRule l model rule@(Modelled _ (Critical info (Rule ctx lhs rhs))) = do
   modify $ \s ->
-    if simplifies (Rule ctx lhs rhs) then
-      s {
-        labelledEasyRules =
-           Index.insert (Labelled l (Modelled model (Critical info (Rule ctx lhs (Nested.flatten (result (normalise s rhs)))))))
-             (Index.delete (Labelled l rule) (labelledEasyRules s)) }
-    else
-      s {
-        labelledHardRules =
-           Index.insert (Labelled l (Modelled model (Critical info (Rule ctx lhs (Nested.flatten (result (normalise s rhs)))))))
-             (Index.delete (Labelled l rule) (labelledHardRules s)) }
+    s {
+      labelledRules =
+         Indexes.insert (Labelled l (Modelled model (Critical info (Rule ctx lhs (Nested.flatten (result (normalise s rhs)))))))
+           (Indexes.delete (Labelled l rule) (labelledRules s)) }
   newSubRule (Rule ctx lhs rhs)
 
 newEquation :: Function f => Equation f -> State (KBC f) ()
@@ -595,7 +593,7 @@ criticalPairs s lower upper rule = {-# SCC criticalPairs #-}
   | Labelled l' (Modelled _ (Critical _ old)) <- rules,
     cp <- criticalPairs1 s (maxSize s) old [Labelled l' rule] ]
   where
-    rules = filter (p . labelOf) (Index.elems (labelledEasyRules s) ++ Index.elems (labelledHardRules s))
+    rules = filter (p . labelOf) (Indexes.elems (labelledRules s))
     p l = lower <= l && l <= upper
 
 cps :: Rule f -> Rule f -> [(Subst f, Term f, Term f)]

@@ -19,7 +19,7 @@ import Text.ParserCombinators.ReadP hiding (get)
 import System.Environment
 import System.Exit
 import Data.Ord
-import qualified KBC.Index as Index
+import qualified KBC.Indexes as Indexes
 import System.Exit
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
@@ -220,7 +220,7 @@ main = do
           mapM_ newEquation axioms
           loop
 
-      rs = map (critical . modelled . peel) (Index.elems (labelledEasyRules s) ++ Index.elems (labelledHardRules s))
+      rs = map (critical . modelled . peel) (Indexes.elems (labelledRules s))
 
     putStrLn "\nFinal rules:"
     mapM_ prettyPrint rs
