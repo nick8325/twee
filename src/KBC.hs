@@ -385,8 +385,9 @@ newSubRule r@(Rule _ t u) = do
 easy :: Rule f -> Bool
 easy rule =
   case orientation rule of
-    Oriented -> True
-    _        -> False
+    Oriented         -> True
+    WeaklyOriented _ -> True
+    _                -> False
 
 addRule :: Function f => Modelled (Critical (Rule f)) -> State (KBC f) Label
 addRule rule = do
