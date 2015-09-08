@@ -246,8 +246,8 @@ nested strat (Fun f xs) =
     ys = fromTermList xs
 
 {-# INLINE rewrite #-}
-rewrite :: Function f => (Rule f -> Bool) -> Frozen (Rule f) -> Strategy f
-rewrite p rules t = do
+rewrite :: Function f => String -> (Rule f -> Bool) -> Frozen (Rule f) -> Strategy f
+rewrite phase p rules t = do
   rule <- Index.lookup t rules
   guard (p rule)
   return (step rule)
