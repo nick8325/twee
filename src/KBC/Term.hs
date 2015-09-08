@@ -143,6 +143,33 @@ substCompose !sub1 !sub2 =
         forMSubst_ sub1 $ \_ t ->
           emitFun (MkFun 0) (emitSubstList sub2 t)
 
+-- Are two substitutions compatible?
+substCompatible :: Subst f -> Subst f -> Bool
+substCompatible sub1 sub2 = loop (viewSubst sub1) (viewSubst sub2)
+  where
+    loop !_ !_ | False = __
+    loop !_ !_ | False = __
+    loop EmptySubst _ = True
+    loop _ EmptySubst = True
+    loop (ConsSubst (Just (_, t)) sub1) (ConsSubst (Just (_, u)) sub2) =
+      t == u && loop sub1 sub2
+    loop (ConsSubst _ sub1) (ConsSubst _ sub2) =
+      loop sub1 sub2
+
+-- Take the union of two substitutions, which must be compatible.
+substUnion :: Subst f -> Subst f -> Subst f
+substUnion sub1 sub2 = runST $ do
+  msub <- newMutableSubst (vars sub1 `max` vars sub2)
+  let
+    loop EmptySubst = return ()
+    loop (ConsSubst (Just (x, t)) sub) = do
+      unsafeExtendList msub x t
+      loop sub
+    loop (ConsSubst Nothing sub) = loop sub
+  loop (viewSubst sub1)
+  loop (viewSubst sub2)
+  unsafeFreezeSubst msub
+
 -- Is a substitution idempotent?
 {-# INLINE idempotent #-}
 idempotent :: Subst f -> Bool
