@@ -20,7 +20,7 @@ newtype Indexes a =
 
 {-# INLINE empty #-}
 empty :: forall a. Rated a => Indexes a
-empty = Indexes (listArray (0, maxRating (undefined :: a)) (repeat Index.empty))
+empty = Indexes (listArray (0, maxRating (undefined :: a)) (repeat Index.Nil))
 
 {-# INLINE singleton #-}
 singleton :: (Symbolic a, Rated a) => a -> Indexes a

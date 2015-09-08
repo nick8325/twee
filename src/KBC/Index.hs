@@ -6,14 +6,13 @@ module KBC.Index where
 
 #include "errors.h"
 import qualified Prelude
-import Prelude hiding (filter, map)
+import Prelude hiding (filter, map, null)
 import KBC.Base hiding (var, fun, empty, vars, size)
 import qualified KBC.Term as Term
 import Control.Monad.ST.Strict
 import GHC.ST
 import KBC.Array hiding (null)
 import qualified KBC.Array as Array
-import Data.Maybe
 import qualified Data.List as List
 import Control.Monad
 
@@ -27,11 +26,16 @@ data Index a =
   Singleton {
     vars  :: {-# UNPACK #-} !Int,
     key   :: {-# UNPACK #-} !(TermListOf a),
-    value :: a }
+    value :: a } |
+  Nil
   deriving Show
 
-empty :: Index a
-empty = Index maxBound 0 [] newArray newArray
+instance Default (Index a) where def = Nil
+
+{-# INLINE null #-}
+null :: Index a -> Bool
+null Nil = True
+null _ = False
 
 {-# INLINEABLE singleton #-}
 singleton :: Symbolic a => a -> Index a
@@ -43,28 +47,23 @@ singleton x = Singleton (bound t) (Term.singleton t) x
 insert :: Symbolic a => a -> Index a -> Index a
 insert x0 !idx = aux t idx
   where
+    aux t Nil = Singleton (boundList t) t x
     aux t (Singleton _ u x) = aux t (expand u x)
     aux Empty idx@Index{..} = idx { size = 0, here = x:here }
     aux t@(ConsSym (Fun (MkFun f) _) u) idx =
       idx {
         size = lenList t `min` size idx,
         vars = vars idx `max` vars idx',
-        fun  = update f (Just idx') (fun idx) }
+        fun  = update f idx' (fun idx) }
       where
-        idx' =
-          case fun idx ! f of
-            Nothing  -> Singleton (boundList u) u x
-            Just i -> aux u i
+        idx' = aux u (fun idx ! f)
     aux t@(ConsSym (Var (MkVar v)) u) idx =
       idx {
         size = lenList t `min` size idx,
         vars = vars idx `max` vars idx' `max` succ v,
-        var  = update v (Just idx') (var idx) }
+        var  = update v idx' (var idx) }
       where
-        idx' =
-          case var idx ! v of
-            Nothing  -> Singleton (boundList u) u x
-            Just i -> aux u i
+        idx' = aux u (var idx ! v)
     n = boundList t
     x = canonicalise x0
     t = Term.singleton (term x)
@@ -78,23 +77,24 @@ expand (ConsSym s t) x =
     (fun, var, m) =
       case s of
         Fun (MkFun f) _ ->
-          (update f (Just (Singleton n t x)) newArray, newArray, 0)
+          (update f (Singleton n t x) newArray, newArray, 0)
         Var (MkVar v) ->
-          (newArray, update v (Just (Singleton n t x)) newArray, succ v)
+          (newArray, update v (Singleton n t x) newArray, succ v)
     n = boundList t
 
 {-# INLINEABLE delete #-}
 delete :: (Eq a, Symbolic a) => a -> Index a -> Index a
 delete x0 !idx = aux t idx
   where
+    aux _ Nil = Nil
     aux t idx@(Singleton _ u x)
-      | t == u    = empty
+      | t == u    = Nil
       | otherwise = idx
     aux Empty idx = idx { here = List.delete x (here idx) }
     aux (ConsSym (Fun (MkFun f) _) t) idx =
-      idx { fun = update f (fmap (aux t) (fun idx ! f)) (fun idx) }
+      idx { fun = update f (aux t (fun idx ! f)) (fun idx) }
     aux (ConsSym (Var (MkVar v)) t) idx =
-      idx { var = update v (fmap (aux t) (var idx ! v)) (var idx) }
+      idx { var = update v (aux t (var idx ! v)) (var idx) }
     x = canonicalise x0
     t = Term.singleton (term x)
 
@@ -117,11 +117,12 @@ matches :: TermOf a -> Frozen a -> [Match a]
 matches t idx = matchesList (Term.singleton t) idx
 
 freeze :: Index a -> Frozen a
-freeze !idx = {-# SCC freeze #-} Frozen $ \(!t) -> runST $ do
+freeze Nil = Frozen $ \_ -> []
+freeze idx = {-# SCC freeze #-} Frozen $ \(!t) -> runST $ do
   msub <- newMutableSubst (vars idx)
   let
     loop !_ !_ _ | False = __
-    --loop t (Singleton _ u x) rest = loop t (expand u x) rest
+    loop _ Nil rest = rest
     loop t (Singleton _ u x) rest = do
       sub0  <- unsafeFreezeSubst msub
       case matchList u t of
@@ -131,7 +132,7 @@ freeze !idx = {-# SCC freeze #-} Frozen $ \(!t) -> runST $ do
         _ -> rest
 
     loop Empty idx rest
-      | null (here idx) = rest
+      | Prelude.null (here idx) = rest
       | otherwise = do
         sub <- freezeSubst msub
         escape (Match (here idx) sub:) rest
@@ -142,30 +143,29 @@ freeze !idx = {-# SCC freeze #-} Frozen $ \(!t) -> runST $ do
         Cons u us = t
     loop (Cons t ts) idx rest = tryVar t ts (var idx) rest
 
-    tryFun (MkFun f) !t !fun rest =
-      tryIn (fun ! f) rest (\idx -> loop t idx rest)
+    tryFun (MkFun f) !t !fun rest = loop t (fun ! f) rest
     tryVar !t !ts !var rest =
       aux 0
       where
         aux n
           | n >= arraySize var = rest
-          | otherwise =
-            tryIn (var ! n) (aux (n+1)) $ \idx -> do
-              mu <- mutableLookupList msub (MkVar n)
-              case mu of
-                Nothing -> do
-                  extend msub (MkVar n) t
-                  loop ts idx (retract msub (MkVar n) >> aux (n+1))
-                Just u
-                  | Term.singleton t == u -> loop ts idx (aux (n+1))
-                  | otherwise -> (aux (n+1))
-
-    tryIn Nothing rest _ = rest
-    tryIn (Just idx) rest f = f idx
+          | null idx = aux (n+1)
+          | otherwise = do
+            mu <- mutableLookupList msub (MkVar n)
+            case mu of
+              Nothing -> do
+                extend msub (MkVar n) t
+                loop ts idx (retract msub (MkVar n) >> aux (n+1))
+              Just u
+                | Term.singleton t == u -> loop ts idx (aux (n+1))
+                | otherwise -> (aux (n+1))
+          where
+            idx = var ! n
 
   loop t idx (return [])
 
 elems :: Index a -> [a]
+elems Nil = []
 elems (Singleton _ _ x) = [x]
 elems idx =
   here idx ++
@@ -181,7 +181,7 @@ filter :: (a -> Bool) -> Frozen a -> Frozen a
 filter p (Frozen matches) = Frozen $ \t -> do
   Match xs sub <- matches t
   let ys = [ x | x <- xs, p x ]
-  guard (not (null ys))
+  guard (not (Prelude.null ys))
   return (Match ys sub)
 
 {-# INLINE union #-}
