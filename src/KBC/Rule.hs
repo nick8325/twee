@@ -206,19 +206,19 @@ parallel f rs =
     (Parallel f (map proof rs))
 
 normaliseWith :: PrettyTerm f => Strategy f -> Term f -> Reduction f
-normaliseWith strat t =
-  {-# SCC normaliseWith #-}
-  case strat t of
-    p:_ -> continue p
-    [] ->
-      case t of
-        Fun f ts | not (all (null . steps) ns) ->
-          continue (parallel f ns)
-          where
-            ns = map (normaliseWith strat) (fromTermList ts)
-        _ -> refl t
+normaliseWith strat t = {-# SCC normaliseWith #-} aux True t
   where
-    continue p = p `trans` normaliseWith strat (Nested.flatten (result p))
+    aux tryInner t =
+      case strat t of
+        p:_ -> continue True p
+        [] ->
+          case t of
+            Fun f ts | tryInner && not (all (null . steps) ns) ->
+              continue False (parallel f ns)
+              where
+                ns = map (normaliseWith strat) (fromTermList ts)
+            _ -> refl t
+    continue tryInner p = p `trans` aux tryInner (Nested.flatten (result p))
 
 normalForms :: Function f => Strategy f -> [Term f] -> Set (Term f)
 normalForms strat ts = go Set.empty Set.empty ts
