@@ -216,7 +216,7 @@ normaliseWith strat t = {-# SCC normaliseWith #-} aux True t
             Fun f ts | tryInner && not (all (null . steps) ns) ->
               continue False (parallel f ns)
               where
-                ns = map (normaliseWith strat) (fromTermList ts)
+                ns = map (aux True) (fromTermList ts)
             _ -> refl t
     continue tryInner p = p `trans` aux tryInner (Nested.flatten (result p))
 
