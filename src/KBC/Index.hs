@@ -2,6 +2,7 @@
 {-# LANGUAGE BangPatterns, CPP, UnboxedTuples, TypeFamilies, RecordWildCards #-}
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
+{-# OPTIONS_GHC -funfolding-creation-threshold=1000 -funfolding-use-threshold=1000 #-}
 module KBC.Index where
 
 #include "errors.h"
@@ -119,7 +120,7 @@ matches t idx = matchesList (Term.singleton t) idx
 freeze :: Index a -> Frozen a
 freeze Nil = Frozen $ \_ -> []
 freeze idx = {-# SCC freeze #-} Frozen $ \(!t) -> runST $ do
-  msub <- newMutableSubst (vars idx)
+  !msub <- newMutableSubst (vars idx)
   let
     loop !_ !_ _ | False = __
     loop _ Nil rest = rest
@@ -158,7 +159,7 @@ freeze idx = {-# SCC freeze #-} Frozen $ \(!t) -> runST $ do
                 loop ts idx (retract msub (MkVar n) >> aux (n+1))
               Just u
                 | Term.singleton t == u -> loop ts idx (aux (n+1))
-                | otherwise -> (aux (n+1))
+                | otherwise -> aux (n+1)
           where
             idx = var ! n
 
