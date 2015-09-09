@@ -466,10 +466,16 @@ reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
 
 simplifyRule :: Function f => Label -> Model f -> Modelled (Critical (Rule f)) -> State (KBC f) ()
 simplifyRule l model rule@(Modelled _ (Critical info (Rule ctx lhs rhs))) = do
+  s <- get
+  let
+    reorient ctx l r =
+      case orient (l :=: r) of
+        [x] -> x
+        _   -> Rule ctx l r
   modify $ \s ->
     s {
       labelledRules =
-         Indexes.insert (Labelled l (Modelled model (Critical info (Rule ctx lhs (Nested.flatten (result (normalise s rhs)))))))
+         Indexes.insert (Labelled l (Modelled model (Critical info (reorient ctx lhs (Nested.flatten (result (normalise s rhs)))))))
            (Indexes.delete (Labelled l rule) (labelledRules s)) }
   newSubRule (Rule ctx lhs rhs)
 
