@@ -47,6 +47,7 @@ data KBC f =
     queue             :: !(Queue (Passive f)),
     useInversionRules :: Bool,
     useSkolemPenalty  :: Bool,
+    useGroundPenalty  :: Bool,
     joinStatistics    :: Map JoinReason Int }
   deriving Show
 
@@ -64,6 +65,7 @@ initialState maxSize goals =
     queue             = empty,
     useInversionRules = False,
     useSkolemPenalty  = False,
+    useGroundPenalty  = False,
     joinStatistics    = Map.empty }
 
 report :: Function f => KBC f -> String
@@ -747,7 +749,7 @@ toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
       | u `lessEq` t = f t u + penalty t u
       | otherwise    = (f t u `max` f u t) + penalty t u
       where
-        f t u = size' t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u)
+        f t u = size' t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u) + if useGroundPenalty s && null (vars u) then 5 else 0
         size' t =
           size t +
           -- Lots of different constants are probably bad
