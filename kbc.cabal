@@ -14,22 +14,30 @@ extra-source-files:  src/errors.h
 library
   exposed-modules:
     KBC
+    KBC.Array
     KBC.Base
     KBC.Pretty
     KBC.Constraints
     KBC.Index
+    KBC.Indexes
     KBC.Queue
     KBC.Rule
+    KBC.Term
+    KBC.Term.Core
+    KBC.Term.Nested
     KBC.Utils
     KBC.KBO
+    Data.Primitive.ArrayArray
   build-depends:
     base >= 4 && < 5,
-    term-rewriting,
     containers,
     transformers,
     dlist,
     pretty,
-    heaps
+    heaps,
+    ghc-prim,
+    primitive,
+    array
   hs-source-dirs:      src
   include-dirs:        src
   ghc-options:         -W
@@ -42,5 +50,6 @@ executable kbc
                        kbc,
                        containers,
                        transformers,
-                       term-rewriting,
-                       pretty
+                       pretty,
+                       array,
+                       reflection
