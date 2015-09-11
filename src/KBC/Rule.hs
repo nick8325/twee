@@ -161,7 +161,7 @@ type Strategy f = Term f -> [Reduction f]
 
 data Reduction f =
     Refl (Term f)
-  | Step (Rule f)
+  | Step (Rule f) (Subst f)
   | Trans (Reduction f) (Reduction f)
   | Parallel (Fun f) [Reduction f]
   deriving Show
@@ -170,22 +170,22 @@ result :: Reduction f -> Term f
 result t = buildTerm 32 (emitReduction t)
   where
     emitReduction (Refl t) = emitTerm t
-    emitReduction (Step r) = emitTerm (rhs r)
+    emitReduction (Step r sub) = emitSubst sub (rhs r)
     emitReduction (Trans _ p) = emitReduction p
     emitReduction (Parallel f ps) = emitFun f (mapM_ emitReduction ps)
 
 instance PrettyTerm f => Pretty (Reduction f) where
   pPrint (Refl t) = pPrint t
-  pPrint (Step rule) = pPrint rule
+  pPrint (Step rule sub) = pPrint (subst sub rule)
   pPrint (Trans p q) = hang (pPrint p <+> text "then") 2 (pPrint q)
   pPrint (Parallel f ps) =
     pPrint f <> parens (sep (punctuate (text ",") (map pPrint ps)))
 
-steps :: Reduction f -> [Rule f]
+steps :: Reduction f -> [(Rule f, Subst f)]
 steps r = aux r []
   where
     aux (Refl _) = id
-    aux (Step r) = (r:)
+    aux (Step r sub) = ((r, sub):)
     aux (Trans p q) = aux p . aux q
     aux (Parallel _ ps) = foldr (.) id (map aux ps)
 
@@ -230,31 +230,31 @@ nested strat (Fun f xs) =
     ys = fromTermList xs
 
 {-# INLINE rewrite #-}
-rewrite :: Function f => String -> (Rule f -> Bool) -> Frozen (Rule f) -> Strategy f
+rewrite :: Function f => String -> (Rule f -> Subst f -> Bool) -> Frozen (Rule f) -> Strategy f
 rewrite phase p rules t = do
-  rule <- Index.lookup t rules
-  guard (p rule)
-  return (Step rule)
+  Index.Match rules sub <- Index.matches t rules
+  rule <- rules
+  guard (p rule sub)
+  return (Step rule sub)
 
-tryRule :: Function f => (Rule f -> Bool) -> Rule f -> Strategy f
+tryRule :: Function f => (Rule f -> Subst f -> Bool) -> Rule f -> Strategy f
 tryRule p rule t = do
   sub <- maybeToList (match (lhs rule) t)
-  let rule' = subst sub rule
-  guard (p rule')
-  return (Step rule')
+  guard (p rule sub)
+  return (Step rule sub)
 
-simplifies :: Function f => Rule f -> Bool
-simplifies (Rule Oriented _ _) = True
-simplifies (Rule (WeaklyOriented ts) _ _) =
-  or [ not (isMinimal (Nested.flatten t)) | t <- ts ]
-simplifies (Rule (Permutative _) _ _) = False
-simplifies (Rule Unoriented _ _) = False
+simplifies :: Function f => Rule f -> Subst f -> Bool
+simplifies (Rule Oriented _ _) _ = True
+simplifies (Rule (WeaklyOriented ts) _ _) sub =
+  or [ not (isMinimal (Nested.flatten t)) | t <- subst sub ts ]
+simplifies (Rule (Permutative _) _ _) _ = False
+simplifies (Rule Unoriented _ _) _ = False
 
-reducesWith :: Function f => (Term f -> Term f -> Bool) -> Rule f -> Bool
-reducesWith _ (Rule Oriented _ _) = True
-reducesWith _ (Rule (WeaklyOriented ts) _ _) =
-  or [ not (isMinimal (Nested.flatten t)) | t <- ts ]
-reducesWith p (Rule (Permutative ts) _ _) =
+reducesWith :: Function f => (Term f -> Term f -> Bool) -> Rule f -> Subst f -> Bool
+reducesWith _ (Rule Oriented _ _) _ = True
+reducesWith _ (Rule (WeaklyOriented ts) _ _) sub =
+  or [ not (isMinimal (Nested.flatten t)) | t <- subst sub ts ]
+reducesWith p (Rule (Permutative ts) _ _) sub =
   aux ts
   where
     aux [] = False
@@ -262,22 +262,25 @@ reducesWith p (Rule (Permutative ts) _ _) =
       | t' == u' = aux ts
       | otherwise = p u' t'
       where
-        t' = Nested.flatten t
-        u' = Nested.flatten u
-reducesWith p (Rule Unoriented t u) =
-  p u t && u /= t
+        t' = Nested.flatten (subst sub t)
+        u' = Nested.flatten (subst sub u)
+reducesWith p (Rule Unoriented t u) sub =
+  p u' t' && u' /= t'
+  where
+    t' = subst sub t
+    u' = subst sub u
 
-reduces :: Function f => Rule f -> Bool
+reduces :: Function f => Rule f -> Subst f -> Bool
 reduces rule = reducesWith lessEq rule
 
-reducesInModel :: Function f => Model f -> Rule f -> Bool
+reducesInModel :: Function f => Model f -> Rule f -> Subst f -> Bool
 reducesInModel cond rule = reducesWith (\t u -> isJust (lessIn cond t u)) rule
 
-reducesSkolem :: Function f => Rule f -> Bool
+reducesSkolem :: Function f => Rule f -> Subst f -> Bool
 reducesSkolem = reducesWith (\t u -> lessEq (subst (skolemise t) t) (subst (skolemise u) u))
 
-reducesSub :: Function f => Term f -> Rule f -> Bool
-reducesSub top rule =
-  reducesSkolem rule && lessEq u top && isNothing (unify u top)
+reducesSub :: Function f => Term f -> Rule f -> Subst f -> Bool
+reducesSub top rule sub =
+  reducesSkolem rule sub && lessEq u top && isNothing (unify u top)
   where
-    u = rhs rule
+    u = subst sub (rhs rule)

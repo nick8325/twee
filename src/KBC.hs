@@ -378,7 +378,7 @@ groundJoin s ctx r@(Critical info (t :=: u)) = {-# SCC groundJoin #-}
 valid :: Function f => Model f -> Reduction f -> Bool
 valid model red = all valid1 (steps red)
   where
-    valid1 rule = reducesInModel model rule
+    valid1 (rule, sub) = reducesInModel model rule sub
 
 optimise :: a -> (a -> [a]) -> (a -> Bool) -> a
 optimise x f p =
@@ -716,7 +716,7 @@ toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
         (_, r1) <- Index.lookup t (Index.freeze (subRules s))
         r2 <- Index.lookup (replace t u (rhs r1)) (rules s)
 
-        guard (reducesSub top r1 && reducesSub top r2)
+        guard (reducesSub top r1 emptySubst && reducesSub top r2 emptySubst)
         let t' = rhs r1
             u' = rhs r2
         guard (subsumes True (t', u') (t, u))
