@@ -96,3 +96,5 @@ metric on these existing rules? (The fact that there is a single rule
 which will generalise them all.)
 
 Prioritise rules that allow us to simplify other rules.
+
+Look at why LAT176-1 loops
