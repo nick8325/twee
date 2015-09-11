@@ -231,7 +231,7 @@ main = do
     unless (null goals2) $ do
       putStrLn "Normalised goal terms:"
       forM_ goals2 $ \t ->
-        prettyPrint (Rule Oriented t (Nested.flatten (result (normalise s t))))
+        prettyPrint (Rule Oriented t (result (normalise s t)))
 
     if length (goals s) <= 1 || identical (goals s)
       then exitWith ExitSuccess

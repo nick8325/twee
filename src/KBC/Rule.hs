@@ -160,50 +160,34 @@ trivial (t :=: u) = t == u
 type Strategy f = Term f -> [Reduction f]
 
 data Reduction f =
-  Reduction {
-    result :: Nested.Term f,
-    proof  :: Proof f }
+    Refl (Term f)
+  | Step (Rule f)
+  | Trans (Reduction f) (Reduction f)
+  | Parallel (Fun f) [Reduction f]
   deriving Show
+
+result :: Reduction f -> Term f
+result t = buildTerm 32 (emitReduction t)
+  where
+    emitReduction (Refl t) = emitTerm t
+    emitReduction (Step r) = emitTerm (rhs r)
+    emitReduction (Trans _ p) = emitReduction p
+    emitReduction (Parallel f ps) = emitFun f (mapM_ emitReduction ps)
 
 instance PrettyTerm f => Pretty (Reduction f) where
-  pPrint Reduction{..} = hang (pPrint result <+> text "by") 2 (pPrint proof)
-
-data Proof f =
-    Refl
-  | Step (Rule f)
-  | Trans (Proof f) (Proof f)
-  | Parallel (Fun f) [Proof f]
-  deriving Show
-
-instance PrettyTerm f => Pretty (Proof f) where
-  pPrint Refl = text "_"
+  pPrint (Refl t) = pPrint t
   pPrint (Step rule) = pPrint rule
   pPrint (Trans p q) = hang (pPrint p <+> text "then") 2 (pPrint q)
   pPrint (Parallel f ps) =
     pPrint f <> parens (sep (punctuate (text ",") (map pPrint ps)))
 
 steps :: Reduction f -> [Rule f]
-steps r = aux (proof r) []
+steps r = aux r []
   where
-    aux Refl = id
+    aux (Refl _) = id
     aux (Step r) = (r:)
     aux (Trans p q) = aux p . aux q
     aux (Parallel _ ps) = foldr (.) id (map aux ps)
-
-refl :: Term f -> Reduction f
-refl t = Reduction (Nested.Flat t) Refl
-
-step :: Rule f -> Reduction f
-step r = Reduction (Nested.Flat (rhs r)) (Step r)
-
-trans :: Reduction f -> Reduction f -> Reduction f
-trans ~(Reduction _ p) (Reduction t q) = Reduction t (p `Trans` q)
-
-parallel :: Fun f -> [Reduction f] -> Reduction f
-parallel f rs =
-  Reduction
-    (Nested.Fun f (map result rs))
-    (Parallel f (map proof rs))
 
 normaliseWith :: PrettyTerm f => Strategy f -> Term f -> Reduction f
 normaliseWith strat t = {-# SCC normaliseWith #-} aux True t
@@ -214,11 +198,11 @@ normaliseWith strat t = {-# SCC normaliseWith #-} aux True t
         [] ->
           case t of
             Fun f ts | tryInner && not (all (null . steps) ns) ->
-              continue False (parallel f ns)
+              continue False (Parallel f ns)
               where
                 ns = map (aux True) (fromTermList ts)
-            _ -> refl t
-    continue tryInner p = p `trans` aux tryInner (Nested.flatten (result p))
+            _ -> Refl t
+    continue tryInner p = p `Trans` aux tryInner (result p)
 
 normalForms :: Function f => Strategy f -> [Term f] -> Set (Term f)
 normalForms strat ts = go Set.empty Set.empty ts
@@ -231,15 +215,15 @@ normalForms strat ts = go Set.empty Set.empty ts
       | otherwise =
         go (Set.insert t dead) norm (us ++ ts)
       where
-        us = map (Nested.flatten . result) (anywhere strat t)
+        us = map result (anywhere strat t)
 
 anywhere :: Strategy f -> Strategy f
 anywhere strat t = strat t ++ nested (anywhere strat) t
 
 nested _ Var{} = []
 nested strat (Fun f xs) =
-  [ parallel f $
-      map refl (take i ys) ++ [p] ++ map refl (drop (i+1) ys)
+  [ Parallel f $
+      map Refl (take i ys) ++ [p] ++ map Refl (drop (i+1) ys)
   | (i, x) <- zip [0..] ys,
     p <- strat x ]
   where
@@ -250,14 +234,14 @@ rewrite :: Function f => String -> (Rule f -> Bool) -> Frozen (Rule f) -> Strate
 rewrite phase p rules t = do
   rule <- Index.lookup t rules
   guard (p rule)
-  return (step rule)
+  return (Step rule)
 
 tryRule :: Function f => (Rule f -> Bool) -> Rule f -> Strategy f
 tryRule p rule t = do
   sub <- maybeToList (match (lhs rule) t)
   let rule' = subst sub rule
   guard (p rule')
-  return (step rule')
+  return (Step rule')
 
 simplifies :: Function f => Rule f -> Bool
 simplifies (Rule Oriented _ _) = True

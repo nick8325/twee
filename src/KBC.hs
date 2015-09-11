@@ -175,7 +175,7 @@ normaliseSub :: Function f => KBC f -> Term f -> Term f -> Reduction f
 normaliseSub s top t
   | lessEq t top && isNothing (unify t top) =
     normaliseWith (rewrite "sub" (reducesSub top) (rules s)) t
-  | otherwise = Reduction (Nested.Flat t) Refl
+  | otherwise = Refl t
 
 normaliseSkolem :: Function f => KBC f -> Term f -> Reduction f
 normaliseSkolem s = normaliseWith (rewrite "skolem" reducesSkolem (rules s))
@@ -222,7 +222,7 @@ normaliseCPQuickly, normaliseCP ::
   KBC f -> Critical (Equation f) -> Either JoinReason (Critical (Equation f))
 normaliseCPQuickly s cp =
   reduceCP s Initial id cp >>=
-  reduceCP s Simplification (Nested.flatten . result . normaliseQuickly s)
+  reduceCP s Simplification (result . normaliseQuickly s)
 
 normaliseCP s cp@(Critical info _) =
   case (cp1, cp2, cp3, cp4) of
@@ -234,11 +234,11 @@ normaliseCP s cp@(Critical info _) =
   where
     cp1 =
       normaliseCPQuickly s cp >>=
-      reduceCP s Reducing (Nested.flatten . result . normalise s) >>=
-      reduceCP s Subjoining (Nested.flatten . result . normaliseSub s (top info))
+      reduceCP s Reducing (result . normalise s) >>=
+      reduceCP s Subjoining (result . normaliseSub s (top info))
 
     cp2 =
-      reduceCP s Subjoining (Nested.flatten . result . normaliseSub s (flipCP (top info))) (flipCP cp)
+      reduceCP s Subjoining (result . normaliseSub s (flipCP (top info))) (flipCP cp)
 
     cp3 = setJoin cp
     cp4 = setJoin (flipCP cp)
@@ -321,7 +321,7 @@ consider pair = {-# SCC consider #-} do
     Right (Critical info eq) ->
       forM_ (map canonicalise (orient eq)) $ \(Rule orientation t u0) -> do
         s <- get
-        let u = Nested.flatten (result (normaliseSub s t u0))
+        let u = result (normaliseSub s t u0)
             r = Rule orientation t u
         case {-# SCC normalise2 #-} normaliseCP s (Critical info (t :=: u)) of
           Left reason -> do
@@ -356,10 +356,10 @@ groundJoin s ctx r@(Critical info (t :=: u)) = {-# SCC groundJoin #-}
       let rs = [ subst sub r | sub <- instances ] in
       Right (usort (map canonicalise rs))
     (model:_, _)
-      | isRight (normaliseCP s (Critical info (Nested.flatten t' :=: Nested.flatten u'))) -> Left model
+      | isRight (normaliseCP s (Critical info (t' :=: u'))) -> Left model
       | otherwise ->
           let model1 = optimise model weakenModel (\m -> valid m nt && valid m nu)
-              model2 = optimise model1 weakenModel (\m -> isLeft (normaliseCP s (Critical info (Nested.flatten (result (normaliseIn s m t)) :=: Nested.flatten (result (normaliseIn s m u))))))
+              model2 = optimise model1 weakenModel (\m -> isLeft (normaliseCP s (Critical info (result (normaliseIn s m t) :=: result (normaliseIn s m u)))))
 
               diag [] = Or []
               diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
@@ -370,8 +370,10 @@ groundJoin s ctx r@(Critical info (t :=: u)) = {-# SCC groundJoin #-}
           trace (Discharge r model2) $
           groundJoin s ctx' r
       where
-        nt@(Reduction t' _) = normaliseIn s model t
-        nu@(Reduction u' _) = normaliseIn s model u
+        nt = normaliseIn s model t
+        nu = normaliseIn s model u
+        t' = result nt
+        u' = result nu
 
 valid :: Function f => Model f -> Reduction f -> Bool
 valid model red = all valid1 (steps red)
@@ -457,8 +459,8 @@ reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
   where
     s' = s { labelledRules = Indexes.delete (Labelled lab old0) (labelledRules s) }
     modelJoinable = isLeft (normaliseCP s' (Critical info (lm :=: rm)))
-    lm = Nested.flatten (result (normaliseIn s' model l))
-    rm = Nested.flatten (result (normaliseIn s' model r))
+    lm = result (normaliseIn s' model l)
+    rm = result (normaliseIn s' model r)
     tryGroundJoin =
       case groundJoin s' (branches (And [])) (Critical info (l :=: r)) of
         Left model' ->
@@ -477,7 +479,7 @@ simplifyRule l model rule@(Modelled _ (Critical info (Rule ctx lhs rhs))) = do
   modify $ \s ->
     s {
       labelledRules =
-         Indexes.insert (Labelled l (Modelled model (Critical info (reorient ctx lhs (Nested.flatten (result (normalise s rhs)))))))
+         Indexes.insert (Labelled l (Modelled model (Critical info (reorient ctx lhs (result (normalise s rhs))))))
            (Indexes.delete (Labelled l rule) (labelledRules s)) }
   newSubRule (Rule ctx lhs rhs)
 
@@ -697,8 +699,8 @@ toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
   where
     norm (Critical info (t :=: u)) = {-# SCC norm #-} do
       guard (t /= u)
-      let t' = Nested.flatten (result (normaliseQuickly s t))
-          u' = Nested.flatten (result (normaliseQuickly s u))
+      let t' = result (normaliseQuickly s t)
+          u' = result (normaliseQuickly s u)
       guard (t' /= u')
       invert (Critical info (t' :=: u'))
 
@@ -764,7 +766,7 @@ toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
 
     penalty t u
       | useSkolemPenalty s &&
-        Nested.flatten (result (normaliseSkolem s t)) == Nested.flatten (result (normaliseSkolem s u)) =
+        result (normaliseSkolem s t) == result (normaliseSkolem s u) =
         -- Arbitrary heuristic: assume one in three of the variables need to
         -- be instantiated with with terms of size > 1 to not be joinable
         (length (vars t) + length (vars u)) `div` 3
