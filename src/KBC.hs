@@ -7,7 +7,7 @@ module KBC where
 #include "errors.h"
 import KBC.Base hiding (empty)
 import qualified KBC.Term.Nested as Nested
-import KBC.Constraints
+import KBC.Constraints hiding (funs)
 import KBC.Rule
 import qualified KBC.Indexes as Indexes
 import KBC.Indexes(Indexes, Rated(..))

@@ -2,7 +2,7 @@
 module KBC.Constraints where
 
 #include "errors.h"
-import KBC.Base hiding (equals, Term(..), pattern Fun, pattern Var, lookup)
+import KBC.Base hiding (equals, Term(..), pattern Fun, pattern Var, lookup, funs)
 import qualified KBC.Term as Flat
 import KBC.Term.Nested
 import qualified KBC.Term.Nested as Nested
@@ -90,6 +90,7 @@ false = Or []
 data Branch f =
   -- Branches are kept normalised wrt equals
   Branch {
+    funs        :: [Fun f],
     less        :: [(Atom f, Atom f)],
     equals      :: [(Atom f, Atom f)] } -- greatest atom first
   deriving (Eq, Ord)
@@ -101,17 +102,20 @@ instance Function f => Pretty (Branch f) where
       [pPrint x <+> text "=" <+> pPrint y | (x, y) <- equals ]
 
 trueBranch :: Branch f
-trueBranch = Branch [] []
+trueBranch = Branch [] [] []
 
 norm :: Eq f => Branch f -> Atom f -> Atom f
 norm Branch{..} x = fromMaybe x (lookup x equals)
 
 contradictory :: Function f => Branch f -> Bool
 contradictory Branch{..} =
-  or [x == y | (x, y) <- less] ||
-  or [fun g [] `lessEq` fun f [] | (Constant f, Constant g) <- less] ||
   or [f == minimal | (_, Constant f) <- less] ||
-  or [f /= g | (Constant f, Constant g) <- equals]
+  or [f /= g | (Constant f, Constant g) <- equals] ||
+  any cyclic (stronglyConnComp
+    [(x, x, [y | (x', y) <- less, x == x']) | x <- usort (map fst less)])
+  where
+    cyclic (AcyclicSCC _) = False
+    cyclic (CyclicSCC _) = True
 
 formAnd :: Function f => Formula f -> [Branch f] -> [Branch f]
 formAnd f bs = usort (bs >>= add f)
@@ -125,7 +129,7 @@ formAnd f bs = usort (bs >>= add f)
 branches :: Function f => Formula f -> [Branch f]
 branches x = aux [x]
   where
-    aux [] = [Branch [] []]
+    aux [] = [Branch [] [] []]
     aux (And xs:ys) = aux (xs ++ ys)
     aux (Or xs:ys) = usort $ concat [aux (x:ys) | x <- xs]
     aux (Less t u:xs) = usort $ concatMap (addLess t u) (aux xs)
@@ -137,22 +141,17 @@ branches x = aux [x]
 addLess :: Function f => Atom f -> Atom f -> Branch f -> [Branch f]
 addLess t0 u0 b@Branch{..} =
   filter (not . contradictory)
-    [b {
-      less = usort $ newLess ++ less }]
+    [addTerm t (addTerm u b) {less = usort ((t, u):less)}]
   where
     t = norm b t0
     u = norm b u0
-    newLess =
-      (t, u):
-      [(t, v) | (u', v) <- less, u == u'] ++
-      [(v, u) | (v, t') <- less, t == t']
 
 addEquals :: Function f => Atom f -> Atom f -> Branch f -> [Branch f]
 addEquals t0 u0 b@Branch{..}
   | t == u || (t, u) `elem` equals = [b]
   | otherwise =
     filter (not . contradictory)
-      [b {
+      [addTerm t (addTerm u b) {
          equals      = usort $ (t, u):[(x', y') | (x, y) <- equals, let (y', x') = sort2 (sub x, sub y), x' /= y'],
          less        = usort $ [(sub x, sub y) | (x, y) <- less] }]
   where
@@ -162,6 +161,15 @@ addEquals t0 u0 b@Branch{..}
     sub x
       | x == t = u
       | otherwise = x
+
+addTerm :: Function f => Atom f -> Branch f -> Branch f
+addTerm (Constant f) b
+  | f `notElem` funs b =
+    b {
+      funs = f:funs b,
+      less = [ (Constant f, Constant g) | g <- funs b, f < g ] ++
+             [ (Constant g, Constant f) | g <- funs b, g < f ] ++ less b }
+addTerm _ b = b
 
 newtype Model f = Model (Map (Atom f) (Int, Int))
   deriving Show
