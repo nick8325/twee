@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, StandaloneDeriving, FlexibleContexts, UndecidableInstances, RecordWildCards, PatternGuards, CPP #-}
+{-# LANGUAGE TypeFamilies, StandaloneDeriving, FlexibleContexts, UndecidableInstances, RecordWildCards, PatternGuards, CPP, BangPatterns #-}
 module KBC.Rule where
 
 #include "errors.h"
@@ -160,49 +160,60 @@ trivial (t :=: u) = t == u
 type Strategy f = Term f -> [Reduction f]
 
 data Reduction f =
-    Refl (Term f)
-  | Step (Rule f) (Subst f)
+    Step (Rule f) (Subst f)
   | Trans (Reduction f) (Reduction f)
-  | Parallel (Fun f) [Reduction f]
+  | Parallel [(Int, Reduction f)] (Term f)
   deriving Show
 
 result :: Reduction f -> Term f
 result t = buildTerm 32 (emitReduction t)
   where
-    emitReduction (Refl t) = emitTerm t
     emitReduction (Step r sub) = emitSubst sub (rhs r)
     emitReduction (Trans _ p) = emitReduction p
-    emitReduction (Parallel f ps) = emitFun f (mapM_ emitReduction ps)
+    emitReduction (Parallel ps t) = emitParallel 0 ps (singleton t)
+
+    emitParallel !_ _ _ | False = __
+    emitParallel _ _ Empty = return ()
+    emitParallel _ [] t = emitTermList t
+    emitParallel n ((m, _):_) t  | m >= n + lenList t = emitTermList t
+    emitParallel n ((m, _):ps) t | m < n = emitParallel n ps t
+    emitParallel n ((m, p):ps) (Cons t u) | m == n = do
+      emitReduction p
+      emitParallel (n + len t) ps u
+    emitParallel n ps (Cons (Var x) u) = do
+      emitVar x
+      emitParallel (n + 1) ps u
+    emitParallel n ps (Cons (Fun f t) u) = do
+      emitFun f (emitParallel (n+1) ps t)
+      emitParallel (n + 1 + lenList t) ps u
 
 instance PrettyTerm f => Pretty (Reduction f) where
-  pPrint (Refl t) = pPrint t
   pPrint (Step rule sub) = pPrint (subst sub rule)
   pPrint (Trans p q) = hang (pPrint p <+> text "then") 2 (pPrint q)
-  pPrint (Parallel f ps) =
-    pPrint f <> parens (sep (punctuate (text ",") (map pPrint ps)))
+  pPrint (Parallel ps t) =
+    pPrint [pPrint n <> text ":" <> pPrint r | (n, r) <- ps] <+> text "in" <+> pPrint t <+> text "to" <+> pPrint (result (Parallel ps t))
 
 steps :: Reduction f -> [(Rule f, Subst f)]
 steps r = aux r []
   where
-    aux (Refl _) = id
     aux (Step r sub) = ((r, sub):)
     aux (Trans p q) = aux p . aux q
-    aux (Parallel _ ps) = foldr (.) id (map aux ps)
+    aux (Parallel ps _) = foldr (.) id (map (aux . snd) ps)
 
 normaliseWith :: PrettyTerm f => Strategy f -> Term f -> Reduction f
-normaliseWith strat t = {-# SCC normaliseWith #-} aux True t
+normaliseWith strat t = {-# SCC normaliseWith #-} aux [] 0 (singleton t) t
   where
-    aux tryInner t =
-      case strat t of
-        p:_ -> continue True p
-        [] ->
-          case t of
-            Fun f ts | tryInner && not (all (null . steps) ns) ->
-              continue False (Parallel f ns)
-              where
-                ns = map (aux True) (fromTermList ts)
-            _ -> Refl t
-    continue tryInner p = p `Trans` aux tryInner (result p)
+    aux _ !_ _ _ | False = __
+    aux [] _ Empty t = Parallel [] t
+    aux ps _ Empty t =
+      let p = Parallel (reverse ps) t
+          u = result p
+      in p `Trans` aux [] 0 (singleton u) u
+    aux ps n (Cons (Var _) t) u = aux ps (n+1) t u
+    aux ps n (Cons t u) v | p:_ <- strat t =
+      aux ((n, p):ps) (n+len t) u v
+    aux ps n (ConsSym (Fun _ _) t) u =
+      aux ps (n+1) t u
 
 normalForms :: Function f => Strategy f -> [Term f] -> Set (Term f)
 normalForms strat ts = go Set.empty Set.empty ts
@@ -218,16 +229,20 @@ normalForms strat ts = go Set.empty Set.empty ts
         us = map result (anywhere strat t)
 
 anywhere :: Strategy f -> Strategy f
-anywhere strat t = strat t ++ nested (anywhere strat) t
-
-nested _ Var{} = []
-nested strat (Fun f xs) =
-  [ Parallel f $
-      map Refl (take i ys) ++ [p] ++ map Refl (drop (i+1) ys)
-  | (i, x) <- zip [0..] ys,
-    p <- strat x ]
+anywhere strat t = aux 0 (singleton t)
   where
-    ys = fromTermList xs
+    aux !_ Empty = []
+    aux n (Cons Var{} u) = aux (n+1) u
+    aux n (ConsSym u v) =
+      [Parallel [(n,p)] t | p <- strat u] ++ aux (n+1) v
+
+nested :: Strategy f -> Strategy f
+nested strat t = [Parallel [(1,p)] t | p <- aux 0 (children t)]
+  where
+    aux !_ Empty = []
+    aux n (Cons Var{} u) = aux (n+1) u
+    aux n (Cons u v) =
+      [Parallel [(n,p)] t | p <- strat u] ++ aux (n+len t) v
 
 {-# INLINE rewrite #-}
 rewrite :: Function f => String -> (Rule f -> Subst f -> Bool) -> Frozen (Rule f) -> Strategy f

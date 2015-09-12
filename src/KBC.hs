@@ -175,7 +175,7 @@ normaliseSub :: Function f => KBC f -> Term f -> Term f -> Reduction f
 normaliseSub s top t
   | lessEq t top && isNothing (unify t top) =
     normaliseWith (rewrite "sub" (reducesSub top) (rules s)) t
-  | otherwise = Refl t
+  | otherwise = Parallel [] t
 
 normaliseSkolem :: Function f => KBC f -> Term f -> Reduction f
 normaliseSkolem s = normaliseWith (rewrite "skolem" reducesSkolem (rules s))
