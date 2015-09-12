@@ -322,7 +322,7 @@ consider pair = {-# SCC consider #-} do
       forM_ (map canonicalise (orient eq)) $ \(Rule orientation t u0) -> do
         s <- get
         let u = result (normaliseSub s t u0)
-            r = Rule orientation t u
+            r = rule t u
         case {-# SCC normalise2 #-} normaliseCP s (Critical info (t :=: u)) of
           Left reason -> do
             let hard (Trivial Subjoining) = True
@@ -469,19 +469,14 @@ reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
           Just (Reorient old0)
 
 simplifyRule :: Function f => Label -> Model f -> Modelled (Critical (Rule f)) -> State (KBC f) ()
-simplifyRule l model rule@(Modelled _ (Critical info (Rule ctx lhs rhs))) = do
+simplifyRule l model r@(Modelled _ (Critical info (Rule ctx lhs rhs))) = do
   s <- get
-  let
-    reorient ctx l r =
-      case orient (l :=: r) of
-        [x] -> x
-        _   -> Rule ctx l r
   modify $ \s ->
     s {
       labelledRules =
-         Indexes.insert (Labelled l (Modelled model (Critical info (reorient ctx lhs (result (normalise s rhs))))))
-           (Indexes.delete (Labelled l rule) (labelledRules s)) }
-  newSubRule (Rule ctx lhs rhs)
+         Indexes.insert (Labelled l (Modelled model (Critical info (rule lhs (result (normalise s rhs))))))
+           (Indexes.delete (Labelled l r) (labelledRules s)) }
+  newSubRule (rule lhs rhs)
 
 newEquation :: Function f => Equation f -> State (KBC f) ()
 newEquation (t :=: u) = do

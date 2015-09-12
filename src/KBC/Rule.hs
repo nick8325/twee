@@ -103,8 +103,8 @@ orient (l :=: r) =
   -- where k is an arbitrary constant
   [ rule l r' | ord /= Just LT && ord /= Just EQ ] ++
   [ rule r l' | ord /= Just GT && ord /= Just EQ ] ++
-  [ Rule (WeaklyOriented (map Nested.Var ls)) l l' | not (null ls), ord /= Just GT ] ++
-  [ Rule (WeaklyOriented (map Nested.Var rs)) r r' | not (null rs), ord /= Just LT ]
+  [ rule l l' | not (null ls), ord /= Just GT ] ++
+  [ rule r r' | not (null rs), ord /= Just LT ]
   where
     ord = orientTerms l' r'
     l' = erase ls l
@@ -117,18 +117,22 @@ orient (l :=: r) =
       where
         sub = Nested.flattenSubst [(x, minimalTerm) | x <- xs]
 
-    rule t u = Rule o t u
-      where
-        o | lessEq u t =
-            case unify t u of
-              Nothing -> Oriented
-              Just sub
-                | allSubst (\_ (Cons t Empty) -> isMinimal t) sub ->
-                  WeaklyOriented (map (Nested.Var . fst) (substToList sub))
-                | otherwise -> Unoriented
-          | Just ts <- evalStateT (makePermutative t u) [] =
-            Permutative ts
-          | otherwise = Unoriented
+rule :: Function f => Term f -> Term f -> Rule f
+rule t u = Rule o t u
+  where
+    o | lessEq u t =
+        case unify t u of
+          Nothing -> Oriented
+          Just sub
+            | allSubst (\_ (Cons t Empty) -> isMinimal t) sub ->
+              WeaklyOriented (map (Nested.Var . fst) (substToList sub))
+            | otherwise -> Unoriented
+      | lessEq t u = ERROR("wrongly-oriented rule")
+      | not (null (usort (vars u) \\ usort (vars t))) =
+        ERROR("unbound variables in rule")
+      | Just ts <- evalStateT (makePermutative t u) [] =
+        Permutative ts
+      | otherwise = Unoriented
 
     makePermutative t u = do
       sub <- gets Nested.flattenSubst
