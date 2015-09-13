@@ -29,8 +29,8 @@ data Rule f =
 
 data Orientation f =
     Oriented
-  | WeaklyOriented [Nested.Term f]
-  | Permutative [(Nested.Term f, Nested.Term f)]
+  | WeaklyOriented [Term f]
+  | Permutative [(Term f, Term f)]
   | Unoriented
   deriving Show
 
@@ -125,7 +125,7 @@ rule t u = Rule o t u
           Nothing -> Oriented
           Just sub
             | allSubst (\_ (Cons t Empty) -> isMinimal t) sub ->
-              WeaklyOriented (map (Nested.Var . fst) (substToList sub))
+              WeaklyOriented (map (var . fst) (substToList sub))
             | otherwise -> Unoriented
       | lessEq t u = ERROR("wrongly-oriented rule")
       | not (null (usort (vars u) \\ usort (vars t))) =
@@ -142,7 +142,7 @@ rule t u = Rule o t u
             | x == y = return []
             | otherwise = do
               modify ((x, Nested.Var y):)
-              return [(Nested.Var x, Nested.Var y)]
+              return [(var x, var y)]
 
           aux (Fun f ts) (Fun g us)
             | f == g &&
@@ -268,14 +268,14 @@ tryRule p rule t = do
 simplifies :: Function f => Rule f -> Subst f -> Bool
 simplifies (Rule Oriented _ _) _ = True
 simplifies (Rule (WeaklyOriented ts) _ _) sub =
-  or [ not (isMinimal (Nested.flatten t)) | t <- subst sub ts ]
+  or [ not (isMinimal t) | t <- subst sub ts ]
 simplifies (Rule (Permutative _) _ _) _ = False
 simplifies (Rule Unoriented _ _) _ = False
 
 reducesWith :: Function f => (Term f -> Term f -> Bool) -> Rule f -> Subst f -> Bool
 reducesWith _ (Rule Oriented _ _) _ = True
 reducesWith _ (Rule (WeaklyOriented ts) _ _) sub =
-  or [ not (isMinimal (Nested.flatten t)) | t <- subst sub ts ]
+  or [ not (isMinimal t) | t <- subst sub ts ]
 reducesWith p (Rule (Permutative ts) _ _) sub =
   aux ts
   where
@@ -284,8 +284,8 @@ reducesWith p (Rule (Permutative ts) _ _) sub =
       | t' == u' = aux ts
       | otherwise = p u' t'
       where
-        t' = Nested.flatten (subst sub t)
-        u' = Nested.flatten (subst sub u)
+        t' = subst sub t
+        u' = subst sub u
 reducesWith p (Rule Unoriented t u) sub =
   p u' t' && u' /= t'
   where
