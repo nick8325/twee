@@ -48,6 +48,8 @@ data KBC f =
     useInversionRules :: Bool,
     useSkolemPenalty  :: Bool,
     useGroundPenalty  :: Bool,
+    useGeneralSuperpositions :: Bool,
+    useOvergeneralSuperpositions :: Bool,
     joinStatistics    :: Map JoinReason Int }
   deriving Show
 
@@ -66,6 +68,8 @@ initialState maxSize goals =
     useInversionRules = False,
     useSkolemPenalty  = False,
     useGroundPenalty  = False,
+    useGeneralSuperpositions = True,
+    useOvergeneralSuperpositions = False,
     joinStatistics    = Map.empty }
 
 report :: Function f => KBC f -> String
@@ -113,8 +117,9 @@ newLabelM =
 
 data Modelled a =
   Modelled {
-    model    :: Model (ConstantOf a),
-    modelled :: a }
+    model     :: Model (ConstantOf a),
+    positions :: [Int],
+    modelled  :: a }
 
 instance Eq a => Eq (Modelled a) where x == y = modelled x == modelled y
 instance Ord a => Ord (Modelled a) where compare = comparing modelled
@@ -129,7 +134,7 @@ instance Symbolic a => Symbolic (Modelled a) where
 
   term = term . modelled
   symbols fun var = symbols fun var . modelled
-  subst sub Modelled{..} = Modelled model (subst sub modelled)
+  subst sub Modelled{..} = Modelled model positions (subst sub modelled)
 
 --------------------------------------------------------------------------------
 -- Rewriting.
@@ -344,7 +349,7 @@ consider pair = {-# SCC consider #-} do
                 newSubRule r
               Left model -> {-# SCC "NewRule" #-} do
                 traceM (NewRule r)
-                l <- addRule (Modelled model (Critical info r))
+                l <- addRule (Modelled model (ruleOverlaps s (lhs r)) (Critical info r))
                 queueCPsSplit noLabel l (Labelled l r)
                 interreduce r
 
@@ -430,12 +435,12 @@ interreduce new = {-# SCC interreduce #-} do
         traceM (Reduce red new)
         case red of
           Simplify model rule -> simplifyRule l model rule
-          Reorient rule@(Modelled _ (Critical info (Rule _ t u))) -> do
+          Reorient rule@(Modelled _ _ (Critical info (Rule _ t u))) -> do
             deleteRule l rule
             queueCP noLabel noLabel (Critical info (t :=: u))
 
 reduceWith :: Function f => KBC f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
-reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
+reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
   | {-# SCC "reorient-normal" #-}
     not (lhs new `isInstanceOf` l) &&
     not (null (anywhere (tryRule reduces new) l)) =
@@ -469,12 +474,12 @@ reduceWith s lab new old0@(Modelled model (Critical info old@(Rule _ l r)))
           Just (Reorient old0)
 
 simplifyRule :: Function f => Label -> Model f -> Modelled (Critical (Rule f)) -> State (KBC f) ()
-simplifyRule l model r@(Modelled _ (Critical info (Rule ctx lhs rhs))) = do
+simplifyRule l model r@(Modelled _ positions (Critical info (Rule ctx lhs rhs))) = do
   s <- get
   modify $ \s ->
     s {
       labelledRules =
-         Indexes.insert (Labelled l (Modelled model (Critical info (rule lhs (result (normalise s rhs))))))
+         Indexes.insert (Labelled l (Modelled model positions (Critical info (rule lhs (result (normalise s rhs))))))
            (Indexes.delete (Labelled l r) (labelledRules s)) }
   newSubRule (rule lhs rhs)
 
@@ -585,30 +590,37 @@ data InitialCP f =
     cpOK :: Bool,
     cpCP :: Labelled (Critical (Equation f)) }
 
-filterCPs :: Function f => [InitialCP f] -> [Labelled [Critical (Equation f)]]
-filterCPs =
-  map pick . filter (cpOK . head) . groupBy ((==) `on` cpId) . sortBy (comparing cpId)
-  where
-    pick xs@(x:_) = Labelled (labelOf (cpCP x)) (map (peel . cpCP) xs)
-
-criticalPairs :: Function f => KBC f -> Label -> Label -> Rule f -> [InitialCP f]
+criticalPairs :: Function f => KBC f -> Label -> Label -> Rule f -> [Labelled (Critical (Equation f))]
 criticalPairs s lower upper rule = {-# SCC criticalPairs #-}
-  criticalPairs1 s (maxSize s) rule (map (fmap (critical . modelled)) rules) ++
+  criticalPairs1 s (ruleOverlaps s (lhs rule)) rule (map (fmap (critical . modelled)) rules) ++
   [ cp
-  | Labelled l' (Modelled _ (Critical _ old)) <- rules,
-    cp <- criticalPairs1 s (maxSize s) old [Labelled l' rule] ]
+  | Labelled l' (Modelled _ ns (Critical _ old)) <- rules,
+    cp <- criticalPairs1 s ns old [Labelled l' rule] ]
   where
     rules = filter (p . labelOf) (Indexes.elems (labelledRules s))
     p l = lower <= l && l <= upper
 
-cps :: Rule f -> Rule f -> [(Subst f, Int)]
-cps _ (Rule _ (Var _) _) = []
-cps (Rule _ t1 _) (Rule _ t2 _) = {-# SCC cps #-} go 0 (singleton t1) []
+ruleOverlaps :: KBC f -> Term f -> [Int]
+ruleOverlaps s t = aux 0 Set.empty (singleton t)
   where
-    go !_ !_ _ | False = __
-    go _ Empty rest = rest
-    go n (Cons (Var _) t) rest = go (n+1) t rest
-    go n (ConsSym t u) rest = here ++ go (n+1) u rest
+    aux !_ !_ Empty = []
+    aux n m (Cons (Var _) t) = aux (n+1) m t
+    aux n m (ConsSym t@Fun{} u)
+      | (useGeneralSuperpositions s || useOvergeneralSuperpositions s) &&
+        canon t `Set.member` m = aux (n+1) m u
+      | otherwise = n:aux (n+1) (Set.insert (canon t) m) u
+
+    canon = if useOvergeneralSuperpositions s then canonicalise else id
+
+overlaps :: [Int] -> Term f -> Term f -> [(Subst f, Int)]
+overlaps ns t1 t2 = {-# SCC overlaps #-} go 0 ns (singleton t1) []
+  where
+    go !_ _ !_ _ | False = __
+    go _ [] _ rest = rest
+    go _ _ Empty rest = rest
+    go n (m:ms) (ConsSym t u) rest
+      | m == n = here ++ go (n+1) ms u rest
+      | otherwise = go (n+1) (m:ms) u rest
       where
         here =
           case unify t t2 of
@@ -634,15 +646,13 @@ emitReplacement n t = aux n
           emitTerm t
           aux (n-len t) u
 
--- XXX we generate self-CPs twice and also CPs where both terms are applied to the root.
-
-criticalPairs1 :: Function f => KBC f -> Int -> Rule f -> [Labelled (Rule f)] -> [InitialCP f]
-criticalPairs1 s n r1@(Rule or1 t u) idx = {-# SCC criticalPairs1 #-} do
+criticalPairs1 :: Function f => KBC f -> [Int] -> Rule f -> [Labelled (Rule f)] -> [Labelled (Critical (Equation f))]
+criticalPairs1 s ns (Rule or t u) rs = {-# SCC criticalPairs1 #-} do
   let b = {-# SCC bound #-} bound t
-  Labelled l r <- idx
+  Labelled l r <- rs
   let sub = Nested.flattenSubst [(x, Nested.Var (toEnum (fromEnum x+b))) | x <- vars r]
-      r2@(Rule or2 t' u') = subst sub r
-  (sub, pos) <- cps r1 r2
+      Rule or' t' u' = subst sub r
+  (sub, pos) <- overlaps ns t t'
   let left = subst sub u
       right = subst sub (buildTerm 32 (emitReplacement pos u' (singleton t)))
       top = subst sub t
@@ -653,14 +663,11 @@ criticalPairs1 s n r1@(Rule or1 t u) idx = {-# SCC criticalPairs1 #-} do
       sz = size top
 
   guard (left /= top && right /= top && left /= right)
-  when (or1 == Unoriented) $ guard ({-# SCC lessEq #-} not (lessEq top right))
-  when (or2 == Unoriented) $ guard ({-# SCC lessEq #-} not (lessEq top left))
-  guard (size top <= n)
-  return $
-    InitialCP
-      ({-# SCC "label" #-} (canonicalise overlap, l))
-      ({-# SCC condition #-} null (nested (anywhere (rewrite "prime" simplifies (easyRules s))) inner))
-      (Labelled l (Critical (CritInfo top osz) (left :=: right)))
+  when (or  /= Oriented) $ guard (not (lessEq top right))
+  when (or' /= Oriented) $ guard (not (lessEq top left))
+  guard (size top <= maxSize s)
+  guard (null (nested (anywhere (rewrite "prime" simplifies (easyRules s))) inner))
+  return (Labelled l (Critical (CritInfo top osz) (left :=: right)))
 
 queueCP ::
   Function f =>
@@ -698,10 +705,7 @@ toCPs ::
   Function f =>
   KBC f -> Label -> Label -> Labelled (Rule f) -> [CP f]
 toCPs s lower upper (Labelled l rule) = {-# SCC toCPs #-}
-  usortBy (comparing (critical . cp)) . map minimum . filter (not . null) $
-    [ catMaybes (map (toCP s l l') eqns) | Labelled l' eqns <- cps0 ]
-  where
-    cps0 = filterCPs (criticalPairs s lower upper rule)
+  catMaybes [toCP s l l' eqn | Labelled l' eqn <- criticalPairs s lower upper rule]
 
 toCP ::
   Function f =>
