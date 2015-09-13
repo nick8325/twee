@@ -6,7 +6,7 @@
 module KBC.Term(
   module KBC.Term,
   -- Stuff from KBC.Term.Core.
-  Term, TermList, lenList,
+  Term, TermList, at, lenList,
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
   Fun(..), OrdFun(..), Var(..), pattern Var, pattern Fun, singleton,

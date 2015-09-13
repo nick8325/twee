@@ -1,7 +1,7 @@
 -- Knuth-Bendix completion, with lots of exciting tricks for
 -- unorientable equations.
 
-{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, RecordWildCards, ScopedTypeVariables, UndecidableInstances, StandaloneDeriving, PatternGuards #-}
+{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, RecordWildCards, ScopedTypeVariables, UndecidableInstances, StandaloneDeriving, PatternGuards, BangPatterns #-}
 module KBC where
 
 #include "errors.h"
@@ -601,25 +601,40 @@ criticalPairs s lower upper rule = {-# SCC criticalPairs #-}
     rules = filter (p . labelOf) (Indexes.elems (labelledRules s))
     p l = lower <= l && l <= upper
 
-cps :: Rule f -> Rule f -> [(Subst f, Term f, Term f)]
+cps :: Rule f -> Rule f -> [(Subst f, Int)]
 cps _ (Rule _ (Var _) _) = []
-cps (Rule _ t1 _) (Rule _ t2 u2) = {-# SCC cps #-}
-  -- t1 -> u1 at root
-  -- returns substitution and position and t1[u2].
-  DList.toList (fmap (\(sub, t0, t) -> (sub, t0, Nested.flatten t)) (go t1 id))
-    where
-      go (Var _) _ = mzero
-      go t@(Fun f ts) k = here t k `mplus` there f (fromTermList ts) k
+cps (Rule _ t1 _) (Rule _ t2 _) = {-# SCC cps #-} go 0 (singleton t1) []
+  where
+    go !_ !_ _ | False = __
+    go _ Empty rest = rest
+    go n (Cons (Var _) t) rest = go (n+1) t rest
+    go n (ConsSym t u) rest = here ++ go (n+1) u rest
+      where
+        here =
+          case unify t t2 of
+            Nothing -> []
+            Just sub -> [(sub, n)]
 
-      here t k =
-        case unify t t2 of
-          Nothing  -> mzero
-          Just sub -> return (sub, t, k (Nested.Flat u2))
+emitReplacement :: Int -> Term f -> TermList f -> BuildM s f ()
+emitReplacement n t = aux n
+  where
+    aux !_ !_ | False = __
+    aux _ Empty = return ()
+    aux 0 (Cons _ u) = do
+      emitTerm t
+      emitTermList u
+    aux n (Cons (Var x) u) = do
+      emitVar x
+      aux (n-1) u
+    aux n (Cons t@(Fun f ts) u)
+      | n < len t = do
+          emitFun f (aux (n-1) ts)
+          emitTermList u
+      | otherwise = do
+          emitTerm t
+          aux (n-len t) u
 
-      there f ts k = do
-        n <- DList.fromList [0..length ts-1]
-        let (us, x:vs) = splitAt n ts
-        go x (\y -> k (Nested.Fun f (map Nested.Flat us ++ [y] ++ map Nested.Flat vs)))
+-- XXX we generate self-CPs twice and also CPs where both terms are applied to the root.
 
 criticalPairs1 :: Function f => KBC f -> Int -> Rule f -> [Labelled (Rule f)] -> [InitialCP f]
 criticalPairs1 s n r1@(Rule or1 t u) idx = {-# SCC criticalPairs1 #-} do
@@ -627,10 +642,11 @@ criticalPairs1 s n r1@(Rule or1 t u) idx = {-# SCC criticalPairs1 #-} do
   Labelled l r <- idx
   let sub = Nested.flattenSubst [(x, Nested.Var (toEnum (fromEnum x+b))) | x <- vars r]
       r2@(Rule or2 t' u') = subst sub r
-  (sub, overlap, right0) <- cps r1 r2
+  (sub, pos) <- cps r1 r2
   let left = subst sub u
-      right = subst sub right0
+      right = subst sub (buildTerm 32 (emitReplacement pos u' (singleton t)))
       top = subst sub t
+      overlap = at pos (singleton t)
 
       inner = subst sub overlap
       osz = size overlap + (size u - size t) + (size u' - size t')

@@ -71,6 +71,13 @@ data TermList f =
     high  :: {-# UNPACK #-} !Int,
     array :: {-# UNPACK #-} !ByteArray }
 
+at :: Int -> TermList f -> Term f
+at n (TermList lo hi arr)
+  | n < 0 || n + lo >= hi = ERROR("term index out of bounds")
+  | otherwise =
+    case TermList (lo+n) hi arr of
+      Cons t _ -> t
+
 {-# INLINE lenList #-}
 -- The length (number of symbols in) a flatterm.
 lenList :: TermList f -> Int

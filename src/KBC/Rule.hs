@@ -180,6 +180,9 @@ result t = buildTerm 32 (emitReduction t)
     emitParallel _ _ Empty = return ()
     emitParallel _ [] t = emitTermList t
     emitParallel n ((m, _):_) t  | m >= n + lenList t = emitTermList t
+    emitParallel n ps@((m, _):_) (Cons t u) | m >= n + len t = do
+      emitTerm t
+      emitParallel (n + len t) ps u
     emitParallel n ((m, _):ps) t | m < n = emitParallel n ps t
     emitParallel n ((m, p):ps) (Cons t u) | m == n = do
       emitReduction p
