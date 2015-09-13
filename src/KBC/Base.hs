@@ -121,18 +121,18 @@ isMinimal :: Minimal f => Term f -> Bool
 isMinimal (Fun f Empty) | f == minimal = True
 isMinimal _ = False
 
-minimalTerm :: Minimal f => Nested.Term f
-minimalTerm = Nested.Fun minimal []
+minimalTerm :: Minimal f => Term f
+minimalTerm = fun minimal []
 
 class Skolem f where
   skolem  :: Var -> Fun f
 
-skolemConst :: Skolem f => Var -> Nested.Term f
-skolemConst x = Nested.Fun (skolem x) []
+skolemConst :: Skolem f => Var -> Term f
+skolemConst x = fun (skolem x) []
 
 skolemise :: (Symbolic a, Skolem (ConstantOf a)) => a -> SubstOf a
 skolemise t =
-  Nested.flattenSubst [(x, skolemConst x) | x <- vars t]
+  Nested.flattenSubst [(x, Nested.Flat (skolemConst x)) | x <- vars t]
 
 class (OrdFun f, PrettyTerm f, Minimal f, Skolem f, Arity f, SizedFun f, Ordered f) => Function f
 

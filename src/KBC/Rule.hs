@@ -115,7 +115,7 @@ orient (l :=: r) =
     erase [] t = t
     erase xs t = subst sub t
       where
-        sub = Nested.flattenSubst [(x, minimalTerm) | x <- xs]
+        sub = Nested.flattenSubst [(x, Nested.Flat minimalTerm) | x <- xs]
 
 rule :: Function f => Term f -> Term f -> Rule f
 rule t u = Rule o t u

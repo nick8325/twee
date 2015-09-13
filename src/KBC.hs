@@ -485,7 +485,7 @@ simplifyRule l model r@(Modelled _ positions (Critical info (Rule ctx lhs rhs)))
 
 newEquation :: Function f => Equation f -> State (KBC f) ()
 newEquation (t :=: u) = do
-  consider (Critical (CritInfo (Nested.flatten minimalTerm) 0) (t :=: u))
+  consider (Critical (CritInfo minimalTerm 0) (t :=: u))
   return ()
 
 --------------------------------------------------------------------------------
