@@ -24,7 +24,6 @@ library
     KBC.Rule
     KBC.Term
     KBC.Term.Core
-    KBC.Term.Nested
     KBC.Utils
     KBC.KBO
     Data.Primitive.ArrayArray
