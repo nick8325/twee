@@ -6,7 +6,6 @@ module KBC where
 
 #include "errors.h"
 import KBC.Base hiding (empty)
-import qualified KBC.Term.Nested as Nested
 import KBC.Constraints hiding (funs)
 import KBC.Rule
 import qualified KBC.Indexes as Indexes
@@ -252,7 +251,7 @@ normaliseCP s cp@(Critical info _) =
     flipCP t = subst sub t
       where
         n = maximum (0:map fromEnum (vars t))
-        sub = Nested.flattenSubst [(MkVar x, Nested.Var (MkVar (n - x))) | MkVar x <- vars t]
+        sub = flattenSubst [(MkVar x, var (MkVar (n - x))) | MkVar x <- vars t]
 
     -- XXX shouldn't this also check subsumption?
     setJoin (Critical info (t :=: u))
@@ -650,7 +649,7 @@ criticalPairs1 :: Function f => KBC f -> [Int] -> Rule f -> [Labelled (Rule f)] 
 criticalPairs1 s ns (Rule or t u) rs = {-# SCC criticalPairs1 #-} do
   let b = {-# SCC bound #-} bound t
   Labelled l r <- rs
-  let sub = Nested.flattenSubst [(x, Nested.Var (toEnum (fromEnum x+b))) | x <- vars r]
+  let sub = flattenSubst [(x, var (toEnum (fromEnum x+b))) | x <- vars r]
       Rule or' t' u' = subst sub r
   (sub, pos) <- overlaps ns t t'
   let left = subst sub u

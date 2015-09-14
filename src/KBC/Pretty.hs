@@ -10,7 +10,6 @@ import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.Ratio
 import KBC.Term
-import qualified KBC.Term.Nested as Nested
 
 -- * Miscellaneous 'Pretty' instances and utilities.
 
@@ -60,9 +59,6 @@ instance PrettyTerm f => Pretty (Term f) where
 
 instance PrettyTerm f => Pretty (TermList f) where
   pPrintPrec l p = pPrint . termListToList
-
-instance PrettyTerm f => Pretty (Nested.Term f) where
-  pPrintPrec l p = pPrintPrec l p . Nested.flatten
 
 instance PrettyTerm f => Pretty (Subst f) where
   pPrint sub = text "{" <> fsep (punctuate (text ",") docs) <> text "}"

@@ -11,7 +11,6 @@ import Control.Monad.Trans.Class
 import Data.Char
 import KBC
 import KBC.Base hiding (char, lookup)
-import qualified KBC.Term.Nested as Nested
 import KBC.Rule
 import KBC.Utils
 import KBC.Queue
@@ -189,9 +188,8 @@ main = do
         array (0, maximum (map conIndex fs1))
           [(conIndex f, f) | f <- fs1]
 
-      translate = Nested.flatten . translate1
-      translate1 (VarTm x) = Nested.Var x
-      translate1 (App f ts) = Nested.Fun (replace fs f) (map translate1 ts)
+      translate (VarTm x) = var x
+      translate (App f ts) = fun (replace fs f) (map translate ts)
 
       axioms1 = map (run parseEquation) (map tok axioms0)
       goals1 = map (run parseTerm . tok) goals0

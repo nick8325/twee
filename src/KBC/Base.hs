@@ -16,7 +16,6 @@ import Data.List
 import qualified Data.Map as Map
 import KBC.Term hiding (subst, canonicalise)
 import qualified KBC.Term as Term
-import qualified KBC.Term.Nested as Nested
 import KBC.Pretty
 import Text.PrettyPrint.HughesPJClass hiding (empty)
 import Data.Ord
@@ -56,38 +55,6 @@ termListSymbols fun var = aux
     aux (ConsSym (Fun f _) t) = fun f `mappend` aux t
     aux (ConsSym (Var x) t) = var x `mappend` aux t
 
-instance Symbolic (Nested.Term f) where
-  type ConstantOf (Nested.Term f) = f
-  term    = Nested.flatten
-  symbols = nestedTermSymbols
-  subst   = Nested.Subst
-
-{-# INLINE nestedTermSymbols #-}
-nestedTermSymbols :: Monoid w => (Fun f -> w) -> (Var -> w) -> Nested.Term f -> w
-nestedTermSymbols fun var = aux []
-  where
-    aux subs (Nested.Flat t) = go subs (singleton t)
-    aux subs (Nested.Subst sub t) = aux (Left sub:subs) t
-    aux subs (Nested.IterSubst sub t) = aux (Right sub:subs) t
-    aux subs (Nested.Var x) = goVar subs x
-    aux subs (Nested.Fun f ts) = fun f `mappend` mconcat (map (aux subs) ts)
-
-    goVar [] x = var x
-    goVar subs0@(sub0:subs) x =
-      case lookupList sub x of
-        Nothing -> goVar subs x
-        Just t  ->
-          case sub0 of
-            Left{}  -> go subs  t
-            Right{} -> go subs0 t
-      where
-        sub = either id unTriangle sub0
-
-    go _ Empty = mempty
-    go [] t = symbols fun var t
-    go subs (ConsSym (Fun f _) t) = fun f `mappend` go subs t
-    go subs (Cons (Var x) t) = goVar subs x `mappend` go subs t
-
 instance (ConstantOf a ~ ConstantOf b,
           Symbolic a, Symbolic b) => Symbolic (a, b) where
   type ConstantOf (a, b) = ConstantOf a
@@ -112,7 +79,7 @@ funs = DList.toList . symbols return (const mzero)
 canonicalise :: Symbolic a => a -> a
 canonicalise t = subst sub t
   where
-    sub = Term.canonicalise [Nested.flattenList (map Nested.Var (vars t))]
+    sub = Term.canonicalise (map (singleton . var) (vars t))
 
 class Minimal a where
   minimal :: Fun a
@@ -132,7 +99,7 @@ skolemConst x = fun (skolem x) []
 
 skolemise :: (Symbolic a, Skolem (ConstantOf a)) => a -> SubstOf a
 skolemise t =
-  Nested.flattenSubst [(x, Nested.Flat (skolemConst x)) | x <- vars t]
+  flattenSubst [(x, skolemConst x) | x <- vars t]
 
 class (OrdFun f, PrettyTerm f, Minimal f, Skolem f, Arity f, SizedFun f, Ordered f) => Function f
 

@@ -3,7 +3,6 @@ module KBC.Rule where
 
 #include "errors.h"
 import KBC.Base
-import qualified KBC.Term.Nested as Nested
 import KBC.Constraints
 import qualified KBC.Index as Index
 import KBC.Index(Frozen)
@@ -115,7 +114,7 @@ orient (l :=: r) =
     erase [] t = t
     erase xs t = subst sub t
       where
-        sub = Nested.flattenSubst [(x, Nested.Flat minimalTerm) | x <- xs]
+        sub = flattenSubst [(x, minimalTerm) | x <- xs]
 
 rule :: Function f => Term f -> Term f -> Rule f
 rule t u = Rule o t u
@@ -135,13 +134,13 @@ rule t u = Rule o t u
       | otherwise = Unoriented
 
     makePermutative t u = do
-      sub <- gets Nested.flattenSubst
+      sub <- gets flattenSubst
       aux (subst sub t) (subst sub u)
         where
           aux (Var x) (Var y)
             | x == y = return []
             | otherwise = do
-              modify ((x, Nested.Var y):)
+              modify ((x, var y):)
               return [(var x, var y)]
 
           aux (Fun f ts) (Fun g us)

@@ -4,8 +4,6 @@ module KBC.Constraints where
 #include "errors.h"
 import KBC.Base hiding (equals, Term(..), pattern Fun, pattern Var, lookup, funs)
 import qualified KBC.Term as Flat
-import KBC.Term.Nested
-import qualified KBC.Term.Nested as Nested
 import Control.Monad
 import qualified Data.Map.Strict as Map
 import KBC.Utils
@@ -15,16 +13,17 @@ import Data.Graph
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
 import Data.Ord
+import KBC.Term hiding (lookup)
 
 data Atom f = Constant (Fun f) | Variable Var deriving (Eq, Ord, Show)
 
 toTerm :: Atom f -> Term f
-toTerm (Constant f) = Fun f []
-toTerm (Variable x) = Var x
+toTerm (Constant f) = fun f []
+toTerm (Variable x) = var x
 
 fromTerm :: Flat.Term f -> Maybe (Atom f)
-fromTerm (Flat.Fun f Empty) = Just (Constant f)
-fromTerm (Flat.Var x) = Just (Variable x)
+fromTerm (Fun f Empty) = Just (Constant f)
+fromTerm (Var x) = Just (Variable x)
 fromTerm _ = Nothing
 
 instance Function f => Pretty (Atom f) where
@@ -245,7 +244,7 @@ solve xs b@Branch{..}
   | null equals = Left model
   | otherwise = Right sub
     where
-      sub = Nested.flattenSubst $
+      sub = flattenSubst $
         [(x, toTerm y) | (Variable x, y) <- equals] ++
         [(y, toTerm x) | (x@Constant{}, Variable y) <- equals]
       vs = reverse (flattenSCCs (stronglyConnComp [(x, x, [y | (x', y) <- less, x == x']) | x <- as]))

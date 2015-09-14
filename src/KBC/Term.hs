@@ -222,6 +222,14 @@ emptySubst =
     msub <- newMutableSubst 0
     unsafeFreezeSubst msub
 
+-- Turn a substitution list into a substitution.
+flattenSubst :: [(Var, Term f)] -> Subst f
+flattenSubst sub = fromMaybe err (matchList pat t)
+  where
+    pat = concatTerms (map (singleton . var . fst) sub)
+    t   = concatTerms (map (singleton . snd) sub)
+    err = ERROR("variable bound to two different terms")
+
 --------------------------------------------------------------------------------
 -- Matching.
 --------------------------------------------------------------------------------
