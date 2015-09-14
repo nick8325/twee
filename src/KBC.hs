@@ -765,7 +765,7 @@ toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
       | u `lessEq` t = f t u + penalty t u
       | otherwise    = (f t u `max` f u t) + penalty t u
       where
-        f t u = size' t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u) + if useGroundPenalty s && null (vars u) then 5 else 0
+        f t u = 2*size' t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u) + if useGroundPenalty s && null (vars u) then 5 else 0
         size' t =
           size t +
           -- Lots of different constants are probably bad
