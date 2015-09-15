@@ -214,7 +214,7 @@ main = do
         when (res && (length goals <= 1 || not (identical goals))) loop
 
       s =
-        flip execState (initialState (read size) (map Set.singleton goals2)) $ do
+        flip execState (addGoals (map Set.singleton goals2) initialState { maxSize = Just (read size) }) $ do
           mapM_ newEquation axioms
           loop
 

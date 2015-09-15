@@ -35,7 +35,7 @@ import qualified Data.DList as DList
 
 data KBC f =
   KBC {
-    maxSize           :: Int,
+    maxSize           :: Maybe Int,
     labelledRules     :: {-# UNPACK #-} !(Indexes (Labelled (Modelled (Critical (Rule f))))),
     extraRules        :: {-# UNPACK #-} !(Indexes (Rule f)),
     subRules          :: Index (Term f, Rule f),
@@ -52,14 +52,14 @@ data KBC f =
     joinStatistics    :: Map JoinReason Int }
   deriving Show
 
-initialState :: Int -> [Set (Term f)] -> KBC f
-initialState maxSize goals =
+initialState :: KBC f
+initialState =
   KBC {
-    maxSize           = maxSize,
+    maxSize           = Nothing,
     labelledRules     = Indexes.empty,
     extraRules        = Indexes.empty,
     subRules          = Index.Nil,
-    goals             = goals,
+    goals             = [],
     totalCPs          = 0,
     processedCPs      = 0,
     renormaliseAt     = 50,
@@ -70,6 +70,9 @@ initialState maxSize goals =
     useGeneralSuperpositions = True,
     useOvergeneralSuperpositions = False,
     joinStatistics    = Map.empty }
+
+addGoals :: [Set (Term f)] -> KBC f -> KBC f
+addGoals gs s = s { goals = gs ++ goals s }
 
 report :: Function f => KBC f -> String
 report KBC{..} =
@@ -664,7 +667,9 @@ criticalPairs1 s ns (Rule or t u) rs = {-# SCC criticalPairs1 #-} do
   guard (left /= top && right /= top && left /= right)
   when (or  /= Oriented) $ guard (not (lessEq top right))
   when (or' /= Oriented) $ guard (not (lessEq top left))
-  guard (size top <= maxSize s)
+  case maxSize s of
+    Nothing -> return ()
+    Just n -> guard (size top <= n)
   guard (null (nested (anywhere (rewrite "prime" simplifies (easyRules s))) inner))
   return (Labelled l (Critical (CritInfo top osz) (left :=: right)))
 
