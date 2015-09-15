@@ -51,4 +51,5 @@ executable kbc
                        transformers,
                        pretty,
                        array,
-                       reflection
+                       reflection,
+                       optparse-applicative

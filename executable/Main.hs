@@ -9,12 +9,12 @@ import Control.Monad
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Class
 import Data.Char
-import KBC
-import KBC.Base hiding (char, lookup)
+import KBC hiding (info)
+import KBC.Base hiding (char, lookup, (<>))
 import KBC.Rule
 import KBC.Utils
 import KBC.Queue
-import Text.ParserCombinators.ReadP hiding (get)
+import Text.ParserCombinators.ReadP hiding (get, option)
 import System.Environment
 import System.Exit
 import Data.Ord
@@ -26,6 +26,29 @@ import qualified KBC.KBO as KBO
 import qualified Data.Set as Set
 import Data.Reflection
 import Data.Array
+import Options.Applicative
+
+parseInitialState :: Parser (KBC f)
+parseInitialState =
+  go <$> maxSize <*> inversion <*> skolem <*> ground <*> general <*> overgeneral
+  where
+    go maxSize inversion skolem ground general overgeneral =
+      initialState {
+        maxSize = maxSize,
+        useInversionRules = inversion,
+        useSkolemPenalty = skolem,
+        useGroundPenalty = ground,
+        useGeneralSuperpositions = general,
+        useOvergeneralSuperpositions = overgeneral }
+    maxSize = (Just <$> option auto (long "max-size" <> help "Maximum critical pair size")) <|> pure Nothing
+    inversion = switch (long "inversion" <> help "Detect inversion rules")
+    skolem = switch (long "skolem-penalty" <> help "Penalise critical pairs whose Skolemisation is joinable")
+    ground = switch (long "ground-penalty" <> help "Penalise ground critical pairs")
+    general = switch (long "general-superpositions" <> help "Consider only general superpositions")
+    overgeneral = switch (long "overgeneral-superpositions" <> help "A more aggressive, incomplete version of --general-superpositions")
+
+parseFile :: Parser (Maybe String)
+parseFile = fmap Just (strArgument (metavar "FILENAME")) <|> pure Nothing
 
 data Constant =
   Constant {
@@ -174,8 +197,15 @@ check t = do
       _ -> return ()
 
 main = do
-  [size] <- getArgs
-  input  <- getContents
+  (state, mfile) <-
+    execParser $
+      info (helper <*> ((,) <$> parseInitialState <*> parseFile))
+        (fullDesc <>
+         header "kbc - an equational theorem prover")
+  input <-
+    case mfile of
+      Nothing -> getContents
+      Just file -> readFile file
   let (sig, ("--":eqs1)) = break (== "--") (filter (not . comment) (lines input))
       comment ('%':_) = True
       comment _ = False
@@ -214,7 +244,7 @@ main = do
         when (res && (length goals <= 1 || not (identical goals))) loop
 
       s =
-        flip execState (addGoals (map Set.singleton goals2) initialState { maxSize = Just (read size) }) $ do
+        flip execState (addGoals (map Set.singleton goals2) state) $ do
           mapM_ newEquation axioms
           loop
 
