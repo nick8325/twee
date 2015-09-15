@@ -1,11 +1,11 @@
 -- Term indexing, where the inserted values can be given categories.
 {-# LANGUAGE CPP, TypeFamilies, ScopedTypeVariables #-}
-module KBC.Indexes where
+module Twee.Indexes where
 
 #include "errors.h"
-import KBC.Base hiding (empty)
-import qualified KBC.Index as Index
-import KBC.Index(Index)
+import Twee.Base hiding (empty)
+import qualified Twee.Index as Index
+import Twee.Index(Index)
 import Data.Array
 import Data.Maybe
 

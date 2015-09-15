@@ -1,12 +1,12 @@
 {-# LANGUAGE TemplateHaskell #-}
-import KBC.Constraints
-import KBC.Term
+import Twee.Constraints
+import Twee.Term
 import Test.QuickCheck
 import Test.QuickCheck.All
-import KBC.Pretty
+import Twee.Pretty
 import Text.PrettyPrint
 import Data.Rewriting.Term
-import KBC.Base
+import Twee.Base
 import Control.Monad
 
 lhs, rhs :: Term Fun Var

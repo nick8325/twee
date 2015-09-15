@@ -1,7 +1,7 @@
 -- | Pretty-printing of terms and assorted other values.
 
 {-# LANGUAGE Rank2Types, FlexibleContexts #-}
-module KBC.Pretty(module KBC.Pretty, module Text.PrettyPrint.HughesPJClass, Pretty(..)) where
+module Twee.Pretty(module Twee.Pretty, module Text.PrettyPrint.HughesPJClass, Pretty(..)) where
 
 import Text.PrettyPrint.HughesPJClass
 import qualified Data.Map as Map
@@ -9,7 +9,7 @@ import Data.Map(Map)
 import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.Ratio
-import KBC.Term
+import Twee.Term
 
 -- * Miscellaneous 'Pretty' instances and utilities.
 

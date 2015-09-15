@@ -1,16 +1,16 @@
 {-# LANGUAGE TypeFamilies, StandaloneDeriving, FlexibleContexts, UndecidableInstances, RecordWildCards, PatternGuards, CPP, BangPatterns #-}
-module KBC.Rule where
+module Twee.Rule where
 
 #include "errors.h"
-import KBC.Base
-import KBC.Constraints
-import qualified KBC.Index as Index
-import KBC.Index(Frozen)
+import Twee.Base
+import Twee.Constraints
+import qualified Twee.Index as Index
+import Twee.Index(Frozen)
 import Control.Monad
 import Control.Monad.Trans.State.Strict
 import Data.Maybe
 import Data.List
-import KBC.Utils
+import Twee.Utils
 import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.Monoid hiding ((<>))

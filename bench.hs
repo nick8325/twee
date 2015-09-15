@@ -1,14 +1,14 @@
 {-# LANGUAGE PatternGuards #-}
 import Criterion.Main
-import KBC.Term hiding (var, fun, isFun)
-import qualified KBC.Term
+import Twee.Term hiding (var, fun, isFun)
+import qualified Twee.Term
 import Test.QuickCheck
 import Data.Int
 import Data.Maybe
-import KBC.Term.Core hiding (subst)
-import KBC.Term.Nested
+import Twee.Term.Core hiding (subst)
+import Twee.Term.Nested
 
-t0, t1, u0, u1, t2, t, u :: KBC.Term.Term Int
+t0, t1, u0, u1, t2, t, u :: Twee.Term.Term Int
 t0 = flatten $ fun 0 [var 0, fun 0 [var 0, fun 0 [fun 0 [var 0, var 1], var 2]]]
 u0 = flatten $ fun 0 [fun 0 [fun 2 [fun 2 [var 2, var 2], var 1], fun 0 [fun 2 [var 2, var 2], var 3]], fun 0 [fun 0 [fun 2 [fun 2 [var 2, var 2], var 1], fun 0 [fun 2 [var 2, var 2], var 3]], fun 0 [fun 0 [fun 0 [fun 2 [fun 2 [var 2, var 2], var 1], fun 0 [fun 2 [var 2, var 2], var 3]], fun 2 [fun 2 [var 2, var 2], var 1]], fun 2 [var 2, var 2]]]]
 
@@ -18,8 +18,8 @@ u1 = flatten $ fun 0 [fun 1 [fun 0 [fun 2 [], fun 3 []]], fun 1 [fun 0 [fun 4 []
 t2 = flatten $ fun 0 [var 0, fun 1 [var 1, fun 1 [var 1, var 1]]]
 u2 = flatten $ fun 0 [fun 0 [var 2, var 2], var 2]
 
-fun f ts = KBC.Term.Nested.Fun (MkFun f) ts
-var = KBC.Term.Nested.Var . MkVar
+fun f ts = Twee.Term.Nested.Fun (MkFun f) ts
+var = Twee.Term.Nested.Var . MkVar
 
 t = t0
 u = u0
@@ -62,8 +62,8 @@ main = do
     bench "unify-subst-closed2" (whnf (uncurry subst) (csub', u2)),
     bench "mgu-tri" (whnf (uncurry mgu1) (t2, u2)),
     bench "mgu-close" (whnf (uncurry mgu2) (t2, u2)),
-    bench "make-constant" (whnf (uncurry KBC.Term.fun) (MkFun 0, [])),
-    bench "make-constant-cfun" (whnf (uncurry KBC.Term.Nested.Fun) (MkFun 0, [])),
+    bench "make-constant" (whnf (uncurry Twee.Term.fun) (MkFun 0, [])),
+    bench "make-constant-cfun" (whnf (uncurry Twee.Term.Nested.Fun) (MkFun 0, [])),
     bench "baseline" (whnf (uncurry (+)) (0 :: Int, 0))]
 
 prop :: Bool -> NonNegative (Small Int) -> NonNegative (Small Int) -> Property

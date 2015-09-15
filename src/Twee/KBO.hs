@@ -1,10 +1,10 @@
 {-# LANGUAGE CPP, PatternGuards #-}
-module KBC.KBO where
+module Twee.KBO where
 
 #include "errors.h"
-import KBC.Base hiding (lessEq, lessIn)
+import Twee.Base hiding (lessEq, lessIn)
 import Data.List
-import KBC.Constraints
+import Twee.Constraints
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
 import Data.Maybe

@@ -1,8 +1,8 @@
 -- A priority queue, with orphan murder.
 {-# LANGUAGE TypeFamilies, GeneralizedNewtypeDeriving, DeriveFunctor, RecordWildCards #-}
-module KBC.Queue where
+module Twee.Queue where
 
-import KBC.Base
+import Twee.Base
 import Data.Ord
 import qualified Data.Heap as Heap
 import Data.Heap(Heap)

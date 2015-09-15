@@ -9,26 +9,26 @@ import Control.Monad
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Class
 import Data.Char
-import KBC hiding (info)
-import KBC.Base hiding (char, lookup, (<>))
-import KBC.Rule
-import KBC.Utils
-import KBC.Queue
+import Twee hiding (info)
+import Twee.Base hiding (char, lookup, (<>))
+import Twee.Rule
+import Twee.Utils
+import Twee.Queue
 import Text.ParserCombinators.ReadP hiding (get, option)
 import System.Environment
 import System.Exit
 import Data.Ord
-import qualified KBC.Indexes as Indexes
+import qualified Twee.Indexes as Indexes
 import System.Exit
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
-import qualified KBC.KBO as KBO
+import qualified Twee.KBO as KBO
 import qualified Data.Set as Set
 import Data.Reflection
 import Data.Array
 import Options.Applicative
 
-parseInitialState :: Parser (KBC f)
+parseInitialState :: Parser (Twee f)
 parseInitialState =
   go <$> maxSize <*> inversion <*> skolem <*> ground <*> general <*> overgeneral
   where
@@ -201,7 +201,7 @@ main = do
     execParser $
       info (helper <*> ((,) <$> parseInitialState <*> parseFile))
         (fullDesc <>
-         header "kbc - an equational theorem prover")
+         header "twee - an equational theorem prover")
   input <-
     case mfile of
       Nothing -> getContents

@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP #-}
-module KBC.Array where
+module Twee.Array where
 
 #include "errors.h"
 import qualified Data.Primitive as P

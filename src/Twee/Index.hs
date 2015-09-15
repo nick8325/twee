@@ -3,17 +3,17 @@
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
 {-# OPTIONS_GHC -funfolding-creation-threshold=1000 -funfolding-use-threshold=1000 #-}
-module KBC.Index where
+module Twee.Index where
 
 #include "errors.h"
 import qualified Prelude
 import Prelude hiding (filter, map, null)
-import KBC.Base hiding (var, fun, empty, vars, size)
-import qualified KBC.Term as Term
+import Twee.Base hiding (var, fun, empty, vars, size)
+import qualified Twee.Term as Term
 import Control.Monad.ST.Strict
 import GHC.ST
-import KBC.Array hiding (null)
-import qualified KBC.Array as Array
+import Twee.Array hiding (null)
+import qualified Twee.Array as Array
 import qualified Data.List as List
 import Control.Monad
 

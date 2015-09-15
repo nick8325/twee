@@ -1,7 +1,7 @@
 -- | Miscellaneous utility functions.
 
 {-# LANGUAGE CPP #-}
-module KBC.Utils where
+module Twee.Utils where
 
 import Control.Arrow((&&&))
 import Control.Exception

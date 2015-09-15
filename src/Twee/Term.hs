@@ -1,11 +1,11 @@
 -- Terms and substitutions, implemented using flatterms.
 -- This module implements the usual term manipulation stuff
 -- (matching, unification, etc.) on top of the primitives
--- in KBC.Term.Core.
+-- in Twee.Term.Core.
 {-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes, FlexibleContexts, ViewPatterns #-}
-module KBC.Term(
-  module KBC.Term,
-  -- Stuff from KBC.Term.Core.
+module Twee.Term(
+  module Twee.Term,
+  -- Stuff from Twee.Term.Core.
   Term, TermList, at, lenList,
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
@@ -17,7 +17,7 @@ module KBC.Term(
 
 #include "errors.h"
 import Prelude hiding (lookup)
-import KBC.Term.Core hiding (subst)
+import Twee.Term.Core hiding (subst)
 import Control.Monad
 import Control.Monad.ST.Strict
 import Data.List hiding (lookup)

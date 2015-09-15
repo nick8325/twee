@@ -1,19 +1,19 @@
 {-# LANGUAGE TypeFamilies, CPP, FlexibleContexts, UndecidableInstances, StandaloneDeriving, RecordWildCards, GADTs, ScopedTypeVariables, PatternGuards, PatternSynonyms #-}
-module KBC.Constraints where
+module Twee.Constraints where
 
 #include "errors.h"
-import KBC.Base hiding (equals, Term(..), pattern Fun, pattern Var, lookup, funs)
-import qualified KBC.Term as Flat
+import Twee.Base hiding (equals, Term(..), pattern Fun, pattern Var, lookup, funs)
+import qualified Twee.Term as Flat
 import Control.Monad
 import qualified Data.Map.Strict as Map
-import KBC.Utils
+import Twee.Utils
 import Data.Maybe
 import Data.List
 import Data.Graph
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
 import Data.Ord
-import KBC.Term hiding (lookup)
+import Twee.Term hiding (lookup)
 
 data Atom f = Constant (Fun f) | Variable Var deriving (Eq, Ord, Show)
 

@@ -1,7 +1,7 @@
-name:                kbc
+name:                twee
 version:             0.1
 synopsis:            An equational theorem prover based on Knuth-Bendix completion
-homepage:            http://github.com/nick8325/kbc
+homepage:            http://github.com/nick8325/twee
 license:             BSD3
 license-file:        LICENSE
 author:              Nick Smallbone
@@ -13,19 +13,19 @@ extra-source-files:  src/errors.h
 
 library
   exposed-modules:
-    KBC
-    KBC.Array
-    KBC.Base
-    KBC.Pretty
-    KBC.Constraints
-    KBC.Index
-    KBC.Indexes
-    KBC.Queue
-    KBC.Rule
-    KBC.Term
-    KBC.Term.Core
-    KBC.Utils
-    KBC.KBO
+    Twee
+    Twee.Array
+    Twee.Base
+    Twee.Pretty
+    Twee.Constraints
+    Twee.Index
+    Twee.Indexes
+    Twee.Queue
+    Twee.Rule
+    Twee.Term
+    Twee.Term.Core
+    Twee.Utils
+    Twee.KBO
     Data.Primitive.ArrayArray
   build-depends:
     base >= 4 && < 5,
@@ -42,11 +42,11 @@ library
   ghc-options:         -W
   default-language:    Haskell2010
 
-executable kbc
+executable twee
   main-is:             executable/Main.hs
   default-language:    Haskell2010
   build-depends:       base,
-                       kbc,
+                       twee,
                        containers,
                        transformers,
                        pretty,

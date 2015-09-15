@@ -1,11 +1,11 @@
 {-# LANGUAGE TypeSynonymInstances, TypeFamilies, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, CPP #-}
-module KBC.Base(
+module Twee.Base(
   Symbolic(..), TermOf, TermListOf, SubstOf,
   vars, funs, canonicalise,
   Minimal(..), minimalTerm, isMinimal,
   Skolem(..), skolemConst, skolemise,
   Arity(..), Sized(..), SizedFun(..), Ordered(..), Strictness(..), Function,
-  module KBC.Term, module KBC.Pretty) where
+  module Twee.Term, module Twee.Pretty) where
 
 #include "errors.h"
 import Prelude hiding (lookup)
@@ -14,14 +14,14 @@ import qualified Data.DList as DList
 import Data.DList(DList)
 import Data.List
 import qualified Data.Map as Map
-import KBC.Term hiding (subst, canonicalise)
-import qualified KBC.Term as Term
-import KBC.Pretty
+import Twee.Term hiding (subst, canonicalise)
+import qualified Twee.Term as Term
+import Twee.Pretty
 import Text.PrettyPrint.HughesPJClass hiding (empty)
 import Data.Ord
 import Data.Monoid
 import Data.Either
-import {-# SOURCE #-} KBC.Constraints
+import {-# SOURCE #-} Twee.Constraints
 
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where
