@@ -337,8 +337,22 @@ consider pair = {-# SCC consider #-} do
   modify' (\s -> s { processedCPs = processedCPs s + 1 })
   s <- get
   let record reason = modify' (\s -> s { joinStatistics = Map.insertWith (+) reason 1 (joinStatistics s) })
+      hard (Trivial Subjoining) = True
+      hard (Subsumed Subjoining) = True
+      hard SetJoining = True
+      hard _ = False
   case {-# SCC normalise1 #-} normaliseCP s pair of
-    Left reason -> record reason
+    Left reason -> do
+      record reason
+      when (hard reason) $ forM_ (map canonicalise (orient (critical pair))) $ \(Rule orientation t u0) -> do
+        s <- get
+        let u = result (normaliseSub s t u0)
+            r = rule t u
+        case normaliseCP s (Critical (critInfo pair) (t :=: u)) of
+          Left reason | not (hard reason) -> return ()
+          _ -> do
+            traceM (ExtraRule r)
+            addExtraRule r
     Right (Critical info eq) ->
       forM_ (map canonicalise (orient eq)) $ \(Rule orientation t u0) -> do
         s <- get
@@ -346,12 +360,7 @@ consider pair = {-# SCC consider #-} do
             r = rule t u
         case {-# SCC normalise2 #-} normaliseCP s (Critical info (t :=: u)) of
           Left reason -> do
-            let hard (Trivial Subjoining) = True
-                hard (Subsumed Subjoining) = True
-                hard (Trivial Reducing) | lessEq u t = True
-                hard (Subsumed Reducing) | lessEq u t = True
-                hard SetJoining = True
-                hard _ = False
+            record reason
             when (hard reason) $ do
               traceM (ExtraRule r)
               addExtraRule r
