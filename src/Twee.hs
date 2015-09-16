@@ -300,7 +300,7 @@ complete1 = {-# SCC complete1 #-} do
   case res of
     Just (SingleCP (CP _ cp _ _)) -> do
       consider cp
-      modify $ \s -> s { goals = map (normalForms (rewrite "goal" reduces (rules s)) . Set.toList) goals }
+      modify $ \s -> s { goals = {-# SCC normaliseGoals #-} map (normalForms (rewrite "goal" reduces (rules s)) . Set.toList) goals }
       return True
     Just (ManyCPs (CPs _ l lower upper size rule)) -> do
       s <- get
