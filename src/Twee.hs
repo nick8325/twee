@@ -49,6 +49,10 @@ data Twee f =
     useGroundPenalty  :: Bool,
     useGeneralSuperpositions :: Bool,
     useOvergeneralSuperpositions :: Bool,
+    useGroundJoining  :: Bool,
+    useConnectedness  :: Bool,
+    useSetJoining     :: Bool,
+    lhsWeight         :: Int,
     joinStatistics    :: Map JoinReason Int }
   deriving Show
 
@@ -69,6 +73,10 @@ initialState =
     useGroundPenalty  = False,
     useGeneralSuperpositions = True,
     useOvergeneralSuperpositions = False,
+    useGroundJoining  = True,
+    useConnectedness  = True,
+    useSetJoining     = True,
+    lhsWeight         = 2,
     joinStatistics    = Map.empty }
 
 addGoals :: [Set (Term f)] -> Twee f -> Twee f
@@ -180,7 +188,7 @@ normaliseIn s model =
 
 normaliseSub :: Function f => Twee f -> Term f -> Term f -> Reduction f
 normaliseSub s top t
-  | lessEq t top && isNothing (unify t top) =
+  | useConnectedness s && lessEq t top && isNothing (unify t top) =
     normaliseWith (rewrite "sub" (reducesSub top) (rules s)) t
   | otherwise = Parallel [] t
 
@@ -258,7 +266,8 @@ normaliseCP s cp@(Critical info _) =
 
     -- XXX shouldn't this also check subsumption?
     setJoin (Critical info (t :=: u))
-      | Set.null (norm t `Set.intersection` norm u) =
+      | not (useSetJoining s) ||
+        Set.null (norm t `Set.intersection` norm u) =
         Right (Critical info (t :=: u))
       | otherwise =
         Debug.Trace.traceShow (sep [text "Joined", nest 2 (pPrint (Critical info (t :=: u))), text "to", nest 2 (pPrint v)])
@@ -363,6 +372,7 @@ groundJoin s ctx r@(Critical info (t :=: u)) = {-# SCC groundJoin #-}
       let rs = [ subst sub r | sub <- instances ] in
       Right (usort (map canonicalise rs))
     (model:_, _)
+      | not (useGroundJoining s) -> Left model
       | isRight (normaliseCP s (Critical info (t' :=: u'))) -> Left model
       | otherwise ->
           let model1 = optimise model weakenModel (\m -> valid m nt && valid m nu)
@@ -770,7 +780,7 @@ toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
       | u `lessEq` t = f t u + penalty t u
       | otherwise    = (f t u `max` f u t) + penalty t u
       where
-        f t u = 2*size' t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u) + if useGroundPenalty s && null (vars u) then 5 else 0
+        f t u = lhsWeight s*size' t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u) + if useGroundPenalty s && null (vars u) then 5 else 0
         size' t =
           size t +
           -- Lots of different constants are probably bad

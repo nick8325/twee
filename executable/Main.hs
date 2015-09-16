@@ -30,22 +30,31 @@ import Options.Applicative
 
 parseInitialState :: Parser (Twee f)
 parseInitialState =
-  go <$> maxSize <*> inversion <*> skolem <*> ground <*> general <*> overgeneral
+  go <$> maxSize <*> inversion <*> skolem <*> ground <*> general
+     <*> overgeneral <*> groundJoin <*> conn <*> set <*> weight
   where
-    go maxSize inversion skolem ground general overgeneral =
+    go maxSize inversion skolem ground general overgeneral groundJoin conn set weight =
       initialState {
         maxSize = maxSize,
         useInversionRules = inversion,
         useSkolemPenalty = skolem,
         useGroundPenalty = ground,
         useGeneralSuperpositions = general,
-        useOvergeneralSuperpositions = overgeneral }
-    maxSize = (Just <$> option auto (long "max-size" <> help "Maximum critical pair size")) <|> pure Nothing
+        useOvergeneralSuperpositions = overgeneral,
+        useGroundJoining = groundJoin,
+        useConnectedness = conn,
+        useSetJoining = set,
+        lhsWeight = weight }
+    maxSize = (Just <$> option auto (long "max-size" <> help "Maximum critical pair size" <> metavar "SIZE")) <|> pure Nothing
     inversion = switch (long "inversion" <> help "Detect inversion rules")
     skolem = switch (long "skolem-penalty" <> help "Penalise critical pairs whose Skolemisation is joinable")
     ground = switch (long "ground-penalty" <> help "Penalise ground critical pairs")
-    general = switch (long "general-superpositions" <> help "Consider only general superpositions")
-    overgeneral = switch (long "overgeneral-superpositions" <> help "A more aggressive, incomplete version of --general-superpositions")
+    general = not <$> switch (long "no-general-superpositions" <> help "Disable considering only general superpositions")
+    overgeneral = not <$> switch (long "no-overgeneral-superpositions" <> help "A more aggressive, incomplete version of --general-superpositions")
+    groundJoin = not <$> switch (long "no-ground-join" <> help "Disable ground joinability testing")
+    conn = not <$> switch (long "no-connectedness" <> help "Disable connectedness testing")
+    set = not <$> switch (long "no-set-join" <> help "Disable joining by computing set of normal forms")
+    weight = option auto (long "lhs-weight" <> help "Weight given to LHS of critical pair (default 2)" <> value 2 <> metavar "WEIGHT")
 
 parseFile :: Parser (Maybe String)
 parseFile = fmap Just (strArgument (metavar "FILENAME")) <|> pure Nothing
