@@ -52,6 +52,7 @@ data Twee f =
     useGroundJoining  :: Bool,
     useConnectedness  :: Bool,
     useSetJoining     :: Bool,
+    useSetJoiningForGoals :: Bool,
     lhsWeight         :: Int,
     joinStatistics    :: Map JoinReason Int }
   deriving Show
@@ -76,6 +77,7 @@ initialState =
     useGroundJoining  = True,
     useConnectedness  = True,
     useSetJoining     = True,
+    useSetJoiningForGoals = True,
     lhsWeight         = 2,
     joinStatistics    = Map.empty }
 
@@ -300,7 +302,10 @@ complete1 = {-# SCC complete1 #-} do
   case res of
     Just (SingleCP (CP _ cp _ _)) -> do
       consider cp
-      modify $ \s -> s { goals = {-# SCC normaliseGoals #-} map (normalForms (rewrite "goal" reduces (rules s)) . Set.toList) goals }
+      if useSetJoiningForGoals then
+        modify $ \s -> s { goals = {-# SCC normaliseGoals #-} map (normalForms (rewrite "goal" reduces (rules s)) . Set.toList) goals }
+      else
+        modify $ \s -> s { goals = {-# SCC normaliseGoals #-} map (Set.fromList . map (result . normaliseWith (rewrite "goal" reduces (rules s))) . Set.toList) goals }
       return True
     Just (ManyCPs (CPs _ l lower upper size rule)) -> do
       s <- get

@@ -31,9 +31,9 @@ import Options.Applicative
 parseInitialState :: Parser (Twee f)
 parseInitialState =
   go <$> maxSize <*> inversion <*> skolem <*> ground <*> general
-     <*> overgeneral <*> groundJoin <*> conn <*> set <*> weight
+     <*> overgeneral <*> groundJoin <*> conn <*> set <*> setGoals <*> weight
   where
-    go maxSize inversion skolem ground general overgeneral groundJoin conn set weight =
+    go maxSize inversion skolem ground general overgeneral groundJoin conn set setGoals weight =
       initialState {
         maxSize = maxSize,
         useInversionRules = inversion,
@@ -44,6 +44,7 @@ parseInitialState =
         useGroundJoining = groundJoin,
         useConnectedness = conn,
         useSetJoining = set,
+        useSetJoiningForGoals = setGoals,
         lhsWeight = weight }
     maxSize = (Just <$> option auto (long "max-size" <> help "Maximum critical pair size" <> metavar "SIZE")) <|> pure Nothing
     inversion = switch (long "inversion" <> help "Detect inversion rules")
@@ -54,6 +55,7 @@ parseInitialState =
     groundJoin = not <$> switch (long "no-ground-join" <> help "Disable ground joinability testing")
     conn = not <$> switch (long "no-connectedness" <> help "Disable connectedness testing")
     set = not <$> switch (long "no-set-join" <> help "Disable joining by computing set of normal forms")
+    setGoals = not <$> switch (long "no-set-join-goals" <> help "Disable joining goals by computing set of normal forms")
     weight = option auto (long "lhs-weight" <> help "Weight given to LHS of critical pair (default 2)" <> value 2 <> metavar "WEIGHT")
 
 parseFile :: Parser String
