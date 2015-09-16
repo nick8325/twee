@@ -173,9 +173,10 @@ rulesFor n k =
   {-# SCC rules #-}
   Index.map (critical . modelled . peel) (Indexes.freeze n (labelledRules k))
 
-easyRules, rules :: Function f => Twee f -> Frozen (Rule f)
+easyRules, rules, allRules :: Function f => Twee f -> Frozen (Rule f)
 easyRules k = rulesFor 0 k
-rules k = rulesFor 1 k `Index.union` Indexes.freeze 1 (extraRules k)
+rules k = rulesFor 1 k `Index.union` Indexes.freeze 0 (extraRules k)
+allRules k = rulesFor 1 k `Index.union` Indexes.freeze 1 (extraRules k)
 
 normaliseQuickly :: Function f => Twee f -> Term f -> Reduction f
 normaliseQuickly s = normaliseWith (rewrite "simplify" simplifies (easyRules s))
@@ -216,7 +217,7 @@ reduceCP s stage f (Critical top (t :=: u))
         there (Var x) (Var y) | x == y = True
         there (Fun f ts) (Fun g us) | f == g = and (zipWith (subsumed s False) (fromTermList ts) (fromTermList us))
         there _ _ = False
-        rs = rules s
+        rs = allRules s
 
 data JoinStage = Initial | Simplification | Reducing | Subjoining deriving (Eq, Ord, Show)
 data JoinReason = Trivial JoinStage | Subsumed JoinStage | SetJoining | GroundJoined deriving (Eq, Ord, Show)
@@ -427,15 +428,9 @@ addRule rule = do
   return l
 
 addExtraRule :: Function f => Rule f -> State (Twee f) ()
-addExtraRule rule
-  | oriented (orientation rule) = do
-      traceM (ExtraRule rule)
-      modify (\s -> s { extraRules = Indexes.insert rule (extraRules s) })
-  | otherwise = return ()
-  where
-    oriented Oriented = True
-    oriented (WeaklyOriented _) = True
-    oriented _ = False
+addExtraRule rule = do
+  traceM (ExtraRule rule)
+  modify (\s -> s { extraRules = Indexes.insert rule (extraRules s) })
 
 deleteRule :: Function f => Label -> Modelled (Critical (Rule f)) -> State (Twee f) ()
 deleteRule l rule =
