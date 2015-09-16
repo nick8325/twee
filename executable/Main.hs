@@ -56,8 +56,8 @@ parseInitialState =
     set = not <$> switch (long "no-set-join" <> help "Disable joining by computing set of normal forms")
     weight = option auto (long "lhs-weight" <> help "Weight given to LHS of critical pair (default 2)" <> value 2 <> metavar "WEIGHT")
 
-parseFile :: Parser (Maybe String)
-parseFile = fmap Just (strArgument (metavar "FILENAME")) <|> pure Nothing
+parseFile :: Parser String
+parseFile = strArgument (metavar "FILENAME")
 
 data Constant =
   Constant {
@@ -206,15 +206,15 @@ check t = do
       _ -> return ()
 
 main = do
-  (state, mfile) <-
+  (state, file) <-
     execParser $
       info (helper <*> ((,) <$> parseInitialState <*> parseFile))
         (fullDesc <>
          header "twee - an equational theorem prover")
   input <-
-    case mfile of
-      Nothing -> getContents
-      Just file -> readFile file
+    case file of
+      "-" -> getContents
+      _ -> readFile file
   let (sig, ("--":eqs1)) = break (== "--") (filter (not . comment) (lines input))
       comment ('%':_) = True
       comment _ = False
