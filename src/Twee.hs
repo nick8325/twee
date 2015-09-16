@@ -171,12 +171,11 @@ instance Rated (Rule f) where
 rulesFor :: Function f => Int -> Twee f -> Frozen (Rule f)
 rulesFor n k =
   {-# SCC rules #-}
-  Index.map (critical . modelled . peel) (Indexes.freeze n (labelledRules k)) `Index.union`
-  Indexes.freeze n (extraRules k)
+  Index.map (critical . modelled . peel) (Indexes.freeze n (labelledRules k))
 
 easyRules, rules :: Function f => Twee f -> Frozen (Rule f)
 easyRules k = rulesFor 0 k
-rules k = rulesFor 1 k
+rules k = rulesFor 1 k `Index.union` Indexes.freeze 1 (extraRules k)
 
 normaliseQuickly :: Function f => Twee f -> Term f -> Reduction f
 normaliseQuickly s = normaliseWith (rewrite "simplify" simplifies (easyRules s))
@@ -348,11 +347,7 @@ consider pair = {-# SCC consider #-} do
         s <- get
         let u = result (normaliseSub s t u0)
             r = rule t u
-        case normaliseCP s (Critical (critInfo pair) (t :=: u)) of
-          Left reason | not (hard reason) -> return ()
-          _ -> do
-            traceM (ExtraRule r)
-            addExtraRule r
+        addExtraRule r
     Right (Critical info eq) ->
       forM_ (map canonicalise (orient eq)) $ \(Rule orientation t u0) -> do
         s <- get
@@ -360,16 +355,13 @@ consider pair = {-# SCC consider #-} do
             r = rule t u
         case {-# SCC normalise2 #-} normaliseCP s (Critical info (t :=: u)) of
           Left reason -> do
-            record reason
-            when (hard reason) $ do
-              traceM (ExtraRule r)
-              addExtraRule r
+            when (hard reason) $ record reason
+            addExtraRule r
           Right eq ->
             case groundJoin s (branches (And [])) eq of
               Right eqs -> {-# SCC "GroundJoined" #-} do
                 record GroundJoined
                 mapM_ consider eqs
-                traceM (ExtraRule r)
                 addExtraRule r
                 newSubRule r
               Left model -> {-# SCC "NewRule" #-} do
@@ -435,8 +427,15 @@ addRule rule = do
   return l
 
 addExtraRule :: Function f => Rule f -> State (Twee f) ()
-addExtraRule rule =
-  modify (\s -> s { extraRules = Indexes.insert rule (extraRules s) })
+addExtraRule rule
+  | oriented (orientation rule) = do
+      traceM (ExtraRule rule)
+      modify (\s -> s { extraRules = Indexes.insert rule (extraRules s) })
+  | otherwise = return ()
+  where
+    oriented Oriented = True
+    oriented (WeaklyOriented _) = True
+    oriented _ = False
 
 deleteRule :: Function f => Label -> Modelled (Critical (Rule f)) -> State (Twee f) ()
 deleteRule l rule =
