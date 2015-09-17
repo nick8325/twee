@@ -207,19 +207,22 @@ steps r = aux r []
     aux (Parallel ps _) = foldr (.) id (map (aux . snd) ps)
 
 normaliseWith :: PrettyTerm f => Strategy f -> Term f -> Reduction f
-normaliseWith strat t = {-# SCC normaliseWith #-} aux [] 0 (singleton t) t
+normaliseWith strat t = {-# SCC normaliseWith #-} aux 0 [] 0 (singleton t) (Parallel [] t) t
   where
-    aux _ !_ _ _ | False = __
-    aux [] _ Empty t = Parallel [] t
-    aux ps _ Empty t =
-      let p = Parallel (reverse ps) t
-          u = result p
-      in p `Trans` aux [] 0 (singleton u) u
-    aux ps n (Cons (Var _) t) u = aux ps (n+1) t u
-    aux ps n (Cons t u) v | p:_ <- strat t =
-      aux ((n, p):ps) (n+len t) u v
-    aux ps n (ConsSym (Fun _ _) t) u =
-      aux ps (n+1) t u
+    aux !_ _ !_ !_ _ !_ | False = __
+    aux 1000 _ _ _ p _ =
+      ERROR("Possibly nonterminating rewrite:\n" ++
+            prettyShow p)
+    aux _ [] _ Empty p _ = p
+    aux n ps _ Empty p t =
+      let q = Parallel (reverse ps) t
+          u = result q
+      in aux (n+1) [] 0 (singleton u) (p `Trans` q) u
+    aux m ps n (Cons (Var _) t) p u = aux m ps (n+1) t p u
+    aux m ps n (Cons t u) p v | q:_ <- strat t =
+      aux m ((n, q):ps) (n+len t) u p v
+    aux m ps n (ConsSym (Fun _ _) t) p u =
+      aux m ps (n+1) t p u
 
 normalForms :: Function f => Strategy f -> [Term f] -> Set (Term f)
 normalForms strat ts = go Set.empty Set.empty ts
