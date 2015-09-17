@@ -194,10 +194,26 @@ result t = buildTerm 32 (emitReduction t)
       emitParallel (n + 1 + lenList t) ps u
 
 instance PrettyTerm f => Pretty (Reduction f) where
-  pPrint (Step rule sub) = pPrint (subst sub rule)
-  pPrint (Trans p q) = hang (pPrint p <+> text "then") 2 (pPrint q)
-  pPrint (Parallel ps t) =
-    pPrint [pPrint n <> text ":" <> pPrint r | (n, r) <- ps] <+> text "in" <+> pPrint t <+> text "to" <+> pPrint (result (Parallel ps t))
+  pPrint = pPrintReduction
+
+pPrintReduction :: PrettyTerm f => Reduction f -> Doc
+pPrintReduction p =
+  case flatten p of
+    [p] -> pp p
+    ps -> pPrint (map pp ps)
+  where
+    flatten (Trans p q) = flatten p ++ flatten q
+    flatten p = [p]
+
+    pp p = sep [pp0 p, nest 2 (text "giving" <+> pPrint (result p))]
+    pp0 p@(Step rule sub) =
+      sep [pPrint rule,
+           nest 2 (text "at" <+> pPrint sub)]
+    pp0 (Parallel [] t) = text "refl"
+    pp0 (Parallel [(0, p)] t) = pp0 p
+    pp0 (Parallel ps t) =
+      sep (punctuate (text " and")
+        [hang (pPrint n <+> text "->") 2 (pPrint p) | (n, p) <- ps])
 
 steps :: Reduction f -> [(Rule f, Subst f)]
 steps r = aux r []
