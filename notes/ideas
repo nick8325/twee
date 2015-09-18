@@ -1,6 +1,5 @@
 change Symbolic to remove type families (e.g. Symbolic Rule instead of Symbolic (Rule f v))
 take size of top term into account when ordering CPs
-allow constraints between variables and constants
 
 Use following idea from Bachmair:
 
@@ -21,15 +20,12 @@ Use following idea from Bachmair:
   when we generate a critical pair, check that the top term can't be
   reduced by any earlier rule than the one we actually picked. (?)
 
-Check if subsumption checking is sound (applying rules backwards only if subterm)
-
 Add "evil model" construction from before
+(XXX does this help? It helped before when we would add conditional rules when a thing wasn't joinable. But now maybe it apes the model elimination thing we do anyway.)
 
 Do narrowing
 
 Implement unification indexing etc
-
-Nice new term structure: Term = Flat FlatTerm | Subst Term Subst
 
 Add proof production
 
@@ -38,8 +34,6 @@ Take age into account with critical pairs. Other ideas:
   * Try each rule before going on to the next one
   * Reduce size if it matches goal term
     (subtract size of goal term from both sides?)
-
-Change constraint stuff so we always have a total order
 
 When generating a critical pair s <- t -> u,
 add constraints s < t and t > u.
@@ -94,7 +88,3 @@ When we discover the crucial lemma, it causes bajillions of existing
 rules to be discarded. Can we somehow use this as a similar/boringness
 metric on these existing rules? (The fact that there is a single rule
 which will generalise them all.)
-
-Prioritise rules that allow us to simplify other rules.
-
-Look at why LAT176-1 loops
