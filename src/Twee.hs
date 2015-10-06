@@ -53,6 +53,8 @@ data Twee f =
     useConnectedness  :: Bool,
     useSetJoining     :: Bool,
     useSetJoiningForGoals :: Bool,
+    tracing :: Bool,
+    moreTracing :: Bool,
     lhsWeight         :: Int,
     joinStatistics    :: Map JoinReason Int }
   deriving Show
@@ -78,6 +80,8 @@ initialState =
     useConnectedness  = True,
     useSetJoining     = True,
     useSetJoiningForGoals = True,
+    tracing = True,
+    moreTracing = False,
     lhsWeight         = 2,
     joinStatistics    = Map.empty }
 
@@ -391,7 +395,7 @@ groundJoin s ctx r@(Critical info (t :=: u)) = {-# SCC groundJoin #-}
               weaken x = x
               ctx' = formAnd (diag (modelToLiterals model2)) ctx in
 
-          trace (Discharge r model2) $
+          trace s (Discharge r model2) $
           groundJoin s ctx' r
       where
         nt = normaliseIn s model t
@@ -822,17 +826,19 @@ data Event f =
   | Discharge (Critical (Equation f)) (Model f)
   | NormaliseCPs (Twee f)
 
-trace :: Function f => Event f -> a -> a
-trace (NewRule rule) = traceIf True (hang (text "New rule") 2 (pPrint rule))
-trace (ExtraRule rule) = traceIf True (hang (text "Extra rule") 2 (pPrint rule))
-trace (NewCP cp) = traceIf False (hang (text "Critical pair") 2 (pPrint cp))
-trace (Reduce red rule) = traceIf True (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
-trace (Consider eq) = traceIf False (sep [text "Considering", nest 2 (pPrint eq)])
-trace (Discharge eq fs) = traceIf True (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
-trace (NormaliseCPs s) = traceIf True (text "" $$ text "Normalising unprocessed critical pairs." $$ text (report s) $$ text "")
+trace :: Function f => Twee f -> Event f -> a -> a
+trace Twee{..} (NewRule rule) = traceIf tracing (hang (text "New rule") 2 (pPrint rule))
+trace Twee{..} (ExtraRule rule) = traceIf tracing (hang (text "Extra rule") 2 (pPrint rule))
+trace Twee{..} (NewCP cp) = traceIf moreTracing (hang (text "Critical pair") 2 (pPrint cp))
+trace Twee{..} (Reduce red rule) = traceIf tracing (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
+trace Twee{..} (Consider eq) = traceIf moreTracing (sep [text "Considering", nest 2 (pPrint eq)])
+trace Twee{..} (Discharge eq fs) = traceIf tracing (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
+trace Twee{..} (NormaliseCPs s) = traceIf tracing (text "" $$ text "Normalising unprocessed critical pairs." $$ text (report s) $$ text "")
 
-traceM :: (Monad m, Function f) => Event f -> m ()
-traceM x = trace x (return ())
+traceM :: Function f => Event f -> State (Twee f) ()
+traceM x = do
+  s <- get
+  trace s x (return ())
 
 traceIf :: Bool -> Doc -> a -> a
 traceIf True x = Debug.Trace.trace (show x)
