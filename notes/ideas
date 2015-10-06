@@ -88,3 +88,6 @@ When we discover the crucial lemma, it causes bajillions of existing
 rules to be discarded. Can we somehow use this as a similar/boringness
 metric on these existing rules? (The fact that there is a single rule
 which will generalise them all.)
+
+Why does test/abelian --no-set-join terminate, and with such a weird
+set of rules?
