@@ -93,7 +93,7 @@ newtype Context = Context (Array Int Constant)
 fromFun :: Given Context => Fun Constant -> Constant
 fromFun (MkFun n)
   | even n    = arr ! (n `div` 2)
-  | otherwise = skolemFun (negate n `div` 2)
+  | otherwise = skolemFun (n `div` 2)
   where
     Context arr = given
 
