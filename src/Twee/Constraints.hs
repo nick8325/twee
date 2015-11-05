@@ -237,6 +237,8 @@ lessEqInModel (Model m) x y
   | Just a <- Map.lookup x m,
     Just b <- Map.lookup y m,
     a < b = Just Nonstrict
+  | x == y = Just Nonstrict
+  | Constant a <- x, Constant b <- y, a < b = Just Strict
   | otherwise = Nothing
 
 solve :: Function f => [Var] -> Branch f -> Either (Model f) (Subst f)

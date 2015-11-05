@@ -26,6 +26,7 @@ library
     Twee.Term.Core
     Twee.Utils
     Twee.KBO
+    Twee.LPO
     Data.Primitive.ArrayArray
   build-depends:
     base >= 4 && < 5,

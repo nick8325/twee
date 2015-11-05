@@ -23,6 +23,7 @@ import System.Exit
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
 import qualified Twee.KBO as KBO
+import qualified Twee.LPO as LPO
 import qualified Data.Set as Set
 import Data.Reflection
 import Data.Array

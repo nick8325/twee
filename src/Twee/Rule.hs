@@ -129,9 +129,20 @@ rule t u = Rule o t u
       | lessEq t u = ERROR("wrongly-oriented rule")
       | not (null (usort (vars u) \\ usort (vars t))) =
         ERROR("unbound variables in rule")
-      | Just ts <- evalStateT (makePermutative t u) [] =
+      | Just ts <- evalStateT (makePermutative t u) [],
+        permutativeOK t u ts =
         Permutative ts
       | otherwise = Unoriented
+
+    permutativeOK _ _ [] = True
+    permutativeOK t u ((Var x, Var y):xs) =
+      lessIn model u t == Just Strict &&
+      permutativeOK t' u' xs
+      where
+        model = modelFromOrder [Variable y, Variable x]
+        sub = flattenSubst [(x, var y)]
+        t' = subst sub t
+        u' = subst sub u
 
     makePermutative t u = do
       sub <- gets flattenSubst
@@ -144,8 +155,7 @@ rule t u = Rule o t u
               return [(var x, var y)]
 
           aux (Fun f ts) (Fun g us)
-            | f == g &&
-              sort (vars ts) `isSubsequenceOf` sort (vars us) =
+            | f == g =
               fmap concat (zipWithM makePermutative (fromTermList ts) (fromTermList us))
 
           aux _ _ = mzero
