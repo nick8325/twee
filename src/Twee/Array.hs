@@ -4,7 +4,6 @@ module Twee.Array where
 #include "errors.h"
 import qualified Data.Primitive as P
 import Control.Monad.ST
-import Control.Monad
 import Data.List
 
 -- Zero-indexed dynamic arrays.

@@ -11,22 +11,10 @@ module Twee.Base(
 import Prelude hiding (lookup)
 import Control.Monad
 import qualified Data.DList as DList
-import Data.DList(DList)
-import Data.List
-import qualified Data.Map.Strict as Map
-import Data.Map.Strict(Map)
 import Twee.Term hiding (subst, canonicalise)
 import qualified Twee.Term as Term
 import Twee.Pretty
-import Text.PrettyPrint.HughesPJClass hiding (empty)
-import Data.Ord
-import Data.Monoid hiding ((<>))
-import Data.Either
-import Data.Reflection
 import {-# SOURCE #-} Twee.Constraints
-import System.IO.Unsafe
-import Data.IORef
-import Twee.Array
 
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where

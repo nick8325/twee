@@ -6,26 +6,22 @@ import Twee.Base hiding (lessEq, lessIn)
 import Twee.Constraints
 import qualified Data.Map.Strict as Map
 import Data.Maybe
-import Data.List
-import Debug.Trace
 import Control.Monad
 
 lessEq :: Function f => Term f -> Term f -> Bool
 lessEq t u = isJust (lessIn (Model Map.empty) t u)
 
 lessIn :: Function f => Model f -> Term f -> Term f -> Maybe Strictness
---lessIn model t u | traceShow (text "Checking" <+> pPrint t <+> text "<" <+> pPrint u <+> text "in" <+> pPrint model) False = undefined
-lessIn model u@(Var x) t
-  | or [isJust (varLessIn x u) | u <- properSubterms t] = traceRes u t $ Just Strict
-  | Just str <- varLessIn x t = traceRes u t $ Just str
-  | otherwise = traceRes u t Nothing
+lessIn model (Var x) t
+  | or [isJust (varLessIn x u) | u <- properSubterms t] = Just Strict
+  | Just str <- varLessIn x t = Just str
+  | otherwise = Nothing
   where
     varLessIn x t = fromTerm t >>= lessEqInModel model (Variable x)
-lessIn model t u@(Var x) = traceRes t u $ do
+lessIn model t (Var x) = do
   a <- fromTerm t
   lessEqInModel model a (Variable x)
 lessIn model t@(Fun f ts) u@(Fun g us) =
-  traceRes t u $ 
   case compare f g of
     LT -> do
       guard (and [ lessIn model t u == Just Strict | t <- fromTermList ts ])
@@ -49,7 +45,3 @@ lessIn model t@(Fun f ts) u@(Fun g us) =
         msum [ lessIn model t u | u <- fromTermList us ]
         return Strict
     lexLess _ _ _ _ = ERROR("incorrect function arity")
-
--- traceRes t u res =
---   traceShow (pPrint t <+> text "<" <+> pPrint u <> text ":" <+> text (show res)) res
-traceRes _ _ x = x

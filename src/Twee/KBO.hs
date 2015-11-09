@@ -114,5 +114,5 @@ lexLessIn cond (Fun f ts) (Fun g us) =
             let Just sub = unify t u in
             loop (subst sub ts) (subst sub us)
     loop _ _ = ERROR("incorrect function arity")
-lexLessIn model t _ | isMinimal t = Just Nonstrict
-lexLessIn model _ _ = Nothing
+lexLessIn _ t _ | isMinimal t = Just Nonstrict
+lexLessIn _ _ _ = Nothing

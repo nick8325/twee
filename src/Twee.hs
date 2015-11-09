@@ -20,14 +20,12 @@ import Data.Ord
 import qualified Debug.Trace
 import Control.Monad.Trans.State.Strict
 import Data.List
-import Data.Function
 import Text.Printf
 import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.Either
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
-import qualified Data.DList as DList
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
@@ -321,7 +319,7 @@ complete1 = {-# SCC complete1 #-} do
     Nothing ->
       return False
 
-normaliseCPs :: forall f v. Function f => State (Twee f) ()
+normaliseCPs :: forall f. Function f => State (Twee f) ()
 normaliseCPs = {-# SCC normaliseCPs #-} do
   s@Twee{..} <- get
   traceM (NormaliseCPs s)
@@ -347,13 +345,13 @@ consider pair = {-# SCC consider #-} do
   case {-# SCC normalise1 #-} normaliseCP s pair of
     Left reason -> do
       record reason
-      when (hard reason) $ forM_ (map canonicalise (orient (critical pair))) $ \(Rule orientation t u0) -> do
+      when (hard reason) $ forM_ (map canonicalise (orient (critical pair))) $ \(Rule _ t u0) -> do
         s <- get
         let u = result (normaliseSub s t u0)
             r = rule t u
         addExtraRule r
     Right (Critical info eq) ->
-      forM_ (map canonicalise (orient eq)) $ \(Rule orientation t u0) -> do
+      forM_ (map canonicalise (orient eq)) $ \(Rule _ t u0) -> do
         s <- get
         let u = result (normaliseSub s t u0)
             r = rule t u
@@ -497,8 +495,7 @@ reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
           Just (Reorient old0)
 
 simplifyRule :: Function f => Label -> Model f -> Modelled (Critical (Rule f)) -> State (Twee f) ()
-simplifyRule l model r@(Modelled _ positions (Critical info (Rule ctx lhs rhs))) = do
-  s <- get
+simplifyRule l model r@(Modelled _ positions (Critical info (Rule _ lhs rhs))) = do
   modify $ \s ->
     s {
       labelledRules =
@@ -684,7 +681,6 @@ criticalPairs1 s ns (Rule or t u) rs = {-# SCC criticalPairs1 #-} do
 
       inner = subst sub overlap
       osz = size overlap + (size u - size t) + (size u' - size t')
-      sz = size top
 
   guard (left /= top && right /= top && left /= right)
   when (or  /= Oriented) $ guard (not (lessEq top right))

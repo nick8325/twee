@@ -12,8 +12,7 @@ import Twee.Base hiding (var, fun, empty, vars, size)
 import qualified Twee.Term as Term
 import Control.Monad.ST.Strict
 import GHC.ST
-import Twee.Array hiding (null)
-import qualified Twee.Array as Array
+import Twee.Array
 import qualified Data.List as List
 import Control.Monad
 
@@ -65,7 +64,6 @@ insert x0 !idx = aux t idx
         var  = update v idx' (var idx) }
       where
         idx' = aux u (var idx ! v)
-    n = boundList t
     x = canonicalise x0
     t = Term.singleton (term x)
 
@@ -88,7 +86,7 @@ delete :: (Eq a, Symbolic a) => a -> Index a -> Index a
 delete x0 !idx = aux t idx
   where
     aux _ Nil = Nil
-    aux t idx@(Singleton _ u x)
+    aux t idx@(Singleton _ u _)
       | t == u    = Nil
       | otherwise = idx
     aux Empty idx = idx { here = List.delete x (here idx) }

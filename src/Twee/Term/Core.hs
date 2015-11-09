@@ -11,7 +11,6 @@ import Control.Monad.ST.Strict
 import Data.Bits
 import Data.Int
 import Data.Word
-import Data.List hiding (lookup)
 import GHC.Types(Int(..))
 import GHC.Prim
 import GHC.ST hiding (liftST)

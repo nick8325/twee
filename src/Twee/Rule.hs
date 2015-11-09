@@ -13,7 +13,6 @@ import Data.List
 import Twee.Utils
 import qualified Data.Set as Set
 import Data.Set(Set)
-import Data.Monoid hiding ((<>))
 
 --------------------------------------------------------------------------------
 -- Rewrite rules.
@@ -48,10 +47,10 @@ instance Symbolic (Orientation f) where
   symbols fun var (WeaklyOriented ts) = symbols fun var ts
   symbols fun var (Permutative ts) = symbols fun var ts
   symbols _ _ Unoriented = mempty
-  subst sub Oriented = Oriented
+  subst _ Oriented = Oriented
   subst sub (WeaklyOriented ts) = WeaklyOriented (subst sub ts)
   subst sub (Permutative ts) = Permutative (subst sub ts)
-  subst sub Unoriented = Unoriented
+  subst _ Unoriented = Unoriented
 
 instance (Numbered f, PrettyTerm f) => Pretty (Rule f) where
   pPrint (Rule Oriented l r) = pPrintRule l r
@@ -216,12 +215,12 @@ pPrintReduction p =
     flatten p = [p]
 
     pp p = sep [pp0 p, nest 2 (text "giving" <+> pPrint (result p))]
-    pp0 p@(Step rule sub) =
+    pp0 (Step rule sub) =
       sep [pPrint rule,
            nest 2 (text "at" <+> pPrint sub)]
-    pp0 (Parallel [] t) = text "refl"
-    pp0 (Parallel [(0, p)] t) = pp0 p
-    pp0 (Parallel ps t) =
+    pp0 (Parallel [] _) = text "refl"
+    pp0 (Parallel [(0, p)] _) = pp0 p
+    pp0 (Parallel ps _) =
       sep (punctuate (text " and")
         [hang (pPrint n <+> text "->") 2 (pPrint p) | (n, p) <- ps])
 
@@ -253,7 +252,7 @@ normaliseWith strat t = {-# SCC normaliseWith #-} aux 0 [] 0 (singleton t) (Para
 normalForms :: Function f => Strategy f -> [Term f] -> Set (Term f)
 normalForms strat ts = go Set.empty Set.empty ts
   where
-    go dead norm [] = norm
+    go _ norm [] = norm
     go dead norm (t:ts)
       | t `Set.member` dead = go dead norm ts
       | t `Set.member` norm = go dead norm ts
@@ -281,7 +280,7 @@ nested strat t = [Parallel [(1,p)] t | p <- aux 0 (children t)]
 
 {-# INLINE rewrite #-}
 rewrite :: Function f => String -> (Rule f -> Subst f -> Bool) -> Frozen (Rule f) -> Strategy f
-rewrite phase p rules t = do
+rewrite _phase p rules t = do
   Index.Match rules sub <- Index.matches t rules
   rule <- rules
   guard (p rule sub)

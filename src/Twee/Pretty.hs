@@ -61,7 +61,7 @@ instance (Numbered f, PrettyTerm f) => Pretty (Term f) where
     pPrintTerm (termStyle (fromFun f)) l p (pPrint f) (termListToList xs)
 
 instance (Numbered f, PrettyTerm f) => Pretty (TermList f) where
-  pPrintPrec l p = pPrint . termListToList
+  pPrintPrec _ _ = pPrint . termListToList
 
 instance (Numbered f, PrettyTerm f) => Pretty (Subst f) where
   pPrint sub = text "{" <> fsep (punctuate (text ",") docs) <> text "}"

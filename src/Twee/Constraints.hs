@@ -2,15 +2,13 @@
 module Twee.Constraints where
 
 #include "errors.h"
-import Twee.Base hiding (equals, Term(..), pattern Fun, pattern Var, lookup, funs)
+import Twee.Base hiding (equals, Term, pattern Fun, pattern Var, lookup, funs)
 import qualified Twee.Term as Flat
-import Control.Monad
 import qualified Data.Map.Strict as Map
 import Twee.Utils
 import Data.Maybe
 import Data.List
 import Data.Graph
-import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
 import Data.Ord
 import Twee.Term hiding (lookup)
@@ -213,7 +211,7 @@ weakenModel (Model m) =
   where
     glue [] = []
     glue [_] = []
-    glue (a@(x, (i1, j1)):b@(y, (i2, _)):xs) =
+    glue (a@(_x, (i1, j1)):b@(y, (i2, _)):xs) =
       [ (a:(y, (i1, j1+1)):xs) | i1 < i2 ] ++
       map (a:) (glue (b:xs))
 
@@ -247,7 +245,7 @@ lessEqInModel (Model m) x y
   | otherwise = Nothing
 
 solve :: Function f => [Var] -> Branch f -> Either (Model f) (Subst f)
-solve xs b@Branch{..}
+solve xs Branch{..}
   | null equals = Left model
   | otherwise = Right sub
     where

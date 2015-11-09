@@ -138,7 +138,7 @@ substCompose !sub1 !sub2 =
   runST $ do
     sub <- newMutableSubst (substSize sub1)
     let
-      loop EmptySubst !t = unsafeFreezeSubst sub
+      loop EmptySubst !_ = unsafeFreezeSubst sub
       loop (ConsSubst Nothing sub1) t = loop sub1 t
       loop (ConsSubst (Just (x, _)) sub1) (UnsafeCons (Fun _ t) u) = do
         unsafeExtendList sub x t
@@ -288,7 +288,7 @@ unifyListTri !t !u = {-# SCC unifyListTri #-} runST $ do
   subst <- newMutableSubst (boundList t `max` boundList u)
   let
     loop !_ !_ | False = __
-    loop Empty t = return True
+    loop Empty _ = return True
     loop _ Empty = __
     loop (ConsSym (Fun f _) t) (ConsSym (Fun g _) u)
       | f == g = loop t u
@@ -328,7 +328,7 @@ unifyListTri !t !u = {-# SCC unifyListTri #-} runST $ do
         extend subst x t
         return True
 
-    occurs !x Empty = return False
+    occurs !_ Empty = return False
     occurs x (ConsSym Fun{} t) = occurs x t
     occurs x (ConsSym (Var y) t)
       | x == y = return True
@@ -456,7 +456,7 @@ subterms t = t:properSubterms t
 
 properSubterms :: Term f -> [Term f]
 properSubterms Var{} = []
-properSubterms (Fun f ts) = concatMap subterms (fromTermList ts)
+properSubterms (Fun _ ts) = concatMap subterms (fromTermList ts)
 
 isFun :: Term f -> Bool
 isFun Fun{} = True

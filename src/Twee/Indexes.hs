@@ -7,7 +7,6 @@ import Twee.Base hiding (empty)
 import qualified Twee.Index as Index
 import Twee.Index(Index)
 import Data.Array
-import Data.Maybe
 
 class Rated a where
   rating :: a -> Int
