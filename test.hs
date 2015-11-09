@@ -1,74 +1,66 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell, FlexibleInstances, FlexibleContexts, UndecidableInstances #-}
 import Twee.Constraints
-import Twee.Term
+import Twee.Term hiding (subst)
 import Test.QuickCheck
 import Test.QuickCheck.All
 import Twee.Pretty
+import qualified Twee.LPO as Ord
 import Text.PrettyPrint
-import Data.Rewriting.Term
 import Twee.Base
+import Twee.Rule
 import Control.Monad
+import qualified Data.Map as Map
+import Data.Maybe
+import Data.Ord
+import Data.List
 
-lhs, rhs :: Term Fun Var
-lhs = (x `f` (y `f` w)) `f` z
-rhs = ((x `f` y) `f` z) `f` w
+data Func = F Int Int Int deriving (Eq, Ord, Show)
 
-f x y = Fun (F 1 1 2) [x, y]
-g x y = Fun (F 2 1 2) [x, y]
-h x y = Fun (F 3 1 2) [x, y]
-x = Var (V 0)
-y = Var (V 1)
-z = Var (V 2)
-w = Var (V 3)
+fromFunc :: Fun Func -> Func
+fromFunc (MkFun n) = F n 1 2
 
-lhs' = x `f` ((x `g` y) `f` (x `g` x))
-rhs' = (y `f` x) `f` (Fun minimal [] `h` (x `f` Fun minimal []))
+toFunc :: Func -> Fun Func
+toFunc (F n 1 2) = MkFun n
 
-lhs1 = x `f` (x `f` (y `f` z))
-rhs1 = y `f` (z `f` (x `f` x))
-
-lhs2 = f (f z x) (f (f y y) y)
-rhs2 = f (f y y) (f (f z z) z)
-
-data Fun = F Int Int Int deriving (Eq, Ord, Show)
-
-instance Pretty Fun where
+instance Pretty Func where
   pPrint (F f s n) = text "f" <> int f
 
-instance PrettyTerm Fun where
+instance Pretty (Fun Func) where pPrint = pPrint . fromFunc
+
+instance PrettyTerm Func where
   termStyle _ = uncurried
 
-instance Arbitrary Fun where
-  arbitrary = F <$> choose (0, 0) <*> choose (1, 1) <*> choose (2, 2)
+instance Arbitrary (Subst Func) where
+  arbitrary = fmap flattenSubst (liftM2 zip (fmap nub arbitrary) (infiniteListOf arbitrary))
 
-instance Minimal Fun where
-  minimal = F 0 1 0
+instance Arbitrary Func where
+  arbitrary = F <$> choose (1, 1) <*> choose (1, 1) <*> choose (2, 2)
 
-instance Sized Fun where
-  funSize (F _ s _) = fromIntegral s
-  funArity (F _ _ n) = n
+instance Arbitrary (Fun Func) where arbitrary = fmap toFunc arbitrary
 
-newtype Var = V Int deriving (Eq, Ord, Show)
+instance Minimal Func where
+  minimal = MkFun 0
 
-instance Numbered Var where
-  number (V x) = x
-  withNumber n _ = V n
+instance Sized Func where
+  size (F _ s _) = fromIntegral s
 
-instance Pretty Var where
-  pPrint (V n) = text "X" <> int n
+instance Sized (Fun Func) where
+  size = size . fromFunc
 
-instance Arbitrary Var where
-  arbitrary = V <$> choose (0, 2)
+instance Arity Func where
+  arity f = let F _ _ n = fromFunc f in n
 
-instance (Arbitrary f, Arbitrary v, Sized f) => Arbitrary (Term f v) where
+instance Arbitrary Var where arbitrary = fmap MkVar (choose (0, 1))
+
+instance (Arbitrary (Fun f), Sized f, Arity f) => Arbitrary (Term f) where
   arbitrary =
     sized $ \n ->
       oneof $
-        [ Var <$> arbitrary ] ++
-        [ do { f <- arbitrary; Fun f <$> vectorOf (funArity f) (resize ((n-1) `div` funArity f) arbitrary) } | n > 0 ]
+        [ var <$> arbitrary ] ++
+        [ do { f <- arbitrary; fun f <$> vectorOf (arity f) (resize ((n-1) `div` arity f) arbitrary) } | n > 0 ]
   shrink (Fun f ts) =
-    ts ++
-    (Fun f <$> shrinkOne ts)
+    fromTermList ts ++
+    (fun f <$> shrinkOne (fromTermList ts))
     where
       shrinkOne [] = []
       shrinkOne (x:xs) =
@@ -76,79 +68,84 @@ instance (Arbitrary f, Arbitrary v, Sized f) => Arbitrary (Term f v) where
         [ x:ys | ys <- shrinkOne xs ]
   shrink _ = []
 
-data Pair f v = Pair (Tm f v) (Tm f v) deriving Show
+data Pair f = Pair (Term f) (Term f) deriving Show
 
-instance (Arbitrary f, Arbitrary v, Sized f) => Arbitrary (Pair f v) where
+instance (Arbitrary f, Arbitrary (Fun f), Arity f, Sized f) => Arbitrary (Pair f) where
   arbitrary = liftM2 Pair arbitrary arbitrary
   shrink (Pair x y) =
     [ Pair x' y  | x' <- shrink x ] ++
     [ Pair x y'  | y' <- shrink y ] ++
     [ Pair x' y' | x' <- shrink x, y' <- shrink y ]
 
-prop_1 :: Pair Fun Var -> Property
-prop_1 (Pair t u) =
-  counterexample (prettyShow (Less t u)) $
-  counterexample (show (orientTerms t u)) $
-  counterexample (prettyShow (less Strict t u)) $
-  agrees (orientTerms t u) (less Strict t u)
-  where
-    agrees (Just LT) (And [])   = True
-    agrees (Just EQ) (Or [])    = True
-    agrees (Just GT) (Or [])    = True
-    agrees Nothing   (Less _ _) = True
-    agrees _         _          = False
+instance Skolem Func
+instance SizedFun Func
+instance OrdFun Func where
+  compareFun = comparing fromFunc
+instance Function Func
+instance Ordered Func where
+  lessIn = Ord.lessIn
+  lessEq = Ord.lessEq
 
-prop_2 :: Pair Fun Var -> Property
-prop_2 (Pair t u) =
-  counterexample (prettyShow (Less t u)) $
-  counterexample (show (orientTerms t u)) $
-  counterexample (show (lessThan Strict t u)) $
-  lessThan Strict t u == (orientTerms t u == Just LT)
+lessThan Strict t u = lessIn (modelFromOrder []) t u == Just Strict
+lessThan Nonstrict t u = isJust (lessIn (modelFromOrder []) t u)
 
-prop_3 :: Pair Fun Var -> Bool
+instance Function f => Arbitrary (Model f) where
+  arbitrary = fmap (modelFromOrder . map Variable . nub) arbitrary
+  shrink = weakenModel
+
+prop_1 :: Model Func -> Pair Func -> Subst Func -> Property
+prop_1 model (Pair t u) sub =
+  counterexample ("Model: " ++ prettyShow model) $
+  counterexample ("Subst: " ++ prettyShow sub) $
+  conjoin $ do
+    r@(Rule _ t' u') <- orient (t :=: u)
+    return $
+      counterexample ("LHS:   " ++ prettyShow t') $
+      counterexample ("RHS:   " ++ prettyShow u') $
+      counterexample ("Rule:  " ++ prettyShow r) $
+      counterexample ("Inst:  " ++ prettyShow (Rule Oriented (subst sub t') (subst sub u'))) $
+      counterexample ("Res:   " ++ show (lessIn model (subst sub u') (subst sub t'))) $
+      not (reducesInModel model r sub) || isJust (lessIn model (subst sub u') (subst sub t'))
+
+prop_2 :: Model Func -> Pair Func -> Bool
+prop_2 model (Pair t u) =
+  not (lessIn model t u == Just Strict && isJust (lessIn model u t))
+
+prop_3 :: Pair Func -> Bool
 prop_3 (Pair t u) =
   not (lessThan Strict t u && lessThan Nonstrict u t)
 
-prop_4 :: Pair Fun Var -> Property
+prop_4 :: Pair Func -> Property
 prop_4 (Pair t u) =
   t /= u ==> 
   not (lessThan Nonstrict t u && lessThan Nonstrict u t)
 
-prop_5 :: Term Fun Var -> Property
+prop_5 :: Term Func -> Property
 prop_5 t =
   lessThan Nonstrict t t .&&. not (lessThan Strict t t)
 
-prop_6 :: Pair Fun Var -> Property
-prop_6 (Pair t u) =
-  counterexample (prettyShow t) $
-  counterexample (prettyShow u) $
-  counterexample (prettyShow (less Strict t u)) $
-  counterexample (prettyShow (branches (toConstraint (less Strict t u)))) $
-  conjoin [ counterexample (prettyShow sol) $ counterexample (prettyShow (toModel sol)) $ trueIn (toModel sol) (less Strict t u) | sol <- solve (branches (toConstraint (less Strict t u))) ]
+-- return []
+-- main = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000000 })
 
-prop_7 :: Pair Fun Var -> Property
-prop_7 (Pair t u) =
-  counterexample (prettyShow t) $
-  counterexample (prettyShow u) $
-  counterexample (prettyShow (less Strict t u)) $
-  conjoin [ counterexample (prettyShow model) $ trueIn model (Less t u) | model <- fmap toModel (solve (branches (toConstraint (less Strict t u)))) ]
+main = quickCheckWith stdArgs { maxSuccess = 1000000 } prop_1
 
-prop_8 :: Pair Fun Var -> Pair Fun Var -> Property
-prop_8 (Pair t u) (Pair v w) =
-  counterexample ("t = " ++ prettyShow t) $
-  counterexample ("u = " ++ prettyShow u) $
-  counterexample ("v = " ++ prettyShow v) $
-  counterexample ("w = " ++ prettyShow w) $
-  let c1 = less Strict t u
-      c2 = less Strict v w
-      b = branches . toConstraint in
-  counterexample ("t < u: " ++ prettyShow (b c1)) $
-  counterexample ("v < w: " ++ prettyShow (b c2)) $
-  counterexample ("t < u && v < w: " ++ prettyShow (b (c1 &&& c2))) $
-  counterexample ("t < u && v >= w: " ++ prettyShow (b (c1 &&& negateFormula c2))) $
-  not (null (solve (branches (toConstraint (c1 &&& c2))))) ==>
-  branches (toConstraint (c1 &&& negateFormula c2)) /= branches (toConstraint c1)
+x, y, z :: Var
+x = MkVar 0
+y = MkVar 1
+z = MkVar 2
 
-return []
---main = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000000 })
-main = quickCheckWith stdArgs { maxSuccess = 1000000 } prop_8
+times, plus :: Fun Func
+plus = MkFun 1
+times = MkFun 2
+
+a, b, c :: Term Func
+a = fun plus [fun times [var x, var y], fun times [var z, var y]]
+b = fun plus [fun times [var y, var z], fun times [var y, var x]]
+c = fun plus [fun times [var y, var x], fun times [var y, var z]]
+
+-- main = do
+--   prettyPrint b
+--   prettyPrint a
+--   print (lessIn (modelFromOrder (map Variable [x, y, z])) b a)
+--   print (lessIn (modelFromOrder (map Variable [x, y, z])) c b)
+--   print (lessIn (modelFromOrder (map Variable [x, y, z])) a c)
