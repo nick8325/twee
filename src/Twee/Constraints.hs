@@ -248,7 +248,7 @@ varGroups (Model m) = filter nonempty (go minimal (map fst (sortBy (comparing sn
     nonempty (_, [], _) = False
     nonempty _ = True
 
-lessEqInModel :: Ord (Fun f) => Model f -> Atom f -> Atom f -> Maybe Strictness
+lessEqInModel :: (Numbered f, Minimal f, Ord f) => Model f -> Atom f -> Atom f -> Maybe Strictness
 lessEqInModel (Model m) x y
   | Just (a, _) <- Map.lookup x m,
     Just (b, _) <- Map.lookup y m,
@@ -258,6 +258,7 @@ lessEqInModel (Model m) x y
     a < b = Just Nonstrict
   | x == y = Just Nonstrict
   | Constant a <- x, Constant b <- y, a < b = Just Strict
+  | Constant a <- x, a == minimal = Just Nonstrict
   | otherwise = Nothing
 
 solve :: Function f => [Atom f] -> Branch f -> Either (Model f) (Subst f)
