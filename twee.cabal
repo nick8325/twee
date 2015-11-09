@@ -37,6 +37,7 @@ library
     heaps,
     ghc-prim,
     primitive,
+    reflection,
     array
   hs-source-dirs:      src
   include-dirs:        src
