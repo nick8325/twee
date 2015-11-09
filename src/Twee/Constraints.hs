@@ -8,6 +8,7 @@ import qualified Data.Map.Strict as Map
 import Twee.Utils
 import Data.Maybe
 import Data.List
+import Data.Function
 import Data.Graph
 import Data.Map.Strict(Map)
 import Data.Ord
@@ -217,13 +218,18 @@ modelFromOrder xs =
 weakenModel :: Ord (Fun f) => Model f -> [Model f]
 weakenModel (Model m) =
   [ Model (Map.delete x m)  | x <- Map.keys m ] ++
-  [ Model (Map.fromList xs) | xs <- glue (sortBy (comparing snd) (Map.toList m)) ]
+  [ Model (Map.fromList xs)
+  | xs <- glue (sortBy (comparing snd) (Map.toList m)),
+    all ok (groupBy ((==) `on` (fst . snd)) xs) ]
   where
     glue [] = []
     glue [_] = []
     glue (a@(_x, (i1, j1)):b@(y, (i2, _)):xs) =
       [ (a:(y, (i1, j1+1)):xs) | i1 < i2 ] ++
       map (a:) (glue (b:xs))
+
+    -- We must never make two constants equal
+    ok xs = length [x | (Constant x, _) <- xs] <= 1
 
 varInModel :: Function f => Model f -> Var -> Bool
 varInModel (Model m) x = Variable x `Map.member` m
@@ -262,6 +268,7 @@ solve xs Branch{..}
       sub = flattenSubst $
         [(x, toTerm y) | (Variable x, y) <- equals] ++
         [(y, toTerm x) | (x@Constant{}, Variable y) <- equals]
-      vs = reverse (flattenSCCs (stronglyConnComp [(x, x, [y | (x', y) <- less, x == x']) | x <- as]))
+      vs = reverse (flattenSCCs (stronglyConnComp [(x, x, [y | (x', y) <- less', x == x']) | x <- as]))
+      less' = less ++ [(Constant x, Constant y) | Constant x <- as, Constant y <- as, x < y]
       as = usort $ Constant minimal:xs ++ map fst less ++ map snd less
       model = modelFromOrder vs
