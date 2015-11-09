@@ -53,13 +53,13 @@ instance Symbolic (Orientation f) where
   subst sub (Permutative ts) = Permutative (subst sub ts)
   subst sub Unoriented = Unoriented
 
-instance PrettyTerm f => Pretty (Rule f) where
+instance (Numbered f, PrettyTerm f) => Pretty (Rule f) where
   pPrint (Rule Oriented l r) = pPrintRule l r
   pPrint (Rule (WeaklyOriented ts) l r) = pPrintRule l r <+> text "(weak on" <+> pPrint ts <> text ")"
   pPrint (Rule (Permutative ts) l r) = pPrintRule l r <+> text "(permutative on" <+> pPrint ts <> text ")"
   pPrint (Rule Unoriented l r) = pPrintRule l r <+> text "(unoriented)"
 
-pPrintRule :: PrettyTerm f => Term f -> Term f -> Doc
+pPrintRule :: (Numbered f, PrettyTerm f) => Term f -> Term f -> Doc
 pPrintRule l r = hang (pPrint l <+> text "->") 2 (pPrint r)
 
 --------------------------------------------------------------------------------
@@ -75,7 +75,7 @@ instance Symbolic (Equation f) where
   symbols fun var (t :=: u) = symbols fun var (t, u)
   subst sub (t :=: u) = subst sub t :=: subst sub u
 
-instance PrettyTerm f => Pretty (Equation f) where
+instance (Numbered f, PrettyTerm f) => Pretty (Equation f) where
   pPrint (x :=: y) = hang (pPrint x <+> text "=") 2 (pPrint y)
 
 order :: Function f => Equation f -> Equation f
@@ -203,10 +203,10 @@ result t = buildTerm 32 (emitReduction t)
       emitFun f (emitParallel (n+1) ps t)
       emitParallel (n + 1 + lenList t) ps u
 
-instance PrettyTerm f => Pretty (Reduction f) where
+instance (Numbered f, PrettyTerm f) => Pretty (Reduction f) where
   pPrint = pPrintReduction
 
-pPrintReduction :: PrettyTerm f => Reduction f -> Doc
+pPrintReduction :: (Numbered f, PrettyTerm f) => Reduction f -> Doc
 pPrintReduction p =
   case flatten p of
     [p] -> pp p
@@ -232,7 +232,7 @@ steps r = aux r []
     aux (Trans p q) = aux p . aux q
     aux (Parallel ps _) = foldr (.) id (map (aux . snd) ps)
 
-normaliseWith :: PrettyTerm f => Strategy f -> Term f -> Reduction f
+normaliseWith :: (Numbered f, PrettyTerm f) => Strategy f -> Term f -> Reduction f
 normaliseWith strat t = {-# SCC normaliseWith #-} aux 0 [] 0 (singleton t) (Parallel [] t) t
   where
     aux !_ _ !_ !_ _ !_ | False = __

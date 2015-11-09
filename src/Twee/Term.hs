@@ -2,14 +2,14 @@
 -- This module implements the usual term manipulation stuff
 -- (matching, unification, etc.) on top of the primitives
 -- in Twee.Term.Core.
-{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes, FlexibleContexts, ViewPatterns #-}
+{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes, FlexibleContexts, ViewPatterns, FlexibleInstances, UndecidableInstances, ScopedTypeVariables, RecordWildCards #-}
 module Twee.Term(
   module Twee.Term,
   -- Stuff from Twee.Term.Core.
   Term, TermList, at, lenList,
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
-  Fun(..), OrdFun(..), Var(..), pattern Var, pattern Fun, singleton,
+  Fun(..), Var(..), pattern Var, pattern Fun, singleton,
   BuildM, buildTermList, emitRoot, emitFun, emitVar, emitTermList,
   Subst, substSize, lookupList,
   MutableSubst, newMutableSubst, unsafeFreezeSubst, freezeSubst, copySubst,
@@ -22,6 +22,13 @@ import Control.Monad
 import Control.Monad.ST.Strict
 import Data.List hiding (lookup)
 import Data.Maybe
+import Data.Ord
+import Data.Reflection
+import Data.IORef
+import System.IO.Unsafe
+import qualified Data.Map.Strict as Map
+import Data.Map.Strict(Map)
+import Twee.Array
 
 --------------------------------------------------------------------------------
 -- Pattern synonyms for substitutions.
@@ -464,3 +471,56 @@ t `isInstanceOf` pat = isJust (match pat t)
 
 isVariantOf :: Term f -> Term f -> Bool
 t `isVariantOf` u = t `isInstanceOf` u && u `isInstanceOf` t
+
+--------------------------------------------------------------------------------
+-- Typeclass for getting at the 'f' in a 'Term f'.
+--------------------------------------------------------------------------------
+
+class Numbered f where
+  fromInt :: Int -> f
+  toInt   :: f -> Int
+
+fromFun :: Numbered f => Fun f -> f
+fromFun (MkFun n) = fromInt n
+
+toFun :: Numbered f => f -> Fun f
+toFun f = MkFun (toInt f)
+
+instance (Ord f, Numbered f) => Ord (Fun f) where
+  compare = comparing fromFun
+
+data AutoState f =
+  AutoState {
+    st_next :: {-# UNPACK #-} !Int,
+    st_from :: {-# UNPACK #-} !(Array (NoDef f)),
+    st_to   :: !(Map f Int) }
+newtype NoDef a = NoDef a
+instance Default (NoDef a) where def = __
+
+newtype AutoNumbered f = AutoNumbered { unAutoNumber :: f }
+  deriving (Eq, Ord, Show)
+
+instance (Ord f, Given (IORef (AutoState f))) => Numbered (AutoNumbered f) where
+  fromInt n =
+    AutoNumbered . unsafePerformIO $ do
+      AutoState{..} <- readIORef given
+      let NoDef f = st_from ! n
+      return f
+
+  toInt (AutoNumbered f) =
+    unsafePerformIO $
+      atomicModifyIORef' given $ \st@AutoState{..} ->
+        case Map.lookup f st_to of
+          Just n -> (st, n)
+          Nothing ->
+            (AutoState
+               (st_next+1)
+               (update st_next (NoDef f) st_from)
+               (Map.insert f st_next st_to),
+             st_next)
+
+autonumber :: forall f a. Ord f => f -> (Numbered (AutoNumbered f) => a) -> a
+autonumber _ f =
+  unsafePerformIO $ do
+    ref <- newIORef (AutoState 0 newArray Map.empty) :: IO (IORef (AutoState f))
+    return (give ref f)

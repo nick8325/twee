@@ -15,7 +15,9 @@ import Data.Map.Strict(Map)
 import Data.Ord
 import Twee.Term hiding (lookup)
 
-data Atom f = Constant (Fun f) | Variable Var deriving (Eq, Ord, Show)
+data Atom f = Constant (Fun f) | Variable Var deriving Show
+deriving instance Eq (Fun f) => Eq (Atom f)
+deriving instance Ord (Fun f) => Ord (Atom f)
 
 toTerm :: Atom f -> Term f
 toTerm (Constant f) = fun f []
@@ -34,7 +36,9 @@ data Formula f =
   | LessEq (Atom f) (Atom f)
   | And [Formula f]
   | Or  [Formula f]
-  deriving (Eq, Ord, Show)
+  deriving Show
+deriving instance Eq (Fun f) => Eq (Formula f)
+deriving instance Ord (Fun f) => Ord (Formula f)
 
 instance Function f => Pretty (Formula f) where
   pPrintPrec _ _ (Less t u) = hang (pPrint t <+> text "<") 2 (pPrint u)
@@ -92,7 +96,8 @@ data Branch f =
     funs        :: [Fun f],
     less        :: [(Atom f, Atom f)],
     equals      :: [(Atom f, Atom f)] } -- greatest atom first
-  deriving (Eq, Ord)
+deriving instance Eq (Fun f) => Eq (Branch f)
+deriving instance Ord (Fun f) => Ord (Branch f)
 
 instance Function f => Pretty (Branch f) where
   pPrint Branch{..} =
@@ -201,7 +206,7 @@ modelFromOrder :: Function f => [Atom f] -> Model f
 modelFromOrder xs =
   Model (Map.fromList [(x, (i, i)) | (x, i) <- zip xs [0..]])
 
-weakenModel :: OrdFun f => Model f -> [Model f]
+weakenModel :: Ord (Fun f) => Model f -> [Model f]
 weakenModel (Model m) =
   [ Model (Map.delete x m)  | x <- Map.keys m ] ++
   [ Model (Map.fromList xs) | xs <- glue (sortBy (comparing snd) (Map.toList m)) ]
@@ -229,7 +234,7 @@ varGroups (Model m) = filter nonempty (go minimal (map fst (sortBy (comparing sn
     nonempty (_, [], _) = False
     nonempty _ = True
 
-lessEqInModel :: OrdFun f => Model f -> Atom f -> Atom f -> Maybe Strictness
+lessEqInModel :: Ord (Fun f) => Model f -> Atom f -> Atom f -> Maybe Strictness
 lessEqInModel (Model m) x y
   | Just (a, _) <- Map.lookup x m,
     Just (b, _) <- Map.lookup y m,

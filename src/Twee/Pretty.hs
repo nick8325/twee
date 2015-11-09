@@ -52,15 +52,18 @@ supply names =
 
 -- * Pretty-printing of terms.
 
-instance PrettyTerm f => Pretty (Term f) where
+instance (Numbered f, Pretty f) => Pretty (Fun f) where
+  pPrintPrec l p = pPrintPrec l p . fromFun
+
+instance (Numbered f, PrettyTerm f) => Pretty (Term f) where
   pPrintPrec l p (Var x) = pPrintPrec l p x
   pPrintPrec l p (Fun f xs) =
-    pPrintTerm (termStyle f) l p (pPrint f) (termListToList xs)
+    pPrintTerm (termStyle (fromFun f)) l p (pPrint f) (termListToList xs)
 
-instance PrettyTerm f => Pretty (TermList f) where
+instance (Numbered f, PrettyTerm f) => Pretty (TermList f) where
   pPrintPrec l p = pPrint . termListToList
 
-instance PrettyTerm f => Pretty (Subst f) where
+instance (Numbered f, PrettyTerm f) => Pretty (Subst f) where
   pPrint sub = text "{" <> fsep (punctuate (text ",") docs) <> text "}"
     where
       docs =
@@ -68,8 +71,8 @@ instance PrettyTerm f => Pretty (Subst f) where
         | (x, t) <- substToList sub ]
 
 -- | A class for customising the printing of function symbols.
-class Pretty (Fun f) => PrettyTerm f where
-  termStyle :: Fun f -> TermStyle
+class Pretty f => PrettyTerm f where
+  termStyle :: f -> TermStyle
   termStyle _ = curried
 
 -- | Defines how to print out a function symbol.

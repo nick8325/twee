@@ -84,54 +84,24 @@ instance Ord Constant where
   number = conIndex
   withNumber = __-}
 
-toFun :: Constant -> Fun Constant
-toFun Constant{..}
-  | conIndex >= 0 = MkFun (conIndex*2)
-  | otherwise     = MkFun (negate conIndex*2-1)
-
-newtype Context = Context (Array Int Constant)
-
-fromFun :: Given Context => Fun Constant -> Constant
-fromFun (MkFun n)
-  | even n    = arr ! (n `div` 2)
-  | otherwise = skolemFun (n `div` 2)
-  where
-    Context arr = given
-
-instance Minimal Constant where
-  minimal = toFun con0
-instance Skolem Constant where
-  skolem (MkVar n) = toFun (skolemFun n)
-
-skolemFun n =  Constant (-(n+1)) 0 1 ("sk" ++ show n)
-
-instance Given Context => Sized (Fun Constant) where
-  size = fromIntegral . conSize . fromFun
-instance Given Context => SizedFun Constant
-instance Given Context => Arity Constant where
-  arity = conArity . fromFun
+instance Sized Constant where
+  size = fromIntegral . conSize
+instance Arity Constant where
+  arity = conArity
 
 instance Pretty Constant where pPrint = text . conName
-instance Given Context => Pretty (Fun Constant) where
-  pPrint = pPrint . fromFun
-instance Given Context => PrettyTerm Constant where
-  termStyle con0
+instance PrettyTerm Constant where
+  termStyle con
     | not (any isAlphaNum (conName con)) =
       case conArity con of
         1 -> prefix
         2 -> infixStyle 5
         _ -> uncurried
-    where
-      con = fromFun con0
   termStyle _ = uncurried
 
-instance Given Context => Ordered Constant where
+instance Numbered (AutoNumbered Constant) => Ordered (Extended (AutoNumbered Constant)) where
   lessEq = KBO.lessEq
   lessIn = KBO.lessIn
-
-instance Given Context => OrdFun Constant where
-  compareFun = comparing fromFun
-instance Given Context => Function Constant
 
 parseDecl :: Int -> StateT (Int, Map String Int) ReadP Constant
 parseDecl n = lift $ do
@@ -196,23 +166,23 @@ replace xs x =
     Just y -> y
     Nothing -> error (show x ++ " not found")
 
-check :: Given Context => Term Constant -> IO ()
+check :: Numbered (AutoNumbered Constant) => Term (Extended (AutoNumbered Constant)) -> IO ()
 check t = do
   forM_ (subterms t) $ \t ->
     case t of
-      Fun f xs | conArity (fromFun f) /= length (fromTermList xs) -> do
+      Fun f xs | arity f /= length (fromTermList xs) -> do
           print $
             fsep [
             text "Function",
             nest 2 (pPrint f),
             text "has arity",
-            nest 2 (pPrint (conArity (fromFun f))),
+            nest 2 (pPrint (arity f)),
             text "but called as",
             nest 2 (pPrint t)]
           exitWith (ExitFailure 1)
       _ -> return ()
 
-main = do
+main = autonumber (undefined :: Constant) $ do
   (state, file) <-
     execParser $
       info (helper <*> ((,) <$> parseInitialState <*> parseFile))
@@ -228,11 +198,7 @@ main = do
       (axioms0, ("--":goals0)) = break (== "--") eqs1
       fs0 = zipWith (run . parseDecl) [1..] (map tok sig)
       fs1 = con0:fs0
-      fs = [(conName f, toFun f) | f <- fs0]
-      context =
-        Context $
-        array (0, maximum (map conIndex fs1))
-          [(conIndex f, f) | f <- fs1]
+      fs = [(conName f, toFun (Function (AutoNumbered f))) | f <- fs0]
 
       translate (VarTm x) = var x
       translate (App f ts) = fun (replace fs f) (map translate ts)
@@ -242,41 +208,40 @@ main = do
       axioms = [translate t :=: translate u | (t, u) <- axioms1]
       goals2 = map translate goals1
 
-  give context $ do
-    putStrLn "Axioms:"
-    mapM_ prettyPrint axioms
-    putStrLn "\nGoals:"
-    mapM_ prettyPrint goals2
-    mapM_ check goals2
-    forM_ axioms $ \(t :=: u) -> do { check t; check u }
-    putStrLn "\nGo!"
+  putStrLn "Axioms:"
+  mapM_ prettyPrint axioms
+  putStrLn "\nGoals:"
+  mapM_ prettyPrint goals2
+  mapM_ check goals2
+  forM_ axioms $ \(t :=: u) -> do { check t; check u }
+  putStrLn "\nGo!"
 
-    let
-      identical xs = not (Set.null (foldr1 Set.intersection xs))
+  let
+    identical xs = not (Set.null (foldr1 Set.intersection xs))
 
-      loop = do
-        res <- complete1
-        goals <- gets goals
-        when (res && (length goals <= 1 || not (identical goals))) loop
+    loop = do
+      res <- complete1
+      goals <- gets goals
+      when (res && (length goals <= 1 || not (identical goals))) loop
 
-      s =
-        flip execState (addGoals (map Set.singleton goals2) state) $ do
-          mapM_ newEquation axioms
-          loop
+    s =
+      flip execState (addGoals (map Set.singleton goals2) state) $ do
+        mapM_ newEquation axioms
+        loop
 
-      rs = map (critical . modelled . peel) (Indexes.elems (labelledRules s))
+    rs = map (critical . modelled . peel) (Indexes.elems (labelledRules s))
 
-    putStrLn "\nFinal rules:"
-    mapM_ prettyPrint rs
-    putStrLn ""
+  putStrLn "\nFinal rules:"
+  mapM_ prettyPrint rs
+  putStrLn ""
 
-    putStrLn (report s)
+  putStrLn (report s)
 
-    unless (null goals2) $ do
-      putStrLn "Normalised goal terms:"
-      forM_ goals2 $ \t ->
-        prettyPrint (Rule Oriented t (result (normalise s t)))
+  unless (null goals2) $ do
+    putStrLn "Normalised goal terms:"
+    forM_ goals2 $ \t ->
+      prettyPrint (Rule Oriented t (result (normalise s t)))
 
-    if length (goals s) <= 1 || identical (goals s)
-      then exitWith ExitSuccess
-      else exitWith (ExitFailure 1)
+  if length (goals s) <= 1 || identical (goals s)
+    then exitWith ExitSuccess
+    else exitWith (ExitFailure 1)

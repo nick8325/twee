@@ -136,9 +136,6 @@ newtype Var   = MkVar Int deriving (Eq, Ord, Enum)
 instance Show (Fun f) where show (MkFun x) = "f" ++ show x
 instance Show Var     where show (MkVar x) = "x" ++ show x
 
-class OrdFun f where compareFun :: Fun f -> Fun f -> Ordering
-instance OrdFun f => Ord (Fun f) where compare = compareFun
-
 pattern Var x <- Term (patRoot -> Left x) _
 pattern Fun f ts <- Term (patRoot -> Right (f :: Fun f)) (patNext -> (ts :: TermList f))
 
