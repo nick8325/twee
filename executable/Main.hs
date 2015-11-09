@@ -66,6 +66,14 @@ parseInitialState =
 parseFile :: Parser String
 parseFile = strArgument (metavar "FILENAME")
 
+data Order = KBO | LPO
+
+parseOrder :: Parser Order
+parseOrder =
+  flag' KBO (long "kbo" <> help "Use Knuth-Bendix ordering (default)") <|>
+  flag' LPO (long "lpo" <> help "Use lexicographic path ordering") <|>
+  pure KBO
+
 data Constant =
   Constant {
     conIndex :: Int,
@@ -99,9 +107,15 @@ instance PrettyTerm Constant where
         _ -> uncurried
   termStyle _ = uncurried
 
-instance Numbered (AutoNumbered Constant) => Ordered (Extended (AutoNumbered Constant)) where
-  lessEq = KBO.lessEq
-  lessIn = KBO.lessIn
+instance (Given Order, Numbered (AutoNumbered Constant)) => Ordered (Extended (AutoNumbered Constant)) where
+  lessEq =
+    case given of
+      KBO -> KBO.lessEq
+      LPO -> LPO.lessEq
+  lessIn =
+    case given of
+      KBO -> KBO.lessIn
+      LPO -> LPO.lessIn
 
 parseDecl :: Int -> StateT (Int, Map String Int) ReadP Constant
 parseDecl n = lift $ do
@@ -182,66 +196,67 @@ check t = do
           exitWith (ExitFailure 1)
       _ -> return ()
 
-main = autonumber (undefined :: Constant) $ do
-  (state, file) <-
+main = do
+  (state, file, order) <-
     execParser $
-      info (helper <*> ((,) <$> parseInitialState <*> parseFile))
+      info (helper <*> ((,,) <$> parseInitialState <*> parseFile <*> parseOrder))
         (fullDesc <>
          header "twee - an equational theorem prover")
-  input <-
-    case file of
-      "-" -> getContents
-      _ -> readFile file
-  let (sig, ("--":eqs1)) = break (== "--") (filter (not . comment) (lines input))
-      comment ('%':_) = True
-      comment _ = False
-      (axioms0, ("--":goals0)) = break (== "--") eqs1
-      fs0 = zipWith (run . parseDecl) [1..] (map tok sig)
-      fs1 = con0:fs0
-      fs = [(conName f, toFun (Function (AutoNumbered f))) | f <- fs0]
+  autonumber (undefined :: Constant) $ give order $ do
+    input <-
+      case file of
+        "-" -> getContents
+        _ -> readFile file
+    let (sig, ("--":eqs1)) = break (== "--") (filter (not . comment) (lines input))
+        comment ('%':_) = True
+        comment _ = False
+        (axioms0, ("--":goals0)) = break (== "--") eqs1
+        fs0 = zipWith (run . parseDecl) [1..] (map tok sig)
+        fs1 = con0:fs0
+        fs = [(conName f, toFun (Function (AutoNumbered f))) | f <- fs0]
 
-      translate (VarTm x) = var x
-      translate (App f ts) = fun (replace fs f) (map translate ts)
+        translate (VarTm x) = var x
+        translate (App f ts) = fun (replace fs f) (map translate ts)
 
-      axioms1 = map (run parseEquation) (map tok axioms0)
-      goals1 = map (run parseTerm . tok) goals0
-      axioms = [translate t :=: translate u | (t, u) <- axioms1]
-      goals2 = map translate goals1
+        axioms1 = map (run parseEquation) (map tok axioms0)
+        goals1 = map (run parseTerm . tok) goals0
+        axioms = [translate t :=: translate u | (t, u) <- axioms1]
+        goals2 = map translate goals1
 
-  putStrLn "Axioms:"
-  mapM_ prettyPrint axioms
-  putStrLn "\nGoals:"
-  mapM_ prettyPrint goals2
-  mapM_ check goals2
-  forM_ axioms $ \(t :=: u) -> do { check t; check u }
-  putStrLn "\nGo!"
+    putStrLn "Axioms:"
+    mapM_ prettyPrint axioms
+    putStrLn "\nGoals:"
+    mapM_ prettyPrint goals2
+    mapM_ check goals2
+    forM_ axioms $ \(t :=: u) -> do { check t; check u }
+    putStrLn "\nGo!"
 
-  let
-    identical xs = not (Set.null (foldr1 Set.intersection xs))
+    let
+      identical xs = not (Set.null (foldr1 Set.intersection xs))
 
-    loop = do
-      res <- complete1
-      goals <- gets goals
-      when (res && (length goals <= 1 || not (identical goals))) loop
+      loop = do
+        res <- complete1
+        goals <- gets goals
+        when (res && (length goals <= 1 || not (identical goals))) loop
 
-    s =
-      flip execState (addGoals (map Set.singleton goals2) state) $ do
-        mapM_ newEquation axioms
-        loop
+      s =
+        flip execState (addGoals (map Set.singleton goals2) state) $ do
+          mapM_ newEquation axioms
+          loop
 
-    rs = map (critical . modelled . peel) (Indexes.elems (labelledRules s))
+      rs = map (critical . modelled . peel) (Indexes.elems (labelledRules s))
 
-  putStrLn "\nFinal rules:"
-  mapM_ prettyPrint rs
-  putStrLn ""
+    putStrLn "\nFinal rules:"
+    mapM_ prettyPrint rs
+    putStrLn ""
 
-  putStrLn (report s)
+    putStrLn (report s)
 
-  unless (null goals2) $ do
-    putStrLn "Normalised goal terms:"
-    forM_ goals2 $ \t ->
-      prettyPrint (Rule Oriented t (result (normalise s t)))
+    unless (null goals2) $ do
+      putStrLn "Normalised goal terms:"
+      forM_ goals2 $ \t ->
+        prettyPrint (Rule Oriented t (result (normalise s t)))
 
-  if length (goals s) <= 1 || identical (goals s)
-    then exitWith ExitSuccess
-    else exitWith (ExitFailure 1)
+    if length (goals s) <= 1 || identical (goals s)
+      then exitWith ExitSuccess
+      else exitWith (ExitFailure 1)
