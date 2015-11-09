@@ -41,6 +41,8 @@ data Twee f =
     totalCPs          :: Int,
     processedCPs      :: Int,
     renormaliseAt     :: Int,
+    minimumCPSetSize  :: Int,
+    cpSplits          :: Int,
     queue             :: !(Queue (Passive f)),
     useInversionRules :: Bool,
     useSkolemPenalty  :: Bool,
@@ -68,6 +70,8 @@ initialState =
     totalCPs          = 0,
     processedCPs      = 0,
     renormaliseAt     = 50,
+    minimumCPSetSize  = 20,
+    cpSplits          = 5,
     queue             = empty,
     useInversionRules = False,
     useSkolemPenalty  = False,
@@ -708,7 +712,7 @@ queueCPs lower upper f rule = {-# SCC queueCPs #-} do
   let cps = toCPs s lower upper rule
       cpss = partitionBy (f . l2) cps
   forM_ cpss $ \xs -> do
-    if length xs <= 20 then
+    if length xs <= minimumCPSetSize s then
       mapM_ (enqueueM . SingleCP) xs
     else
       let best = minimum xs
@@ -719,9 +723,10 @@ queueCPs lower upper f rule = {-# SCC queueCPs #-} do
 queueCPsSplit ::
   Function f =>
   Label -> Label -> Labelled (Rule f) -> State (Twee f) ()
-queueCPsSplit l u rule = queueCPs l u f rule
-  where
-    f x = 5*(x-l) `div` (u-l+1)
+queueCPsSplit l u rule = do
+  s <- get
+  let f x = fromIntegral (cpSplits s)*(x-l) `div` (u-l+1)
+  queueCPs l u f rule
 
 toCPs ::
   Function f =>

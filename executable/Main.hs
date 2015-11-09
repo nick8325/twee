@@ -32,11 +32,13 @@ import Options.Applicative
 parseInitialState :: Parser (Twee f)
 parseInitialState =
   go <$> maxSize <*> inversion <*> skolem <*> ground <*> general
-     <*> overgeneral <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> weight
+     <*> overgeneral <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> weight <*> splits <*> cpSetSize
   where
-    go maxSize inversion skolem ground general overgeneral groundJoin conn set setGoals tracing moreTracing weight =
+    go maxSize inversion skolem ground general overgeneral groundJoin conn set setGoals tracing moreTracing weight splits cpSetSize =
       initialState {
         maxSize = maxSize,
+        cpSplits = splits,
+        minimumCPSetSize = cpSetSize,
         useInversionRules = inversion,
         useSkolemPenalty = skolem,
         useGroundPenalty = ground,
@@ -62,6 +64,8 @@ parseInitialState =
     tracing = not <$> switch (long "no-tracing" <> help "Disable tracing output")
     moreTracing = switch (long "more-tracing" <> help "Produce even more tracing output")
     weight = option auto (long "lhs-weight" <> help "Weight given to LHS of critical pair (default 2)" <> value 2 <> metavar "WEIGHT")
+    splits = option auto (long "split" <> help "Split CP sets into this many pieces on selection (default 5)" <> value 5)
+    cpSetSize = option auto (long "cp-set-minimum" <> help "Decay CP sets into single CPs when they get this small (default 20)" <> value 20)
 
 parseFile :: Parser String
 parseFile = strArgument (metavar "FILENAME")
