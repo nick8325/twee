@@ -379,7 +379,7 @@ consider pair = {-# SCC consider #-} do
 groundJoin :: Function f =>
   Twee f -> [Branch f] -> Critical (Equation f) -> Either (Model f) [Critical (Equation f)]
 groundJoin s ctx r@(Critical info (t :=: u)) = {-# SCC groundJoin #-}
-  case partitionEithers (map (solve (usort (vars t ++ vars u))) ctx) of
+  case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
     ([], instances) ->
       let rs = [ subst sub r | sub <- instances ] in
       Right (usort (map canonicalise rs))

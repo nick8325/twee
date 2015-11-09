@@ -12,10 +12,20 @@ import Data.Graph
 import Data.Map.Strict(Map)
 import Data.Ord
 import Twee.Term hiding (lookup)
+import qualified Data.DList as DList
+import Control.Monad
 
 data Atom f = Constant (Fun f) | Variable Var deriving Show
 deriving instance Eq (Fun f) => Eq (Atom f)
 deriving instance Ord (Fun f) => Ord (Atom f)
+
+{-# INLINE atoms #-}
+atoms :: (Numbered (ConstantOf a), Arity (ConstantOf a), Symbolic a) => a -> [Atom (ConstantOf a)]
+atoms = DList.toList . symbols f (return . Variable)
+  where
+    f x
+      | arity x == 0 = return (Constant x)
+      | otherwise = mzero
 
 toTerm :: Atom f -> Term f
 toTerm (Constant f) = fun f []
@@ -244,7 +254,7 @@ lessEqInModel (Model m) x y
   | Constant a <- x, Constant b <- y, a < b = Just Strict
   | otherwise = Nothing
 
-solve :: Function f => [Var] -> Branch f -> Either (Model f) (Subst f)
+solve :: Function f => [Atom f] -> Branch f -> Either (Model f) (Subst f)
 solve xs Branch{..}
   | null equals = Left model
   | otherwise = Right sub
@@ -253,5 +263,5 @@ solve xs Branch{..}
         [(x, toTerm y) | (Variable x, y) <- equals] ++
         [(y, toTerm x) | (x@Constant{}, Variable y) <- equals]
       vs = reverse (flattenSCCs (stronglyConnComp [(x, x, [y | (x', y) <- less, x == x']) | x <- as]))
-      as = usort $ map Variable xs ++ filter (/= Constant minimal) (map fst less ++ map snd less)
+      as = usort $ Constant minimal:xs ++ map fst less ++ map snd less
       model = modelFromOrder vs
