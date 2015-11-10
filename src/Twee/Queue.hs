@@ -71,21 +71,20 @@ instance Heuristic h => Heuristic (Mix h) where
     mix { left = insert x (left mix),
           right = insert x (right mix) }
 
-  remove mix@Mix{..} = l `mplus` r
+  remove mix = go mix `mplus` go (swap mix) `mplus` go (reset mix)
     where
-      l = do
+      go mix@Mix{..} = do
         guard (takeNext > 0)
         (x, left') <- remove left
         return (x, mix { takeNext = takeNext - 1, left = left' })
-      r = do
-        (x, right') <- remove right
-        return (x, Mix takeRight takeLeft takeRight right' left)
+      swap Mix{..} = Mix takeRight takeLeft takeRight right left
+      reset Mix{..} = Mix takeLeft takeRight takeLeft left right
 
   reinsert x mix =
     mix { left = reinsert x (left mix),
           right = reinsert x (right mix) }
 
-  members mix = members (right mix)
+  members mix = members (left mix)
 
 data Queue h a =
   Queue {
