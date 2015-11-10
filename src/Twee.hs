@@ -305,8 +305,8 @@ complete1 = {-# SCC complete1 #-} do
 
   res <- dequeueM
   case res of
-    Just (SingleCP (CP _ cp _ _)) -> do
-      consider cp
+    Just (SingleCP (CP _ cp l1 l2)) -> do
+      consider l1 l2 cp
       if useSetJoiningForGoals then
         modify $ \s -> s { goals = {-# SCC normaliseGoals #-} map (normalForms (rewrite "goal" reduces (rules s)) . Set.toList) goals }
       else
@@ -336,8 +336,8 @@ normaliseCPs = {-# SCC normaliseCPs #-} do
 
 consider ::
   Function f =>
-  Critical (Equation f) -> State (Twee f) ()
-consider pair = {-# SCC consider #-} do
+  Label -> Label -> Critical (Equation f) -> State (Twee f) ()
+consider l1 l2 pair@(Critical _ eq0) = {-# SCC consider #-} do
   traceM (Consider pair)
   modify' (\s -> s { processedCPs = processedCPs s + 1 })
   s <- get
@@ -346,6 +346,7 @@ consider pair = {-# SCC consider #-} do
       hard (Subsumed Subjoining) = True
       hard SetJoining = True
       hard _ = False
+      eqSize (t :=: u) = size t + size u
   case {-# SCC normalise1 #-} normaliseCP s pair of
     Left reason -> do
       record reason
@@ -354,6 +355,8 @@ consider pair = {-# SCC consider #-} do
         let u = result (normaliseSub s t u0)
             r = rule t u
         addExtraRule r
+    Right (Critical info eq) | eqSize eq > eqSize eq0 ->
+      queueCP l1 l2 (Critical info eq)
     Right (Critical info eq) ->
       forM_ (map canonicalise (orient eq)) $ \(Rule _ t u0) -> do
         s <- get
@@ -367,7 +370,7 @@ consider pair = {-# SCC consider #-} do
             case groundJoin s (branches (And [])) eq of
               Right eqs -> {-# SCC "GroundJoined" #-} do
                 record GroundJoined
-                mapM_ consider eqs
+                mapM_ (consider l1 l2) eqs
                 addExtraRule r
                 newSubRule r
               Left model -> {-# SCC "NewRule" #-} do
@@ -509,7 +512,7 @@ simplifyRule l model r@(Modelled _ positions (Critical info (Rule _ lhs rhs))) =
 
 newEquation :: Function f => Equation f -> State (Twee f) ()
 newEquation (t :=: u) = do
-  consider (Critical (CritInfo minimalTerm 0) (t :=: u))
+  consider noLabel noLabel (Critical (CritInfo minimalTerm 0) (t :=: u))
   return ()
 
 --------------------------------------------------------------------------------
