@@ -248,6 +248,7 @@ varGroups (Model m) = filter nonempty (go minimal (map fst (sortBy (comparing sn
     nonempty (_, [], _) = False
     nonempty _ = True
 
+{-# INLINE lessEqInModel #-}
 lessEqInModel :: (Numbered f, Minimal f, Ord f) => Model f -> Atom f -> Atom f -> Maybe Strictness
 lessEqInModel (Model m) x y
   | Just (a, _) <- Map.lookup x m,

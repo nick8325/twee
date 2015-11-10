@@ -9,7 +9,30 @@ import Data.Maybe
 import Control.Monad
 
 lessEq :: Function f => Term f -> Term f -> Bool
-lessEq t u = isJust (lessIn (Model Map.empty) t u)
+lessEq (Var x) (Var y) = x == y
+lessEq (Var x) t = x `elem` vars t
+lessEq (Fun f _) (Var _) = f == minimal
+lessEq t@(Fun f ts) u@(Fun g us) =
+  case compare f g of
+    LT ->
+      and [ lessEq t u | t <- fromTermList ts ] &&
+      and [ isNothing (match u t) | t <- fromTermList ts ]
+    EQ -> lexLess t u ts us
+    GT -> or [ lessEq t u | u <- fromTermList us ]
+  where
+    lexLess _ _ Empty Empty = True
+    lexLess t u (Cons t' ts) (Cons u' us)
+      | t' == u' = lexLess t u ts us
+      | lessEq t' u' =
+        and [ lessEq t u | t <- fromTermList ts ] &&
+        and [ isNothing (match u t) | t <- fromTermList ts ] &&
+        case match u' t' of
+          Nothing -> True
+          Just sub ->
+            lexLess (subst sub t) (subst sub u) (subst sub ts) (subst sub us)
+      | otherwise =
+        or [ lessEq t u | u <- fromTermList us ]
+    lexLess _ _ _ _ = ERROR("incorrect function arity")
 
 lessIn :: Function f => Model f -> Term f -> Term f -> Maybe Strictness
 lessIn model (Var x) t
