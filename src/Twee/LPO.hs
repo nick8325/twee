@@ -3,7 +3,7 @@ module Twee.LPO where
 
 #include "errors.h"
 import Twee.Base hiding (lessEq, lessIn)
-import Twee.Constraints
+import Twee.Constraints hiding (lessEq, lessIn)
 import qualified Data.Map.Strict as Map
 import Data.Maybe
 import Control.Monad

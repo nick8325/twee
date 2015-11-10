@@ -4,7 +4,7 @@ module Twee.KBO where
 #include "errors.h"
 import Twee.Base hiding (lessEq, lessIn)
 import Data.List
-import Twee.Constraints
+import Twee.Constraints hiding (lessEq, lessIn)
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
 import Data.Maybe

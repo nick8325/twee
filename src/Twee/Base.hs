@@ -14,7 +14,7 @@ import qualified Data.DList as DList
 import Twee.Term hiding (subst, canonicalise)
 import qualified Twee.Term as Term
 import Twee.Pretty
-import {-# SOURCE #-} Twee.Constraints
+import Twee.Constraints hiding (funs)
 
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where
@@ -74,12 +74,6 @@ canonicalise t = subst sub t
   where
     sub = Term.canonicalise (map (singleton . var) (vars t))
 
-class Minimal a where
-  minimal :: a
-
-instance (Numbered f, Minimal f) => Minimal (Fun f) where
-  minimal = toFun minimal
-
 isMinimal :: (Numbered f, Minimal f) => Term f -> Bool
 isMinimal (Fun f Empty) | f == minimal = True
 isMinimal _ = False
@@ -121,19 +115,6 @@ instance (Sized f, Numbered f) => Sized (TermList f) where
 
 instance (Sized f, Numbered f) => Sized (Term f) where
   size = size . singleton
-
-class Ord f => Ordered f where
-  orientTerms :: Term f -> Term f -> Maybe Ordering
-  orientTerms t u
-    | t == u = Just EQ
-    | lessEq t u = Just LT
-    | lessEq u t = Just GT
-    | otherwise = Nothing
-
-  lessEq :: Term f -> Term f -> Bool
-  lessIn :: Model f -> Term f -> Term f -> Maybe Strictness
-
-data Strictness = Strict | Nonstrict deriving (Eq, Show)
 
 class    (Numbered f, Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f) => Function f
 instance (Numbered f, Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f) => Function f
