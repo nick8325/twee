@@ -70,7 +70,7 @@ funs :: Symbolic a => a -> [Fun (ConstantOf a)]
 funs = DList.toList . symbols return (const mzero)
 
 canonicalise :: Symbolic a => a -> a
-canonicalise t = {-# SCC canonicalise #-} subst sub t
+canonicalise t = subst sub t
   where
     sub = Term.canonicalise (map (singleton . var) (vars t))
 

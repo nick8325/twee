@@ -181,7 +181,7 @@ instance Rated (Rule f) where
 {-# INLINE rulesFor #-}
 rulesFor :: Function f => Int -> Twee f -> Frozen (Rule f)
 rulesFor n k =
-  {-# SCC rules #-}
+  {-# SCC rulesFor #-}
   Index.map (critical . modelled . peel) (Indexes.freeze n (labelledRules k))
 
 easyRules, rules :: Function f => Twee f -> Frozen (Rule f)

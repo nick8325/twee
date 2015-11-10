@@ -232,7 +232,7 @@ steps r = aux r []
     aux (Parallel ps _) = foldr (.) id (map (aux . snd) ps)
 
 normaliseWith :: (Numbered f, PrettyTerm f) => Strategy f -> Term f -> Reduction f
-normaliseWith strat t = {-# SCC normaliseWith #-} aux 0 [] 0 (singleton t) (Parallel [] t) t
+normaliseWith strat t = aux 0 [] 0 (singleton t) (Parallel [] t) t
   where
     aux !_ _ !_ !_ _ !_ | False = __
     aux 1000 _ _ _ p _ =

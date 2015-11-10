@@ -117,7 +117,7 @@ matches t idx = matchesList (Term.singleton t) idx
 
 freeze :: Index a -> Frozen a
 freeze Nil = Frozen $ \_ -> []
-freeze idx = {-# SCC freeze #-} Frozen $ \(!t) -> runST $ do
+freeze idx = Frozen $ \(!t) -> runST $ do
   !msub <- newMutableSubst (vars idx)
   let
     loop !_ !_ _ | False = __

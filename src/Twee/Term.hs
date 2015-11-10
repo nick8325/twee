@@ -83,7 +83,7 @@ subst sub t =
     Cons u Empty -> u
 
 substList :: Subst f -> TermList f -> TermList f
-substList !sub !t = {-# SCC substList #-} buildTermList (2*lenList t) (emitSubstList sub t)
+substList !sub !t = buildTermList (2*lenList t) (emitSubstList sub t)
 
 -- Emit a substitution applied to a term.
 {-# INLINE emitSubst #-}
@@ -248,7 +248,7 @@ match pat t = matchList (singleton pat) (singleton t)
 matchList :: TermList f -> TermList f -> Maybe (Subst f)
 matchList !pat !t
   | lenList t < lenList pat = Nothing
-  | otherwise = {-# SCC matchList #-} runST $ do
+  | otherwise = runST $ do
     subst <- newMutableSubst (boundList pat)
     let loop !_ !_ | False = __
         loop Empty _ = fmap Just (unsafeFreezeSubst subst)
@@ -275,7 +275,7 @@ unify :: Term f -> Term f -> Maybe (Subst f)
 unify t u = unifyList (singleton t) (singleton u)
 
 unifyList :: TermList f -> TermList f -> Maybe (Subst f)
-unifyList t u = {-# SCC unifyList #-} do
+unifyList t u = do
   sub <- unifyListTri t u
   return $! close sub
 
@@ -284,7 +284,7 @@ unifyTri :: Term f -> Term f -> Maybe (TriangleSubst f)
 unifyTri t u = unifyListTri (singleton t) (singleton u)
 
 unifyListTri :: TermList f -> TermList f -> Maybe (TriangleSubst f)
-unifyListTri !t !u = {-# SCC unifyListTri #-} runST $ do
+unifyListTri !t !u = runST $ do
   subst <- newMutableSubst (boundList t `max` boundList u)
   let
     loop !_ !_ | False = __
