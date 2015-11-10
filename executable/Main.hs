@@ -32,10 +32,10 @@ import Options.Applicative
 parseInitialState :: Parser (Twee f)
 parseInitialState =
   go <$> maxSize <*> inversion <*> skolem <*> ground <*> general
-     <*> overgeneral <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> weight <*> splits <*> cpSetSize
+     <*> overgeneral <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> weight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio
   where
-    go maxSize inversion skolem ground general overgeneral groundJoin conn set setGoals tracing moreTracing weight splits cpSetSize =
-      initialState {
+    go maxSize inversion skolem ground general overgeneral groundJoin conn set setGoals tracing moreTracing weight splits cpSetSize mixFIFO mixPrio =
+      (initialState mixFIFO mixPrio) {
         maxSize = maxSize,
         cpSplits = splits,
         minimumCPSetSize = cpSetSize,
@@ -66,6 +66,8 @@ parseInitialState =
     weight = option auto (long "lhs-weight" <> help "Weight given to LHS of critical pair (default 2)" <> value 2 <> metavar "WEIGHT")
     splits = option auto (long "split" <> help "Split CP sets into this many pieces on selection (default 5)" <> value 5)
     cpSetSize = option auto (long "cp-set-minimum" <> help "Decay CP sets into single CPs when they get this small (default 20)" <> value 20)
+    mixFIFO = option auto (long "mix-fifo" <> help "Take this many CPs at a time from FIFO (default 1)" <> value 1)
+    mixPrio = option auto (long "mix-prio" <> help "Take this many CPs at a time from priority queue (default 10)" <> value 10)
 
 parseFile :: Parser String
 parseFile = strArgument (metavar "FILENAME")

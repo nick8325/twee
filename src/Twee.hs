@@ -43,7 +43,7 @@ data Twee f =
     renormaliseAt     :: Int,
     minimumCPSetSize  :: Int,
     cpSplits          :: Int,
-    queue             :: !(Queue (Passive f)),
+    queue             :: !(Queue (Mix (Either1 FIFO Heap)) (Passive f)),
     useInversionRules :: Bool,
     useSkolemPenalty  :: Bool,
     useGroundPenalty  :: Bool,
@@ -59,8 +59,8 @@ data Twee f =
     joinStatistics    :: Map JoinReason Int }
   deriving Show
 
-initialState :: Twee f
-initialState =
+initialState :: Int -> Int -> Twee f
+initialState mixFIFO mixPrio =
   Twee {
     maxSize           = Nothing,
     labelledRules     = Indexes.empty,
@@ -72,7 +72,7 @@ initialState =
     renormaliseAt     = 50,
     minimumCPSetSize  = 20,
     cpSplits          = 5,
-    queue             = empty,
+    queue             = empty (emptyMix mixFIFO mixPrio (Left1 emptyFIFO) (Right1 emptyHeap)),
     useInversionRules = False,
     useSkolemPenalty  = False,
     useGroundPenalty  = False,
@@ -119,6 +119,11 @@ enqueueM cps = do
   modify' $ \s -> s {
     queue    = enqueue cps (queue s),
     totalCPs = totalCPs s + passiveCount cps }
+
+reenqueueM :: Function f => Passive f -> State (Twee f) ()
+reenqueueM cps = do
+  modify' $ \s -> s {
+    queue    = reenqueue cps (queue s) }
 
 dequeueM :: Function f => State (Twee f) (Maybe (Passive f))
 dequeueM =
@@ -316,9 +321,9 @@ complete1 = {-# SCC complete1 #-} do
       s <- get
       modify (\s@Twee{..} -> s { totalCPs = totalCPs - size })
 
-      queueCPsSplit lower (l-1) rule
-      mapM_ (enqueueM . SingleCP) (toCPs s l l rule)
-      queueCPsSplit (l+1) upper rule
+      queueCPsSplit reenqueueM lower (l-1) rule
+      mapM_ (reenqueueM . SingleCP) (toCPs s l l rule)
+      queueCPsSplit reenqueueM (l+1) upper rule
       complete1
     Nothing ->
       return False
@@ -330,8 +335,8 @@ normaliseCPs = {-# SCC normaliseCPs #-} do
   put s { queue = emptyFrom queue }
   forM_ (toList queue) $ \cp ->
     case cp of
-      SingleCP (CP _ cp l1 l2) -> queueCP l1 l2 cp
-      ManyCPs (CPs _ _ lower upper _ rule) -> queueCPs lower upper (const ()) rule
+      SingleCP (CP _ cp l1 l2) -> queueCP enqueueM l1 l2 cp
+      ManyCPs (CPs _ _ lower upper _ rule) -> queueCPs enqueueM lower upper (const ()) rule
   modify (\s -> s { totalCPs = totalCPs })
 
 consider ::
@@ -356,7 +361,7 @@ consider l1 l2 pair@(Critical _ eq0) = {-# SCC consider #-} do
             r = rule t u
         addExtraRule r
     Right (Critical info eq) | eqSize eq > eqSize eq0 ->
-      queueCP l1 l2 (Critical info eq)
+      queueCP enqueueM l1 l2 (Critical info eq)
     Right (Critical info eq) ->
       forM_ (map canonicalise (orient eq)) $ \(Rule _ t u0) -> do
         s <- get
@@ -376,7 +381,7 @@ consider l1 l2 pair@(Critical _ eq0) = {-# SCC consider #-} do
               Left model -> {-# SCC "NewRule" #-} do
                 traceM (NewRule r)
                 l <- addRule (Modelled model (ruleOverlaps s (lhs r)) (Critical info r))
-                queueCPsSplit noLabel l (Labelled l r)
+                queueCPsSplit enqueueM noLabel l (Labelled l r)
                 interreduce r
 
 groundJoin :: Function f =>
@@ -465,7 +470,7 @@ interreduce new = {-# SCC interreduce #-} do
           Simplify model rule -> simplifyRule l model rule
           Reorient rule@(Modelled _ _ (Critical info (Rule _ t u))) -> do
             deleteRule l rule
-            queueCP noLabel noLabel (Critical info (t :=: u))
+            queueCP enqueueM noLabel noLabel (Critical info (t :=: u))
 
 reduceWith :: Function f => Twee f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
 reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
@@ -700,36 +705,39 @@ criticalPairs1 s ns (Rule or t u) rs = {-# SCC criticalPairs1 #-} do
 
 queueCP ::
   Function f =>
+  (Passive f -> State (Twee f) ()) ->
   Label -> Label -> Critical (Equation f) -> State (Twee f) ()
-queueCP l1 l2 eq = do
+queueCP enq l1 l2 eq = do
   s <- get
   case toCP s l1 l2 eq of
     Nothing -> return ()
-    Just cp -> enqueueM (SingleCP cp)
+    Just cp -> enq (SingleCP cp)
 
 queueCPs ::
   (Function f, Ord a) =>
+  (Passive f -> State (Twee f) ()) ->
   Label -> Label -> (Label -> a) -> Labelled (Rule f) -> State (Twee f) ()
-queueCPs lower upper f rule = {-# SCC queueCPs #-} do
+queueCPs enq lower upper f rule = {-# SCC queueCPs #-} do
   s <- get
   let cps = toCPs s lower upper rule
       cpss = partitionBy (f . l2) cps
   forM_ cpss $ \xs -> do
     if length xs <= minimumCPSetSize s then
-      mapM_ (enqueueM . SingleCP) xs
+      mapM_ (enq . SingleCP) xs
     else
       let best = minimum xs
           l1' = minimum (map l1 xs)
           l2' = minimum (map l2 xs) in
-      enqueueM (ManyCPs (CPs (info best) (l2 best) l1' l2' (length xs) rule))
+      enq (ManyCPs (CPs (info best) (l2 best) l1' l2' (length xs) rule))
 
 queueCPsSplit ::
   Function f =>
+  (Passive f -> State (Twee f) ()) ->
   Label -> Label -> Labelled (Rule f) -> State (Twee f) ()
-queueCPsSplit l u rule = do
+queueCPsSplit enq l u rule = do
   s <- get
   let f x = fromIntegral (cpSplits s)*(x-l) `div` (u-l+1)
-  queueCPs l u f rule
+  queueCPs enq l u f rule
 
 toCPs ::
   Function f =>
