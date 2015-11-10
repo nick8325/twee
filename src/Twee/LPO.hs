@@ -9,7 +9,7 @@ import Data.Maybe
 import Control.Monad
 
 lessEq :: Function f => Term f -> Term f -> Bool
-lessEq t u = isJust (lessIn (Model Map.empty) t u)
+lessEq t u = {-# SCC lessEq #-} isJust (lessIn (Model Map.empty) t u)
 
 lessIn :: Function f => Model f -> Term f -> Term f -> Maybe Strictness
 lessIn model (Var x) t
