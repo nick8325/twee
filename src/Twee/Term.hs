@@ -23,7 +23,6 @@ import Control.Monad.ST.Strict
 import Data.List hiding (lookup)
 import Data.Maybe
 import Data.Ord
-import Data.Reflection
 
 --------------------------------------------------------------------------------
 -- Pattern synonyms for substitutions.

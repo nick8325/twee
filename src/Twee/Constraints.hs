@@ -14,7 +14,6 @@ import Data.Graph
 import Data.Map.Strict(Map)
 import Data.Ord
 import Twee.Term hiding (lookup)
-import Control.Monad
 
 data Atom f = Constant (Fun f) | Variable Var deriving Show
 deriving instance Eq (Fun f) => Eq (Atom f)
