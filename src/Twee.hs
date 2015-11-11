@@ -687,7 +687,7 @@ criticalPairs1 s ns (Rule or t u) rs = {-# SCC criticalPairs1 #-} do
       Rule or' t' u' = subst sub r
   (sub, pos) <- overlaps ns t t'
   let left = subst sub u
-      right = subst sub (buildTerm 32 (emitReplacement pos u' (singleton t)))
+      right = subst sub (buildTerm (emitReplacement pos u' (singleton t)))
       top = subst sub t
       overlap = at pos (singleton t)
 

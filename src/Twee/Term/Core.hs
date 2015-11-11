@@ -214,8 +214,8 @@ instance Monad (BuildM s f) where
         (# s, j, x #) -> unBuildM (f x) s array n j
 
 {-# INLINE buildTermList #-}
-buildTermList :: Int -> (forall s. BuildM s f ()) -> TermList f
-buildTermList n0 builder = runST $ do
+buildTermList :: (forall s. BuildM s f ()) -> TermList f
+buildTermList builder = runST $ do
   let
     BuildM m = builder
     loop n@(I# n#) = do
@@ -229,7 +229,7 @@ buildTermList n0 builder = runST $ do
         !array <- unsafeFreezeByteArray (MutableByteArray marray#)
         return (TermList 0 n' array)
        else loop (n'*2)
-  loop n0
+  loop 16
 
 {-# INLINE getArray #-}
 getArray :: BuildM s f (MutableByteArray s)

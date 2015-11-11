@@ -77,7 +77,7 @@ subst sub t =
     Cons u Empty -> u
 
 substList :: Subst f -> TermList f -> TermList f
-substList !sub !t = buildTermList (2*lenList t) (emitSubstList sub t)
+substList !sub !t = buildTermList (emitSubstList sub t)
 
 -- Emit a substitution applied to a term.
 {-# INLINE emitSubst #-}
@@ -112,7 +112,7 @@ iterSubst sub t =
     Cons u Empty -> u
 
 iterSubstList :: TriangleSubst f -> TermList f -> TermList f
-iterSubstList !sub !t = buildTermList (2*lenList t) (emitIterSubstList sub t)
+iterSubstList !sub !t = buildTermList (emitIterSubstList sub t)
 
 -- Emit a substitution repeatedly applied to a term.
 {-# INLINE emitIterSubst #-}
@@ -140,7 +140,7 @@ substCompose !sub1 !sub2 =
     loop (viewSubst sub1) t
   where
     !t =
-      buildTermList 32 $
+      buildTermList $
         forMSubst_ sub1 $ \_ t ->
           emitFun (MkFun 0) (emitSubstList sub2 t)
 
@@ -212,7 +212,7 @@ canonicalise (t:ts) = runST $ do
   where
     n = maximum (0:map boundList (t:ts))
     vars =
-      buildTermList (n+1) $ do
+      buildTermList $ do
         forM_ [0..n] $ \i ->
           emitVar (MkVar i)
 
@@ -427,22 +427,22 @@ termListToList (Cons t ts) = t:termListToList ts
 -- The empty term list.
 {-# NOINLINE emptyTermList #-}
 emptyTermList :: TermList f
-emptyTermList = buildTermList 0 (return ())
+emptyTermList = buildTermList (return ())
 
 -- Functions for building terms.
 var :: Var -> Term f
-var x = buildTerm 1 (emitVar x)
+var x = buildTerm (emitVar x)
 
 fun :: Fun f -> [Term f] -> Term f
-fun f ts = buildTerm (1+sum (map len ts)) (emitFun f (mapM_ emitTerm ts))
+fun f ts = buildTerm (emitFun f (mapM_ emitTerm ts))
 
 concatTerms :: [TermList f] -> TermList f
-concatTerms ts = buildTermList (sum (map lenList ts)) (mapM_ emitTermList ts)
+concatTerms ts = buildTermList (mapM_ emitTermList ts)
 
 {-# INLINE buildTerm #-}
-buildTerm :: Int -> (forall s. BuildM s f ()) -> Term f
-buildTerm n m =
-  case buildTermList n m of
+buildTerm :: (forall s. BuildM s f ()) -> Term f
+buildTerm m =
+  case buildTermList m of
     Cons t Empty -> t
 
 subterms :: Term f -> [Term f]

@@ -178,7 +178,7 @@ data Reduction f =
   deriving Show
 
 result :: Reduction f -> Term f
-result t = buildTerm 32 (emitReduction t)
+result t = buildTerm (emitReduction t)
   where
     emitReduction (Step r sub) = emitSubst sub (rhs r)
     emitReduction (Trans _ p) = emitReduction p
