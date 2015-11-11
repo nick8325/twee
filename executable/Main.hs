@@ -131,7 +131,7 @@ parseDecl n = lift $ do
   size <- readS_to_P reads
   return (Constant n arity size name)
 
-data Tm = App String [Tm] | VarTm Var
+data Tm = AppTm String [Tm] | VarTm Var
 
 parseTerm :: StateT (Int, Map String Int) ReadP Tm
 parseTerm = var `mplus` fun
@@ -140,7 +140,7 @@ parseTerm = var `mplus` fun
       x <- lift $ satisfy (\c -> c `notElem` "(),=_" && not (isUpper c))
       xs <- lift $ munch (\c -> c `notElem` "(),=")
       args <- args `mplus` return []
-      return (App (x:xs) args)
+      return (AppTm (x:xs) args)
     args = between (char '(') (char ')') (sepBy parseTerm (char ','))
     between p q r = do
       lift p
@@ -221,7 +221,7 @@ main = do
   let fs = [(conName f, toFun (Function f)) | f <- fs0]
 
       translate (VarTm x) = var x
-      translate (App f ts) = fun (replace fs f) (map translate ts)
+      translate (AppTm f ts) = fun (replace fs f) (map translate ts)
 
       axioms1 = map (run parseEquation) (map tok axioms0)
       goals1 = map (run parseTerm . tok) goals0

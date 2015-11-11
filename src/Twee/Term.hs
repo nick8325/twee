@@ -483,3 +483,8 @@ toFun f = MkFun (toInt f)
 
 instance (Ord f, Numbered f) => Ord (Fun f) where
   compare = comparing fromFun
+
+pattern App f ts <- Fun (fromFun -> f) (fromTermList -> ts)
+
+app :: Numbered a => a -> [Term a] -> Term a
+app f ts = fun (toFun f) ts
