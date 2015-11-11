@@ -24,11 +24,6 @@ import Data.List hiding (lookup)
 import Data.Maybe
 import Data.Ord
 import Data.Reflection
-import Data.IORef
-import System.IO.Unsafe
-import qualified Data.Map.Strict as Map
-import Data.Map.Strict(Map)
-import Twee.Array
 
 --------------------------------------------------------------------------------
 -- Pattern synonyms for substitutions.
@@ -488,39 +483,3 @@ toFun f = MkFun (toInt f)
 
 instance (Ord f, Numbered f) => Ord (Fun f) where
   compare = comparing fromFun
-
-data AutoState f =
-  AutoState {
-    st_next :: {-# UNPACK #-} !Int,
-    st_from :: {-# UNPACK #-} !(Array (NoDef f)),
-    st_to   :: !(Map f Int) }
-newtype NoDef a = NoDef a
-instance Default (NoDef a) where def = __
-
-newtype AutoNumbered f = AutoNumbered { unAutoNumber :: f }
-  deriving (Eq, Ord, Show)
-
-instance (Ord f, Given (IORef (AutoState f))) => Numbered (AutoNumbered f) where
-  fromInt n =
-    AutoNumbered . unsafePerformIO $ do
-      AutoState{..} <- readIORef given
-      let NoDef f = st_from ! n
-      return f
-
-  toInt (AutoNumbered f) =
-    unsafePerformIO $
-      atomicModifyIORef' given $ \st@AutoState{..} ->
-        case Map.lookup f st_to of
-          Just n -> (st, n)
-          Nothing ->
-            (AutoState
-               (st_next+1)
-               (update st_next (NoDef f) st_from)
-               (Map.insert f st_next st_to),
-             st_next)
-
-autonumber :: forall f a. Ord f => f -> (Numbered (AutoNumbered f) => a) -> a
-autonumber _ f =
-  unsafePerformIO $ do
-    ref <- newIORef (AutoState 0 newArray Map.empty) :: IO (IORef (AutoState f))
-    return (give ref f)

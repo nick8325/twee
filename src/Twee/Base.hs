@@ -157,10 +157,3 @@ instance Sized f => Sized (Extended f) where
 instance Arity f => Arity (Extended f) where
   arity (Function f) = arity f
   arity _ = 0
-
-deriving instance Pretty f     => Pretty (AutoNumbered f)
-deriving instance PrettyTerm f => PrettyTerm (AutoNumbered f)
-deriving instance Sized f      => Sized (AutoNumbered f)
-deriving instance Arity f      => Arity (AutoNumbered f)
-deriving instance Minimal f    => Minimal (AutoNumbered f)
-deriving instance Skolem f     => Skolem (AutoNumbered f)
