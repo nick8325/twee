@@ -798,7 +798,7 @@ toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
     toCP' (Critical info (t :=: u)) = {-# SCC toCP' #-}
       CP (CPInfo (weight t' u') (-(overlap info)) l2 l1 (ordering t u)) (Critical info' (t' :=: u')) l1 l2
       where
-        Critical info' (t' :=: u') = canonicalise (Critical info (order (t :=: u)))
+        Critical info' (t' :=: u') = Critical info (order (t :=: u))
 
     ordering t u = maximum (0:map (ordering1 . orientation) (orient (t :=: u)))
     ordering1 Oriented = 0

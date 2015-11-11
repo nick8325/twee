@@ -31,6 +31,7 @@ type SubstOf a = Subst (ConstantOf a)
 instance Symbolic (Term f) where
   type ConstantOf (Term f) = f
   term            = id
+  {-# INLINE symbols #-}
   symbols fun var = symbols fun var . singleton
   subst           = Term.subst
 
