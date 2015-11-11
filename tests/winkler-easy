@@ -1,13 +1,13 @@
 % Needs case split on X < c.
 a/0=1
 b/0=1
-plus/2=1
-neg/1=0
++/2=1
+-/1=0
 --
-plus(X, Y) = plus(Y, X)
-plus(X, plus(Y, Z)) = plus(plus(X, Y), Z)
-plus(X, X) = X
-neg(plus(neg(plus(X, Y)), neg(plus(X, neg(Y))))) = X
++(X, Y) = +(Y, X)
++(X, +(Y, Z)) = +(+(X, Y), Z)
++(X, X) = X
+-(+(-(+(X, Y)), -(+(X, -(Y))))) = X
 --
-plus(neg(plus(neg(a), b)), neg(plus(neg(a), neg(b))))
++(-(+(-(a), b)), -(+(-(a), -(b))))
 a
