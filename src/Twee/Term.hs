@@ -35,6 +35,13 @@ data SubstView f =
 viewSubst :: Subst f -> SubstView f
 viewSubst sub = SubstView 0 sub
 
+listSubst :: Subst f -> [(Var, TermList f)]
+listSubst sub = unfoldr op (viewSubst sub)
+  where
+    op EmptySubst = Nothing
+    op (ConsSubst Nothing sub) = op sub
+    op (ConsSubst (Just (x, t)) sub) = Just ((x, t), sub)
+
 patNextSubst :: SubstView f -> Maybe (Maybe (Var, TermList f), SubstView f)
 patNextSubst (SubstView n sub)
   | n == substSize sub = Nothing
@@ -49,11 +56,7 @@ pattern ConsSubst x s <- (patNextSubst -> Just (x, s))
 
 {-# INLINE foldSubst #-}
 foldSubst :: (Var -> TermList f -> b -> b) -> b -> Subst f -> b
-foldSubst op e !sub = aux (viewSubst sub)
-  where
-    aux EmptySubst = e
-    aux (ConsSubst Nothing sub) = aux sub
-    aux (ConsSubst (Just (x, t)) sub) = op x t (aux sub)
+foldSubst op e !sub = foldr (uncurry op) e (listSubst sub)
 
 {-# INLINE allSubst #-}
 allSubst :: (Var -> TermList f -> Bool) -> Subst f -> Bool
@@ -159,14 +162,8 @@ substCompatible sub1 sub2 = loop (viewSubst sub1) (viewSubst sub2)
 substUnion :: Subst f -> Subst f -> Subst f
 substUnion sub1 sub2 = runST $ do
   msub <- newMutableSubst (vars sub1 `max` vars sub2)
-  let
-    loop EmptySubst = return ()
-    loop (ConsSubst (Just (x, t)) sub) = do
-      unsafeExtendList msub x t
-      loop sub
-    loop (ConsSubst Nothing sub) = loop sub
-  loop (viewSubst sub1)
-  loop (viewSubst sub2)
+  forM_ (listSubst sub1) $ \(x, t) -> unsafeExtendList msub x t
+  forM_ (listSubst sub2) $ \(x, t) -> unsafeExtendList msub x t
   unsafeFreezeSubst msub
 
 -- Is a substitution idempotent?
