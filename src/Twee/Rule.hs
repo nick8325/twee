@@ -123,7 +123,7 @@ rule t u = Rule o t u
           Nothing -> Oriented
           Just sub
             | allSubst (\_ (Cons t Empty) -> isMinimal t) sub ->
-              WeaklyOriented (map (var . fst) (substToList sub))
+              WeaklyOriented (map (var . fst) (listSubst sub))
             | otherwise -> Unoriented
       | lessEq t u = ERROR("wrongly-oriented rule")
       | not (null (usort (vars u) \\ usort (vars t))) =
