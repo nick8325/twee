@@ -660,24 +660,20 @@ overlaps ns t1 t2 = {-# SCC overlaps #-} go 0 ns (singleton t1) []
             Nothing -> []
             Just sub -> [(sub, n)]
 
-emitReplacement :: Int -> Term f -> TermList f -> BuildM s f ()
+emitReplacement :: Int -> Term f -> TermList f -> Builder f
 emitReplacement n t = aux n
   where
     aux !_ !_ | False = __
-    aux _ Empty = return ()
-    aux 0 (Cons _ u) = do
-      emitTerm t
-      emitTermList u
-    aux n (Cons (Var x) u) = do
-      emitVar x
-      aux (n-1) u
+    aux _ Empty = mempty
+    aux 0 (Cons _ u) =
+      emitTerm t `mappend` emitTermList u
+    aux n (Cons (Var x) u) =
+      emitVar x `mappend` aux (n-1) u
     aux n (Cons t@(Fun f ts) u)
-      | n < len t = do
-          emitFun f (aux (n-1) ts)
-          emitTermList u
-      | otherwise = do
-          emitTerm t
-          aux (n-len t) u
+      | n < len t =
+        emitFun f (aux (n-1) ts) `mappend` emitTermList u
+      | otherwise =
+        emitTerm t `mappend` aux (n-len t) u
 
 criticalPairs1 :: Function f => Twee f -> [Int] -> Rule f -> [Labelled (Rule f)] -> [Labelled (Critical (Equation f))]
 criticalPairs1 s ns (Rule or t u) rs = {-# SCC criticalPairs1 #-} do

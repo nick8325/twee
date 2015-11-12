@@ -185,21 +185,18 @@ result t = buildTerm (emitReduction t)
     emitReduction (Parallel ps t) = emitParallel 0 ps (singleton t)
 
     emitParallel !_ _ _ | False = __
-    emitParallel _ _ Empty = return ()
+    emitParallel _ _ Empty = mempty
     emitParallel _ [] t = emitTermList t
     emitParallel n ((m, _):_) t  | m >= n + lenList t = emitTermList t
-    emitParallel n ps@((m, _):_) (Cons t u) | m >= n + len t = do
-      emitTerm t
-      emitParallel (n + len t) ps u
+    emitParallel n ps@((m, _):_) (Cons t u) | m >= n + len t =
+      emitTerm t `mappend` emitParallel (n + len t) ps u
     emitParallel n ((m, _):ps) t | m < n = emitParallel n ps t
-    emitParallel n ((m, p):ps) (Cons t u) | m == n = do
-      emitReduction p
-      emitParallel (n + len t) ps u
-    emitParallel n ps (Cons (Var x) u) = do
-      emitVar x
-      emitParallel (n + 1) ps u
-    emitParallel n ps (Cons (Fun f t) u) = do
-      emitFun f (emitParallel (n+1) ps t)
+    emitParallel n ((m, p):ps) (Cons t u) | m == n =
+      emitReduction p `mappend` emitParallel (n + len t) ps u
+    emitParallel n ps (Cons (Var x) u) =
+      emitVar x `mappend` emitParallel (n + 1) ps u
+    emitParallel n ps (Cons (Fun f t) u) =
+      emitFun f (emitParallel (n+1) ps t) `mappend`
       emitParallel (n + 1 + lenList t) ps u
 
 instance (Numbered f, PrettyTerm f) => Pretty (Reduction f) where

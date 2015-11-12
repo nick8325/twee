@@ -186,45 +186,31 @@ compareContents (ConsSym s1 t) (UnsafeConsSym s2 u) =
 --------------------------------------------------------------------------------
 
 -- A monad for building terms.
-newtype BuildM s f a =
-  BuildM {
-    unBuildM ::
+newtype Builder f =
+  Builder {
+    unBuilder ::
       -- Takes: the term array and size, and current position in the term.
       -- Returns the final position, which may be out of bounds.
-      State# s -> MutableByteArray# s -> Int# -> Int# -> (# State# s, Int#, a #) }
+      forall s. Builder1 s }
 
-instance Functor (BuildM s f) where
-  {-# INLINE fmap #-}
-  fmap f (BuildM m) =
-    BuildM $ \s array n i ->
-      case m s array n i of
-        (# s, j, x #) -> (# s, j, f x #)
+type Builder1 s = State# s -> MutableByteArray# s -> Int# -> Int# -> (# State# s, Int# #)
 
-instance Applicative (BuildM s f) where
-  pure = return
-  (<*>) = ap
-
-instance Monad (BuildM s f) where
-  {-# INLINE return #-}
-  return x = BuildM (\s _ _ i -> (# s, i, x #))
-  {-# INLINE (>>=) #-}
-  BuildM m >>= f =
-    BuildM $ \s array n i ->
-      case m s array n i of
-        (# s, j, x #) -> unBuildM (f x) s array n j
+instance Monoid (Builder f) where
+  mempty = Builder built
+  m1 `mappend` m2 = Builder (unBuilder m1 `then_` unBuilder m2)
 
 {-# INLINE buildTermList #-}
-buildTermList :: (forall s. BuildM s f ()) -> TermList f
+buildTermList :: Builder f -> TermList f
 buildTermList builder = runST $ do
   let
-    BuildM m = builder
+    Builder m = builder
     loop n@(I# n#) = do
       MutableByteArray marray# <-
         newByteArray (n * sizeOf (fromSymbol __))
       n' <-
         ST $ \s ->
           case m s marray# n# 0# of
-            (# s, n#, _ #) -> (# s, I# n# #)
+            (# s, n# #) -> (# s, I# n# #)
       if n' <= n then do
         !array <- unsafeFreezeByteArray (MutableByteArray marray#)
         return (TermList 0 n' array)
@@ -232,71 +218,84 @@ buildTermList builder = runST $ do
   loop 16
 
 {-# INLINE getArray #-}
-getArray :: BuildM s f (MutableByteArray s)
-getArray = BuildM $ \s array _ i -> (# s, i, MutableByteArray array #)
+getArray :: (MutableByteArray s -> Builder1 s) -> Builder1 s
+getArray k = \s array n i -> k (MutableByteArray array) s array n i
 
 {-# INLINE getSize #-}
-getSize :: BuildM s f Int
-getSize = BuildM $ \s _ n i -> (# s, i, I# n #)
+getSize :: (Int -> Builder1 s) -> Builder1 s
+getSize k = \s array n i -> k (I# n) s array n i
 
 {-# INLINE getIndex #-}
-getIndex :: BuildM s f Int
-getIndex = BuildM $ \s _ _ i -> (# s, i, I# i #)
+getIndex :: (Int -> Builder1 s) -> Builder1 s
+getIndex k = \s array n i -> k (I# i) s array n i
 
 {-# INLINE putIndex #-}
-putIndex :: Int -> BuildM s f ()
-putIndex (I# i) = BuildM $ \s _ _ _ -> (# s, i, () #)
+putIndex :: Int -> Builder1 s
+putIndex (I# i) = \s _ _ _ -> (# s, i #)
 
 {-# INLINE liftST #-}
-liftST :: ST s a -> BuildM s f a
+liftST :: ST s () -> Builder1 s
 liftST (ST m) =
-  BuildM $ \s _ _ i ->
+  \s _ _ i ->
   case m s of
-    (# s, x #) -> (# s, i, x #)
+    (# s, () #) -> (# s, i #)
+
+{-# INLINE built #-}
+built :: Builder1 s
+built = \s _ _ i -> (# s, i #)
+
+{-# INLINE then_ #-}
+then_ :: Builder1 s -> Builder1 s -> Builder1 s
+then_ m1 m2 =
+  \s array n i ->
+    case m1 s array n i of
+      (# s, i #) -> m2 s array n i
 
 {-# INLINE checked #-}
-checked :: Int -> BuildM s f () -> BuildM s f ()
-checked j m = do
-  n <- getSize
-  i <- getIndex
+checked :: Int -> Builder1 s -> Builder1 s
+checked j m =
+  getSize $ \n ->
+  getIndex $ \i ->
   if i + j <= n then m else putIndex (i + j)
 
-{-# INLINE emitSymbolBuildM #-}
-emitSymbolBuildM :: Symbol -> BuildM s f () -> BuildM s f ()
-emitSymbolBuildM x inner = checked 1 $ do
-  array <- getArray
-  n <- getIndex
-  putIndex (n+1)
-  inner
-  m <- getIndex
-  liftST $ writeByteArray array n (fromSymbol x { size = m - n })
+{-# INLINE emitSymbolBuilder #-}
+emitSymbolBuilder :: Symbol -> Builder f -> Builder f
+emitSymbolBuilder x inner =
+  Builder $ checked 1 $
+    getArray $ \array ->
+    getIndex $ \n ->
+    putIndex (n+1) `then_`
+    unBuilder inner `then_`
+    getIndex (\m ->
+      liftST $ writeByteArray array n (fromSymbol x { size = m - n }))
 
 -- Emit the root of a term.
 -- The second argument is called to emit the children.
 {-# INLINE emitRoot #-}
-emitRoot :: Term f -> BuildM s f () -> BuildM s f ()
-emitRoot t inner = emitSymbolBuildM (toSymbol (root t)) inner
+emitRoot :: Term f -> Builder f -> Builder f
+emitRoot t inner = emitSymbolBuilder (toSymbol (root t)) inner
 
 -- Emit a function symbol.
 -- The second argument is called to emit the function's arguments.
 {-# INLINE emitFun #-}
-emitFun :: Fun f -> BuildM s f () -> BuildM s f ()
-emitFun (MkFun f) inner = emitSymbolBuildM (Symbol True f 0) inner
+emitFun :: Fun f -> Builder f -> Builder f
+emitFun (MkFun f) inner = emitSymbolBuilder (Symbol True f 0) inner
 
 -- Emit a variable.
 {-# INLINE emitVar #-}
-emitVar :: Var -> BuildM s f ()
-emitVar (MkVar x) = emitSymbolBuildM (Symbol False x 1) (return ())
+emitVar :: Var -> Builder f
+emitVar (MkVar x) = emitSymbolBuilder (Symbol False x 1) mempty
 
 -- Emit a whole termlist.
 {-# INLINE emitTermList #-}
-emitTermList :: TermList f -> BuildM s f ()
-emitTermList (TermList lo hi array) = checked (hi-lo) $ do
-  marray <- getArray
-  n <- getIndex
-  let k = sizeOf (fromSymbol __)
-  liftST $ copyByteArray marray (n*k) array (lo*k) ((hi-lo)*k)
-  putIndex (n + hi-lo)
+emitTermList :: TermList f -> Builder f
+emitTermList (TermList lo hi array) =
+  Builder $ checked (hi-lo) $
+    getArray $ \marray ->
+    getIndex $ \n ->
+    let k = sizeOf (fromSymbol __) in
+    liftST (copyByteArray marray (n*k) array (lo*k) ((hi-lo)*k)) `then_`
+    putIndex (n + hi-lo)
 
 --------------------------------------------------------------------------------
 -- Substitutions.
