@@ -15,6 +15,7 @@ import Twee.Term hiding (subst, canonicalise)
 import qualified Twee.Term as Term
 import Twee.Pretty
 import Twee.Constraints hiding (funs)
+import Data.Maybe
 
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where
@@ -93,7 +94,7 @@ skolemConst x = fun (skolem x) []
 
 skolemise :: (Symbolic a, Numbered (ConstantOf a), Skolem (ConstantOf a)) => a -> SubstOf a
 skolemise t =
-  flattenSubst [(x, skolemConst x) | x <- vars t]
+  fromMaybe __ $ flattenSubst [(x, skolemConst x) | x <- vars t]
 
 class Arity f where
   arity :: f -> Int

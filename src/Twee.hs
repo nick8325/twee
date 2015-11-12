@@ -274,7 +274,7 @@ normaliseCP s cp@(Critical info _) =
     flipCP t = subst sub t
       where
         n = maximum (0:map fromEnum (vars t))
-        sub = flattenSubst [(MkVar x, var (MkVar (n - x))) | MkVar x <- vars t]
+        sub = fromMaybe __ $ flattenSubst [(MkVar x, var (MkVar (n - x))) | MkVar x <- vars t]
 
     -- XXX shouldn't this also check subsumption?
     setJoin (Critical info (t :=: u))
@@ -679,7 +679,7 @@ criticalPairs1 :: Function f => Twee f -> [Int] -> Rule f -> [Labelled (Rule f)]
 criticalPairs1 s ns (Rule or t u) rs = {-# SCC criticalPairs1 #-} do
   let b = {-# SCC bound #-} bound t
   Labelled l r <- rs
-  let sub = flattenSubst [(x, var (toEnum (fromEnum x+b))) | x <- vars r]
+  let sub = fromMaybe __ $ flattenSubst [(x, var (toEnum (fromEnum x+b))) | x <- vars r]
       Rule or' t' u' = subst sub r
   (sub, pos) <- overlaps ns t t'
   let left = subst sub u

@@ -7,6 +7,7 @@ import Twee.Constraints
 import qualified Twee.Index as Index
 import Twee.Index(Frozen)
 import Control.Monad
+import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
 import Data.Maybe
 import Data.List
@@ -113,7 +114,7 @@ orient (l :=: r) =
     erase [] t = t
     erase xs t = subst sub t
       where
-        sub = flattenSubst [(x, minimalTerm) | x <- xs]
+        sub = fromMaybe __ $ flattenSubst [(x, minimalTerm) | x <- xs]
 
 rule :: Function f => Term f -> Term f -> Rule f
 rule t u = Rule o t u
@@ -139,12 +140,13 @@ rule t u = Rule o t u
       permutativeOK t' u' xs
       where
         model = modelFromOrder [Variable y, Variable x]
-        sub = flattenSubst [(x, var y)]
+        sub = fromMaybe __ $ flattenSubst [(x, var y)]
         t' = subst sub t
         u' = subst sub u
 
     makePermutative t u = do
-      sub <- gets flattenSubst
+      msub <- gets flattenSubst
+      sub  <- lift msub
       aux (subst sub t) (subst sub u)
         where
           aux (Var x) (Var y)

@@ -273,7 +273,7 @@ solve xs Branch{..}
   | null equals = Left model
   | otherwise = Right sub
     where
-      sub = flattenSubst $
+      sub = fromMaybe __ . flattenSubst $
         [(x, toTerm y) | (Variable x, y) <- equals] ++
         [(y, toTerm x) | (x@Constant{}, Variable y) <- equals]
       vs = reverse (flattenSCCs (stronglyConnComp [(x, x, [y | (x', y) <- less', x == x']) | x <- as]))
