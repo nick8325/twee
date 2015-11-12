@@ -10,7 +10,7 @@ module Twee.Term(
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
   Fun(..), Var(..), pattern Var, pattern Fun, singleton,
-  Builder, buildTermList, emitRoot, emitFun, emitVar, emitTermList,
+  Builder, buildTermList, emitFun, emitVar, emitTermList,
   Subst, substSize, lookupList,
   MutableSubst, newMutableSubst, unsafeFreezeSubst, freezeSubst, copySubst,
   mutableLookupList, extendList, unsafeExtendList, retract, unsafeRetract) where

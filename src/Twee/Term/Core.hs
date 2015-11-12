@@ -269,12 +269,6 @@ emitSymbolBuilder x inner =
     getIndex (\m ->
       liftST $ writeByteArray array n (fromSymbol x { size = m - n }))
 
--- Emit the root of a term.
--- The second argument is called to emit the children.
-{-# INLINE emitRoot #-}
-emitRoot :: Term f -> Builder f -> Builder f
-emitRoot t inner = emitSymbolBuilder (toSymbol (root t)) inner
-
 -- Emit a function symbol.
 -- The second argument is called to emit the function's arguments.
 {-# INLINE emitFun #-}
