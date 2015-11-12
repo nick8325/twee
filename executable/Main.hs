@@ -68,7 +68,7 @@ parseInitialState =
     weight = option auto (long "lhs-weight" <> help "Weight given to LHS of critical pair (default 2)" <> value 2 <> metavar "WEIGHT")
     splits = option auto (long "split" <> help "Split CP sets into this many pieces on selection (default 20)" <> value 20)
     cpSetSize = option auto (long "cp-set-minimum" <> help "Decay CP sets into single CPs when they get this small (default 20)" <> value 20)
-    mixFIFO = option auto (long "mix-fifo" <> help "Take this many CPs at a time from FIFO (default 1)" <> value 1)
+    mixFIFO = option auto (long "mix-fifo" <> help "Take this many CPs at a time from FIFO (default 0)" <> value 0)
     mixPrio = option auto (long "mix-prio" <> help "Take this many CPs at a time from priority queue (default 10)" <> value 10)
 
 parseFile :: Parser String
