@@ -29,8 +29,8 @@ atoms t = aux (singleton t)
     aux (ConsSym _ t) = aux t
 
 toTerm :: Atom f -> Term f
-toTerm (Constant f) = fun f []
-toTerm (Variable x) = var x
+toTerm (Constant f) = build (con f)
+toTerm (Variable x) = build (var x)
 
 fromTerm :: Flat.Term f -> Maybe (Atom f)
 fromTerm (Fun f Empty) = Just (Constant f)

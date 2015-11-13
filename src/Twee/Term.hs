@@ -2,7 +2,7 @@
 -- This module implements the usual term manipulation stuff
 -- (matching, unification, etc.) on top of the primitives
 -- in Twee.Term.Core.
-{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes, FlexibleContexts, ViewPatterns, FlexibleInstances, UndecidableInstances, ScopedTypeVariables, RecordWildCards #-}
+{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes, FlexibleContexts, ViewPatterns, FlexibleInstances, UndecidableInstances, ScopedTypeVariables, RecordWildCards, MultiParamTypeClasses, FunctionalDependencies #-}
 module Twee.Term(
   module Twee.Term,
   -- Stuff from Twee.Term.Core.
@@ -10,8 +10,7 @@ module Twee.Term(
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
   Fun(..), Var(..), pattern Var, pattern Fun, singleton,
-  Builder, buildTermList, emitFun, emitVar, emitTermList,
-  Subst, substSize, lookupList,
+  Builder, Subst, substSize, lookupList,
   MutableSubst, newMutableSubst, unsafeFreezeSubst, freezeSubst, copySubst,
   mutableLookupList, extendList, unsafeExtendList, retract, unsafeRetract) where
 
@@ -24,6 +23,47 @@ import Data.List hiding (lookup)
 import Data.Maybe
 import Data.Ord
 import Data.Monoid
+
+--------------------------------------------------------------------------------
+-- A type class for builders.
+--------------------------------------------------------------------------------
+
+class Build f a | a -> f where
+  builder :: a -> Builder f
+
+instance Build f (Builder f) where
+  builder = id
+
+instance Build f (Term f) where
+  builder = emitTerm
+
+instance Build f (TermList f) where
+  builder = emitTermList
+
+instance Build f a => Build f [a] where
+  {-# INLINE builder #-}
+  builder = mconcat . map builder
+
+{-# INLINE build #-}
+build :: Build f a => a -> Term f
+build x =
+  case buildList x of
+    Cons t Empty -> t
+
+{-# INLINE buildList #-}
+buildList :: Build f a => a -> TermList f
+buildList x = buildTermList (builder x)
+
+{-# INLINE con #-}
+con :: Fun f -> Builder f
+con x = emitFun x mempty
+
+{-# INLINE fun #-}
+fun :: Build f a => Fun f -> a -> Builder f
+fun f ts = emitFun f (builder ts)
+
+var :: Var -> Builder f
+var = emitVar
 
 --------------------------------------------------------------------------------
 -- Pattern synonyms for substitutions.
@@ -70,59 +110,31 @@ forMSubst_ sub f = foldSubst (\x t m -> do { f x t; m }) (return ()) sub
 -- Substitution.
 --------------------------------------------------------------------------------
 
+class Substitution f s | s -> f where
+  evalSubst :: s -> Var -> Builder f
+
+instance Build f a => Substitution f (Var -> a) where
+  {-# INLINE evalSubst #-}
+  evalSubst sub x = builder (sub x)
+
+instance Substitution f (Subst f) where
+  {-# INLINE evalSubst #-}
+  evalSubst sub x =
+    case lookupList sub x of
+      Nothing -> var x
+      Just ts -> builder ts
+
 {-# INLINE subst #-}
-subst :: Subst f -> Term f -> Term f
-subst sub t =
-  case substList sub (singleton t) of
-    Cons u Empty -> u
+subst :: Substitution f s => s -> Term f -> Builder f
+subst sub t = substList sub (singleton t)
 
-substList :: Subst f -> TermList f -> TermList f
-substList !sub !t = buildTermList (emitSubstList sub t)
-
--- Emit a substitution applied to a term.
-{-# INLINE emitSubst #-}
-emitSubst :: Subst f -> Term f -> Builder f
-emitSubst sub t = emitSubstList sub (singleton t)
-
--- Emit a substitution applied to a term list.
-{-# INLINE emitSubstList #-}
-emitSubstList :: Subst f -> TermList f -> Builder f
-emitSubstList !sub = emitTransSubstList emitTermList sub
-
--- Emit a substitution applied to a term list, with some transformation
--- applied to the result of the substitution.
-{-# INLINE emitTransSubstList #-}
-emitTransSubstList :: (TermList f -> Builder f) -> Subst f -> TermList f -> Builder f
-emitTransSubstList f !sub = aux
+{-# INLINE substList #-}
+substList :: Substitution f s => s -> TermList f -> Builder f
+substList sub ts = aux ts
   where
     aux Empty = mempty
-    aux (Cons (Var x) ts) =
-      case lookupList sub x of
-        Nothing -> emitVar x <> aux ts
-        Just u  -> f u <> aux ts
-    aux (Cons (Fun f ts) us) =
-      emitFun f (aux ts) <> aux us
-
-{-# INLINE iterSubst #-}
-iterSubst :: TriangleSubst f -> Term f -> Term f
-iterSubst sub t =
-  case iterSubstList sub (singleton t) of
-    Cons u Empty -> u
-
-iterSubstList :: TriangleSubst f -> TermList f -> TermList f
-iterSubstList !sub !t = buildTermList (emitIterSubstList sub t)
-
--- Emit a substitution repeatedly applied to a term.
-{-# INLINE emitIterSubst #-}
-emitIterSubst :: TriangleSubst f -> Term f -> Builder f
-emitIterSubst sub t = emitIterSubstList sub (singleton t)
-
--- Emit a substitution repeatedly applied to a term list.
-{-# INLINE emitIterSubstList #-}
-emitIterSubstList :: TriangleSubst f -> TermList f -> Builder f
-emitIterSubstList (Triangle !sub) = aux
-  where
-    aux !t = emitTransSubstList aux sub t
+    aux (Cons (Var x) ts) = evalSubst sub x <> aux ts
+    aux (Cons (Fun f ts) us) = fun f (aux ts) <> aux us
 
 -- Composition of substitutions.
 substCompose :: Subst f -> Subst f -> Subst f
@@ -139,7 +151,7 @@ substCompose !sub1 !sub2 =
   where
     !t =
       buildTermList $
-        foldSubst (\_ t u -> emitFun (MkFun 0) (emitSubstList sub2 t) <> u) mempty sub1
+        foldSubst (\_ t u -> fun (MkFun 0) (substList sub2 t) <> u) mempty sub1
 
 -- Are two substitutions compatible?
 substCompatible :: Subst f -> Subst f -> Bool
@@ -217,8 +229,8 @@ emptySubst =
 flattenSubst :: [(Var, Term f)] -> Maybe (Subst f)
 flattenSubst sub = matchList pat t
   where
-    pat = concatTerms (map (singleton . var . fst) sub)
-    t   = concatTerms (map (singleton . snd) sub)
+    pat = buildList (map (var . fst) sub)
+    t   = buildList (map snd sub)
 
 --------------------------------------------------------------------------------
 -- Matching.
@@ -252,6 +264,17 @@ matchList !pat !t
 
 newtype TriangleSubst f = Triangle { unTriangle :: Subst f }
   deriving Show
+
+instance Substitution f (TriangleSubst f) where
+  evalSubst (Triangle sub) x = substTri sub x
+
+substTri :: Subst f -> Var -> Builder f
+substTri sub x = aux x
+  where
+    aux x =
+      case lookupList sub x of
+        Nothing -> var x
+        Just ts -> substList aux ts
 
 {-# INLINE unify #-}
 unify :: Term f -> Term f -> Maybe (Subst f)
@@ -416,24 +439,9 @@ termListToList (Cons t ts) = t:termListToList ts
 -- The empty term list.
 {-# NOINLINE emptyTermList #-}
 emptyTermList :: TermList f
-emptyTermList = buildTermList mempty
+emptyTermList = buildList (mempty :: Builder f)
 
 -- Functions for building terms.
-var :: Var -> Term f
-var x = buildTerm (emitVar x)
-
-fun :: Fun f -> [Term f] -> Term f
-fun f ts = buildTerm (emitFun f (mconcat (map emitTerm ts)))
-
-concatTerms :: [TermList f] -> TermList f
-concatTerms ts = buildTermList (mconcat (map emitTermList ts))
-
-{-# INLINE buildTerm #-}
-buildTerm :: Builder f -> Term f
-buildTerm m =
-  case buildTermList m of
-    Cons t Empty -> t
-
 subterms :: Term f -> [Term f]
 subterms t = t:properSubterms t
 
@@ -475,4 +483,4 @@ instance (Ord f, Numbered f) => Ord (Fun f) where
 pattern App f ts <- Fun (fromFun -> f) (fromTermList -> ts)
 
 app :: Numbered a => a -> [Term a] -> Term a
-app f ts = fun (toFun f) ts
+app f ts = build (fun (toFun f) ts)

@@ -274,7 +274,7 @@ normaliseCP s cp@(Critical info _) =
     flipCP t = subst sub t
       where
         n = maximum (0:map fromEnum (vars t))
-        sub = fromMaybe __ $ flattenSubst [(MkVar x, var (MkVar (n - x))) | MkVar x <- vars t]
+        sub = fromMaybe __ $ flattenSubst [(MkVar x, build $ var (MkVar (n - x))) | MkVar x <- vars t]
 
     -- XXX shouldn't this also check subsumption?
     setJoin (Critical info (t :=: u))
@@ -665,25 +665,23 @@ emitReplacement n t = aux n
   where
     aux !_ !_ | False = __
     aux _ Empty = mempty
-    aux 0 (Cons _ u) =
-      emitTerm t `mappend` emitTermList u
-    aux n (Cons (Var x) u) =
-      emitVar x `mappend` aux (n-1) u
+    aux 0 (Cons _ u) = builder t `mappend` builder u
+    aux n (Cons (Var x) u) = var x `mappend` aux (n-1) u
     aux n (Cons t@(Fun f ts) u)
       | n < len t =
-        emitFun f (aux (n-1) ts) `mappend` emitTermList u
+        fun f (aux (n-1) ts) `mappend` builder u
       | otherwise =
-        emitTerm t `mappend` aux (n-len t) u
+        builder t `mappend` aux (n-len t) u
 
 criticalPairs1 :: Function f => Twee f -> [Int] -> Rule f -> [Labelled (Rule f)] -> [Labelled (Critical (Equation f))]
 criticalPairs1 s ns (Rule or t u) rs = {-# SCC criticalPairs1 #-} do
   let b = {-# SCC bound #-} bound t
   Labelled l r <- rs
-  let sub = fromMaybe __ $ flattenSubst [(x, var (toEnum (fromEnum x+b))) | x <- vars r]
+  let sub = fromMaybe __ $ flattenSubst [(x, build $ var (toEnum (fromEnum x+b))) | x <- vars r]
       Rule or' t' u' = subst sub r
   (sub, pos) <- overlaps ns t t'
   let left = subst sub u
-      right = subst sub (buildTerm (emitReplacement pos u' (singleton t)))
+      right = subst sub (build (emitReplacement pos u' (singleton t)))
       top = subst sub t
       overlap = at pos (singleton t)
 
@@ -772,12 +770,12 @@ toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
         return (t', u')
 
     replace t u v | v == t = u
-    replace t u (Fun f ts) = fun f (map (replace t u) (fromTermList ts))
+    replace t u (Fun f ts) = build (fun f (map (replace t u) (fromTermList ts)))
     replace _ _ t = t
 
     subsumes strict (t', u') (t, u) =
-      (isJust (matchList (concatTerms [singleton t', singleton t]) (concatTerms [singleton u', singleton u]))) &&
-       (not strict || isNothing (matchList (concatTerms [singleton t, singleton t']) (concatTerms [singleton u, singleton u']))) ||
+      (isJust (matchList (buildList [t', t]) (buildList [u', u]))) &&
+       (not strict || isNothing (matchList (buildList [t, t']) (buildList [u, u']))) ||
       case focus t u of
         Just (t'', u'') -> subsumes False (t', u') (t'', u'')
         _ -> False

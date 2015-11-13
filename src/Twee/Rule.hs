@@ -14,6 +14,7 @@ import Data.List
 import Twee.Utils
 import qualified Data.Set as Set
 import Data.Set(Set)
+import qualified Twee.Term as Term
 
 --------------------------------------------------------------------------------
 -- Rewrite rules.
@@ -124,7 +125,7 @@ rule t u = Rule o t u
           Nothing -> Oriented
           Just sub
             | allSubst (\_ (Cons t Empty) -> isMinimal t) sub ->
-              WeaklyOriented (map (var . fst) (listSubst sub))
+              WeaklyOriented (map (build . var . fst) (listSubst sub))
             | otherwise -> Unoriented
       | lessEq t u = ERROR("wrongly-oriented rule")
       | not (null (usort (vars u) \\ usort (vars t))) =
@@ -140,7 +141,7 @@ rule t u = Rule o t u
       permutativeOK t' u' xs
       where
         model = modelFromOrder [Variable y, Variable x]
-        sub = fromMaybe __ $ flattenSubst [(x, var y)]
+        sub = fromMaybe __ $ flattenSubst [(x, build $ var y)]
         t' = subst sub t
         u' = subst sub u
 
@@ -152,8 +153,8 @@ rule t u = Rule o t u
           aux (Var x) (Var y)
             | x == y = return []
             | otherwise = do
-              modify ((x, var y):)
-              return [(var x, var y)]
+              modify ((x, build $ var y):)
+              return [(build $ var x, build $ var y)]
 
           aux (Fun f ts) (Fun g us)
             | f == g =
@@ -180,25 +181,25 @@ data Reduction f =
   deriving Show
 
 result :: Reduction f -> Term f
-result t = buildTerm (emitReduction t)
+result t = build (emitReduction t)
   where
-    emitReduction (Step r sub) = emitSubst sub (rhs r)
+    emitReduction (Step r sub) = Term.subst sub (rhs r)
     emitReduction (Trans _ p) = emitReduction p
     emitReduction (Parallel ps t) = emitParallel 0 ps (singleton t)
 
     emitParallel !_ _ _ | False = __
     emitParallel _ _ Empty = mempty
-    emitParallel _ [] t = emitTermList t
-    emitParallel n ((m, _):_) t  | m >= n + lenList t = emitTermList t
+    emitParallel _ [] t = builder t
+    emitParallel n ((m, _):_) t  | m >= n + lenList t = builder t
     emitParallel n ps@((m, _):_) (Cons t u) | m >= n + len t =
-      emitTerm t `mappend` emitParallel (n + len t) ps u
+      builder t `mappend` emitParallel (n + len t) ps u
     emitParallel n ((m, _):ps) t | m < n = emitParallel n ps t
     emitParallel n ((m, p):ps) (Cons t u) | m == n =
       emitReduction p `mappend` emitParallel (n + len t) ps u
     emitParallel n ps (Cons (Var x) u) =
-      emitVar x `mappend` emitParallel (n + 1) ps u
+      var x `mappend` emitParallel (n + 1) ps u
     emitParallel n ps (Cons (Fun f t) u) =
-      emitFun f (emitParallel (n+1) ps t) `mappend`
+      fun f (emitParallel (n+1) ps t) `mappend`
       emitParallel (n + 1 + lenList t) ps u
 
 instance (Numbered f, PrettyTerm f) => Pretty (Reduction f) where

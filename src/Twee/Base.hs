@@ -34,13 +34,13 @@ instance Symbolic (Term f) where
   term            = id
   {-# INLINE symbols #-}
   symbols fun var = symbols fun var . singleton
-  subst           = Term.subst
+  subst sub       = build . Term.subst sub
 
 instance Symbolic (TermList f) where
   type ConstantOf (TermList f) = f
-  term    = __
-  symbols = termListSymbols
-  subst   = Term.substList
+  term      = __
+  symbols   = termListSymbols
+  subst sub = buildList . Term.substList sub
 
 {-# INLINE termListSymbols #-}
 termListSymbols :: Monoid w => (Fun f -> w) -> (Var -> w) -> TermList f -> w
@@ -74,14 +74,14 @@ funs = DList.toList . symbols return (const mzero)
 canonicalise :: Symbolic a => a -> a
 canonicalise t = subst sub t
   where
-    sub = Term.canonicalise (map (singleton . var) (vars t))
+    sub = Term.canonicalise (map (buildList . var) (vars t))
 
 isMinimal :: (Numbered f, Minimal f) => Term f -> Bool
 isMinimal (Fun f Empty) | f == minimal = True
 isMinimal _ = False
 
 minimalTerm :: (Numbered f, Minimal f) => Term f
-minimalTerm = fun minimal []
+minimalTerm = build (con minimal)
 
 class Skolem f where
   skolem  :: Var -> f
@@ -90,7 +90,7 @@ instance (Numbered f, Skolem f) => Skolem (Fun f) where
   skolem = toFun . skolem
 
 skolemConst :: (Numbered f, Skolem f) => Var -> Term f
-skolemConst x = fun (skolem x) []
+skolemConst x = build (con (skolem x))
 
 skolemise :: (Symbolic a, Numbered (ConstantOf a), Skolem (ConstantOf a)) => a -> SubstOf a
 skolemise t =

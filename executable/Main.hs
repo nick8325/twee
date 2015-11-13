@@ -220,8 +220,8 @@ main = do
   give m $ give order $ do
   let fs = [(conName f, toFun (Function f)) | f <- fs0]
 
-      translate (VarTm x) = var x
-      translate (AppTm f ts) = fun (replace fs f) (map translate ts)
+      translate (VarTm x) = build (var x)
+      translate (AppTm f ts) = build (fun (replace fs f) (map translate ts))
 
       axioms1 = map (run parseEquation) (map tok axioms0)
       goals1 = map (run parseTerm . tok) goals0
