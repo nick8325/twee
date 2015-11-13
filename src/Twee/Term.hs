@@ -137,7 +137,7 @@ substList sub ts = aux ts
     aux (Cons (Fun f ts) us) = fun f (aux ts) <> aux us
 
 -- Composition of substitutions.
-substCompose :: Subst f -> Subst f -> Subst f
+substCompose :: Substitution f s => Subst f -> s -> Subst f
 substCompose !sub1 !sub2 =
   runST $ do
     sub <- newMutableSubst (substSize sub1)
