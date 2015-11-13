@@ -271,10 +271,10 @@ normaliseCP s cp@(Critical info _) =
     cp4 = setJoin (flipCP cp)
 
     flipCP :: Symbolic a => a -> a
-    flipCP t = subst_ (evalSubst sub) t
+    flipCP t = subst_ sub t
       where
         n = maximum (0:map fromEnum (vars t))
-        sub = fromMaybe __ $ flattenSubst [(MkVar x, build $ var (MkVar (n - x))) | MkVar x <- vars t]
+        sub (MkVar x) = var (MkVar (n - x))
 
     -- XXX shouldn't this also check subsumption?
     setJoin (Critical info (t :=: u))
@@ -677,7 +677,7 @@ criticalPairs1 :: Function f => Twee f -> [Int] -> Rule f -> [Labelled (Rule f)]
 criticalPairs1 s ns (Rule or t u) rs = {-# SCC criticalPairs1 #-} do
   let b = {-# SCC bound #-} bound t
   Labelled l r <- rs
-  let sub = fromMaybe __ $ flattenSubst [(x, build $ var (toEnum (fromEnum x+b))) | x <- vars r]
+  let sub (MkVar x) = var (MkVar (x+b))
       Rule or' t' u' = subst sub r
   (sub, pos) <- overlaps ns t t'
   let left = subst sub u

@@ -3,8 +3,7 @@ module Twee.Base(
   Symbolic(..), subst, symbols, TermOf, TermListOf, SubstOf,
   vars, funs, canonicalise,
   Minimal(..), minimalTerm, isMinimal,
-  Skolem(..), skolemConst, skolemise,
-  Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..),
+  Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..),
   module Twee.Term, module Twee.Pretty) where
 
 #include "errors.h"
@@ -34,6 +33,8 @@ subst sub x = subst_ (evalSubst sub) x
 type TermOf a = Term (ConstantOf a)
 type TermListOf a = TermList (ConstantOf a)
 type SubstOf a = Subst (ConstantOf a)
+type BuilderOf a = Builder (ConstantOf a)
+type FunOf a = Fun (ConstantOf a)
 
 instance Symbolic (Term f) where
   type ConstantOf (Term f) = f
@@ -48,7 +49,7 @@ instance Symbolic (TermList f) where
   subst_ sub = buildList . Term.substList sub
 
 {-# INLINE symbols #-}
-symbols :: (Symbolic a, Monoid w) => (Fun (ConstantOf a) -> w) -> (Var -> w) -> a -> w
+symbols :: (Symbolic a, Monoid w) => (FunOf a -> w) -> (Var -> w) -> a -> w
 symbols fun var x = DList.foldr mappend mempty (fmap (termListSymbols fun var) (termsDL x))
 
 {-# INLINE termListSymbols #-}
@@ -77,7 +78,7 @@ vars :: Symbolic a => a -> [Var]
 vars = DList.toList . symbols (const mzero) return
 
 {-# INLINE funs #-}
-funs :: Symbolic a => a -> [Fun (ConstantOf a)]
+funs :: Symbolic a => a -> [FunOf a]
 funs = DList.toList . symbols return (const mzero)
 
 canonicalise :: Symbolic a => a -> a
@@ -97,13 +98,6 @@ class Skolem f where
 
 instance (Numbered f, Skolem f) => Skolem (Fun f) where
   skolem = toFun . skolem
-
-skolemConst :: (Numbered f, Skolem f) => Var -> Term f
-skolemConst x = build (con (skolem x))
-
-skolemise :: (Symbolic a, Numbered (ConstantOf a), Skolem (ConstantOf a)) => a -> SubstOf a
-skolemise t =
-  fromMaybe __ $ flattenSubst [(x, skolemConst x) | x <- vars t]
 
 class Arity f where
   arity :: f -> Int

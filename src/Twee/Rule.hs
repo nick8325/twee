@@ -141,7 +141,7 @@ rule t u = Rule o t u
       permutativeOK t' u' xs
       where
         model = modelFromOrder [Variable y, Variable x]
-        sub = fromMaybe __ $ flattenSubst [(x, build $ var y)]
+        sub x' = if x == x' then var y else var x'
         t' = subst sub t
         u' = subst sub u
 
@@ -326,7 +326,9 @@ reducesInModel :: Function f => Model f -> Rule f -> Subst f -> Bool
 reducesInModel cond rule = reducesWith (\t u -> isJust (lessIn cond t u)) rule
 
 reducesSkolem :: Function f => Rule f -> Subst f -> Bool
-reducesSkolem = reducesWith (\t u -> lessEq (subst (skolemise t) t) (subst (skolemise u) u))
+reducesSkolem = reducesWith (\t u -> lessEq (subst skolemise t) (subst skolemise u))
+  where
+    skolemise = con . skolem
 
 reducesSub :: Function f => Term f -> Rule f -> Subst f -> Bool
 reducesSub top rule sub =
