@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeSynonymInstances, TypeFamilies, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, CPP, ConstraintKinds, UndecidableInstances, DeriveFunctor, StandaloneDeriving #-}
 module Twee.Base(
-  Symbolic(..), TermOf, TermListOf, SubstOf,
+  Symbolic(..), subst, symbols, TermOf, TermListOf, SubstOf,
   vars, funs, canonicalise,
   Minimal(..), minimalTerm, isMinimal,
   Skolem(..), skolemConst, skolemise,
@@ -16,14 +16,20 @@ import qualified Twee.Term as Term
 import Twee.Pretty
 import Twee.Constraints hiding (funs)
 import Data.Maybe
+import qualified Data.DList as DList
+import Data.DList(DList)
 
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where
   type ConstantOf a
 
   term    :: a -> TermOf a
-  symbols :: Monoid w => (Fun (ConstantOf a) -> w) -> (Var -> w) -> a -> w
-  subst   :: Subst (ConstantOf a) -> a -> a
+  termsDL :: a -> DList (TermListOf a)
+  subst_  :: (Var -> Builder (ConstantOf a)) -> a -> a
+
+{-# INLINE subst #-}
+subst :: (Symbolic a, Substitution (ConstantOf a) s) => s -> a -> a
+subst sub x = subst_ (evalSubst sub) x
 
 type TermOf a = Term (ConstantOf a)
 type TermListOf a = TermList (ConstantOf a)
@@ -32,15 +38,18 @@ type SubstOf a = Subst (ConstantOf a)
 instance Symbolic (Term f) where
   type ConstantOf (Term f) = f
   term            = id
-  {-# INLINE symbols #-}
-  symbols fun var = symbols fun var . singleton
-  subst sub       = build . Term.subst sub
+  termsDL         = return . singleton
+  subst_ sub      = build . Term.subst sub
 
 instance Symbolic (TermList f) where
   type ConstantOf (TermList f) = f
-  term      = __
-  symbols   = termListSymbols
-  subst sub = buildList . Term.substList sub
+  term       = __
+  termsDL    = return
+  subst_ sub = buildList . Term.substList sub
+
+{-# INLINE symbols #-}
+symbols :: (Symbolic a, Monoid w) => (Fun (ConstantOf a) -> w) -> (Var -> w) -> a -> w
+symbols fun var x = DList.foldr mappend mempty (fmap (termListSymbols fun var) (termsDL x))
 
 {-# INLINE termListSymbols #-}
 termListSymbols :: Monoid w => (Fun f -> w) -> (Var -> w) -> TermList f -> w
@@ -54,14 +63,14 @@ instance (ConstantOf a ~ ConstantOf b,
           Symbolic a, Symbolic b) => Symbolic (a, b) where
   type ConstantOf (a, b) = ConstantOf a
   term (x, _) = term x
-  symbols fun var (x, y) = symbols fun var x `mappend` symbols fun var y
-  subst sub (x, y) = (subst sub x, subst sub y)
+  termsDL (x, y) = termsDL x `mplus` termsDL y
+  subst_ sub (x, y) = (subst sub x, subst sub y)
 
 instance Symbolic a => Symbolic [a] where
   type ConstantOf [a] = ConstantOf a
   term _ = __
-  symbols fun var ts = mconcat (map (symbols fun var) ts)
-  subst sub = map (subst sub)
+  termsDL = msum . map termsDL
+  subst_ sub = map (subst sub)
 
 {-# INLINE vars #-}
 vars :: Symbolic a => a -> [Var]
@@ -72,9 +81,9 @@ funs :: Symbolic a => a -> [Fun (ConstantOf a)]
 funs = DList.toList . symbols return (const mzero)
 
 canonicalise :: Symbolic a => a -> a
-canonicalise t = subst sub t
+canonicalise t = subst_ (evalSubst sub) t
   where
-    sub = Term.canonicalise (map (buildList . var) (vars t))
+    sub = Term.canonicalise (DList.toList (termsDL t))
 
 isMinimal :: (Numbered f, Minimal f) => Term f -> Bool
 isMinimal (Fun f Empty) | f == minimal = True

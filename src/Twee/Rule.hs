@@ -39,20 +39,20 @@ instance Eq (Orientation f) where _ == _ = True
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
   term = lhs
-  symbols fun var Rule{..} = symbols fun var (lhs, (rhs, orientation))
-  subst sub (Rule or l r) = Rule (subst sub or) (subst sub l) (subst sub r)
+  termsDL Rule{..} = termsDL (lhs, (rhs, orientation))
+  subst_ sub (Rule or l r) = Rule (subst sub or) (subst sub l) (subst sub r)
 
 instance Symbolic (Orientation f) where
   type ConstantOf (Orientation f) = f
   term = __
-  symbols _ _ Oriented = mempty
-  symbols fun var (WeaklyOriented ts) = symbols fun var ts
-  symbols fun var (Permutative ts) = symbols fun var ts
-  symbols _ _ Unoriented = mempty
-  subst _ Oriented = Oriented
-  subst sub (WeaklyOriented ts) = WeaklyOriented (subst sub ts)
-  subst sub (Permutative ts) = Permutative (subst sub ts)
-  subst _ Unoriented = Unoriented
+  termsDL Oriented = mempty
+  termsDL (WeaklyOriented ts) = termsDL ts
+  termsDL (Permutative ts) = termsDL ts
+  termsDL Unoriented = mempty
+  subst_ _ Oriented = Oriented
+  subst_ sub (WeaklyOriented ts) = WeaklyOriented (subst sub ts)
+  subst_ sub (Permutative ts) = Permutative (subst sub ts)
+  subst_ _ Unoriented = Unoriented
 
 instance (Numbered f, PrettyTerm f) => Pretty (Rule f) where
   pPrint (Rule Oriented l r) = pPrintRule l r
@@ -73,8 +73,8 @@ type EquationOf a = Equation (ConstantOf a)
 instance Symbolic (Equation f) where
   type ConstantOf (Equation f) = f
   term = __
-  symbols fun var (t :=: u) = symbols fun var (t, u)
-  subst sub (t :=: u) = subst sub t :=: subst sub u
+  termsDL (t :=: u) = termsDL (t, u)
+  subst_ sub (t :=: u) = subst sub t :=: subst sub u
 
 instance (Numbered f, PrettyTerm f) => Pretty (Equation f) where
   pPrint (x :=: y) = hang (pPrint x <+> text "=") 2 (pPrint y)
