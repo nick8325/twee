@@ -2,7 +2,7 @@
 -- This module implements the usual term manipulation stuff
 -- (matching, unification, etc.) on top of the primitives
 -- in Twee.Term.Core.
-{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes, FlexibleContexts, ViewPatterns, FlexibleInstances, UndecidableInstances, ScopedTypeVariables, RecordWildCards, MultiParamTypeClasses, FunctionalDependencies #-}
+{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes, FlexibleContexts, ViewPatterns, FlexibleInstances, UndecidableInstances, ScopedTypeVariables, RecordWildCards, MultiParamTypeClasses, FunctionalDependencies, GADTs #-}
 module Twee.Term(
   module Twee.Term,
   -- Stuff from Twee.Term.Core.
@@ -113,7 +113,7 @@ forMSubst_ sub f = foldSubst (\x t m -> do { f x t; m }) (return ()) sub
 class Substitution f s | s -> f where
   evalSubst :: s -> Var -> Builder f
 
-instance Build f a => Substitution f (Var -> a) where
+instance (Build f a, v ~ Var) => Substitution f (v -> a) where
   {-# INLINE evalSubst #-}
   evalSubst sub x = builder (sub x)
 
