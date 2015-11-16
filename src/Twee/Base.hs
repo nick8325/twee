@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeSynonymInstances, TypeFamilies, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, CPP, ConstraintKinds, UndecidableInstances, DeriveFunctor, StandaloneDeriving #-}
 module Twee.Base(
-  Symbolic(..), subst, symbols, TermOf, TermListOf, SubstOf,
+  Symbolic(..), subst, symbols, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
   vars, funs, canonicalise,
   Minimal(..), minimalTerm, isMinimal,
   Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..),
@@ -14,8 +14,6 @@ import Twee.Term hiding (subst, canonicalise)
 import qualified Twee.Term as Term
 import Twee.Pretty
 import Twee.Constraints hiding (funs)
-import Data.Maybe
-import qualified Data.DList as DList
 import Data.DList(DList)
 
 -- Generalisation of term functionality to things that contain terms.

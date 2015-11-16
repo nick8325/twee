@@ -6,7 +6,6 @@ module Twee.Term.Core where
 
 #include "errors.h"
 import Data.Primitive
-import Control.Monad
 import Control.Monad.ST.Strict
 import Data.Bits
 import Data.Int
