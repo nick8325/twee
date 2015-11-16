@@ -37,27 +37,22 @@ instance Show Symbol where
 
 -- Convert symbols to/from Int64 for storage in flatterms.
 -- The encoding:
---   * bits 0-31:  size
---   * bits 32-63: index (variable) or ~index (function)
+--   * bits 0-30: size
+--   * bit  31: 0 (variable) or 1 (function)
+--   * bits 32-63: index
 {-# INLINE toSymbol #-}
 toSymbol :: Int64 -> Symbol
 toSymbol n =
-  Symbol (n < 0)
-    (if n < 0 then
-       complement (fromIntegral (n `unsafeShiftR` 32))
-     else
-       fromIntegral (n `unsafeShiftR` 32))
-    (fromIntegral n .&. 0xffffffff)
+  Symbol (testBit n 31)
+    (fromIntegral (n `unsafeShiftR` 32))
+    (fromIntegral (n .&. 0x7fffffff))
 
 {-# INLINE fromSymbol #-}
 fromSymbol :: Symbol -> Int64
-fromSymbol Symbol{..}
-  | isFun =
-    fromIntegral (complement index) `unsafeShiftL` 32 +
-    fromIntegral size
-  | otherwise =
-    fromIntegral index `unsafeShiftL` 32 +
-    fromIntegral size
+fromSymbol Symbol{..} =
+  fromIntegral size +
+  fromIntegral index `unsafeShiftL` 32 +
+  fromIntegral (fromEnum isFun) `unsafeShiftL` 31
 
 --------------------------------------------------------------------------------
 -- Flatterms, or rather lists of terms.
