@@ -132,6 +132,11 @@ fixedArity arity style =
           (ys, zs) = splitAt arity xs
     in f
 
+-- | A helper function that drops a certain number of arguments.
+implicitArguments :: Int -> TermStyle -> TermStyle
+implicitArguments n (TermStyle pp) =
+  TermStyle $ \l p d xs -> pp l p d (drop n xs)
+
 -- | For prefix operators.
 prefix =
   fixedArity 1 $
@@ -152,3 +157,9 @@ infixStyle pOp =
     pPrintParen (p > fromIntegral pOp) $
       hang (pPrintPrec l (fromIntegral pOp+1) x <+> d) 2
            (pPrintPrec l (fromIntegral pOp+1) y)
+
+-- | For tuples.
+tupleStyle :: TermStyle
+tupleStyle =
+  TermStyle $ \l _ _ xs ->
+    parens (sep (punctuate comma (map (pPrintPrec l 0) xs)))
