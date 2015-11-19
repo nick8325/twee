@@ -48,6 +48,7 @@ toSymbol n =
 
 {-# INLINE fromSymbol #-}
 fromSymbol :: Symbol -> Int64
+fromSymbol Symbol{..} | index < 0 = ERROR("negative symbol index")
 fromSymbol Symbol{..} =
   fromIntegral size +
   fromIntegral index `unsafeShiftL` 32 +
