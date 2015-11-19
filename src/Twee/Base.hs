@@ -1,9 +1,9 @@
 {-# LANGUAGE TypeSynonymInstances, TypeFamilies, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, CPP, ConstraintKinds, UndecidableInstances, DeriveFunctor, StandaloneDeriving #-}
 module Twee.Base(
-  Symbolic(..), subst, symbols, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
+  Symbolic(..), terms, subst, symbols, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
   vars, funs, canonicalise,
   Minimal(..), minimalTerm, isMinimal,
-  Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..),
+  Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..), extended, unextended,
   module Twee.Term, module Twee.Pretty) where
 
 #include "errors.h"
@@ -23,6 +23,9 @@ class Symbolic a where
   term    :: a -> TermOf a
   termsDL :: a -> DList (TermListOf a)
   subst_  :: (Var -> Builder (ConstantOf a)) -> a -> a
+
+terms :: Symbolic a => a -> [TermListOf a]
+terms = DList.toList . termsDL
 
 {-# INLINE subst #-}
 subst :: (Symbolic a, Substitution (ConstantOf a) s) => s -> a -> a
@@ -160,3 +163,21 @@ instance Sized f => Sized (Extended f) where
 instance Arity f => Arity (Extended f) where
   arity (Function f) = arity f
   arity _ = 0
+
+{-# INLINEABLE extended #-}
+extended :: Numbered f => TermList f -> Builder (Extended f)
+extended Empty = mempty
+extended (Cons (Var x) ts) = var x `mappend` extended ts
+extended (Cons (Fun f ts) us) =
+  fun (toFun (Function (fromFun f))) (extended ts) `mappend`
+  extended us
+
+{-# INLINEABLE unextended #-}
+unextended :: Numbered f => TermList (Extended f) -> Builder f
+unextended Empty = mempty
+unextended (Cons (Var x) ts) = var x `mappend` unextended ts
+unextended (Cons (Fun f ts) us) =
+  case fromFun f of
+    Function g -> fun (toFun g) (unextended ts) `mappend` unextended us
+    Minimal    -> var (MkVar 0) `mappend` unextended us
+    Skolem n   -> var (MkVar n) `mappend` unextended us

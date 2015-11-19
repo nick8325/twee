@@ -25,7 +25,7 @@ data Rule f =
     orientation :: Orientation f,
     lhs :: Term f,
     rhs :: Term f }
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 data Orientation f =
     Oriented
@@ -35,6 +35,7 @@ data Orientation f =
   deriving Show
 
 instance Eq (Orientation f) where _ == _ = True
+instance Ord (Orientation f) where compare _ _ = EQ
 
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
