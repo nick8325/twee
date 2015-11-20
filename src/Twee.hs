@@ -362,6 +362,8 @@ consider l1 l2 pair@(Critical _ eq0) = {-# SCC consider #-} do
         addExtraRule r
     Right (Critical info eq) | eqSize eq > eqSize eq0 ->
       queueCP enqueueM l1 l2 (Critical info eq)
+    Right (Critical _ (t :=: u)) | Just sz <- maxSize s, size t > sz || size u > sz ->
+      return ()
     Right (Critical info eq) ->
       forM_ (map canonicalise (orient eq)) $ \(Rule _ t u0) -> do
         s <- get
@@ -691,9 +693,6 @@ criticalPairs1 s ns (Rule or t u) rs = {-# SCC criticalPairs1 #-} do
   guard (left /= top && right /= top && left /= right)
   when (or  /= Oriented) $ guard (not (lessEq top right))
   when (or' /= Oriented) $ guard (not (lessEq top left))
-  case maxSize s of
-    Nothing -> return ()
-    Just n -> guard (size top <= n)
   guard (null (nested (anywhere (rewrite "prime" simplifies (easyRules s))) inner))
   return (Labelled l (Critical (CritInfo top osz) (left :=: right)))
 
