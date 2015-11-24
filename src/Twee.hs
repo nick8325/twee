@@ -157,7 +157,7 @@ instance Symbolic a => Symbolic (Modelled a) where
 
   term = term . modelled
   termsDL = termsDL . modelled
-  subst_ sub Modelled{..} = Modelled model positions (subst sub modelled)
+  replace f Modelled{..} = Modelled model positions (replace f modelled)
 
 --------------------------------------------------------------------------------
 -- Rewriting.
@@ -271,7 +271,7 @@ normaliseCP s cp@(Critical info _) =
     cp4 = setJoin (flipCP cp)
 
     flipCP :: Symbolic a => a -> a
-    flipCP t = subst_ sub t
+    flipCP t = replace (substList sub) t
       where
         n = maximum (0:map fromEnum (vars t))
         sub (MkVar x) = var (MkVar (n - x))
@@ -550,14 +550,14 @@ instance Symbolic a => Symbolic (Critical a) where
 
   term = term . critical
   termsDL Critical{..} = termsDL (critical, critInfo)
-  subst_ sub Critical{..} = Critical (subst sub critInfo) (subst sub critical)
+  replace f Critical{..} = Critical (replace f critInfo) (replace f critical)
 
 instance Symbolic (CritInfo f) where
   type ConstantOf (CritInfo f) = f
 
   term = __
   termsDL = termsDL . top
-  subst_ sub CritInfo{..} = CritInfo (subst sub top) overlap
+  replace f CritInfo{..} = CritInfo (replace f top) overlap
 
 data CPInfo =
   CPInfo {

@@ -146,7 +146,7 @@ instance Symbolic a => Symbolic (Labelled a) where
   type ConstantOf (Labelled a) = ConstantOf a
   term = term . peel
   termsDL = termsDL . peel
-  subst_ sub (Labelled l x) = Labelled l (subst sub x)
+  replace f (Labelled l x) = Labelled l (replace f x)
 instance Pretty a => Pretty (Labelled a) where pPrint = pPrint . peel
 
 moveLabel :: Functor f => Labelled (f a) -> f (Labelled a)

@@ -22,14 +22,14 @@ class Symbolic a where
 
   term    :: a -> TermOf a
   termsDL :: a -> DList (TermListOf a)
-  subst_  :: (Var -> Builder (ConstantOf a)) -> a -> a
+  replace :: (TermListOf a -> BuilderOf a) -> a -> a
 
 terms :: Symbolic a => a -> [TermListOf a]
 terms = DList.toList . termsDL
 
 {-# INLINE subst #-}
 subst :: (Symbolic a, Substitution (ConstantOf a) s) => s -> a -> a
-subst sub x = subst_ (evalSubst sub) x
+subst sub x = replace (substList sub) x
 
 type TermOf a = Term (ConstantOf a)
 type TermListOf a = TermList (ConstantOf a)
@@ -39,15 +39,15 @@ type FunOf a = Fun (ConstantOf a)
 
 instance Symbolic (Term f) where
   type ConstantOf (Term f) = f
-  term            = id
-  termsDL         = return . singleton
-  subst_ sub      = build . Term.subst sub
+  term      = id
+  termsDL   = return . singleton
+  replace f = build . f . singleton
 
 instance Symbolic (TermList f) where
   type ConstantOf (TermList f) = f
-  term       = __
-  termsDL    = return
-  subst_ sub = buildList . Term.substList sub
+  term      = __
+  termsDL   = return
+  replace f = buildList . f
 
 {-# INLINE symbols #-}
 symbols :: (Symbolic a, Monoid w) => (FunOf a -> w) -> (Var -> w) -> a -> w
@@ -66,13 +66,13 @@ instance (ConstantOf a ~ ConstantOf b,
   type ConstantOf (a, b) = ConstantOf a
   term (x, _) = term x
   termsDL (x, y) = termsDL x `mplus` termsDL y
-  subst_ sub (x, y) = (subst sub x, subst sub y)
+  replace f (x, y) = (replace f x, replace f y)
 
 instance Symbolic a => Symbolic [a] where
   type ConstantOf [a] = ConstantOf a
   term _ = __
   termsDL = msum . map termsDL
-  subst_ sub = map (subst sub)
+  replace f = map (replace f)
 
 {-# INLINE vars #-}
 vars :: Symbolic a => a -> [Var]
@@ -83,7 +83,7 @@ funs :: Symbolic a => a -> [FunOf a]
 funs = DList.toList . symbols return (const mzero)
 
 canonicalise :: Symbolic a => a -> a
-canonicalise t = subst_ (evalSubst sub) t
+canonicalise t = replace (Term.substList sub) t
   where
     sub = Term.canonicalise (DList.toList (termsDL t))
 

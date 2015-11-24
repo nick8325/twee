@@ -10,7 +10,7 @@ import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Class
 import Data.Char
 import Twee hiding (info)
-import Twee.Base hiding (char, lookup, (<>))
+import Twee.Base hiding (char, lookup, (<>), replace)
 import Twee.Rule
 import Twee.Utils
 import Twee.Queue

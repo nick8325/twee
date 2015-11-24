@@ -41,7 +41,7 @@ instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
   term = lhs
   termsDL Rule{..} = termsDL (lhs, (rhs, orientation))
-  subst_ sub (Rule or l r) = Rule (subst sub or) (subst sub l) (subst sub r)
+  replace f (Rule or l r) = Rule (replace f or) (replace f l) (replace f r)
 
 instance Symbolic (Orientation f) where
   type ConstantOf (Orientation f) = f
@@ -50,10 +50,10 @@ instance Symbolic (Orientation f) where
   termsDL (WeaklyOriented ts) = termsDL ts
   termsDL (Permutative ts) = termsDL ts
   termsDL Unoriented = mempty
-  subst_ _ Oriented = Oriented
-  subst_ sub (WeaklyOriented ts) = WeaklyOriented (subst sub ts)
-  subst_ sub (Permutative ts) = Permutative (subst sub ts)
-  subst_ _ Unoriented = Unoriented
+  replace _ Oriented = Oriented
+  replace f (WeaklyOriented ts) = WeaklyOriented (replace f ts)
+  replace f (Permutative ts) = Permutative (replace f ts)
+  replace _ Unoriented = Unoriented
 
 instance (Numbered f, PrettyTerm f) => Pretty (Rule f) where
   pPrint (Rule Oriented l r) = pPrintRule l r
@@ -75,7 +75,7 @@ instance Symbolic (Equation f) where
   type ConstantOf (Equation f) = f
   term = __
   termsDL (t :=: u) = termsDL (t, u)
-  subst_ sub (t :=: u) = subst sub t :=: subst sub u
+  replace f (t :=: u) = replace f t :=: replace f u
 
 instance (Numbered f, PrettyTerm f) => Pretty (Equation f) where
   pPrint (x :=: y) = hang (pPrint x <+> text "=") 2 (pPrint y)
