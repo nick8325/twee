@@ -466,6 +466,16 @@ t `isInstanceOf` pat = isJust (match pat t)
 isVariantOf :: Term f -> Term f -> Bool
 t `isVariantOf` u = t `isInstanceOf` u && u `isInstanceOf` t
 
+mapFun :: (Fun f -> Fun g) -> Term f -> Builder g
+mapFun f = mapFunList f . singleton
+
+mapFunList :: (Fun f -> Fun g) -> TermList f -> Builder g
+mapFunList f ts = aux ts
+  where
+    aux Empty = mempty
+    aux (Cons (Var x) ts) = var x `mappend` aux ts
+    aux (Cons (Fun ff ts) us) = fun (f ff) (aux ts) `mappend` aux us
+
 --------------------------------------------------------------------------------
 -- Typeclass for getting at the 'f' in a 'Term f'.
 --------------------------------------------------------------------------------
