@@ -352,39 +352,44 @@ consider l1 l2 pair@(Critical _ eq0) = {-# SCC consider #-} do
       hard SetJoining = True
       hard _ = False
       eqSize (t :=: u) = size t + size u
-  case {-# SCC normalise1 #-} normaliseCP s pair of
-    Left reason -> do
-      record reason
-      when (hard reason) $ forM_ (map canonicalise (orient (critical pair))) $ \(Rule _ t u0) -> do
-        s <- get
-        let u = result (normaliseSub s t u0)
-            r = rule t u
-        addExtraRule r
-    Right (Critical info eq) | eqSize eq > eqSize eq0 ->
-      queueCP enqueueM l1 l2 (Critical info eq)
-    Right (Critical _ (t :=: u)) | Just sz <- maxSize s, size t > sz || size u > sz ->
-      return ()
-    Right (Critical info eq) ->
-      forM_ (map canonicalise (orient eq)) $ \(Rule _ t u0) -> do
-        s <- get
-        let u = result (normaliseSub s t u0)
-            r = rule t u
-        case {-# SCC normalise2 #-} normaliseCP s (Critical info (t :=: u)) of
-          Left reason -> do
-            when (hard reason) $ record reason
-            addExtraRule r
-          Right eq ->
-            case groundJoin s (branches (And [])) eq of
-              Right eqs -> {-# SCC "GroundJoined" #-} do
-                record GroundJoined
-                mapM_ (consider l1 l2) eqs
-                addExtraRule r
-                newSubRule r
-              Left model -> {-# SCC "NewRule" #-} do
-                traceM (NewRule r)
-                l <- addRule (Modelled model (ruleOverlaps s (lhs r)) (Critical info r))
-                queueCPsSplit enqueueM noLabel l (Labelled l r)
-                interreduce r
+      tooBig (Critical _ (t :=: u)) =
+        case maxSize s of
+          Nothing -> False
+          Just sz -> size t > sz || size u > sz
+  unless (tooBig pair) $
+    case {-# SCC normalise1 #-} normaliseCP s pair of
+      Left reason -> do
+        record reason
+        when (hard reason) $ forM_ (map canonicalise (orient (critical pair))) $ \(Rule _ t u0) -> do
+          s <- get
+          let u = result (normaliseSub s t u0)
+              r = rule t u
+          addExtraRule r
+      Right (Critical info eq) | eqSize eq > eqSize eq0 ->
+        queueCP enqueueM l1 l2 (Critical info eq)
+      Right pair | tooBig pair ->
+        return ()
+      Right (Critical info eq) ->
+        forM_ (map canonicalise (orient eq)) $ \(Rule _ t u0) -> do
+          s <- get
+          let u = result (normaliseSub s t u0)
+              r = rule t u
+          case {-# SCC normalise2 #-} normaliseCP s (Critical info (t :=: u)) of
+            Left reason -> do
+              when (hard reason) $ record reason
+              addExtraRule r
+            Right eq ->
+              case groundJoin s (branches (And [])) eq of
+                Right eqs -> {-# SCC "GroundJoined" #-} do
+                  record GroundJoined
+                  mapM_ (consider l1 l2) eqs
+                  addExtraRule r
+                  newSubRule r
+                Left model -> {-# SCC "NewRule" #-} do
+                  traceM (NewRule r)
+                  l <- addRule (Modelled model (ruleOverlaps s (lhs r)) (Critical info r))
+                  queueCPsSplit enqueueM noLabel l (Labelled l r)
+                  interreduce r
 
 groundJoin :: Function f =>
   Twee f -> [Branch f] -> Critical (Equation f) -> Either (Model f) [Critical (Equation f)]
