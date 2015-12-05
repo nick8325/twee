@@ -75,6 +75,7 @@ data SubstView f =
 viewSubst :: Subst f -> SubstView f
 viewSubst sub = SubstView 0 sub
 
+{-# INLINE listSubstList #-}
 listSubstList :: Subst f -> [(Var, TermList f)]
 listSubstList sub = unfoldr op (viewSubst sub)
   where
@@ -82,9 +83,11 @@ listSubstList sub = unfoldr op (viewSubst sub)
     op (ConsSubst Nothing sub) = op sub
     op (ConsSubst (Just (x, t)) sub) = Just ((x, t), sub)
 
+{-# INLINE listSubst #-}
 listSubst :: Subst f -> [(Var, Term f)]
 listSubst sub = [(x, t) | (x, Cons t Empty) <- listSubstList sub]
 
+{-# INLINE patNextSubst #-}
 patNextSubst :: SubstView f -> Maybe (Maybe (Var, TermList f), SubstView f)
 patNextSubst (SubstView n sub)
   | n == substSize sub = Nothing
@@ -173,8 +176,8 @@ substCompatible sub1 sub2 = loop (viewSubst sub1) (viewSubst sub2)
 substUnion :: Subst f -> Subst f -> Subst f
 substUnion sub1 sub2 = runST $ do
   msub <- newMutableSubst (vars sub1 `max` vars sub2)
-  forM_ (listSubstList sub1) $ \(x, t) -> unsafeExtendList msub x t
-  forM_ (listSubstList sub2) $ \(x, t) -> unsafeExtendList msub x t
+  forMSubst_ sub1 $ \x t -> unsafeExtendList msub x t
+  forMSubst_ sub2 $ \x t -> unsafeExtendList msub x t
   unsafeFreezeSubst msub
 
 -- Is a substitution idempotent?

@@ -2,7 +2,7 @@
 {-# LANGUAGE BangPatterns, CPP, UnboxedTuples, TypeFamilies, RecordWildCards #-}
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
-{-# OPTIONS_GHC -funfolding-creation-threshold=1000 -funfolding-use-threshold=1000 #-}
+{-# OPTIONS_GHC -funfolding-creation-threshold=1000000 -funfolding-use-threshold=1000000 #-}
 module Twee.Index where
 
 #include "errors.h"
@@ -115,53 +115,88 @@ lookup t idx = concat [Prelude.map (subst sub) xs | Match xs sub <- matches t id
 matches :: TermOf a -> Frozen a -> [Match a]
 matches t idx = matchesList (Term.singleton t) idx
 
+data Search a =
+    Fail
+  | Try {-# UNPACK #-} !(TermListOf a) (Index a) (Search a)
+  | Single {-# UNPACK #-} !(SubstOf a) a (Search a)
+  | Retract {-# UNPACK #-} !Int (Search a)
+  | TryVar
+    {-# UNPACK #-} !Int
+    {-# UNPACK #-} !(TermOf a)
+    {-# UNPACK #-} !(TermListOf a)
+    {-# UNPACK #-} !(Array (Index a))
+    (Search a)
+
+step :: MutableSubst s (ConstantOf a) -> Search a -> ST s (Maybe (Match a, Search a))
+step !_ _ | False = __
+step _ Fail = {-# SCC "step_fail" #-} return Nothing
+step msub (Single sub x rest) = {-# SCC "step_single" #-} do
+  sub0 <- unsafeFreezeSubst msub
+  case substCompatible sub0 sub of
+    True ->
+      let !sub' = substUnion sub0 sub in
+      return (Just (Match [x] sub', rest))
+    False -> step msub rest
+step msub (Try Empty Index{here = here} rest) = {-# SCC "step_base" #-} do
+  sub <- freezeSubst msub
+  return (Just (Match here sub, rest))
+step msub (Try t@(ConsSym (Fun (MkFun n) _) ts) Index{fun = fun, var = var} rest) =
+  {-# SCC "step_fun" #-}
+  step msub (try ts (fun ! n) $! tryVar 0 u us var rest)
+  where
+    Cons u us = t
+step msub (Try (Cons t ts) Index{var = var} rest) =
+  {-# SCC "step_var" #-}
+  step msub (tryVar 0 t ts var rest)
+step msub (Retract n rest) = {-# SCC "step_retract" #-} do
+  unsafeRetract msub (MkVar n)
+  step msub rest
+step msub (TryVar n t ts var rest) = {-# SCC "step_tryvar" #-} do
+  mu <- mutableLookupList msub (MkVar n)
+  case mu of
+    Nothing -> {-# SCC "step_newvar" #-} do
+      extendList msub (MkVar n) (Term.singleton t)
+      step msub (try ts idx $! (Retract n $! tryVar (n+1) t ts var rest))
+    Just u
+      | Term.singleton t == u ->
+        {-# SCC "step_oldvar" #-}
+        step msub (try ts idx $! tryVar (n+1) t ts var rest)
+      | otherwise ->
+        {-# SCC "step_badvar" #-}
+        step msub (tryVar (n+1) t ts var rest)
+  where
+    idx = var ! n
+
+{-# INLINE try #-}
+try :: TermListOf a -> Index a -> Search a -> Search a
+try !_ !_ _ | False = __
+try _ Nil rest = rest
+try t (Singleton _ u x) rest =
+  case matchList u t of
+    Nothing -> rest
+    Just sub -> Single sub x rest
+try Empty Index{here = []} rest = rest
+try t Index{size = size} rest
+  | lenList t < size = rest
+try t idx rest = Try t idx rest
+
+{-# INLINE tryVar #-}
+tryVar :: Int -> TermOf a -> TermListOf a -> Array (Index a) -> Search a -> Search a
+tryVar !n !t !ts !var rest
+  | n >= arraySize var = rest
+  | otherwise = TryVar n t ts var rest
+
 freeze :: Index a -> Frozen a
 freeze Nil = Frozen $ \_ -> []
 freeze idx = Frozen $ \(!t) -> runST $ do
-  !msub <- newMutableSubst (vars idx)
+  msub <- newMutableSubst (vars idx)
   let
-    loop !_ !_ _ | False = __
-    loop _ Nil rest = rest
-    loop t (Singleton _ u x) rest = do
-      sub0  <- unsafeFreezeSubst msub
-      case matchList u t of
-        Just sub | substCompatible sub0 sub ->
-          let !sub' = substUnion sub0 sub in
-          escape (Match [x] sub':) rest
-        _ -> rest
-
-    loop Empty idx rest
-      | Prelude.null (here idx) = rest
-      | otherwise = do
-        sub <- freezeSubst msub
-        escape (Match (here idx) sub:) rest
-    loop t idx rest | lenList t < size idx = rest
-    loop t@(ConsSym (Fun f _) ts) idx rest =
-      tryFun f ts (fun idx) (tryVar u us (var idx) rest)
-      where
-        Cons u us = t
-    loop (Cons t ts) idx rest = tryVar t ts (var idx) rest
-
-    tryFun (MkFun f) !t !fun rest = loop t (fun ! f) rest
-    tryVar !t !ts !var rest =
-      aux 0
-      where
-        aux n
-          | n >= arraySize var = rest
-          | null idx = aux (n+1)
-          | otherwise = do
-            mu <- mutableLookupList msub (MkVar n)
-            case mu of
-              Nothing -> do
-                extend msub (MkVar n) t
-                loop ts idx (retract msub (MkVar n) >> aux (n+1))
-              Just u
-                | Term.singleton t == u -> loop ts idx (aux (n+1))
-                | otherwise -> aux (n+1)
-          where
-            idx = var ! n
-
-  loop t idx (return [])
+    loop x = do
+      r <- step msub x
+      case r of
+        Nothing -> return []
+        Just (x, y) -> escape (x:) (loop y)
+  loop (try t idx Fail)
 
 elems :: Index a -> [a]
 elems Nil = []
