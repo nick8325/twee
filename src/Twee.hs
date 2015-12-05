@@ -224,7 +224,7 @@ reduceCP s stage f (Critical top (t :=: u))
       where
         here =
           or [ rhs x == u | x <- Index.lookup t rs ] ||
-          or [ subst sub (rhs x) == t | Index.Match xs sub <- Index.matches u rs, x <- xs, not root || not (isVariantOf (lhs x) u) ]
+          or [ subst sub (rhs x) == t | Index.Match x sub <- Index.matches u rs, not root || not (isVariantOf (lhs x) u) ]
         there (Var x) (Var y) | x == y = True
         there (Fun f ts) (Fun g us) | f == g = and (zipWith (subsumed s False) (fromTermList ts) (fromTermList us))
         there _ _ = False

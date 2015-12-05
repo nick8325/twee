@@ -282,8 +282,7 @@ nested strat t = [Parallel [(1,p)] t | p <- aux 0 (children t)]
 {-# INLINE rewrite #-}
 rewrite :: Function f => String -> (Rule f -> Subst f -> Bool) -> Frozen (Rule f) -> Strategy f
 rewrite _phase p rules t = do
-  Index.Match rules sub <- Index.matches t rules
-  rule <- rules
+  Index.Match rule sub <- Index.matches t rules
   guard (p rule sub)
   return (Step rule sub)
 
