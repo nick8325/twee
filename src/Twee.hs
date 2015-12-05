@@ -184,9 +184,10 @@ rulesFor n k =
   {-# SCC rulesFor #-}
   Index.map (critical . modelled . peel) (Indexes.freeze n (labelledRules k))
 
-easyRules, rules :: Function f => Twee f -> Frozen (Rule f)
+easyRules, rules, allRules :: Function f => Twee f -> Frozen (Rule f)
 easyRules k = rulesFor 0 k
-rules k = rulesFor 1 k `Index.union` Indexes.freeze 1 (extraRules k)
+rules k = rulesFor 1 k `Index.union` Indexes.freeze 0 (extraRules k)
+allRules k = rulesFor 1 k `Index.union` Indexes.freeze 1 (extraRules k)
 
 normaliseQuickly :: Function f => Twee f -> Term f -> Reduction f
 normaliseQuickly s = normaliseWith (rewrite "simplify" simplifies (easyRules s))
@@ -227,7 +228,7 @@ reduceCP s stage f (Critical top (t :=: u))
         there (Var x) (Var y) | x == y = True
         there (Fun f ts) (Fun g us) | f == g = and (zipWith (subsumed s False) (fromTermList ts) (fromTermList us))
         there _ _ = False
-        rs = rules s
+        rs = allRules s
 
 data JoinStage = Initial | Simplification | Reducing | Subjoining deriving (Eq, Ord, Show)
 data JoinReason = Trivial JoinStage | Subsumed JoinStage | SetJoining | GroundJoined deriving (Eq, Ord, Show)
@@ -569,8 +570,7 @@ data CPInfo =
     cpWeight  :: {-# UNPACK #-} !Int,
     cpWeight2 :: {-# UNPACK #-} !Int,
     cpAge1    :: {-# UNPACK #-} !Label,
-    cpAge2    :: {-# UNPACK #-} !Label,
-    cpOrder   :: {-# UNPACK #-} !Int }
+    cpAge2    :: {-# UNPACK #-} !Label }
     deriving (Eq, Ord, Show)
 
 data CP f =
@@ -794,15 +794,9 @@ toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
         focus _ _ = Nothing
 
     toCP' (Critical info (t :=: u)) = {-# SCC toCP' #-}
-      CP (CPInfo (weight t' u') (-(overlap info)) l2 l1 (ordering t u)) (Critical info' (t' :=: u')) l1 l2
+      CP (CPInfo (weight t' u') (-(overlap info)) l2 l1) (Critical info' (t' :=: u')) l1 l2
       where
         Critical info' (t' :=: u') = Critical info (order (t :=: u))
-
-    ordering t u = maximum (0:map (ordering1 . orientation) (orient (t :=: u)))
-    ordering1 Oriented = 0
-    ordering1 (WeaklyOriented _) = 1
-    ordering1 (Permutative xs) = length xs + 2
-    ordering1 Unoriented = maxBound
 
     weight t u
       | u `lessEq` t = f t u + penalty t u
