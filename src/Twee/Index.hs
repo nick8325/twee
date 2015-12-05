@@ -22,7 +22,7 @@ data Index a =
     vars :: {-# UNPACK #-} !Int,
     here :: [a],
     fun  :: {-# UNPACK #-} !(Array (Index a)),
-    var  :: {-# UNPACK #-} !(Array (Index a)) } |
+    var  :: !(Vars a) } |
   Singleton {
     vars  :: {-# UNPACK #-} !Int,
     key   :: {-# UNPACK #-} !(TermListOf a),
@@ -31,6 +31,34 @@ data Index a =
   deriving Show
 
 instance Default (Index a) where def = Nil
+
+data Vars a = NilVars | ConsVars {-# UNPACK #-} !Var !(Index a) (Vars a)
+  deriving Show
+
+{-# INLINE cons #-}
+cons :: Var -> Index a -> Vars a -> Vars a
+cons _ Nil xs = xs
+cons x idx xs = ConsVars x idx xs
+
+{-# INLINE updateVar #-}
+updateVar :: Var -> (Index a -> Index a) -> Vars a -> Vars a
+updateVar x f NilVars = cons x (f Nil) NilVars
+updateVar x f xs@(ConsVars y idx ys)
+  | x <  y = cons x (f Nil) xs
+  | x == y = ConsVars y (f idx) ys
+  | x >  y = ConsVars y idx (updateVar x f ys)
+
+{-# INLINE (!!!) #-}
+(!!!) :: Vars a -> Var -> Index a
+NilVars !!! _ = Nil
+ConsVars x idx xs !!! y
+  | x < y  = xs !!! y
+  | x == y = idx
+  | x > y  = Nil
+
+varsToList :: Vars a -> [(Var, Index a)]
+varsToList NilVars = []
+varsToList (ConsVars x idx xs) = (x, idx):varsToList xs
 
 {-# INLINE null #-}
 null :: Index a -> Bool
@@ -57,28 +85,28 @@ insert x0 !idx = aux t idx
         fun  = update f idx' (fun idx) }
       where
         idx' = aux u (fun idx ! f)
-    aux t@(ConsSym (Var (MkVar v)) u) idx =
+    aux t@(ConsSym (Var v@(MkVar n)) u) idx =
       idx {
         size = lenList t `min` size idx,
-        vars = vars idx `max` vars idx' `max` succ v,
-        var  = update v idx' (var idx) }
+        vars = vars idx `max` vars idx' `max` succ n,
+        var  = updateVar v (const idx') (var idx) }
       where
-        idx' = aux u (var idx ! v)
+        idx' = aux u (var idx !!! v)
     x = canonicalise x0
     t = Term.singleton (term x)
 
 {-# INLINE expand #-}
 expand :: TermListOf a -> a -> Index a
-expand Empty x = Index 0 0 [x] newArray newArray
+expand Empty x = Index 0 0 [x] newArray NilVars
 expand (ConsSym s t) x =
   Index (1+lenList t) (n `max` m) [] fun var
   where
-    (fun, var, m) =
+    (fun, var, MkVar m) =
       case s of
         Fun (MkFun f) _ ->
-          (update f (Singleton n t x) newArray, newArray, 0)
-        Var (MkVar v) ->
-          (newArray, update v (Singleton n t x) newArray, succ v)
+          (update f (Singleton n t x) newArray, NilVars, MkVar 0)
+        Var v ->
+          (newArray, cons v (Singleton n t x) NilVars, succ v)
     n = boundList t
 
 {-# INLINEABLE delete #-}
@@ -92,8 +120,8 @@ delete x0 !idx = aux t idx
     aux Empty idx = idx { here = List.delete x (here idx) }
     aux (ConsSym (Fun (MkFun f) _) t) idx =
       idx { fun = update f (aux t (fun idx ! f)) (fun idx) }
-    aux (ConsSym (Var (MkVar v)) t) idx =
-      idx { var = update v (aux t (var idx ! v)) (var idx) }
+    aux (ConsSym (Var v) t) idx =
+      idx { var = updateVar v (aux t) (var idx) }
     x = canonicalise x0
     t = Term.singleton (term x)
 
@@ -119,12 +147,13 @@ data Search a =
     Fail
   | Try {-# UNPACK #-} !(TermListOf a) (Index a) (Search a)
   | Single {-# UNPACK #-} !(SubstOf a) a (Search a)
-  | Retract {-# UNPACK #-} !Int (Search a)
+  | Retract {-# UNPACK #-} !Var (Search a)
   | TryVar
-    {-# UNPACK #-} !Int
+    {-# UNPACK #-} !Var
+    !(Index a)
+    !(Vars a)
     {-# UNPACK #-} !(TermOf a)
     {-# UNPACK #-} !(TermListOf a)
-    {-# UNPACK #-} !(Array (Index a))
     (Search a)
 
 step :: MutableSubst s (ConstantOf a) -> Search a -> ST s (Maybe (Match a, Search a))
@@ -142,30 +171,28 @@ step msub (Try Empty Index{here = here} rest) = {-# SCC "step_base" #-} do
   return (Just (Match here sub, rest))
 step msub (Try t@(ConsSym (Fun (MkFun n) _) ts) Index{fun = fun, var = var} rest) =
   {-# SCC "step_fun" #-}
-  step msub (try ts (fun ! n) $! tryVar 0 u us var rest)
+  step msub (try ts (fun ! n) $! tryVar var u us rest)
   where
     Cons u us = t
 step msub (Try (Cons t ts) Index{var = var} rest) =
   {-# SCC "step_var" #-}
-  step msub (tryVar 0 t ts var rest)
+  step msub (tryVar var t ts rest)
 step msub (Retract n rest) = {-# SCC "step_retract" #-} do
-  unsafeRetract msub (MkVar n)
+  unsafeRetract msub n
   step msub rest
-step msub (TryVar n t ts var rest) = {-# SCC "step_tryvar" #-} do
-  mu <- mutableLookupList msub (MkVar n)
+step msub (TryVar n idx var t ts rest) = {-# SCC "step_tryvar" #-} do
+  mu <- mutableLookupList msub n
   case mu of
     Nothing -> {-# SCC "step_newvar" #-} do
-      extendList msub (MkVar n) (Term.singleton t)
-      step msub (try ts idx $! (Retract n $! tryVar (n+1) t ts var rest))
+      extendList msub n (Term.singleton t)
+      step msub (try ts idx $! (Retract n $! tryVar var t ts rest))
     Just u
       | Term.singleton t == u ->
         {-# SCC "step_oldvar" #-}
-        step msub (try ts idx $! tryVar (n+1) t ts var rest)
+        step msub (try ts idx $! tryVar var t ts rest)
       | otherwise ->
         {-# SCC "step_badvar" #-}
-        step msub (tryVar (n+1) t ts var rest)
-  where
-    idx = var ! n
+        step msub (tryVar var t ts rest)
 
 {-# INLINE try #-}
 try :: TermListOf a -> Index a -> Search a -> Search a
@@ -181,10 +208,9 @@ try t Index{size = size} rest
 try t idx rest = Try t idx rest
 
 {-# INLINE tryVar #-}
-tryVar :: Int -> TermOf a -> TermListOf a -> Array (Index a) -> Search a -> Search a
-tryVar !n !t !ts !var rest
-  | n >= arraySize var = rest
-  | otherwise = TryVar n t ts var rest
+tryVar :: Vars a -> TermOf a -> TermListOf a -> Search a -> Search a
+tryVar NilVars !_ !_ rest = rest
+tryVar (ConsVars n idx var) !t !ts rest = TryVar n idx var t ts rest
 
 freeze :: Index a -> Frozen a
 freeze Nil = Frozen $ \_ -> []
@@ -204,7 +230,7 @@ elems (Singleton _ _ x) = [x]
 elems idx =
   here idx ++
   concatMap elems (Prelude.map snd (toList (fun idx))) ++
-  concatMap elems (Prelude.map snd (toList (var idx)))
+  concatMap elems (Prelude.map snd (varsToList (var idx)))
 
 {-# INLINE map #-}
 map :: (ConstantOf a ~ ConstantOf b) => (a -> b) -> Frozen a -> Frozen b
