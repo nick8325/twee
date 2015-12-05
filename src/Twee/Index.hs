@@ -120,10 +120,12 @@ find t idx xs = aux t idx xs
   where
     aux !_ !_ _ | False = __
     aux _ Nil rest = rest
-    aux t (Singleton u x) rest = try [x] rest
-    aux Empty Index{here = here} rest = try here rest
     aux t Index{size = size} rest
       | lenList t < size = rest
+    aux Empty Index{here = here} rest = {-# SCC "try_here" #-} try here rest
+    aux t (Singleton u x) rest
+      | isJust (matchList u t) = {-# SCC "try_singleton" #-} try [x] rest
+      | otherwise = rest
     aux t@(ConsSym (Fun (MkFun n) _) ts) Index{fun = fun, var = var} rest =
       case var of
         Nil -> aux ts (fun ! n) rest
@@ -135,7 +137,11 @@ find t idx xs = aux t idx xs
     {-# INLINE try #-}
     try [] rest = rest
     try xs rest =
-      catMaybes [ fmap (Match x) (matchList (Term.singleton u) t) | Entry u x <- xs ] ++ rest
+      {-# SCC "try" #-}
+      [ Match x sub
+      | Entry u x <- xs,
+        sub <- maybeToList (matchList (Term.singleton u) t) ] ++
+      rest
 
 elems :: Index a -> [a]
 elems Nil = []
