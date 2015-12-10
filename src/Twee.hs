@@ -685,11 +685,10 @@ emitReplacement n t = aux n
         builder t `mappend` aux (n-len t) u
 
 criticalPairs1 :: Function f => Twee f -> [Int] -> Rule f -> [Labelled (Rule f)] -> [Labelled (Critical (Equation f))]
-criticalPairs1 s ns (Rule or t u) rs = {-# SCC criticalPairs1 #-} do
-  let b = {-# SCC bound #-} bound t
-  Labelled l r <- rs
-  let sub (MkVar x) = var (MkVar (x+b))
-      Rule or' t' u' = subst sub r
+criticalPairs1 s ns r rs = {-# SCC criticalPairs1 #-} do
+  let b = {-# SCC bound #-} maximum (0:[ bound t | Labelled _ (Rule _ t _) <- rs ])
+      Rule or t u = subst (\(MkVar x) -> var (MkVar (x+b))) r
+  Labelled l (Rule or' t' u') <- rs
   (sub, pos) <- overlaps ns t t'
   let left = subst sub u
       right = subst sub (build (emitReplacement pos u' (singleton t)))
