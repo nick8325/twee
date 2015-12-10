@@ -115,8 +115,8 @@ instance (Numbered f, Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTe
 
 data Extended f =
     Minimal
-  | Function f
   | Skolem Int
+  | Function f
   deriving (Eq, Ord, Show, Functor)
 
 instance Minimal (Extended f) where
