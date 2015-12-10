@@ -33,15 +33,16 @@ import Data.IntMap(IntMap)
 
 parseInitialState :: Parser (Twee f)
 parseInitialState =
-  go <$> maxSize <*> inversion <*> skolem <*> ground <*> general
+  go <$> maxSize <*> inversion <*> unorientable <*> skolem <*> ground <*> general
      <*> overgeneral <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> weight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio
   where
-    go maxSize inversion skolem ground general overgeneral groundJoin conn set setGoals tracing moreTracing weight splits cpSetSize mixFIFO mixPrio =
+    go maxSize inversion unorientable skolem ground general overgeneral groundJoin conn set setGoals tracing moreTracing weight splits cpSetSize mixFIFO mixPrio =
       (initialState mixFIFO mixPrio) {
         maxSize = maxSize,
         cpSplits = splits,
         minimumCPSetSize = cpSetSize,
         useInversionRules = inversion,
+        useUnorientablePenalty = unorientable,
         useSkolemPenalty = skolem,
         useGroundPenalty = ground,
         useGeneralSuperpositions = general,
@@ -55,6 +56,7 @@ parseInitialState =
         lhsWeight = weight }
     maxSize = (Just <$> option auto (long "max-size" <> help "Maximum critical pair size" <> metavar "SIZE")) <|> pure Nothing
     inversion = switch (long "inversion" <> help "Detect inversion rules")
+    unorientable = switch (long "unorientable-penalty" <> help "Penalise unorientable critical pairs")
     skolem = switch (long "skolem-penalty" <> help "Penalise critical pairs whose Skolemisation is joinable")
     ground = switch (long "ground-penalty" <> help "Penalise ground critical pairs")
     general = not <$> switch (long "no-general-superpositions" <> help "Disable considering only general superpositions")

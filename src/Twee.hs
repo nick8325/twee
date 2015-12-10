@@ -45,6 +45,7 @@ data Twee f =
     cpSplits          :: Int,
     queue             :: !(Queue (Mix (Either1 FIFO Heap)) (Passive f)),
     useInversionRules :: Bool,
+    useUnorientablePenalty  :: Bool,
     useSkolemPenalty  :: Bool,
     useGroundPenalty  :: Bool,
     useGeneralSuperpositions :: Bool,
@@ -74,6 +75,7 @@ initialState mixFIFO mixPrio =
     cpSplits          = 20,
     queue             = empty (emptyMix mixFIFO mixPrio (Left1 emptyFIFO) (Right1 emptyHeap)),
     useInversionRules = False,
+    useUnorientablePenalty  = False,
     useSkolemPenalty  = False,
     useGroundPenalty  = False,
     useGeneralSuperpositions = True,
@@ -799,7 +801,7 @@ toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
         Critical info' (t' :=: u') = Critical info (order (t :=: u))
 
     weight t u
-      | u `lessEq` t = f t u + penalty t u
+      | useUnorientablePenalty s && u `lessEq` t = f t u + penalty t u
       | otherwise    = (f t u `max` f u t) + penalty t u
       where
         f t u = lhsWeight s*size' t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u) + if useGroundPenalty s && null (vars u) then 5 else 0
