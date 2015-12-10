@@ -655,19 +655,21 @@ ruleOverlaps s t = aux 0 Set.empty (singleton t)
     canon = if useOvergeneralSuperpositions s then canonicalise else id
 
 overlaps :: [Int] -> Term f -> Term f -> [(Subst f, Int)]
-overlaps ns t1 t2 = {-# SCC overlaps #-} go 0 ns (singleton t1) []
+overlaps ns t1 t2@(Fun g _) = {-# SCC overlaps #-} go 0 ns (singleton t1) []
   where
     go !_ _ !_ _ | False = __
     go _ [] _ rest = rest
     go _ _ Empty rest = rest
-    go n (m:ms) (ConsSym t u) rest
-      | m == n = here ++ go (n+1) ms u rest
+    go n (m:ms) (ConsSym ~t@(Fun f _) u) rest
+      | m == n && f == g = here ++ go (n+1) ms u rest
+      | m == n = go (n+1) ms u rest
       | otherwise = go (n+1) (m:ms) u rest
       where
         here =
           case unify t t2 of
             Nothing -> []
             Just sub -> [(sub, n)]
+overlaps _ _ _ = []
 
 emitReplacement :: Int -> Term f -> TermList f -> Builder f
 emitReplacement n t = aux n
