@@ -36,7 +36,6 @@ data Twee f =
     maxSize           :: Maybe Int,
     labelledRules     :: {-# UNPACK #-} !(Indexes (Labelled (Modelled (Critical (Rule f))))),
     extraRules        :: {-# UNPACK #-} !(Indexes (Rule f)),
-    subRules          :: Index (Term f, Rule f),
     goals             :: [Set (Term f)],
     totalCPs          :: Int,
     processedCPs      :: Int,
@@ -44,12 +43,10 @@ data Twee f =
     minimumCPSetSize  :: Int,
     cpSplits          :: Int,
     queue             :: !(Queue (Mix (Either1 FIFO Heap)) (Passive f)),
-    useInversionRules :: Bool,
     useUnorientablePenalty  :: Bool,
     useSkolemPenalty  :: Bool,
     useGroundPenalty  :: Bool,
     useGeneralSuperpositions :: Bool,
-    useOvergeneralSuperpositions :: Bool,
     useGroundJoining  :: Bool,
     useConnectedness  :: Bool,
     useSetJoining     :: Bool,
@@ -66,7 +63,6 @@ initialState mixFIFO mixPrio =
     maxSize           = Nothing,
     labelledRules     = Indexes.empty,
     extraRules        = Indexes.empty,
-    subRules          = Index.Nil,
     goals             = [],
     totalCPs          = 0,
     processedCPs      = 0,
@@ -74,12 +70,10 @@ initialState mixFIFO mixPrio =
     minimumCPSetSize  = 20,
     cpSplits          = 20,
     queue             = empty (emptyMix mixFIFO mixPrio (Left1 emptyFIFO) (Right1 emptyHeap)),
-    useInversionRules = False,
     useUnorientablePenalty  = False,
     useSkolemPenalty  = False,
     useGroundPenalty  = False,
     useGeneralSuperpositions = True,
-    useOvergeneralSuperpositions = False,
     useGroundJoining  = True,
     useConnectedness  = True,
     useSetJoining     = False,
@@ -387,7 +381,6 @@ consider l1 l2 pair@(Critical _ eq0) = {-# SCC consider #-} do
                   record GroundJoined
                   mapM_ (consider l1 l2) eqs
                   addExtraRule r
-                  newSubRule r
                 Left model -> {-# SCC "NewRule" #-} do
                   traceM (NewRule r)
                   l <- addRule (Modelled model (ruleOverlaps s (lhs r)) (Critical info r))
@@ -433,21 +426,10 @@ optimise x f p =
     y:_ -> optimise y f p
     _   -> x
 
-newSubRule :: Function f => Rule f -> State (Twee f) ()
-newSubRule r@(Rule _ t u) = do
-  s <- get
-  when (useInversionRules s) $
-    put s { subRules = foldr ins (subRules s) (properSubterms t) }
-  where
-    ins v idx
-      | isFun v && not (lessEq v u) && usort (vars u) `isSubsequenceOf` usort (vars v) = Index.insert (v, r) idx
-      | otherwise = idx
-
 addRule :: Function f => Modelled (Critical (Rule f)) -> State (Twee f) Label
 addRule rule = do
   l <- newLabelM
   modify (\s -> s { labelledRules = Indexes.insert (Labelled l rule) (labelledRules s) })
-  newSubRule (critical (modelled rule))
   return l
 
 addExtraRule :: Function f => Rule f -> State (Twee f) ()
@@ -523,7 +505,6 @@ simplifyRule l model r@(Modelled _ positions (Critical info (Rule _ lhs rhs))) =
       labelledRules =
          Indexes.insert (Labelled l (Modelled model positions (Critical info (rule lhs (result (normalise s rhs))))))
            (Indexes.delete (Labelled l r) (labelledRules s)) }
-  newSubRule (rule lhs rhs)
 
 newEquation :: Function f => Equation f -> State (Twee f) ()
 newEquation (t :=: u) = do
@@ -648,11 +629,8 @@ ruleOverlaps s t = aux 0 Set.empty (singleton t)
     aux !_ !_ Empty = []
     aux n m (Cons (Var _) t) = aux (n+1) m t
     aux n m (ConsSym t@Fun{} u)
-      | (useGeneralSuperpositions s || useOvergeneralSuperpositions s) &&
-        canon t `Set.member` m = aux (n+1) m u
-      | otherwise = n:aux (n+1) (Set.insert (canon t) m) u
-
-    canon = if useOvergeneralSuperpositions s then canonicalise else id
+      | useGeneralSuperpositions s && t `Set.member` m = aux (n+1) m u
+      | otherwise = n:aux (n+1) (Set.insert t m) u
 
 overlaps :: [Int] -> Term f -> Term f -> [(Subst f, Int)]
 overlaps ns t1 t2@(Fun g _) = {-# SCC overlaps #-} go 0 ns (singleton t1) []
@@ -756,45 +734,7 @@ toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
       let t' = result (normaliseQuickly s t)
           u' = result (normaliseQuickly s u)
       guard (t' /= u')
-      invert (Critical info (t' :=: u'))
-
-    invert (Critical info (t :=: u))
-      | useInversionRules s,
-        Just (t', u') <- focus (top info) t u `mplus` focus (top info) u t =
-          Debug.Trace.traceShow (sep [text "Reducing", nest 2 (pPrint (t :=: u)), text "to", nest 2 (pPrint (t' :=: u'))]) $
-          norm (Critical info (t' :=: u'))
-      | otherwise = Just (Critical info (t :=: u))
-
-    focus top t u =
-      listToMaybe $ do
-        (_, r1) <- Index.lookup t (Index.freeze (subRules s))
-        r2 <- Index.lookup (replace t u (rhs r1)) (rules s)
-
-        guard (reducesSub top r1 emptySubst && reducesSub top r2 emptySubst)
-        let t' = rhs r1
-            u' = rhs r2
-        guard (subsumes True (t', u') (t, u))
-        return (t', u')
-
-    replace t u v | v == t = u
-    replace t u (Fun f ts) = build (fun f (map (replace t u) (fromTermList ts)))
-    replace _ _ t = t
-
-    subsumes strict (t', u') (t, u) =
-      (isJust (matchList (buildList [t', t]) (buildList [u', u]))) &&
-       (not strict || isNothing (matchList (buildList [t, t']) (buildList [u, u']))) ||
-      case focus t u of
-        Just (t'', u'') -> subsumes False (t', u') (t'', u'')
-        _ -> False
-      where
-        focus (Fun f ts) (Fun g us) | f == g = aux ts us
-          where
-            aux Empty Empty = Nothing
-            aux (Cons t ts) (Cons u us)
-              | t == u = aux ts us
-              | ts == us = Just (t, u)
-              | otherwise = Nothing
-        focus _ _ = Nothing
+      return (Critical info (t' :=: u'))
 
     toCP' (Critical info (t :=: u)) = {-# SCC toCP' #-}
       CP (CPInfo (weight t' u') (-(overlap info)) l2 l1) (Critical info' (t' :=: u')) l1 l2
