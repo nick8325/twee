@@ -448,12 +448,26 @@ emptyTermList :: TermList f
 emptyTermList = buildList (mempty :: Builder f)
 
 -- Functions for building terms.
-subterms :: Term f -> [Term f]
-subterms t = t:properSubterms t
 
+{-# INLINE subtermsList #-}
+subtermsList :: TermList f -> [Term f]
+subtermsList t = unfoldr op t
+  where
+    op Empty = Nothing
+    op (ConsSym t u) = Just (t, u)
+
+{-# INLINE subterms #-}
+subterms :: Term f -> [Term f]
+subterms = subtermsList . singleton
+
+{-# INLINE properSubtermsList #-}
+properSubtermsList :: TermList f -> [Term f]
+properSubtermsList Empty = []
+properSubtermsList (ConsSym _ t) = subtermsList t
+
+{-# INLINE properSubterms #-}
 properSubterms :: Term f -> [Term f]
-properSubterms Var{} = []
-properSubterms (Fun _ ts) = concatMap subterms (fromTermList ts)
+properSubterms = properSubtermsList . singleton
 
 isFun :: Term f -> Bool
 isFun Fun{} = True

@@ -54,12 +54,10 @@ sizeLessIn model t u =
   where
     (k, m) =
       foldr (addSize id)
-        (foldr (addSize negate) (0, Map.empty) (syms t))
-        (syms u)
-    syms :: Term f -> [Either (Fun f) Var]
-    syms = symbols (return . Left) (return . Right)
-    addSize op (Left f) (k, m) = (k + op (size f), m)
-    addSize op (Right x) (k, m) = (k, Map.insertWith (+) x (op 1) m)
+        (foldr (addSize negate) (0, Map.empty) (subterms t))
+        (subterms u)
+    addSize op (Fun f _) (k, m) = (k + op (size f), m)
+    addSize op (Var x) (k, m) = (k, Map.insertWith (+) x (op 1) m)
 
 minimumIn :: Function f => Model f -> Map Var Int -> Maybe Int
 minimumIn model t =

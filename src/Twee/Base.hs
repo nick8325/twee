@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeSynonymInstances, TypeFamilies, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, CPP, ConstraintKinds, UndecidableInstances, DeriveFunctor, StandaloneDeriving #-}
 module Twee.Base(
-  Symbolic(..), terms, subst, symbols, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
+  Symbolic(..), terms, subst, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
   vars, funs, canonicalise,
   Minimal(..), minimalTerm, isMinimal,
   Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..), extended, unextended,
@@ -49,18 +49,6 @@ instance Symbolic (TermList f) where
   termsDL   = return
   replace f = buildList . f
 
-{-# INLINE symbols #-}
-symbols :: (Symbolic a, Monoid w) => (FunOf a -> w) -> (Var -> w) -> a -> w
-symbols fun var x = DList.foldr mappend mempty (fmap (termListSymbols fun var) (termsDL x))
-
-{-# INLINE termListSymbols #-}
-termListSymbols :: Monoid w => (Fun f -> w) -> (Var -> w) -> TermList f -> w
-termListSymbols fun var = aux
-  where
-    aux Empty = mempty
-    aux (ConsSym (Fun f _) t) = fun f `mappend` aux t
-    aux (ConsSym (Var x) t) = var x `mappend` aux t
-
 instance (ConstantOf a ~ ConstantOf b,
           Symbolic a, Symbolic b) => Symbolic (a, b) where
   type ConstantOf (a, b) = ConstantOf a
@@ -76,11 +64,11 @@ instance Symbolic a => Symbolic [a] where
 
 {-# INLINE vars #-}
 vars :: Symbolic a => a -> [Var]
-vars = DList.toList . symbols (const mzero) return
+vars x = [ v | t <- DList.toList (termsDL x), Var v <- subtermsList t ]
 
 {-# INLINE funs #-}
 funs :: Symbolic a => a -> [FunOf a]
-funs = DList.toList . symbols return (const mzero)
+funs x = [ f | t <- DList.toList (termsDL x), Fun f _ <- subtermsList t ]
 
 canonicalise :: Symbolic a => a -> a
 canonicalise t = replace (Term.substList sub) t
