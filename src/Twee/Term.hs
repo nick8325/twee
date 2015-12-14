@@ -9,8 +9,7 @@ module Twee.Term(
   Term, TermList, at, lenList,
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
-  Fun(..), Var(..), pattern Var, pattern Fun, singleton,
-  Builder, Subst, substSize, lookupList, extendList, unsafeExtendList, retract) where
+  Fun(..), Var(..), pattern Var, pattern Fun, singleton, Builder) where
 
 #include "errors.h"
 import Prelude hiding (lookup)
@@ -21,6 +20,7 @@ import Data.List hiding (lookup)
 import Data.Maybe
 import Data.Ord
 import Data.Monoid
+import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
 
 --------------------------------------------------------------------------------
@@ -137,6 +137,41 @@ substList sub ts = aux ts
     aux (Cons (Var x) ts) = evalSubst sub x <> aux ts
     aux (Cons (Fun f ts) us) = fun f (aux ts) <> aux us
 
+newtype Subst f =
+  Subst {
+    unSubst :: IntMap (TermList f) }
+
+{-# INLINE substSize #-}
+substSize :: Subst f -> Int
+substSize (Subst sub)
+  | IntMap.null sub = 0
+  | otherwise = fst (IntMap.findMax sub) + 1
+
+-- Look up a variable.
+{-# INLINE lookupList #-}
+lookupList :: Var -> Subst f -> Maybe (TermList f)
+lookupList (MkVar x) (Subst sub) = IntMap.lookup x sub
+
+-- Add a new binding to a substitution.
+{-# INLINE extendList #-}
+extendList :: Var -> TermList f -> Subst f -> Maybe (Subst f)
+extendList (MkVar x) !t (Subst sub) =
+  case IntMap.lookup x sub of
+    Nothing -> Just $! Subst (IntMap.insert x t sub)
+    Just u
+      | t == u    -> Just (Subst sub)
+      | otherwise -> Nothing
+
+-- Remove a binding from a substitution.
+{-# INLINE retract #-}
+retract :: Var -> Subst f -> Subst f
+retract (MkVar x) (Subst sub) = Subst (IntMap.delete x sub)
+
+-- Add a new binding to a substitution.
+-- Doesn't check bounds and overwrites any existing binding.
+{-# INLINE unsafeExtendList #-}
+unsafeExtendList :: Var -> TermList f -> Subst f -> Subst f
+unsafeExtendList (MkVar x) !t (Subst sub) = Subst (IntMap.insert x t sub)
 -- Composition of substitutions.
 substCompose :: Substitution f s => Subst f -> s -> Subst f
 substCompose (Subst !sub1) !sub2 =

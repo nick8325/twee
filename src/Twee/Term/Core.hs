@@ -15,8 +15,6 @@ import GHC.Prim
 import GHC.ST hiding (liftST)
 import Data.Primitive.ArrayArray
 import Data.Ord
-import qualified Data.IntMap.Strict as IntMap
-import Data.IntMap.Strict(IntMap)
 
 --------------------------------------------------------------------------------
 -- Symbols. A symbol is a single function or variable in a flatterm.
@@ -287,43 +285,3 @@ emitTermList (TermList lo hi array) =
     let k = sizeOf (fromSymbol __) in
     liftST (copyByteArray marray (n*k) array (lo*k) ((hi-lo)*k)) `then_`
     putIndex (n + hi-lo)
-
---------------------------------------------------------------------------------
--- Substitutions.
---------------------------------------------------------------------------------
-
-newtype Subst f =
-  Subst {
-    unSubst :: IntMap (TermList f) }
-
-{-# INLINE substSize #-}
-substSize :: Subst f -> Int
-substSize (Subst sub)
-  | IntMap.null sub = 0
-  | otherwise = fst (IntMap.findMax sub) + 1
-
--- Look up a variable.
-{-# INLINE lookupList #-}
-lookupList :: Var -> Subst f -> Maybe (TermList f)
-lookupList (MkVar x) (Subst sub) = IntMap.lookup x sub
-
--- Add a new binding to a substitution.
-{-# INLINE extendList #-}
-extendList :: Var -> TermList f -> Subst f -> Maybe (Subst f)
-extendList (MkVar x) !t (Subst sub) =
-  case IntMap.lookup x sub of
-    Nothing -> Just $! Subst (IntMap.insert x t sub)
-    Just u
-      | t == u    -> Just (Subst sub)
-      | otherwise -> Nothing
-
--- Remove a binding from a substitution.
-{-# INLINE retract #-}
-retract :: Var -> Subst f -> Subst f
-retract (MkVar x) (Subst sub) = Subst (IntMap.delete x sub)
-
--- Add a new binding to a substitution.
--- Doesn't check bounds and overwrites any existing binding.
-{-# INLINE unsafeExtendList #-}
-unsafeExtendList :: Var -> TermList f -> Subst f -> Subst f
-unsafeExtendList (MkVar x) !t (Subst sub) = Subst (IntMap.insert x t sub)
