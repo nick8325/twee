@@ -191,8 +191,10 @@ newtype Builder f =
 type Builder1 s = State# s -> MutableByteArray# s -> Int# -> Int# -> (# State# s, Int# #)
 
 instance Monoid (Builder f) where
+  {-# INLINE mempty #-}
   mempty = Builder built
-  m1 `mappend` m2 = Builder (unBuilder m1 `then_` unBuilder m2)
+  {-# INLINE mappend #-}
+  Builder m1 `mappend` Builder m2 = Builder (m1 `then_` m2)
 
 {-# INLINE buildTermList #-}
 buildTermList :: Builder f -> TermList f
