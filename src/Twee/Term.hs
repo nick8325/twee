@@ -10,9 +10,7 @@ module Twee.Term(
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
   Fun(..), Var(..), pattern Var, pattern Fun, singleton,
-  Builder, Subst, substSize, lookupList,
-  MutableSubst, newMutableSubst, unsafeFreezeSubst, freezeSubst, copySubst,
-  mutableLookupList, extendList, unsafeExtendList, retract, unsafeRetract) where
+  Builder, Subst, substSize, lookupList, extendList, unsafeExtendList, retract) where
 
 #include "errors.h"
 import Prelude hiding (lookup)
@@ -23,6 +21,7 @@ import Data.List hiding (lookup)
 import Data.Maybe
 import Data.Ord
 import Data.Monoid
+import qualified Data.IntMap.Strict as IntMap
 
 --------------------------------------------------------------------------------
 -- A type class for builders.
@@ -70,18 +69,14 @@ var = emitVar
 --------------------------------------------------------------------------------
 
 data SubstView f =
-  SubstView {-# UNPACK #-} !Int {-# UNPACK #-} !(Subst f)
+  SubstView {-# UNPACK #-} !Int {-# UNPACK #-} !Int !(Subst f)
 
 viewSubst :: Subst f -> SubstView f
-viewSubst sub = SubstView 0 sub
+viewSubst sub = SubstView 0 (substSize sub) sub
 
 {-# INLINE listSubstList #-}
 listSubstList :: Subst f -> [(Var, TermList f)]
-listSubstList sub = unfoldr op (viewSubst sub)
-  where
-    op EmptySubst = Nothing
-    op (ConsSubst Nothing sub) = op sub
-    op (ConsSubst (Just (x, t)) sub) = Just ((x, t), sub)
+listSubstList (Subst sub) = [(MkVar x, t) | (x, t) <- IntMap.toList sub]
 
 {-# INLINE listSubst #-}
 listSubst :: Subst f -> [(Var, Term f)]
@@ -89,12 +84,12 @@ listSubst sub = [(x, t) | (x, Cons t Empty) <- listSubstList sub]
 
 {-# INLINE patNextSubst #-}
 patNextSubst :: SubstView f -> Maybe (Maybe (Var, TermList f), SubstView f)
-patNextSubst (SubstView n sub)
-  | n == substSize sub = Nothing
-  | otherwise = Just (x, SubstView (n+1) sub)
+patNextSubst (SubstView n m sub)
+  | n > m = Nothing
+  | otherwise = Just (x, SubstView (n+1) m sub)
   where
     x = do
-      t <- lookupList sub (MkVar n)
+      t <- lookupList (MkVar n) sub
       return (MkVar n, t)
 
 pattern EmptySubst <- (patNextSubst -> Nothing)
@@ -126,7 +121,7 @@ instance (Build f a, v ~ Var) => Substitution f (v -> a) where
 instance Substitution f (Subst f) where
   {-# INLINE evalSubst #-}
   evalSubst sub x =
-    case lookupList sub x of
+    case lookupList x sub of
       Nothing -> var x
       Just ts -> builder ts
 
@@ -144,20 +139,8 @@ substList sub ts = aux ts
 
 -- Composition of substitutions.
 substCompose :: Substitution f s => Subst f -> s -> Subst f
-substCompose !sub1 !sub2 =
-  runST $ do
-    sub <- newMutableSubst (substSize sub1)
-    let
-      loop EmptySubst !_ = unsafeFreezeSubst sub
-      loop (ConsSubst Nothing sub1) t = loop sub1 t
-      loop (ConsSubst (Just (x, _)) sub1) (UnsafeCons (Fun _ t) u) = do
-        unsafeExtendList sub x t
-        loop sub1 u
-    loop (viewSubst sub1) t
-  where
-    !t =
-      buildTermList $
-        foldSubst (\_ t u -> fun (MkFun 0) (substList sub2 t) <> u) mempty sub1
+substCompose (Subst !sub1) !sub2 =
+  Subst (IntMap.map (buildList . substList sub2) sub1)
 
 -- Are two substitutions compatible?
 substCompatible :: Subst f -> Subst f -> Bool
@@ -174,11 +157,8 @@ substCompatible sub1 sub2 = loop (viewSubst sub1) (viewSubst sub2)
 
 -- Take the union of two substitutions, which must be compatible.
 substUnion :: Subst f -> Subst f -> Subst f
-substUnion sub1 sub2 = runST $ do
-  msub <- newMutableSubst (vars sub1 `max` vars sub2)
-  forMSubst_ sub1 $ \x t -> unsafeExtendList msub x t
-  forMSubst_ sub2 $ \x t -> unsafeExtendList msub x t
-  unsafeFreezeSubst msub
+substUnion (Subst !sub1) (Subst !sub2) =
+  Subst (IntMap.union sub1 sub2)
 
 -- Is a substitution idempotent?
 {-# INLINE idempotent #-}
@@ -192,44 +172,36 @@ idempotentOn !sub = aux
   where
     aux Empty = True
     aux (ConsSym Fun{} t) = aux t
-    aux (Cons (Var x) t) = isNothing (lookupList sub x) && aux t
+    aux (Cons (Var x) t) = isNothing (lookupList x sub) && aux t
 
 -- Iterate a substitution to make it idempotent.
 close :: TriangleSubst f -> Subst f
 close (Triangle sub)
   | idempotent sub = sub
-  | otherwise = close (Triangle (substCompose sub sub))
+  | otherwise      = close (Triangle (substCompose sub sub))
 
 -- Return a substitution for canonicalising a list of terms.
 canonicalise :: [TermList f] -> Subst f
 canonicalise [] = emptySubst
-canonicalise (t:ts) = runST $ do
-  msub <- newMutableSubst n
-  let
-    loop !_ !_ !_ | False = __
-    loop _ Empty [] = return ()
-    loop vs Empty (t:ts) = loop vs t ts
-    loop vs (ConsSym Fun{} t) ts = loop vs t ts
-    loop vs0@(Cons v vs) (Cons (Var x) t) ts = do
-      res <- extend msub x v
-      case res of
-        Just () -> loop vs  t ts
-        Nothing -> loop vs0 t ts
-
-  loop vars t ts
-  unsafeFreezeSubst msub
+canonicalise (t:ts) = loop emptySubst vars t ts
   where
     n = maximum (0:map boundList (t:ts))
     vars =
       buildTermList $
         mconcat [emitVar (MkVar i) | i <- [0..n]]
 
+    loop !_ !_ !_ !_ | False = __
+    loop sub _ Empty [] = sub
+    loop sub vs Empty (t:ts) = loop sub vs t ts
+    loop sub vs (ConsSym Fun{} t) ts = loop sub vs t ts
+    loop sub vs0@(Cons v vs) (Cons (Var x) t) ts =
+      case extend x v sub of
+        Just sub -> loop sub vs  t ts
+        Nothing  -> loop sub vs0 t ts
+
 -- The empty substitution.
 {-# NOINLINE emptySubst #-}
-emptySubst =
-  runST $ do
-    msub <- newMutableSubst 0
-    unsafeFreezeSubst msub
+emptySubst = Subst IntMap.empty
 
 -- Turn a substitution list into a substitution.
 flattenSubst :: [(Var, Term f)] -> Maybe (Subst f)
@@ -249,20 +221,17 @@ match pat t = matchList (singleton pat) (singleton t)
 matchList :: TermList f -> TermList f -> Maybe (Subst f)
 matchList !pat !t
   | lenList t < lenList pat = Nothing
-  | otherwise = runST $ do
-    subst <- newMutableSubst (boundList pat)
-    let loop !_ !_ | False = __
-        loop Empty _ = fmap Just (unsafeFreezeSubst subst)
-        loop _ Empty = __
-        loop (ConsSym (Fun f _) pat) (ConsSym (Fun g _) t)
-          | f == g = loop pat t
-        loop (Cons (Var x) pat) (Cons t u) = do
-          res <- extend subst x t
-          case res of
-            Nothing -> return Nothing
-            Just () -> loop pat u
-        loop _ _ = return Nothing
-    loop pat t
+  | otherwise =
+    let loop !_ !_ !_ | False = __
+        loop sub Empty _ = Just sub
+        loop _ _ Empty = __
+        loop sub (ConsSym (Fun f _) pat) (ConsSym (Fun g _) t)
+          | f == g = loop sub pat t
+        loop sub (Cons (Var x) pat) (Cons t u) = do
+          sub <- extend x t sub
+          loop sub pat u
+        loop _ _ _ = Nothing
+    in loop emptySubst pat t
 
 --------------------------------------------------------------------------------
 -- Unification.
@@ -278,7 +247,7 @@ substTri :: Subst f -> Var -> Builder f
 substTri sub x = aux x
   where
     aux x =
-      case lookupList sub x of
+      case lookupList x sub of
         Nothing -> var x
         Just ts -> substList aux ts
 
@@ -296,64 +265,46 @@ unifyTri :: Term f -> Term f -> Maybe (TriangleSubst f)
 unifyTri t u = unifyListTri (singleton t) (singleton u)
 
 unifyListTri :: TermList f -> TermList f -> Maybe (TriangleSubst f)
-unifyListTri !t !u = runST $ do
-  subst <- newMutableSubst (boundList t `max` boundList u)
-  let
-    loop !_ !_ | False = __
-    loop Empty _ = return True
-    loop _ Empty = __
-    loop (ConsSym (Fun f _) t) (ConsSym (Fun g _) u)
-      | f == g = loop t u
-    loop (Cons (Var x) t) (Cons u v) =
-      both (var x u) (loop t v)
-    loop (Cons t u) (Cons (Var x) v) =
-      both (var x t) (loop u v)
-    loop _ _ = return False
+unifyListTri !t !u = fmap Triangle (loop emptySubst t u)
+  where
+    loop !_ !_ !_ | False = __
+    loop sub Empty _ = Just sub
+    loop _ _ Empty = __
+    loop sub (ConsSym (Fun f _) t) (ConsSym (Fun g _) u)
+      | f == g = loop sub t u
+    loop sub (Cons (Var x) t) (Cons u v) = do
+      sub <- var sub x u
+      loop sub t v
+    loop sub (Cons t u) (Cons (Var x) v) = do
+      sub <- var sub x t
+      loop sub u v
+    loop _ _ _ = Nothing
 
-    both mx my = do
-      x <- mx
-      if x then my else return False
+    var sub x t =
+      case lookupList x sub of
+        Just u -> loop sub u (singleton t)
+        Nothing -> var1 sub x t
 
-    either mx my = do
-      x <- mx
-      if x then return True else my
+    var1 sub x t@(Var y)
+      | x == y = return sub
+      | otherwise =
+        case lookup y sub of
+          Just t  -> var1 sub x t
+          Nothing -> extend x t sub
 
-    var x t = do
-      res <- mutableLookupList subst x
-      case res of
-        Just u -> loop u (singleton t)
-        Nothing -> var1 x t
+    var1 sub x t = do
+      occurs sub x (singleton t)
+      extend x t sub
 
-    var1 x t@(Var y) = do
-      res <- mutableLookup subst y
-      case res of
-        Just t -> var1 x t
-        Nothing -> do
-          when (x /= y) $ do
-            extend subst x t
-            return ()
-          return True
-
-    var1 x t = do
-      res <- occurs x (singleton t)
-      if res then return False else do
-        extend subst x t
-        return True
-
-    occurs !_ Empty = return False
-    occurs x (ConsSym Fun{} t) = occurs x t
-    occurs x (ConsSym (Var y) t)
-      | x == y = return True
-      | otherwise = either (occurs x t) $ do
-          mu <- mutableLookupList subst y
-          case mu of
-            Nothing -> return False
-            Just u  -> occurs x u
-
-  res <- loop t u
-  case res of
-    True  -> fmap (Just . Triangle) (unsafeFreezeSubst subst)
-    False -> return Nothing
+    occurs !_ !_ Empty = Just ()
+    occurs sub x (ConsSym Fun{} t) = occurs sub x t
+    occurs sub x (ConsSym (Var y) t)
+      | x == y = Nothing
+      | otherwise = do
+          occurs sub x t
+          case lookupList y sub of
+            Nothing -> Just ()
+            Just u  -> occurs sub x u
 
 --------------------------------------------------------------------------------
 -- Miscellaneous stuff.
@@ -381,25 +332,17 @@ instance Show (Subst f) where
     show
       [ (i, t)
       | i <- [0..substSize subst-1],
-        Just t <- [lookup subst (MkVar i)] ]
+        Just t <- [lookup (MkVar i) subst] ]
 
 {-# INLINE lookup #-}
-lookup :: Subst f -> Var -> Maybe (Term f)
-lookup s x = do
-  Cons t Empty <- lookupList s x
+lookup :: Var -> Subst f -> Maybe (Term f)
+lookup x s = do
+  Cons t Empty <- lookupList x s
   return t
 
-{-# INLINE mutableLookup #-}
-mutableLookup :: MutableSubst s f -> Var -> ST s (Maybe (Term f))
-mutableLookup s x = do
-  res <- mutableLookupList s x
-  return $ do
-    Cons t Empty <- res
-    return t
-
 {-# INLINE extend #-}
-extend :: MutableSubst s f -> Var -> Term f -> ST s (Maybe ())
-extend sub x t = extendList sub x (singleton t)
+extend :: Var -> Term f -> Subst f -> Maybe (Subst f)
+extend x t sub = extendList x (singleton t) sub
 
 {-# INLINE len #-}
 len :: Term f -> Int

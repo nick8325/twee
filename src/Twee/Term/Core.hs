@@ -15,6 +15,8 @@ import GHC.Prim
 import GHC.ST hiding (liftST)
 import Data.Primitive.ArrayArray
 import Data.Ord
+import qualified Data.IntMap.Strict as IntMap
+import Data.IntMap.Strict(IntMap)
 
 --------------------------------------------------------------------------------
 -- Symbols. A symbol is a single function or variable in a flatterm.
@@ -290,138 +292,38 @@ emitTermList (TermList lo hi array) =
 -- Substitutions.
 --------------------------------------------------------------------------------
 
--- A substitution is an array of terms, where term number i is the
--- term bound to variable i, or the empty termlist if the variable
--- is unbound. For efficiency we unpack this array into two components:
--- * An ArrayArray containing the ByteArray for each term
--- * A ByteArray containing the (lo, hi) indices for each term
-data Subst f =
+newtype Subst f =
   Subst {
-    -- The number of variables in the term array.
-    vars  :: {-# UNPACK #-} !Int,
-    -- The ByteArray for each term in the substitution.
-    terms :: {-# UNPACK #-} !ArrayArray,
-    -- The (lo, hi) pair for each term in the substitution.
-    subst :: {-# UNPACK #-} !ByteArray }
+    unSubst :: IntMap (TermList f) }
 
--- The number of variables in the domain of a substitution.
+{-# INLINE substSize #-}
 substSize :: Subst f -> Int
-substSize = vars
-
--- Convert between slices and Word64s for storage.
-{-# INLINE toSlice #-}
-toSlice :: Word64 -> Maybe (Int, Int)
-toSlice 0 = Nothing
-toSlice n = Just (fromIntegral n .&. 0xffffffff, fromIntegral (n `unsafeShiftR` 32))
-
-{-# INLINE fromSlice #-}
-fromSlice :: (Int, Int) -> Word64
-fromSlice (lo, hi) =
-  fromIntegral lo .&. 0xffffffff +
-  fromIntegral hi `unsafeShiftL` 32
+substSize (Subst sub)
+  | IntMap.null sub = 0
+  | otherwise = fst (IntMap.findMax sub) + 1
 
 -- Look up a variable.
 {-# INLINE lookupList #-}
-lookupList :: Subst f -> Var -> Maybe (TermList f)
-lookupList Subst{..} (MkVar x)
-  | x >= vars = Nothing
-  | otherwise = do
-    (lo, hi) <- toSlice (indexByteArray subst x)
-    return (TermList lo hi (indexByteArrayArray terms x))
-
--- Mutable substitutions, used for building substitutions.
-data MutableSubst s f =
-  MutableSubst {
-    mvars  :: {-# UNPACK #-} !Int,
-    mterms :: {-# UNPACK #-} !(MutableArrayArray s),
-    msubst :: {-# UNPACK #-} !(MutableByteArray s) }
-
--- Create an empty substitution, given the backing term
--- and the number of variables required.
-{-# INLINE newMutableSubst #-}
-newMutableSubst :: Int -> ST s (MutableSubst s f)
-newMutableSubst vars = do
-  terms <- newArrayArray vars
-  subst <- newByteArray (vars * sizeOf (fromSlice __))
-  setByteArray subst 0 vars (0 `asTypeOf` fromSlice __)
-  return (MutableSubst vars terms subst)
-
--- Freeze a mutable substitution.
-{-# INLINE unsafeFreezeSubst #-}
-unsafeFreezeSubst :: MutableSubst s f -> ST s (Subst f)
-unsafeFreezeSubst MutableSubst{..} = do
-  terms <- unsafeFreezeArrayArray mterms
-  subst <- unsafeFreezeByteArray msubst
-  return (Subst mvars terms subst)
-
--- Copy a mutable substitution.
-{-# INLINE copySubst #-}
-copySubst :: MutableSubst s f -> ST s (MutableSubst s f)
-copySubst MutableSubst{..} = do
-  terms <- newArrayArray mvars
-  subst <- newByteArray (mvars * sizeOf (fromSlice __))
-  copyMutableByteArray subst 0 msubst 0 (mvars * sizeOf (fromSlice __))
-  copyMutableArrayArray terms 0 mterms 0 mvars
-  return (MutableSubst mvars terms subst)
-
--- Freeze a mutable substitution, making a copy.
-{-# INLINE freezeSubst #-}
-freezeSubst :: MutableSubst s f -> ST s (Subst f)
-freezeSubst msub = copySubst msub >>= unsafeFreezeSubst
-
--- Look up a variable in a mutable substitution.
-{-# INLINE mutableLookupList #-}
-mutableLookupList :: MutableSubst s f -> Var -> ST s (Maybe (TermList f))
-mutableLookupList MutableSubst{..} (MkVar x)
-  | x >= mvars = return Nothing
-  | otherwise = do
-    slice <- readByteArray msubst x
-    term <- readByteArrayArray mterms x
-    return $ do
-      (lo, hi) <- toSlice slice
-      return (TermList lo hi term)
+lookupList :: Var -> Subst f -> Maybe (TermList f)
+lookupList (MkVar x) (Subst sub) = IntMap.lookup x sub
 
 -- Add a new binding to a substitution.
--- Returns Just () on success or Nothing if an incompatible
--- binding already existed.
 {-# INLINE extendList #-}
-extendList :: MutableSubst s f -> Var -> TermList f -> ST s (Maybe ())
-extendList MutableSubst{..} (MkVar x) (TermList lo hi arr)
-  | x >= mvars = __
-  | otherwise = do
-    rng <- fmap toSlice (readByteArray msubst x)
-    case rng of
-      Nothing -> do
-        writeByteArray msubst x (fromSlice (lo, hi))
-        writeByteArrayArray mterms x arr
-        return (Just ())
-      Just (lo', hi') -> do
-        arr' <- readByteArrayArray mterms x
-        if TermList lo hi arr == TermList lo' hi' arr' then
-          return (Just ())
-        else
-          return Nothing
+extendList :: Var -> TermList f -> Subst f -> Maybe (Subst f)
+extendList (MkVar x) !t (Subst sub) =
+  case IntMap.lookup x sub of
+    Nothing -> Just $! Subst (IntMap.insert x t sub)
+    Just u
+      | t == u    -> Just (Subst sub)
+      | otherwise -> Nothing
 
 -- Remove a binding from a substitution.
 {-# INLINE retract #-}
-retract :: MutableSubst s f -> Var -> ST s ()
-retract MutableSubst{..} (MkVar x)
-  | x >= mvars = __
-  | otherwise = do
-      writeByteArray msubst x (0 `asTypeOf` fromSlice __)
-      writeMutableArrayArrayArray mterms x mterms
+retract :: Var -> Subst f -> Subst f
+retract (MkVar x) (Subst sub) = Subst (IntMap.delete x sub)
 
 -- Add a new binding to a substitution.
 -- Doesn't check bounds and overwrites any existing binding.
 {-# INLINE unsafeExtendList #-}
-unsafeExtendList :: MutableSubst s f -> Var -> TermList f -> ST s ()
-unsafeExtendList MutableSubst{..} (MkVar x) (TermList lo hi arr) = do
-  writeByteArray msubst x (fromSlice (lo, hi))
-  writeByteArrayArray mterms x arr
-
--- Remove a binding from a substitution. Doesn't check bounds.
-{-# INLINE unsafeRetract #-}
-unsafeRetract :: MutableSubst s f -> Var -> ST s ()
-unsafeRetract MutableSubst{..} (MkVar x) = do
-  writeByteArray msubst x (0 `asTypeOf` fromSlice __)
-  writeMutableArrayArrayArray mterms x mterms
+unsafeExtendList :: Var -> TermList f -> Subst f -> Subst f
+unsafeExtendList (MkVar x) !t (Subst sub) = Subst (IntMap.insert x t sub)
