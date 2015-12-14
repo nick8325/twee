@@ -58,7 +58,7 @@ insert x0 !idx = aux (Term.singleton t) idx
         fun  = update f idx' (fun idx) }
       where
         idx' = aux u (fun idx ! f)
-    aux t@(ConsSym (Var v@(MkVar n)) u) idx =
+    aux t@(ConsSym (Var _) u) idx =
       idx {
         size = lenList t `min` size idx,
         var  = aux u (var idx) }
@@ -75,7 +75,7 @@ expand (ConsSym s t) x =
       case s of
         Fun (MkFun f) _ ->
           (update f (Singleton t x) newArray, Nil)
-        Var v ->
+        Var _ ->
           (newArray, Singleton t x)
 
 {-# INLINEABLE delete #-}
@@ -89,7 +89,7 @@ delete x0 !idx = aux (Term.singleton t) idx
     aux Empty idx = idx { here = List.delete x (here idx) }
     aux (ConsSym (Fun (MkFun f) _) t) idx =
       idx { fun = update f (aux t (fun idx ! f)) (fun idx) }
-    aux (ConsSym (Var v) t) idx =
+    aux (ConsSym (Var _) t) idx =
       idx { var = aux t (var idx) }
     t  = term x0
     x  = Entry t x0
@@ -131,7 +131,7 @@ find t idx xs = aux t idx xs
         Nil -> aux ts (fun ! n) rest
         _   -> aux ts (fun ! n) (aux us var rest)
       where
-        Cons u us = t
+        Cons _ us = t
     aux (Cons _ ts) Index{var = var} rest = aux ts var rest
 
     {-# INLINE try #-}

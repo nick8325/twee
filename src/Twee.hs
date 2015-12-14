@@ -11,7 +11,7 @@ import Twee.Rule
 import qualified Twee.Indexes as Indexes
 import Twee.Indexes(Indexes, Rated(..))
 import qualified Twee.Index as Index
-import Twee.Index(Index, Frozen)
+import Twee.Index(Frozen)
 import Twee.Queue hiding (queue)
 import Twee.Utils
 import Control.Monad

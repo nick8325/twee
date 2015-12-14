@@ -13,9 +13,7 @@ module Twee.Term(
 
 #include "errors.h"
 import Prelude hiding (lookup)
-import Twee.Term.Core hiding (subst)
-import Control.Monad
-import Control.Monad.ST.Strict
+import Twee.Term.Core
 import Data.List hiding (lookup)
 import Data.Maybe
 import Data.Ord

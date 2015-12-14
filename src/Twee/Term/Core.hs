@@ -9,11 +9,9 @@ import Data.Primitive
 import Control.Monad.ST.Strict
 import Data.Bits
 import Data.Int
-import Data.Word
 import GHC.Types(Int(..))
 import GHC.Prim
 import GHC.ST hiding (liftST)
-import Data.Primitive.ArrayArray
 import Data.Ord
 
 --------------------------------------------------------------------------------
