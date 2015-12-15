@@ -276,6 +276,7 @@ newtype TriangleSubst f = Triangle { unTriangle :: Subst f }
 instance Substitution f (TriangleSubst f) where
   evalSubst (Triangle sub) x = substTri sub x
 
+{-# INLINE substTri #-}
 substTri :: Subst f -> Var -> Builder f
 substTri sub x = aux x
   where
