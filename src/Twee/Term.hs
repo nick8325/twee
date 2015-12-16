@@ -66,12 +66,6 @@ var = emitVar
 -- Pattern synonyms for substitutions.
 --------------------------------------------------------------------------------
 
-data SubstView f =
-  SubstView {-# UNPACK #-} !Int {-# UNPACK #-} !Int !(Subst f)
-
-viewSubst :: Subst f -> SubstView f
-viewSubst sub = SubstView 0 (substSize sub) sub
-
 {-# INLINE listSubstList #-}
 listSubstList :: Subst f -> [(Var, TermList f)]
 listSubstList (Subst sub) = [(MkVar x, t) | (x, t) <- IntMap.toList sub]
@@ -79,19 +73,6 @@ listSubstList (Subst sub) = [(MkVar x, t) | (x, t) <- IntMap.toList sub]
 {-# INLINE listSubst #-}
 listSubst :: Subst f -> [(Var, Term f)]
 listSubst sub = [(x, t) | (x, Cons t Empty) <- listSubstList sub]
-
-{-# INLINE patNextSubst #-}
-patNextSubst :: SubstView f -> Maybe (Maybe (Var, TermList f), SubstView f)
-patNextSubst (SubstView n m sub)
-  | n > m = Nothing
-  | otherwise = Just (x, SubstView (n+1) m sub)
-  where
-    x = do
-      t <- lookupList (MkVar n) sub
-      return (MkVar n, t)
-
-pattern EmptySubst <- (patNextSubst -> Nothing)
-pattern ConsSubst x s <- (patNextSubst -> Just (x, s))
 
 {-# INLINE foldSubst #-}
 foldSubst :: (Var -> TermList f -> b -> b) -> b -> Subst f -> b
@@ -166,10 +147,11 @@ retract :: Var -> Subst f -> Subst f
 retract (MkVar x) (Subst sub) = Subst (IntMap.delete x sub)
 
 -- Add a new binding to a substitution.
--- Doesn't check bounds and overwrites any existing binding.
+-- Overwrites any existing binding.
 {-# INLINE unsafeExtendList #-}
 unsafeExtendList :: Var -> TermList f -> Subst f -> Subst f
 unsafeExtendList (MkVar x) !t (Subst sub) = Subst (IntMap.insert x t sub)
+
 -- Composition of substitutions.
 substCompose :: Substitution f s => Subst f -> s -> Subst f
 substCompose (Subst !sub1) !sub2 =
@@ -177,16 +159,14 @@ substCompose (Subst !sub1) !sub2 =
 
 -- Are two substitutions compatible?
 substCompatible :: Subst f -> Subst f -> Bool
-substCompatible sub1 sub2 = loop (viewSubst sub1) (viewSubst sub2)
+substCompatible (Subst !sub1) (Subst !sub2) =
+  IntMap.null (IntMap.mergeWithKey f g h sub1 sub2)
   where
-    loop !_ !_ | False = __
-    loop !_ !_ | False = __
-    loop EmptySubst _ = True
-    loop _ EmptySubst = True
-    loop (ConsSubst (Just (_, t)) sub1) (ConsSubst (Just (_, u)) sub2) =
-      t == u && loop sub1 sub2
-    loop (ConsSubst _ sub1) (ConsSubst _ sub2) =
-      loop sub1 sub2
+    f _ t u
+      | t == u = Nothing
+      | otherwise = Just t
+    g _ = IntMap.empty
+    h _ = IntMap.empty
 
 -- Take the union of two substitutions, which must be compatible.
 substUnion :: Subst f -> Subst f -> Subst f
