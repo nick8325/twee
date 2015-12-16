@@ -54,4 +54,5 @@ executable twee
                        pretty,
                        array,
                        reflection,
-                       optparse-applicative
+                       optparse-applicative,
+                       split

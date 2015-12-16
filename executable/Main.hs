@@ -30,6 +30,9 @@ import Data.Array
 import Options.Applicative
 import qualified Data.IntMap as IntMap
 import Data.IntMap(IntMap)
+import Data.List.Split
+import Data.List
+import Data.Maybe
 
 parseInitialState :: Parser (Twee f)
 parseInitialState =
@@ -79,6 +82,12 @@ parseOrder =
   flag' KBO (long "kbo" <> help "Use Knuth-Bendix ordering (default)") <|>
   flag' LPO (long "lpo" <> help "Use lexicographic path ordering") <|>
   pure KBO
+
+parsePrecedence :: Parser [String]
+parsePrecedence =
+  fmap (splitOn ",")
+  (option str (long "precedence" <> help "List of functions in descending order of precedence"))
+  <|> pure []
 
 data Constant =
   Constant {
@@ -200,9 +209,9 @@ check t = do
       _ -> return ()
 
 main = do
-  (state, file, order) <-
+  (state, file, order, precedence) <-
     execParser $
-      info (helper <*> ((,,) <$> parseInitialState <*> parseFile <*> parseOrder))
+      info (helper <*> ((,,,) <$> parseInitialState <*> parseFile <*> parseOrder <*> parsePrecedence))
         (fullDesc <>
          header "twee - an equational theorem prover")
   input <-
@@ -213,10 +222,15 @@ main = do
       comment ('%':_) = True
       comment _ = False
       (axioms0, ("--":goals0)) = break (== "--") eqs1
+      prec c = (isNothing (elemIndex (conName c) precedence),
+                fmap negate (elemIndex (conName c) precedence),
+                conIndex c)
       fs0 = zipWith (run . parseDecl) [1..] (map tok sig)
-      m  = IntMap.fromList [(conIndex f, f) | f <- fs0]
+      fs1 = sortBy (comparing prec) fs0
+      fs2 = zipWith (\i c -> c { conIndex = i}) [1..] fs1
+      m  = IntMap.fromList [(conIndex f, f) | f <- fs2]
   give m $ give order $ do
-  let fs = [(conName f, toFun (Function f)) | f <- fs0]
+  let fs = [(conName f, toFun (Function f)) | f <- fs2]
 
       translate (VarTm x) = build (var x)
       translate (AppTm f ts) = build (fun (replace fs f) (map translate ts))
