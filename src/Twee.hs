@@ -223,8 +223,7 @@ reduceCP s stage f (Critical top (t :=: u))
     subsumed s root t u = here || there t u
       where
         here =
-          or [ rhs x == u | x <- Index.lookup t rs ] ||
-          or [ subst sub (rhs x) == t | Index.Match x sub <- Index.matches u rs, not root || not (isVariantOf (lhs x) u) ]
+          or [ rhs x == u | x <- Index.lookup t rs ]
         there (Var x) (Var y) | x == y = True
         there (Fun f ts) (Fun g us) | f == g = and (zipWith (subsumed s False) (fromTermList ts) (fromTermList us))
         there _ _ = False
