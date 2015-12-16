@@ -377,7 +377,8 @@ consider l1 l2 pair@(Critical _ eq0) = {-# SCC consider #-} do
           s <- get
           let u = result (normaliseSub s t u0)
               r = rule t u
-          case {-# SCC normalise2 #-} normaliseCP s (Critical info (t :=: u)) of
+              info' = info { top = t }
+          case {-# SCC normalise2 #-} normaliseCP s (Critical info' (t :=: u)) of
             Left reason -> do
               when (hard reason) $ record reason
               addExtraRule r
@@ -386,7 +387,7 @@ consider l1 l2 pair@(Critical _ eq0) = {-# SCC consider #-} do
               case groundJoin s (branches (And [])) eq of
                 Right eqs -> {-# SCC "GroundJoined" #-} do
                   record GroundJoined
-                  mapM_ (consider l1 l2) eqs
+                  mapM_ (consider l1 l2) [ eq { critInfo = info' } | eq <- eqs ]
                   addExtraRule r
                   return False
                 Left model -> {-# SCC "NewRule" #-} do
