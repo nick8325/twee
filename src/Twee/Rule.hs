@@ -37,6 +37,11 @@ data Orientation f =
 instance Eq (Orientation f) where _ == _ = True
 instance Ord (Orientation f) where compare _ _ = EQ
 
+oriented :: Orientation f -> Bool
+oriented Oriented = True
+oriented (WeaklyOriented _) = True
+oriented _ = False
+
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
   term = lhs

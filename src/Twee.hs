@@ -478,7 +478,7 @@ reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
       Just (Reorient old0)
   | {-# SCC "reorient-ground" #-}
     not (lhs new `isInstanceOf` l) &&
-    orientation new == Unoriented &&
+    not (oriented (orientation new)) &&
     not (all isNothing [ match (lhs new) l' | l' <- subterms l ]) &&
     modelJoinable =
     tryGroundJoin
@@ -486,8 +486,9 @@ reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
     not (null (anywhere (tryRule reduces new) (rhs old))) =
       Just (Simplify model old0)
   | {-# SCC "reorient-ground/ground" #-}
-    orientation old == Unoriented &&
-    orientation new == Unoriented &&
+    not (oriented (orientation old)) &&
+    not (oriented (orientation new)) &&
+    not (lhs new `isInstanceOf` r) &&
     not (all isNothing [ match (lhs new) r' | r' <- subterms r ]) &&
     modelJoinable =
     tryGroundJoin
