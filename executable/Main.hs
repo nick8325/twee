@@ -37,9 +37,9 @@ import Data.Maybe
 parseInitialState :: Parser (Twee f)
 parseInitialState =
   go <$> maxSize <*> unorientable <*> skolem <*> ground <*> general
-     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> weight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio
+     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> weight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> interreduce
   where
-    go maxSize unorientable skolem ground general groundJoin conn set setGoals tracing moreTracing weight splits cpSetSize mixFIFO mixPrio =
+    go maxSize unorientable skolem ground general groundJoin conn set setGoals tracing moreTracing weight splits cpSetSize mixFIFO mixPrio skipComposite interreduce =
       (initialState mixFIFO mixPrio) {
         maxSize = maxSize,
         cpSplits = splits,
@@ -52,6 +52,8 @@ parseInitialState =
         useConnectedness = conn,
         useSetJoining = set,
         useSetJoiningForGoals = setGoals,
+        useInterreduction = interreduce,
+        skipCompositeSuperpositions = skipComposite,
         tracing = tracing,
         moreTracing = moreTracing,
         lhsWeight = weight }
@@ -71,6 +73,8 @@ parseInitialState =
     cpSetSize = option auto (long "cp-set-minimum" <> help "Decay CP sets into single CPs when they get this small (default 20)" <> value 20)
     mixFIFO = option auto (long "mix-fifo" <> help "Take this many CPs at a time from FIFO (default 0)" <> value 0)
     mixPrio = option auto (long "mix-prio" <> help "Take this many CPs at a time from priority queue (default 10)" <> value 10)
+    interreduce = not <$> switch (long "no-interreduce" <> help "Disable interreduction")
+    skipComposite = not <$> switch (long "composite-superpositions" <> help "Generate composite superpositions")
 
 parseFile :: Parser String
 parseFile = strArgument (metavar "FILENAME")

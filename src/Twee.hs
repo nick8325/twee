@@ -51,6 +51,8 @@ data Twee f =
     useConnectedness  :: Bool,
     useSetJoining     :: Bool,
     useSetJoiningForGoals :: Bool,
+    useInterreduction :: Bool,
+    skipCompositeSuperpositions :: Bool,
     tracing :: Bool,
     moreTracing :: Bool,
     lhsWeight         :: Int,
@@ -78,6 +80,8 @@ initialState mixFIFO mixPrio =
     useConnectedness  = True,
     useSetJoining     = False,
     useSetJoiningForGoals = True,
+    useInterreduction = True,
+    skipCompositeSuperpositions = True,
     tracing = True,
     moreTracing = False,
     lhsWeight         = 2,
@@ -457,18 +461,20 @@ instance (Numbered f, PrettyTerm f) => Pretty (Simplification f) where
 
 interreduce :: Function f => Rule f -> State (Twee f) ()
 interreduce new = {-# SCC interreduce #-} do
-  rules <- gets (\s -> Indexes.elems (labelledRules s))
-  forM_ rules $ \(Labelled l old) -> do
-    s <- get
-    case reduceWith s l new old of
-      Nothing -> return ()
-      Just red -> do
-        traceM (Reduce red new)
-        case red of
-          Simplify model rule -> simplifyRule l model rule
-          Reorient rule@(Modelled _ _ (Critical info (Rule _ t u))) -> do
-            deleteRule l rule
-            queueCP enqueueM noLabel noLabel (Critical info (t :=: u))
+  useInterreduction <- gets useInterreduction
+  when useInterreduction $ do
+    rules <- gets (\s -> Indexes.elems (labelledRules s))
+    forM_ rules $ \(Labelled l old) -> do
+      s <- get
+      case reduceWith s l new old of
+        Nothing -> return ()
+        Just red -> do
+          traceM (Reduce red new)
+          case red of
+            Simplify model rule -> simplifyRule l model rule
+            Reorient rule@(Modelled _ _ (Critical info (Rule _ t u))) -> do
+              deleteRule l rule
+              queueCP enqueueM noLabel noLabel (Critical info (t :=: u))
 
 reduceWith :: Function f => Twee f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
 reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
@@ -686,7 +692,8 @@ criticalPairs1 s ns r rs = {-# SCC criticalPairs1 #-} do
   guard (left /= top && right /= top && left /= right)
   when (or  /= Oriented) $ guard (not (lessEq top right))
   when (or' /= Oriented) $ guard (not (lessEq top left))
-  guard (null (nested (anywhere (rewrite "prime" simplifies (easyRules s))) inner))
+  when (skipCompositeSuperpositions s) $
+    guard (null (nested (anywhere (rewrite "prime" simplifies (easyRules s))) inner))
   return (Labelled l (Critical (CritInfo top osz) (left :=: right)))
 
 queueCP ::
