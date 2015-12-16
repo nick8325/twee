@@ -214,18 +214,18 @@ reduceCP ::
   Critical (Equation f) -> Either JoinReason (Critical (Equation f))
 reduceCP s stage f (Critical top (t :=: u))
   | t' == u' = Left (Trivial stage)
-  | subsumed s True t' u' = Left (Subsumed stage)
+  | subsumed s t' u' = Left (Subsumed stage)
   | otherwise = Right (Critical top (t' :=: u'))
   where
     t' = f t
     u' = f u
 
-    subsumed s root t u = here || there t u
+    subsumed s t u = here || there t u
       where
         here =
           or [ rhs x == u | x <- Index.lookup t rs ]
         there (Var x) (Var y) | x == y = True
-        there (Fun f ts) (Fun g us) | f == g = and (zipWith (subsumed s False) (fromTermList ts) (fromTermList us))
+        there (Fun f ts) (Fun g us) | f == g = and (zipWith (subsumed s) (fromTermList ts) (fromTermList us))
         there _ _ = False
         rs = allRules s
 
