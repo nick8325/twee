@@ -479,10 +479,12 @@ interreduce new = {-# SCC interreduce #-} do
 reduceWith :: Function f => Twee f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
 reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
   | {-# SCC "reorient-normal" #-}
+    not (isWeak new) &&
     not (lhs new `isInstanceOf` l) &&
     not (null (anywhere (tryRule reduces new) l)) =
       Just (Reorient old0)
   | {-# SCC "reorient-ground" #-}
+    not (isWeak new) &&
     not (lhs new `isInstanceOf` l) &&
     not (oriented (orientation new)) &&
     not (all isNothing [ match (lhs new) l' | l' <- subterms l ]) &&
@@ -510,6 +512,8 @@ reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
           Just (Simplify model' old0)
         Right _ ->
           Just (Reorient old0)
+    isWeak (Rule (WeaklyOriented _) _ _) = True
+    isWeak _ = False
 
 simplifyRule :: Function f => Label -> Model f -> Modelled (Critical (Rule f)) -> State (Twee f) ()
 simplifyRule l model r@(Modelled _ positions (Critical info (Rule _ lhs rhs))) = do
