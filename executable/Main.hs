@@ -217,7 +217,7 @@ main = do
     execParser $
       info (helper <*> ((,,,) <$> parseInitialState <*> parseFile <*> parseOrder <*> parsePrecedence))
         (fullDesc <>
-         header "twee - an equational theorem prover")
+         header "twee - The Wonderful Equation Engine")
   input <-
     case file of
       "-" -> getContents
