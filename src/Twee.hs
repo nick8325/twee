@@ -181,7 +181,6 @@ instance Rated (Rule f) where
 {-# INLINE rulesFor #-}
 rulesFor :: Function f => Int -> Twee f -> Frozen (Rule f)
 rulesFor n k =
-  {-# SCC rulesFor #-}
   Index.map (critical . modelled . peel) (Indexes.freeze n (labelledRules k))
 
 easyRules, rules, allRules :: Function f => Twee f -> Frozen (Rule f)
@@ -301,7 +300,7 @@ complete = do
   when res complete
 
 complete1 :: Function f => State (Twee f) Bool
-complete1 = {-# SCC complete1 #-} do
+complete1 = do
   Twee{..} <- get
   let Label n = nextLabel queue
   when (n >= renormaliseAt) $ do
@@ -314,9 +313,9 @@ complete1 = {-# SCC complete1 #-} do
       res <- consider l1 l2 cp
       when res $
         if useSetJoiningForGoals then
-          modify $ \s -> s { goals = {-# SCC normaliseGoals #-} map (normalForms (rewrite "goal" reduces (rules s)) . Set.toList) goals }
+          modify $ \s -> s { goals = map (normalForms (rewrite "goal" reduces (rules s)) . Set.toList) goals }
         else
-          modify $ \s -> s { goals = {-# SCC normaliseGoals #-} map (Set.fromList . map (result . normaliseWith (rewrite "goal" reduces (rules s))) . Set.toList) goals }
+          modify $ \s -> s { goals = map (Set.fromList . map (result . normaliseWith (rewrite "goal" reduces (rules s))) . Set.toList) goals }
       return True
     Just (ManyCPs (CPs _ l lower upper size rule)) -> do
       s <- get
@@ -330,7 +329,7 @@ complete1 = {-# SCC complete1 #-} do
       return False
 
 normaliseCPs :: forall f. Function f => State (Twee f) ()
-normaliseCPs = {-# SCC normaliseCPs #-} do
+normaliseCPs = do
   s@Twee{..} <- get
   traceM (NormaliseCPs s)
   put s { queue = emptyFrom queue }
@@ -343,7 +342,7 @@ normaliseCPs = {-# SCC normaliseCPs #-} do
 consider ::
   Function f =>
   Label -> Label -> Critical (Equation f) -> State (Twee f) Bool
-consider l1 l2 pair@(Critical _ eq0) = {-# SCC consider #-} do
+consider l1 l2 pair@(Critical _ eq0) = do
   traceM (Consider pair)
   modify' (\s -> s { processedCPs = processedCPs s + 1 })
   s <- get
@@ -358,7 +357,7 @@ consider l1 l2 pair@(Critical _ eq0) = {-# SCC consider #-} do
           Nothing -> False
           Just sz -> size t > sz || size u > sz
   if tooBig pair then return False else
-    case {-# SCC normalise1 #-} normaliseCP s pair of
+    case normaliseCP s pair of
       Left reason -> do
         record reason
         when (hard reason) $ forM_ (map canonicalise (orient (critical pair))) $ \(Rule _ t u0) -> do
@@ -378,19 +377,19 @@ consider l1 l2 pair@(Critical _ eq0) = {-# SCC consider #-} do
           let u = result (normaliseSub s t u0)
               r = rule t u
               info' = info { top = t }
-          case {-# SCC normalise2 #-} normaliseCP s (Critical info' (t :=: u)) of
+          case normaliseCP s (Critical info' (t :=: u)) of
             Left reason -> do
               when (hard reason) $ record reason
               addExtraRule r
               return False
             Right eq ->
               case groundJoin s (branches (And [])) eq of
-                Right eqs -> {-# SCC "GroundJoined" #-} do
+                Right eqs -> do
                   record GroundJoined
                   mapM_ (consider l1 l2) [ eq { critInfo = info' } | eq <- eqs ]
                   addExtraRule r
                   return False
-                Left model -> {-# SCC "NewRule" #-} do
+                Left model -> do
                   traceM (NewRule r)
                   l <- addRule (Modelled model (ruleOverlaps s (lhs r)) (Critical info r))
                   queueCPsSplit enqueueM noLabel l (Labelled l r)
@@ -399,7 +398,7 @@ consider l1 l2 pair@(Critical _ eq0) = {-# SCC consider #-} do
 
 groundJoin :: Function f =>
   Twee f -> [Branch f] -> Critical (Equation f) -> Either (Model f) [Critical (Equation f)]
-groundJoin s ctx r@(Critical info (t :=: u)) = {-# SCC groundJoin #-}
+groundJoin s ctx r@(Critical info (t :=: u)) =
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
     ([], instances) ->
       let rs = [ subst sub r | sub <- instances ] in
@@ -460,7 +459,7 @@ instance (Numbered f, PrettyTerm f) => Pretty (Simplification f) where
   pPrint (Reorient rule) = text "Reorient" <+> pPrint rule
 
 interreduce :: Function f => Rule f -> State (Twee f) ()
-interreduce new = {-# SCC interreduce #-} do
+interreduce new = do
   useInterreduction <- gets useInterreduction
   when useInterreduction $ do
     rules <- gets (\s -> Indexes.elems (labelledRules s))
@@ -478,23 +477,19 @@ interreduce new = {-# SCC interreduce #-} do
 
 reduceWith :: Function f => Twee f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
 reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
-  | {-# SCC "reorient-normal" #-}
-    not (isWeak new) &&
+  | not (isWeak new) &&
     not (lhs new `isInstanceOf` l) &&
     not (null (anywhere (tryRule reduces new) l)) =
       Just (Reorient old0)
-  | {-# SCC "reorient-ground" #-}
-    not (isWeak new) &&
+  | not (isWeak new) &&
     not (lhs new `isInstanceOf` l) &&
     not (oriented (orientation new)) &&
     not (all isNothing [ match (lhs new) l' | l' <- subterms l ]) &&
     modelJoinable =
     tryGroundJoin
-  | {-# SCC "simplify" #-}
-    not (null (anywhere (tryRule reduces new) (rhs old))) =
+  | not (null (anywhere (tryRule reduces new) (rhs old))) =
       Just (Simplify model old0)
-  | {-# SCC "reorient-ground/ground" #-}
-    not (oriented (orientation old)) &&
+  | not (oriented (orientation old)) &&
     not (oriented (orientation new)) &&
     not (lhs new `isInstanceOf` r) &&
     not (all isNothing [ match (lhs new) r' | r' <- subterms r ]) &&
@@ -631,7 +626,7 @@ data InitialCP f =
     cpCP :: Labelled (Critical (Equation f)) }
 
 criticalPairs :: Function f => Twee f -> Label -> Label -> Rule f -> [Labelled (Critical (Equation f))]
-criticalPairs s lower upper rule = {-# SCC criticalPairs #-}
+criticalPairs s lower upper rule =
   criticalPairs1 s (ruleOverlaps s (lhs rule)) rule (map (fmap (critical . modelled)) rules) ++
   [ cp
   | Labelled l' (Modelled _ ns (Critical _ old)) <- rules,
@@ -650,7 +645,7 @@ ruleOverlaps s t = aux 0 Set.empty (singleton t)
       | otherwise = n:aux (n+1) (Set.insert t m) u
 
 overlaps :: [Int] -> Term f -> Term f -> [(Subst f, Int)]
-overlaps ns t1 t2@(Fun g _) = {-# SCC overlaps #-} go 0 ns (singleton t1) []
+overlaps ns t1 t2@(Fun g _) = go 0 ns (singleton t1) []
   where
     go !_ _ !_ _ | False = __
     go _ [] _ rest = rest
@@ -680,8 +675,8 @@ emitReplacement n t = aux n
         builder t `mappend` aux (n-len t) u
 
 criticalPairs1 :: Function f => Twee f -> [Int] -> Rule f -> [Labelled (Rule f)] -> [Labelled (Critical (Equation f))]
-criticalPairs1 s ns r rs = {-# SCC criticalPairs1 #-} do
-  let b = {-# SCC bound #-} maximum (0:[ bound t | Labelled _ (Rule _ t _) <- rs ])
+criticalPairs1 s ns r rs = do
+  let b = maximum (0:[ bound t | Labelled _ (Rule _ t _) <- rs ])
       Rule or t u = subst (\(MkVar x) -> var (MkVar (x+b))) r
   Labelled l (Rule or' t' u') <- rs
   (sub, pos) <- overlaps ns t t'
@@ -714,7 +709,7 @@ queueCPs ::
   (Function f, Ord a) =>
   (Passive f -> State (Twee f) ()) ->
   Label -> Label -> (Label -> a) -> Labelled (Rule f) -> State (Twee f) ()
-queueCPs enq lower upper f rule = {-# SCC queueCPs #-} do
+queueCPs enq lower upper f rule = do
   s <- get
   let cps = toCPs s lower upper rule
       cpss = partitionBy (f . l2) cps
@@ -739,22 +734,22 @@ queueCPsSplit enq l u rule = do
 toCPs ::
   Function f =>
   Twee f -> Label -> Label -> Labelled (Rule f) -> [CP f]
-toCPs s lower upper (Labelled l rule) = {-# SCC toCPs #-}
+toCPs s lower upper (Labelled l rule) =
   catMaybes [toCP s l l' eqn | Labelled l' eqn <- criticalPairs s lower upper rule]
 
 toCP ::
   Function f =>
   Twee f -> Label -> Label -> Critical (Equation f) -> Maybe (CP f)
-toCP s l1 l2 cp = {-# SCC toCP #-} fmap toCP' (norm cp)
+toCP s l1 l2 cp = fmap toCP' (norm cp)
   where
-    norm (Critical info (t :=: u)) = {-# SCC norm #-} do
+    norm (Critical info (t :=: u)) = do
       guard (t /= u)
       let t' = result (normaliseQuickly s t)
           u' = result (normaliseQuickly s u)
       guard (t' /= u')
       return (Critical info (t' :=: u'))
 
-    toCP' (Critical info (t :=: u)) = {-# SCC toCP' #-}
+    toCP' (Critical info (t :=: u)) =
       CP (CPInfo (weight t' u') (-(overlap info)) l2 l1) (Critical info' (t' :=: u')) l1 l2
       where
         Critical info' (t' :=: u') = Critical info (order (t :=: u))
