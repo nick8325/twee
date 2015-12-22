@@ -1,3 +1,8 @@
+penalise critical pairs that have repeated occurrences of the same
+variable (too constrained). more generally: measure how widely
+applicable the critical pair would be (how many terms match?
+how many terms that are likely to appear in the proof match?)
+
 change Symbolic to remove type families (e.g. Symbolic Rule instead of Symbolic (Rule f v))
 take size of top term into account when ordering CPs
 
