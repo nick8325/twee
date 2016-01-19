@@ -84,7 +84,7 @@ initialState mixFIFO mixPrio =
     skipCompositeSuperpositions = True,
     tracing = True,
     moreTracing = False,
-    lhsWeight         = 2,
+    lhsWeight         = 1,
     joinStatistics    = Map.empty }
 
 addGoals :: [Set (Term f)] -> Twee f -> Twee f
