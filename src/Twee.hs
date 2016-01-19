@@ -750,9 +750,15 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
       return (Critical info (t' :=: u'))
 
     toCP' (Critical info (t :=: u)) =
-      CP (CPInfo (weight t' u') (-(overlap info)) l2 l1) (Critical info' (t' :=: u')) l1 l2
+      CP (CPInfo (weight t'' u'') (-(overlap info)) l2 l1) (Critical info' (t' :=: u')) l1 l2
       where
         Critical info' (t' :=: u') = Critical info (order (t :=: u))
+        (t'' :=: u'') = unpack (t' :=: u')
+
+    unpack eq@(Fun f (Cons t (Cons u Empty)) :=: Fun g Empty)
+      | size (fromFun f) <= 0 && size (fromFun g) <= 0 =
+        order (t :=: u)
+    unpack eq = eq
 
     weight t u
       | useUnorientablePenalty s && u `lessEq` t = f t u + penalty t u
