@@ -27,6 +27,7 @@ library
     Twee.Utils
     Twee.KBO
     Twee.LPO
+    Twee.Label
     Data.Primitive.ArrayArray
   build-depends:
     base >= 4 && < 5,
@@ -54,5 +55,6 @@ executable twee
                        pretty,
                        array,
                        reflection,
-                       optparse-applicative,
-                       split
+                       split,
+                       jukebox,
+                       bytestring

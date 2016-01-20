@@ -9,8 +9,9 @@ import Control.Monad
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Class
 import Data.Char
+import Data.Either
 import Twee hiding (info)
-import Twee.Base hiding (char, lookup, (<>), replace)
+import Twee.Base hiding (char, lookup, (<>))
 import Twee.Rule
 import Twee.Utils
 import Twee.Queue
@@ -27,14 +28,23 @@ import qualified Twee.LPO as LPO
 import qualified Data.Set as Set
 import Data.Reflection
 import Data.Array
-import Options.Applicative
 import qualified Data.IntMap as IntMap
 import Data.IntMap(IntMap)
 import Data.List.Split
 import Data.List
 import Data.Maybe
+import Jukebox.Options
+import Jukebox.Toolbox
+import Jukebox.Clausify
+import Jukebox.Monotonox.ToFOF
+import Jukebox.Name
+import Control.Applicative
+import qualified Jukebox.Form as Jukebox
+import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
+import qualified Twee.Label as Label
+import qualified Data.ByteString.Char8 as BS
 
-parseInitialState :: Parser (Twee f)
+parseInitialState :: OptionParser (Twee f)
 parseInitialState =
   go <$> maxSize <*> unorientable <*> skolem <*> ground <*> general
      <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> weight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> interreduce
@@ -57,41 +67,44 @@ parseInitialState =
         tracing = tracing,
         moreTracing = moreTracing,
         lhsWeight = weight }
-    maxSize = (Just <$> option auto (long "max-size" <> help "Maximum critical pair size" <> metavar "SIZE")) <|> pure Nothing
-    unorientable = switch (long "unorientable-penalty" <> help "Penalise unorientable critical pairs")
-    skolem = switch (long "skolem-penalty" <> help "Penalise critical pairs whose Skolemisation is joinable")
-    ground = switch (long "ground-penalty" <> help "Penalise ground critical pairs")
-    general = not <$> switch (long "no-general-superpositions" <> help "Disable considering only general superpositions")
-    groundJoin = not <$> switch (long "no-ground-join" <> help "Disable ground joinability testing")
-    conn = not <$> switch (long "no-connectedness" <> help "Disable connectedness testing")
-    set = switch (long "set-join" <> help "Join by computing set of normal forms")
-    setGoals = not <$> switch (long "no-set-join-goals" <> help "Disable joining goals by computing set of normal forms")
-    tracing = not <$> switch (long "no-tracing" <> help "Disable tracing output")
-    moreTracing = switch (long "more-tracing" <> help "Produce even more tracing output")
-    weight = option auto (long "lhs-weight" <> help "Weight given to LHS of critical pair (default 1)" <> value 1 <> metavar "WEIGHT")
-    splits = option auto (long "split" <> help "Split CP sets into this many pieces on selection (default 20)" <> value 20)
-    cpSetSize = option auto (long "cp-set-minimum" <> help "Decay CP sets into single CPs when they get this small (default 20)" <> value 20)
-    mixFIFO = option auto (long "mix-fifo" <> help "Take this many CPs at a time from FIFO (default 0)" <> value 0)
-    mixPrio = option auto (long "mix-prio" <> help "Take this many CPs at a time from priority queue (default 10)" <> value 10)
-    interreduce = not <$> switch (long "no-interreduce" <> help "Disable interreduction")
-    skipComposite = not <$> switch (long "composite-superpositions" <> help "Generate composite superpositions")
-
-parseFile :: Parser String
-parseFile = strArgument (metavar "FILENAME")
+    maxSize = flag "max-size" ["Maximum critical pair size"] Nothing (Just <$> argNum)
+    unorientable = bool "unorientable-penalty" ["Penalise unorientable critical pairs"]
+    skolem = bool "skolem-penalty" ["Penalise critical pairs whose Skolemisation is joinable"]
+    ground = bool "ground-penalty" ["Penalise ground critical pairs"]
+    general = not <$> bool "no-general-superpositions" ["Disable considering only general superpositions"]
+    groundJoin = not <$> bool "no-ground-join" ["Disable ground joinability testing"]
+    conn = not <$> bool "no-connectedness" ["Disable connectedness testing"]
+    set = bool "set-join" ["Join by computing set of normal forms"]
+    setGoals = not <$> bool "no-set-join-goals" ["Disable joining goals by computing set of normal forms"]
+    tracing = not <$> bool "no-tracing" ["Disable tracing output"]
+    moreTracing = bool "more-tracing" ["Produce even more tracing output"]
+    weight = flag "lhs-weight" ["Weight given to LHS of critical pair (default 1)"] 1 argNum
+    splits = flag "split" ["Split CP sets into this many pieces on selection (default 20)"] 20 argNum
+    cpSetSize = flag "cp-set-minimum" ["Decay CP sets into single CPs when they get this small (default 20)"] 20 argNum
+    mixFIFO = flag "mix-fifo" ["Take this many CPs at a time from FIFO (default 0)"] 0 argNum
+    mixPrio = flag "mix-prio" ["Take this many CPs at a time from priority queue (default 10)"] 10 argNum
+    interreduce = not <$> bool "no-interreduce" ["Disable interreduction"]
+    skipComposite = not <$> bool "composite-superpositions" ["Generate composite superpositions"]
 
 data Order = KBO | LPO
 
-parseOrder :: Parser Order
+parseOrder :: OptionParser Order
 parseOrder =
-  flag' KBO (long "kbo" <> help "Use Knuth-Bendix ordering (default)") <|>
-  flag' LPO (long "lpo" <> help "Use lexicographic path ordering") <|>
-  pure KBO
+  f <$>
+  bool "lpo" ["Use lexicographic path ordering instead of KBO"]
+  where
+    f False = KBO
+    f True  = LPO
 
-parsePrecedence :: Parser [String]
+parsePrecedence :: OptionParser [String]
 parsePrecedence =
   fmap (splitOn ",")
-  (option str (long "precedence" <> help "List of functions in descending order of precedence"))
-  <|> pure []
+  (flag "precedence" ["List of functions in descending order of precedence"] [] (arg "<function>" "expected a function name" Just))
+
+parseFile :: OptionParser String
+parseFile = Annotated [] (awaitP p "/dev/stdin" (\xs _ -> Yes 0 (pure xs)))
+  where
+    p = not . isPrefixOf "--"
 
 data Constant =
   Constant {
@@ -99,19 +112,32 @@ data Constant =
     conArity :: Int,
     conSize  :: Int,
     conName  :: String }
+  | Builtin Builtin
+
+data Builtin = CFalse | CTrue | CEquals deriving (Eq, Ord)
 
 instance Eq Constant where
   x == y = x `compare` y == EQ
 instance Ord Constant where
-  compare = comparing conIndex
+  compare Constant{conIndex = x} Constant{conIndex = y} = compare x y
+  compare Constant{} Builtin{} = LT
+  compare Builtin{} Constant{} = GT
+  compare (Builtin x) (Builtin y) = compare x y
 instance Sized Constant where
-  size = fromIntegral . conSize
+  size Constant{conSize = n} = fromIntegral n
+  size Builtin{} = 0
 instance Arity Constant where
-  arity = conArity
+  arity Constant{conSize = n} = n
+  arity (Builtin CEquals) = 2
+  arity (Builtin _) = 0
 
-instance Pretty Constant where pPrint = text . conName
+instance Pretty Constant where
+  pPrint Constant{conName = name} = text name
+  pPrint (Builtin CEquals) = text "$equals"
+  pPrint (Builtin CTrue) = text "$true"
+  pPrint (Builtin CFalse) = text "$false"
 instance PrettyTerm Constant where
-  termStyle con
+  termStyle con@Constant{}
     | not (any isAlphaNum (conName con)) =
       case conArity con of
         1 -> prefix
@@ -120,8 +146,14 @@ instance PrettyTerm Constant where
   termStyle _ = uncurried
 
 instance Given (IntMap Constant) => Numbered Constant where
-  fromInt n = IntMap.findWithDefault __ n given
-  toInt = conIndex
+  fromInt 0 = Builtin CFalse
+  fromInt 1 = Builtin CTrue
+  fromInt 2 = Builtin CEquals
+  fromInt n = IntMap.findWithDefault __ (n-3) given
+  toInt Constant{conIndex = n} = n+3
+  toInt (Builtin CFalse) = 0
+  toInt (Builtin CTrue)  = 1
+  toInt (Builtin CEquals) = 2
 
 instance (Given Order, Given (IntMap Constant)) => Ordered (Extended Constant) where
   lessEq =
@@ -133,123 +165,94 @@ instance (Given Order, Given (IntMap Constant)) => Ordered (Extended Constant) w
       KBO -> KBO.lessIn
       LPO -> LPO.lessIn
 
-parseDecl :: Int -> StateT (Int, Map String Int) ReadP Constant
-parseDecl n = lift $ do
-  name <- munch1 (/= '/')
-  char '/'
-  arity <- readS_to_P reads
-  char '='
-  size <- readS_to_P reads
-  return (Constant n arity size name)
+instance Label.Labelled Jukebox.Function where
+  cache = functionCache
 
-data Tm = AppTm String [Tm] | VarTm Var
+{-# NOINLINE functionCache #-}
+functionCache :: Label.Cache Jukebox.Function
+functionCache = Label.mkCache
 
-parseTerm :: StateT (Int, Map String Int) ReadP Tm
-parseTerm = var `mplus` fun
+instance Numbered Jukebox.Function where
+  fromInt n = fromMaybe __ (Label.find n)
+  toInt = Label.label
+
+toTwee :: Obligs -> ([Equation Jukebox.Function], [Term Jukebox.Function])
+toTwee Obligs{..} = (lefts eqs, goals)
   where
-    fun = do
-      x <- lift $ satisfy (\c -> c `notElem` "(),=_" && not (isUpper c))
-      xs <- lift $ munch (\c -> c `notElem` "(),=")
-      args <- args `mplus` return []
-      return (AppTm (x:xs) args)
-    args = between (char '(') (char ')') (sepBy parseTerm (char ','))
-    between p q r = do
-      lift p
-      x <- r
-      lift q
-      return x
-    sepBy p q = do
-      x  <- p
-      xs <- (lift q >> sepBy p q) `mplus` return []
-      return (x:xs)
+    conjEqs =
+      case conjectures of
+        [[]] -> []
+        [[Input{what = Clause (Bind _ [Neg (t Jukebox.:=: u)])}]] ->
+          [Right (tm t :=: tm u)]
+        [[Input{what = Clause (Bind _ [Pos (t Jukebox.:=: u)])}]] ->
+          [Left (tm t :=: tm u)]
+        _ -> ERROR("Problem is not unit equality")
 
-    var = fmap (VarTm . MkVar) $ do
-      x <- lift $ satisfy (\c -> isUpper c || c == '_')
-      xs <- lift $ munch isAlphaNum
-      let v = x:xs
-      (k, m) <- get
-      case Map.lookup v m of
-        Just n -> return n
-        Nothing -> do
-          put (k+1, Map.insert v k m)
-          return k
+    eq Input{what = Clause (Bind _ [Pos (t Jukebox.:=: u)])} =
+      Left (tm t :=: tm u)
+    eq Input{what = Clause (Bind _ [Neg (t Jukebox.:=: u)])} =
+      Right (tm t :=: tm u)
+    eq _ = ERROR("Problem is not unit equality")
 
-parseEquation :: StateT (Int, Map String Int) ReadP (Tm, Tm)
-parseEquation = do
-  t <- parseTerm
-  lift $ string "="
-  u <- parseTerm
-  return (t, u)
+    eqs = map eq axioms ++ conjEqs
 
-run :: StateT (Int, Map String Int) ReadP a -> String -> a
-run p xs =
-  case readP_to_S (evalStateT p (0, Map.empty) <* eof) xs of
-    ((y, ""):_) -> y
-    _ -> error "parse error"
+    goals =
+      case rights eqs of
+        [] -> []
+        [t :=: u] -> [t, u]
+        _ -> ERROR("Problem is not unit equality")
 
-tok :: String -> String
-tok = filter (not . isSpace)
+    tm (Jukebox.Var (x ::: _)) =
+      build (var (MkVar (fromIntegral (uniqueId x))))
+    tm (f :@: ts) =
+      app f (map tm ts)
 
-replace :: (Eq a, Show a) => [(a, b)] -> a -> b
-replace xs x =
-  case lookup x xs of
-    Just y -> y
-    Nothing -> error (show x ++ " not found")
+addNarrowing ::
+  Given (IntMap Constant) =>
+  ([Equation (Extended Constant)], [Term (Extended Constant)]) ->
+  ([Equation (Extended Constant)], [Term (Extended Constant)])
+addNarrowing (axioms, goals)
+  | all isGround goals = (axioms, goals)
+addNarrowing (axioms, [t, u])
+  | otherwise = (axioms ++ equalities, [app false [], app true []])
+    where
+      false  = Function (Builtin CFalse)
+      true   = Function (Builtin CTrue)
+      equals = Function (Builtin CEquals)
 
-check :: Given (IntMap Constant) => Term (Extended Constant) -> IO ()
-check t = do
-  forM_ (subterms t) $ \t ->
-    case t of
-      Fun f xs | arity f /= length (fromTermList xs) -> do
-          print $
-            fsep [
-            text "Function",
-            nest 2 (pPrint f),
-            text "has arity",
-            nest 2 (pPrint (arity f)),
-            text "but called as",
-            nest 2 (pPrint t)]
-          exitWith (ExitFailure 1)
-      _ -> return ()
+      equalities =
+        [app equals [build (var (MkVar 0)), build (var (MkVar 0))] :=: app true [],
+         app equals [t, u] :=: app false []]
+addNarrowing _ =
+  ERROR("Don't know how to handle several non-ground goals")
 
 main = do
-  (state, file, order, precedence) <-
-    execParser $
-      info (helper <*> ((,,,) <$> parseInitialState <*> parseFile <*> parseOrder <*> parsePrecedence))
-        (fullDesc <>
-         header "twee - The Wonderful Equation Engine")
-  input <-
-    case file of
-      "-" -> getContents
-      _ -> readFile file
-  let (sig, ("--":eqs1)) = break (== "--") (filter (not . comment) (lines input))
-      comment ('%':_) = True
-      comment _ = False
-      (axioms0, ("--":goals0)) = break (== "--") eqs1
-      prec c = (isNothing (elemIndex (conName c) precedence),
-                fmap negate (elemIndex (conName c) precedence),
-                conIndex c)
-      fs0 = zipWith (run . parseDecl) [1..] (map tok sig)
+  let twee = Tool "twee" "twee - the Wonderful Equation Engine" "1" "Proves equations."
+  (state, file, order, precedence, parser) <-
+    parseCommandLine twee
+      (tool twee
+        ((,,,,) <$> parseInitialState <*> parseFile <*> parseOrder <*> parsePrecedence <*> parseProblemBox))
+  obligs <- open <$> clausify (ClausifyFlags False) <$> translate (tags False) (const False) <$> parser file
+  let (axioms0, goals0) = toTwee obligs
+      prec c = (isNothing (elemIndex (stringBaseName c) precedence),
+                fmap negate (elemIndex (stringBaseName c) precedence),
+                negate (occ (toFun c) (axioms0, goals0)))
+      fs0 = map fromFun (usort (funs (axioms0, goals0)))
       fs1 = sortBy (comparing prec) fs0
-      fs2 = zipWith (\i c -> c { conIndex = i}) [1..] fs1
-      m  = IntMap.fromList [(conIndex f, f) | f <- fs2]
+      env = BS.unpack . uniquify (usort (names obligs))
+      fs2 = zipWith (\i (c ::: (FunType args _)) -> Constant i (length args) 1 (env c)) [1..] fs1
+      m   = IntMap.fromList [(conIndex f, f) | f <- fs2]
+      m'  = Map.fromList (zip fs1 (map Function fs2))
   give m $ give order $ do
-  let fs = [(conName f, toFun (Function f)) | f <- fs2]
-
-      translate (VarTm x) = build (var x)
-      translate (AppTm f ts) = build (fun (replace fs f) (map translate ts))
-
-      axioms1 = map (run parseEquation) (map tok axioms0)
-      goals1 = map (run parseTerm . tok) goals0
-      axioms = [translate t :=: translate u | (t, u) <- axioms1]
-      goals2 = map translate goals1
+  let replace = build . mapFun (toFun . flip (Map.findWithDefault __) m' . fromFun)
+      axioms1 = [replace t :=: replace u | t :=: u <- axioms0]
+      goals1  = map replace goals0
+      (axioms2, goals2) = addNarrowing (axioms1, goals1)
 
   putStrLn "Axioms:"
-  mapM_ prettyPrint axioms
+  mapM_ prettyPrint axioms2
   putStrLn "\nGoals:"
   mapM_ prettyPrint goals2
-  mapM_ check goals2
-  forM_ axioms $ \(t :=: u) -> do { check t; check u }
   putStrLn "\nGo!"
 
   let
@@ -262,7 +265,7 @@ main = do
 
     s =
       flip execState (addGoals (map Set.singleton goals2) state) $ do
-        mapM_ newEquation axioms
+        mapM_ newEquation axioms2
         loop
 
     rs = map (critical . modelled . peel) (Indexes.elems (labelledRules s))

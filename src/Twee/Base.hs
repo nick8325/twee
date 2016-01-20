@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances, TypeFamilies, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, CPP, ConstraintKinds, UndecidableInstances, DeriveFunctor, StandaloneDeriving #-}
 module Twee.Base(
   Symbolic(..), terms, subst, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
-  vars, funs, canonicalise,
+  vars, isGround, funs, occ, canonicalise,
   Minimal(..), minimalTerm, isMinimal,
   Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..), extended, unextended,
   module Twee.Term, module Twee.Pretty) where
@@ -56,6 +56,14 @@ instance (ConstantOf a ~ ConstantOf b,
   termsDL (x, y) = termsDL x `mplus` termsDL y
   replace f (x, y) = (replace f x, replace f y)
 
+instance (ConstantOf a ~ ConstantOf b,
+          ConstantOf a ~ ConstantOf c,
+          Symbolic a, Symbolic b, Symbolic c) => Symbolic (a, b, c) where
+  type ConstantOf (a, b, c) = ConstantOf a
+  term (x, _, _) = term x
+  termsDL (x, y, z) = termsDL x `mplus` termsDL y `mplus` termsDL z
+  replace f (x, y, z) = (replace f x, replace f y, replace f z)
+
 instance Symbolic a => Symbolic [a] where
   type ConstantOf [a] = ConstantOf a
   term _ = __
@@ -66,9 +74,17 @@ instance Symbolic a => Symbolic [a] where
 vars :: Symbolic a => a -> [Var]
 vars x = [ v | t <- DList.toList (termsDL x), Var v <- subtermsList t ]
 
+{-# INLINE isGround #-}
+isGround :: Symbolic a => a -> Bool
+isGround = null . vars
+
 {-# INLINE funs #-}
 funs :: Symbolic a => a -> [FunOf a]
 funs x = [ f | t <- DList.toList (termsDL x), Fun f _ <- subtermsList t ]
+
+{-# INLINE occ #-}
+occ :: Symbolic a => FunOf a -> a -> Int
+occ x t = length (filter (== x) (funs t))
 
 canonicalise :: Symbolic a => a -> a
 canonicalise t = replace (Term.substList sub) t
