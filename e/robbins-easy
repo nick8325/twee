@@ -1,4 +1,0 @@
-cnf(a, axiom, plus(X, Y) = plus(Y, X)).
-cnf(a, axiom, plus(X, plus(Y, Z)) = plus(plus(X, Y), Z)).
-cnf(a, axiom, plus(neg(plus(neg(X), Y)), neg(plus(neg(X), neg(Y)))) = X).
-cnf(a, axiom, neg(plus(neg(plus(a, b)), neg(plus(a, neg(b))))) != a).

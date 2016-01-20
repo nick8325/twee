@@ -1,11 +1,4 @@
-a/0  = 1
-b/0  = 1
-rev/1 = 1
-++/2  = 1
---
-rev(rev(X)) = X
-++(X,++(Y,Z)) = ++(++(X,Y),Z)
-++(rev(X),rev(Y)) = rev(++(Y,X))
---
-++(a,rev(b))
-rev(++(b, rev(a)))
+cnf(a, axiom, rev(rev(X)) = X).
+cnf(a, axiom, '++'(X,'++'(Y,Z)) = '++'('++'(X,Y),Z)).
+cnf(a, axiom, '++'(rev(X),rev(Y)) = rev('++'(Y,X))).
+cnf(a, axiom, '++'(a,rev(b)) != rev('++'(b, rev(a)))).

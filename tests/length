@@ -1,6 +1,2 @@
-length/1=1
-++/2=1
---
-++(Xs, ++(Ys, Zs)) = ++(++(Xs, Ys), Zs)
-length(++(Xs, Ys)) = length(++(Ys, Xs))
---
+cnf(a, axiom, '++'(Xs, '++'(Ys, Zs)) = '++'('++'(Xs, Ys), Zs)).
+cnf(a, axiom, length('++'(Xs, Ys)) = length('++'(Ys, Xs))).

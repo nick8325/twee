@@ -1,6 +1,2 @@
-+/0 = 1
-app/2 = 0
---
-app(app(+, X), Y) = app(app(+, Y), X)
-app(app(+, X), app(app(+, Y), Z)) = app(app(+, app(app(+, X), Y)), Z)
---
+cnf(a, axiom, app(app('+', X), Y) = app(app('+', Y), X)).
+cnf(a, axiom, app(app('+', X), app(app('+', Y), Z)) = app(app('+', app(app('+', X), Y)), Z)).

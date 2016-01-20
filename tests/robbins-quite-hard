@@ -1,16 +1,4 @@
-a/0=1
-b/0=1
-+/2=1
--/1=0
-false/0=1
-true/0=1
-equals/2=-1
---
-+(X, Y) = +(Y, X)
-+(X, +(Y, Z)) = +(+(X, Y), Z)
--(+(-(+(X, Y)), -(+(X, -(Y))))) = X
-equals(X,X) = true
-equals(+(X, X), X) = false
---
-true
-false
+cnf(a, axiom, '+'(X, Y) = '+'(Y, X)).
+cnf(a, axiom, '+'(X, '+'(Y, Z)) = '+'('+'(X, Y), Z)).
+cnf(a, axiom, '-'('+'('-'('+'(X, Y)), '-'('+'(X, '-'(Y))))) = X).
+cnf(a, axiom, '+'(X, X) != X).

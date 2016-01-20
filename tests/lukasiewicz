@@ -1,18 +1,6 @@
-a/0=1
-b/0=1
-c/0=1
-true/0=1
-->/2=1
-or/2=1
-not/1=0
---
-->(true, X) = X
-->(->(X, Y), ->(->(Y, Z), ->(X, Z))) = true
-->(->(not(X), not(Y)), ->(Y, X)) = true
-->(->(X, Y), Y) = ->(->(Y, X), X)
-or(X, Y) = ->(not(X), Y)
---
-%or(a,b)
-%or(b,a)
-or(a,or(b,c))
-or(or(a,b),c)
+cnf(a, axiom, '->'(true, X) = X).
+cnf(a, axiom, '->'('->'(X, Y), '->'('->'(Y, Z), '->'(X, Z))) = true).
+cnf(a, axiom, '->'('->'(not(X), not(Y)), '->'(Y, X)) = true).
+cnf(a, axiom, '->'('->'(X, Y), Y) = '->'('->'(Y, X), X)).
+cnf(a, axiom, or(X, Y) = '->'(not(X), Y)).
+cnf(a, axiom, or(a,or(b,c)) != or(or(a,b),c)).
