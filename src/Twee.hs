@@ -755,7 +755,7 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
         Critical info' (t' :=: u') = Critical info (order (t :=: u))
         (t'' :=: u'') = unpack (t' :=: u')
 
-    unpack eq@(Fun f (Cons t (Cons u Empty)) :=: Fun g Empty)
+    unpack (Fun f (Cons t (Cons u Empty)) :=: Fun g Empty)
       | size (fromFun f) <= 0 && size (fromFun g) <= 0 =
         order (t :=: u)
     unpack eq = eq
