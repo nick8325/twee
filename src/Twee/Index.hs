@@ -94,6 +94,21 @@ delete x0 !idx = aux (Term.singleton t) idx
     t  = term x0
     x  = Entry t x0
 
+{-# INLINEABLE elem #-}
+elem :: (Eq a, Symbolic a) => a -> Index a -> Bool
+elem x0 !idx = aux (Term.singleton t) idx
+  where
+    aux _ Nil = False
+    aux t idx@(Singleton u y)
+      | t == u && x == y = True
+      | otherwise        = False
+    aux Empty idx = List.elem x (here idx)
+    aux (ConsSym (Fun (MkFun f) _) t) idx =
+      aux t (fun idx ! f)
+    aux (ConsSym (Var _) t) idx = aux t (var idx)
+    t  = term x0
+    x  = Entry t x0
+
 data Match a =
   Match {
     matchResult :: a,
