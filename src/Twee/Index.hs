@@ -83,9 +83,9 @@ delete :: (Eq a, Symbolic a) => a -> Index a -> Index a
 delete x0 !idx = aux (Term.singleton t) idx
   where
     aux _ Nil = Nil
-    aux t idx@(Singleton u _)
-      | t == u    = Nil
-      | otherwise = idx
+    aux t idx@(Singleton u y)
+      | t == u && x == y = Nil
+      | otherwise        = idx
     aux Empty idx = idx { here = List.delete x (here idx) }
     aux (ConsSym (Fun (MkFun f) _) t) idx =
       idx { fun = update f (aux t (fun idx ! f)) (fun idx) }
