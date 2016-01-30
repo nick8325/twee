@@ -7,7 +7,6 @@ import Control.Applicative
 
 import Control.Monad
 import Control.Monad.Trans.State.Strict
-import Control.Monad.Trans.Class
 import Data.Char
 import Data.Either
 import Twee hiding (info)
@@ -15,19 +14,13 @@ import Twee.Base hiding (char, lookup, (<>))
 import Twee.Rule
 import Twee.Utils
 import Twee.Queue
-import Text.ParserCombinators.ReadP hiding (get, option)
-import System.Environment
-import System.Exit
 import Data.Ord
 import qualified Twee.Indexes as Indexes
-import System.Exit
 import qualified Data.Map.Strict as Map
-import Data.Map.Strict(Map)
 import qualified Twee.KBO as KBO
 import qualified Twee.LPO as LPO
 import qualified Data.Set as Set
 import Data.Reflection
-import Data.Array
 import qualified Data.IntMap as IntMap
 import Data.IntMap(IntMap)
 import Data.List.Split
@@ -35,10 +28,7 @@ import Data.List
 import Data.Maybe
 import Jukebox.Options
 import Jukebox.Toolbox
-import Jukebox.Clausify
-import Jukebox.Monotonox.ToFOF
 import Jukebox.Name
-import Control.Applicative
 import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
 import qualified Twee.Label as Label
@@ -99,11 +89,6 @@ parsePrecedence :: OptionParser [String]
 parsePrecedence =
   fmap (splitOn ",")
   (flag "precedence" ["List of functions in descending order of precedence"] [] (arg "<function>" "expected a function name" Just))
-
-parseFile :: OptionParser String
-parseFile = Annotated [] (awaitP p "/dev/stdin" (\xs _ -> Yes 0 (pure xs)))
-  where
-    p = not . isPrefixOf "--"
 
 data Constant =
   Constant {
@@ -175,25 +160,16 @@ instance Numbered Jukebox.Function where
   fromInt n = fromMaybe __ (Label.find n)
   toInt = Label.label
 
-toTwee :: CNF -> ([Equation Jukebox.Function], [Term Jukebox.Function])
-toTwee CNF{..} = (lefts eqs, goals)
+toTwee :: Problem Clause -> ([Equation Jukebox.Function], [Term Jukebox.Function])
+toTwee prob = (lefts eqs, goals)
   where
-    conjEqs =
-      case conjectures of
-        [[]] -> []
-        [[Input{what = Clause (Bind _ [Neg (t Jukebox.:=: u)])}]] ->
-          [Right (tm t :=: tm u)]
-        [[Input{what = Clause (Bind _ [Pos (t Jukebox.:=: u)])}]] ->
-          [Left (tm t :=: tm u)]
-        _ -> ERROR("Problem is not unit equality")
-
     eq Input{what = Clause (Bind _ [Pos (t Jukebox.:=: u)])} =
       Left (tm t :=: tm u)
     eq Input{what = Clause (Bind _ [Neg (t Jukebox.:=: u)])} =
       Right (tm t :=: tm u)
     eq _ = ERROR("Problem is not unit equality")
 
-    eqs = map eq axioms ++ conjEqs
+    eqs = map eq prob
 
     goals =
       case rights eqs of
@@ -211,7 +187,12 @@ addNarrowing ::
   ([Equation (Extended Constant)], [Term (Extended Constant)]) ->
   ([Equation (Extended Constant)], [Term (Extended Constant)])
 addNarrowing (axioms, goals)
-  | all isGround goals = (axioms, goals)
+  | length goals < 2 = (axioms, [app false [], app true []])
+    where
+      false  = Function (Builtin CFalse)
+      true   = Function (Builtin CTrue)
+addNarrowing (axioms, goals)
+  | length goals >= 2 && all isGround goals = (axioms, goals)
 addNarrowing (axioms, [t, u])
   | otherwise = (axioms ++ equalities, [app false [], app true []])
     where
@@ -225,13 +206,8 @@ addNarrowing (axioms, [t, u])
 addNarrowing _ =
   ERROR("Don't know how to handle several non-ground goals")
 
-main = do
-  let twee = Tool "twee" "twee - the Wonderful Equation Engine" "1" "Proves equations."
-  (state, file, order, precedence, parser) <-
-    parseCommandLine twee
-      (tool twee
-        ((,,,,) <$> parseInitialState <*> parseFile <*> parseOrder <*> parsePrecedence <*> parseProblemBox))
-  obligs <- clausify (ClausifyFlags False) <$> translate (tags False) (const False) <$> parser file
+runTwee :: Twee (Extended Constant) -> Order -> [String] -> Problem Clause -> IO Answer
+runTwee state order precedence obligs = do
   let (axioms0, goals0) = toTwee obligs
       prec c = (isNothing (elemIndex (base c) precedence),
                 fmap negate (elemIndex (base c) precedence),
@@ -273,12 +249,23 @@ main = do
   putStrLn ""
 
   putStrLn (report s)
+  putStrLn "Normalised goal terms:"
+  forM_ goals2 $ \t ->
+    prettyPrint (Rule Oriented t (result (normalise s t)))
 
-  unless (null goals2) $ do
-    putStrLn "Normalised goal terms:"
-    forM_ goals2 $ \t ->
-      prettyPrint (Rule Oriented t (result (normalise s t)))
+  return $
+    case () of
+      _ | identical (goals s) -> Unsatisfiable
+        | isJust (maxSize s) -> NoAnswer GaveUp
+        | otherwise -> Satisfiable
 
-  if length (goals s) <= 1 || identical (goals s)
-    then exitWith ExitSuccess
-    else exitWith (ExitFailure 1)
+main = do
+  let twee = Tool "twee" "twee - the Wonderful Equation Engine" "1" "Proves equations."
+  join . parseCommandLine twee . tool twee $
+    greetingBox twee =>>
+    allFilesBox <*>
+      (parseProblemBox =>>=
+       toFofBox =>>=
+       clausifyBox =>>=
+       allObligsBox <*>
+         (runTwee <$> parseInitialState <*> parseOrder <*> parsePrecedence))
