@@ -99,7 +99,7 @@ elem :: (Eq a, Symbolic a) => a -> Index a -> Bool
 elem x0 !idx = aux (Term.singleton t) idx
   where
     aux _ Nil = False
-    aux t idx@(Singleton u y)
+    aux t (Singleton u y)
       | t == u && x == y = True
       | otherwise        = False
     aux Empty idx = List.elem x (here idx)
