@@ -42,7 +42,6 @@ import Control.Applicative
 import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
 import qualified Twee.Label as Label
-import qualified Data.ByteString.Char8 as BS
 
 parseInitialState :: OptionParser (Twee f)
 parseInitialState =
@@ -176,8 +175,8 @@ instance Numbered Jukebox.Function where
   fromInt n = fromMaybe __ (Label.find n)
   toInt = Label.label
 
-toTwee :: Obligs -> ([Equation Jukebox.Function], [Term Jukebox.Function])
-toTwee Obligs{..} = (lefts eqs, goals)
+toTwee :: CNF -> ([Equation Jukebox.Function], [Term Jukebox.Function])
+toTwee CNF{..} = (lefts eqs, goals)
   where
     conjEqs =
       case conjectures of
@@ -202,8 +201,8 @@ toTwee Obligs{..} = (lefts eqs, goals)
         [t :=: u] -> [t, u]
         _ -> ERROR("Problem is not unit equality")
 
-    tm (Jukebox.Var (x ::: _)) =
-      build (var (MkVar (fromIntegral (uniqueId x))))
+    tm (Jukebox.Var (Unique x _ _ ::: _)) =
+      build (var (MkVar (fromIntegral x)))
     tm (f :@: ts) =
       app f (map tm ts)
 
@@ -232,15 +231,14 @@ main = do
     parseCommandLine twee
       (tool twee
         ((,,,,) <$> parseInitialState <*> parseFile <*> parseOrder <*> parsePrecedence <*> parseProblemBox))
-  obligs <- open <$> clausify (ClausifyFlags False) <$> translate (tags False) (const False) <$> parser file
+  obligs <- clausify (ClausifyFlags False) <$> translate (tags False) (const False) <$> parser file
   let (axioms0, goals0) = toTwee obligs
-      prec c = (isNothing (elemIndex (stringBaseName c) precedence),
-                fmap negate (elemIndex (stringBaseName c) precedence),
+      prec c = (isNothing (elemIndex (base c) precedence),
+                fmap negate (elemIndex (base c) precedence),
                 negate (occ (toFun c) (axioms0, goals0)))
       fs0 = map fromFun (usort (funs (axioms0, goals0)))
       fs1 = sortBy (comparing prec) fs0
-      env = BS.unpack . uniquify (usort (names obligs))
-      fs2 = zipWith (\i (c ::: (FunType args _)) -> Constant i (length args) 1 (env c)) [1..] fs1
+      fs2 = zipWith (\i (c ::: (FunType args _)) -> Constant i (length args) 1 (show c)) [1..] fs1
       m   = IntMap.fromList [(conIndex f, f) | f <- fs2]
       m'  = Map.fromList (zip fs1 (map Function fs2))
   give m $ give order $ do

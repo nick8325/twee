@@ -56,5 +56,4 @@ executable twee
                        array,
                        reflection,
                        split,
-                       jukebox,
-                       bytestring
+                       jukebox >= 0.2
