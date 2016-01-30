@@ -311,11 +311,7 @@ complete1 = do
   case res of
     Just (SingleCP (CP _ cp l1 l2)) -> do
       res <- consider l1 l2 cp
-      when res $
-        if useSetJoiningForGoals then
-          modify $ \s -> s { goals = map (normalForms (rewrite "goal" reduces (rules s)) . Set.toList) goals }
-        else
-          modify $ \s -> s { goals = map (Set.fromList . map (result . normaliseWith (rewrite "goal" reduces (rules s))) . Set.toList) goals }
+      when res renormaliseGoals
       return True
     Just (ManyCPs (CPs _ l lower upper size rule)) -> do
       s <- get
@@ -327,6 +323,14 @@ complete1 = do
       complete1
     Nothing ->
       return False
+
+renormaliseGoals :: Function f => State (Twee f) ()
+renormaliseGoals = do
+  Twee{..} <- get
+  if useSetJoiningForGoals then
+    modify $ \s -> s { goals = map (normalForms (rewrite "goal" reduces (rules s)) . Set.toList) goals }
+  else
+    modify $ \s -> s { goals = map (Set.fromList . map (result . normaliseWith (rewrite "goal" reduces (rules s))) . Set.toList) goals }
 
 normaliseCPs :: forall f. Function f => State (Twee f) ()
 normaliseCPs = do
@@ -521,6 +525,7 @@ simplifyRule l model r@(Modelled _ positions (Critical info (Rule _ lhs rhs))) =
 newEquation :: Function f => Equation f -> State (Twee f) ()
 newEquation (t :=: u) = do
   consider noLabel noLabel (Critical (CritInfo minimalTerm 0) (t :=: u))
+  renormaliseGoals
   return ()
 
 --------------------------------------------------------------------------------
