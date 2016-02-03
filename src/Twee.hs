@@ -231,7 +231,7 @@ reduceCP s stage f (Critical top (t :=: u))
         rs = allRules s
 
 data JoinStage = Initial | Simplification | Reducing | Subjoining deriving (Eq, Ord, Show)
-data JoinReason = Trivial JoinStage | Subsumed JoinStage | SetJoining | GroundJoined deriving (Eq, Ord, Show)
+data JoinReason = TooBig | Trivial JoinStage | Subsumed JoinStage | SetJoining | GroundJoined deriving (Eq, Ord, Show)
 
 instance Pretty JoinStage where
   pPrint Initial        = text "no rewriting"
@@ -240,17 +240,30 @@ instance Pretty JoinStage where
   pPrint Subjoining     = text "connectedness testing"
 
 instance Pretty JoinReason where
+  pPrint TooBig           = text "too big"
   pPrint (Trivial stage)  = text "joined after" <+> pPrint stage
   pPrint (Subsumed stage) = text "subsumed after" <+> pPrint stage
   pPrint SetJoining       = text "joined with set of normal forms"
   pPrint GroundJoined     = text "ground joined"
 
-normaliseCPQuickly, normaliseCP ::
+recordReason :: Function f => JoinReason -> State (Twee f) ()
+recordReason reason =
+  modify' $ \s ->
+    s {
+      joinStatistics = Map.insertWith (+) reason 1 (joinStatistics s) }
+
+normaliseCPQuickly, normaliseCPReducing, normaliseCP ::
   Function f =>
   Twee f -> Critical (Equation f) -> Either JoinReason (Critical (Equation f))
+normaliseCPQuickly Twee{maxSize = Just n} (Critical _ eq)
+  | size eq > n = Left TooBig
 normaliseCPQuickly s cp =
   reduceCP s Initial id cp >>=
   reduceCP s Simplification (result . normaliseQuickly s)
+
+normaliseCPReducing s cp =
+  normaliseCPQuickly s cp >>=
+  reduceCP s Reducing (result . normalise s)
 
 normaliseCP s cp@(Critical info _) =
   case (cp1, cp2, cp3, cp4) of
@@ -261,8 +274,7 @@ normaliseCP s cp@(Critical info _) =
     (Left x, _, _, _) -> Left x
   where
     cp1 =
-      normaliseCPQuickly s cp >>=
-      reduceCP s Reducing (result . normalise s) >>=
+      normaliseCPReducing s cp >>=
       reduceCP s Subjoining (result . normaliseSub s (top info))
 
     cp2 =
@@ -352,55 +364,37 @@ consider l1 l2 pair@(Critical _ eq0) = do
   traceM (Consider pair)
   modify' (\s -> s { processedCPs = processedCPs s + 1 })
   s <- get
-  let record reason = modify' (\s -> s { joinStatistics = Map.insertWith (+) reason 1 (joinStatistics s) })
-      hard (Trivial Subjoining) = True
-      hard (Subsumed Subjoining) = True
-      hard SetJoining = True
-      hard _ = False
-      eqSize (t :=: u) = size t + size u
-      tooBig (Critical _ (t :=: u)) =
-        case maxSize s of
-          Nothing -> False
-          Just sz -> size t > sz || size u > sz
-  if tooBig pair then return False else
-    case normaliseCP s pair of
-      Left reason -> do
-        record reason
-        when (hard reason) $ forM_ (map canonicalise (orient (critical pair))) $ \(Rule _ t u0) -> do
-          s <- get
-          let u = result (normaliseSub s t u0)
-              r = rule t u
-          addExtraRule r
-        return False
-      Right (Critical info eq) | eqSize eq > eqSize eq0 -> do
-        queueCP enqueueM l1 l2 (Critical info eq)
-        return False
-      Right pair | tooBig pair ->
-        return False
-      Right (Critical info eq) ->
-        fmap or $ forM (map canonicalise (orient eq)) $ \(Rule _ t u0) -> do
-          s <- get
-          let u = result (normaliseSub s t u0)
-              r = rule t u
-              info' = info { top = t }
-          case normaliseCP s (Critical info' (t :=: u)) of
-            Left reason -> do
-              when (hard reason) $ record reason
-              addExtraRule r
-              return False
-            Right eq ->
-              case groundJoin s (branches (And [])) eq of
-                Right eqs -> do
-                  record GroundJoined
-                  mapM_ (consider l1 l2) [ eq { critInfo = info' } | eq <- eqs ]
-                  addExtraRule r
-                  return False
-                Left model -> do
-                  traceM (NewRule r)
-                  l <- addRule (Modelled model (ruleOverlaps s (lhs r)) (Critical info r))
-                  queueCPsSplit enqueueM noLabel l (Labelled l r)
-                  interreduce r
-                  return True
+  case normaliseCPReducing s pair of
+    Left reason -> do
+      recordReason reason
+      return False
+    Right (Critical info eq) | size eq > size eq0 -> do
+      queueCP enqueueM l1 l2 (Critical info eq)
+      return False
+    Right (Critical info eq) ->
+      fmap or $ forM (map canonicalise (orient eq)) $ \(Rule _ t u0) -> do
+        s <- get
+        let u = result (normaliseSub s t u0)
+            r = rule t u
+            info' = info { top = t }
+        case normaliseCP s (Critical info' (t :=: u)) of
+          Left reason -> do
+            recordReason reason
+            addExtraRule r
+            return True
+          Right eq ->
+            case groundJoin s (branches (And [])) eq of
+              Right eqs -> do
+                recordReason GroundJoined
+                mapM_ (consider l1 l2) [ eq { critInfo = info' } | eq <- eqs ]
+                addExtraRule r
+                return True
+              Left model -> do
+                traceM (NewRule r)
+                l <- addRule (Modelled model (ruleOverlaps s (lhs r)) (Critical info r))
+                queueCPsSplit enqueueM noLabel l (Labelled l r)
+                interreduce r
+                return True
 
 groundJoin :: Function f =>
   Twee f -> [Branch f] -> Critical (Equation f) -> Either (Model f) [Critical (Equation f)]
