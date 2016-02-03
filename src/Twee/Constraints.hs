@@ -152,9 +152,11 @@ branches x = aux [x]
       concatMap (addEquals u t) (aux xs)
 
 addLess :: (Numbered f, Minimal f, Ord f) => Atom f -> Atom f -> Branch f -> [Branch f]
+addLess _ (Constant min) _ | min == minimal = []
+addLess (Constant min) _ b | min == minimal = [b]
 addLess t0 u0 b@Branch{..} =
   filter (not . contradictory)
-    [addTerm t (addTerm u b) {less = usort ((t, u):less)}]
+    [addTerm t (addTerm u b{less = usort ((t, u):less)})]
   where
     t = norm b t0
     u = norm b u0
@@ -268,18 +270,22 @@ lessEqInModel (Model m) x y
   | Constant a <- x, a == minimal = Just Nonstrict
   | otherwise = Nothing
 
-solve :: (Numbered f, Minimal f, Ord f) => [Atom f] -> Branch f -> Either (Model f) (Subst f)
-solve xs Branch{..}
+solve :: (Numbered f, Minimal f, Ord f, PrettyTerm f) => [Atom f] -> Branch f -> Either (Model f) (Subst f)
+solve xs branch@Branch{..}
+  | null equals && not (all true less) =
+    ERROR("Model " ++ prettyShow model ++ " is not a model of " ++ prettyShow branch ++ " (edges = " ++ prettyShow edges ++ ", vs = " ++ prettyShow vs ++ ")")
   | null equals = Left model
   | otherwise = Right sub
     where
       sub = fromMaybe __ . flattenSubst $
         [(x, toTerm y) | (Variable x, y) <- equals] ++
         [(y, toTerm x) | (x@Constant{}, Variable y) <- equals]
-      vs = reverse (flattenSCCs (stronglyConnComp [(x, x, [y | (x', y) <- less', x == x']) | x <- as]))
+      vs = Constant minimal:reverse (flattenSCCs (stronglyConnComp edges))
+      edges = [(x, x, [y | (x', y) <- less', x == x']) | x <- as]
       less' = less ++ [(Constant x, Constant y) | Constant x <- as, Constant y <- as, x < y]
-      as = usort $ Constant minimal:xs ++ map fst less ++ map snd less
+      as = usort $ xs ++ map fst less ++ map snd less
       model = modelFromOrder vs
+      true (t, u) = lessEqInModel model t u == Just Strict
 
 class Ord f => Ordered f where
   orientTerms :: Term f -> Term f -> Maybe Ordering
