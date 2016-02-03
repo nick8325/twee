@@ -166,9 +166,9 @@ addEquals t0 u0 b@Branch{..}
   | t == u || (t, u) `elem` equals = [b]
   | otherwise =
     filter (not . contradictory)
-      [addTerm t (addTerm u b) {
+      [addTerm t (addTerm u b {
          equals      = usort $ (t, u):[(x', y') | (x, y) <- equals, let (y', x') = sort2 (sub x, sub y), x' /= y'],
-         less        = usort $ [(sub x, sub y) | (x, y) <- less] }]
+         less        = usort $ [(sub x, sub y) | (x, y) <- less] })]
   where
     sort2 (x, y) = (min x y, max x y)
     (u, t) = sort2 (norm b t0, norm b u0)
