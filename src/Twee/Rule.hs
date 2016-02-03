@@ -174,9 +174,6 @@ bothSides f (t :=: u) = f t :=: f u
 trivial :: Eq f => Equation f -> Bool
 trivial (t :=: u) = t == u
 
-instance (Sized f, Numbered f) => Sized (Equation f) where
-  size (t :=: u) = size t + size u
-
 --------------------------------------------------------------------------------
 -- Rewriting.
 --------------------------------------------------------------------------------

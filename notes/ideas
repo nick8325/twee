@@ -1,5 +1,3 @@
-RNG035-7.p --ground-penalty loops forever
-
 Make LPO go faster
 Fix nontermination in case split
 Critical pair improvement
