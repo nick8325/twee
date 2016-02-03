@@ -56,6 +56,7 @@ data Twee f =
     tracing :: Bool,
     moreTracing :: Bool,
     lhsWeight         :: Int,
+    rhsWeight         :: Int,
     joinStatistics    :: Map JoinReason Int }
   deriving Show
 
@@ -85,6 +86,7 @@ initialState mixFIFO mixPrio =
     tracing = True,
     moreTracing = False,
     lhsWeight         = 1,
+    rhsWeight         = 1,
     joinStatistics    = Map.empty }
 
 addGoals :: [Set (Term f)] -> Twee f -> Twee f
@@ -769,7 +771,7 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
       | useUnorientablePenalty s && u `lessEq` t = f t u + penalty t u
       | otherwise    = (f t u `max` f u t) + penalty t u
       where
-        f t u = lhsWeight s*size' t + size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u) + if useGroundPenalty s && null (vars u) then 5 else 0
+        f t u = lhsWeight s*size' t + rhsWeight s*size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u) + if useGroundPenalty s && null (vars u) then 5 else 0
         size' t =
           size t +
           -- Lots of different constants are probably bad

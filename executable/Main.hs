@@ -36,9 +36,9 @@ import qualified Twee.Label as Label
 parseInitialState :: OptionParser (Twee f)
 parseInitialState =
   go <$> maxSize <*> unorientable <*> skolem <*> ground <*> general
-     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> weight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> interreduce
+     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> lweight <*> rweight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> interreduce
   where
-    go maxSize unorientable skolem ground general groundJoin conn set setGoals tracing moreTracing weight splits cpSetSize mixFIFO mixPrio skipComposite interreduce =
+    go maxSize unorientable skolem ground general groundJoin conn set setGoals tracing moreTracing lweight rweight splits cpSetSize mixFIFO mixPrio skipComposite interreduce =
       (initialState mixFIFO mixPrio) {
         maxSize = maxSize,
         cpSplits = splits,
@@ -55,7 +55,8 @@ parseInitialState =
         skipCompositeSuperpositions = skipComposite,
         tracing = tracing,
         moreTracing = moreTracing,
-        lhsWeight = weight }
+        lhsWeight = lweight,
+        rhsWeight = rweight }
     maxSize = flag "max-size" ["Maximum critical pair size"] Nothing (Just <$> argNum)
     unorientable = bool "unorientable-penalty" ["Penalise unorientable critical pairs"]
     skolem = bool "skolem-penalty" ["Penalise critical pairs whose Skolemisation is joinable"]
@@ -67,7 +68,8 @@ parseInitialState =
     setGoals = not <$> bool "no-set-join-goals" ["Disable joining goals by computing set of normal forms"]
     tracing = not <$> bool "no-tracing" ["Disable tracing output"]
     moreTracing = bool "more-tracing" ["Produce even more tracing output"]
-    weight = flag "lhs-weight" ["Weight given to LHS of critical pair (default 1)"] 1 argNum
+    lweight = flag "lhs-weight" ["Weight given to LHS of critical pair (default 1)"] 1 argNum
+    rweight = flag "rhs-weight" ["Weight given to RHS of critical pair (default 1)"] 1 argNum
     splits = flag "split" ["Split CP sets into this many pieces on selection (default 20)"] 20 argNum
     cpSetSize = flag "cp-set-minimum" ["Decay CP sets into single CPs when they get this small (default 20)"] 20 argNum
     mixFIFO = flag "mix-fifo" ["Take this many CPs at a time from FIFO (default 0)"] 0 argNum
