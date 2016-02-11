@@ -85,7 +85,7 @@ initialState mixFIFO mixPrio =
     skipCompositeSuperpositions = True,
     tracing = True,
     moreTracing = False,
-    lhsWeight         = 1,
+    lhsWeight         = 2,
     rhsWeight         = 1,
     joinStatistics    = Map.empty }
 
