@@ -566,40 +566,45 @@ instance Symbolic (CancellationRule f) where
   replace sub (CancellationRule tss rule) =
     CancellationRule (replace sub tss) (replace sub rule)
 
-toCancellationRule :: Rule f -> Maybe (CancellationRule f)
+toCancellationRule :: Function f => Rule f -> Maybe (CancellationRule f)
 toCancellationRule (Rule or l r)
-  -- XXX experiment with:
-  -- Having unoriented rules
-  -- Replacing constants with variables
   | Oriented <- or, not (null vs) =
     Just (CancellationRule tss (Rule or' l' r))
   | otherwise = Nothing
   where
     vs = usort (vars l) \\ usort (vars r)
+    cs = usort [ c | Fun c Empty <- subterms l ]
+
     n = bound l `max` bound r
 
-    l' = build (freshenVars n (singleton l))
+    l' = build (freshenVars (n + length cs) (singleton l))
     freshenVars !_ Empty = mempty
     freshenVars n (Cons (Var x) ts) =
       var y `mappend` freshenVars (n+1) ts
       where
         y = if x `elem` vs then MkVar n else x
+    freshenVars i (Cons (Fun f Empty) ts) =
+      var (MkVar m) `mappend` freshenVars (i+1) ts
+      where
+        m = n + fromMaybe __ (elemIndex f cs)
     freshenVars n (Cons (Fun f ts) us) =
       fun f (freshenVars (n+1) ts) `mappend`
       freshenVars (n+lenList ts+1) us
 
-    tss = map (map (build . var . snd)) (partitionBy fst pairs)
-    pairs = concat (zipWith f (vars l) (vars l'))
+    tss =
+      map (map (build . var . snd)) (partitionBy fst pairs) ++
+      zipWith (\i c -> [build (con c), build (var (MkVar i))]) [n..] cs
+    pairs = concat (zipWith f (subterms l) (subterms l'))
       where
-        f x y
+        f (Var x) (Var y)
           | x `elem` vs = [(x, y)]
-          | otherwise = []
+        f _ _ = []
 
     or' = subst (var . f) or
       where
         f x = fromMaybe __ (lookup x pairs)
 
-addCancellationRule :: Label -> Rule f -> Twee f -> Twee f
+addCancellationRule :: Function f => Label -> Rule f -> Twee f -> Twee f
 addCancellationRule l r s =
   case toCancellationRule r of
     Nothing -> s
@@ -607,7 +612,7 @@ addCancellationRule l r s =
       cancellationRules =
           Index.insert (Labelled l c) (cancellationRules s) }
 
-deleteCancellationRule :: Label -> Rule f -> Twee f -> Twee f
+deleteCancellationRule :: Function f => Label -> Rule f -> Twee f -> Twee f
 deleteCancellationRule l r s =
   case toCancellationRule r of
     Nothing -> s
