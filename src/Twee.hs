@@ -929,7 +929,7 @@ trace Twee{..} (ExtraRule rule) = traceIf tracing (hang (text "Extra rule") 2 (p
 trace Twee{..} (NewCP cp) = traceIf moreTracing (hang (text "Critical pair") 2 (pPrint cp))
 trace Twee{..} (Reduce red rule) = traceIf tracing (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
 trace Twee{..} (Consider eq) = traceIf moreTracing (sep [text "Considering", nest 2 (pPrint eq), text "under", nest 2 (pPrint (top (critInfo eq)))])
-trace Twee{..} (Delay eq) = traceIf tracing (sep [text "Delaying", nest 2 (pPrint eq), text "under", nest 2 (pPrint (top (critInfo eq)))])
+trace Twee{..} (Delay eq) = traceIf moreTracing (sep [text "Delaying", nest 2 (pPrint eq), text "under", nest 2 (pPrint (top (critInfo eq)))])
 trace Twee{..} (Discharge eq fs) = traceIf tracing (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
 trace Twee{..} (NormaliseCPs s) = traceIf tracing (text "" $$ text "Normalising unprocessed critical pairs." $$ text (report s) $$ text "")
 
