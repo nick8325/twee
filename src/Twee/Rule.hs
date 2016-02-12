@@ -85,6 +85,9 @@ instance Symbolic (Equation f) where
 instance (Numbered f, PrettyTerm f) => Pretty (Equation f) where
   pPrint (x :=: y) = hang (pPrint x <+> text "=") 2 (pPrint y)
 
+instance (Numbered f, Sized f) => Sized (Equation f) where
+  size (x :=: y) = size x + size y
+
 order :: Function f => Equation f -> Equation f
 order (l :=: r)
   | l == r = l :=: r
@@ -187,6 +190,8 @@ data Reduction f =
   deriving Show
 
 result :: Reduction f -> Term f
+result (Parallel [] t) = t
+result (Trans _ p) = result p
 result t = build (emitReduction t)
   where
     emitReduction (Step r sub) = Term.subst sub (rhs r)
@@ -237,23 +242,30 @@ steps r = aux r []
     aux (Trans p q) = aux p . aux q
     aux (Parallel ps _) = foldr (.) id (map (aux . snd) ps)
 
-normaliseWith :: (Numbered f, PrettyTerm f) => Strategy f -> Term f -> Reduction f
-normaliseWith strat t = aux 0 [] 0 (singleton t) (Parallel [] t) t
+anywhere1 :: (Numbered f, PrettyTerm f) => Strategy f -> Reduction f -> Maybe (Reduction f)
+anywhere1 strat p = aux [] 0 (singleton t) p t
   where
-    aux !_ _ !_ !_ _ !_ | False = __
-    aux 1000 _ _ _ p _ =
+    aux _ !_ !_ _ !_ | False = __
+    aux [] _ Empty p _ = Nothing
+    aux ps _ Empty p t = Just (p `Trans` Parallel (reverse ps) t)
+    aux ps n (Cons (Var _) t) p u = aux ps (n+1) t p u
+    aux ps n (Cons t u) p v | q:_ <- strat t =
+      aux ((n, q):ps) (n+len t) u p v
+    aux ps n (ConsSym (Fun _ _) t) p u =
+      aux ps (n+1) t p u
+
+    t = result p
+
+normaliseWith :: (Numbered f, PrettyTerm f) => Strategy f -> Term f -> Reduction f
+normaliseWith strat t = aux 0 (Parallel [] t)
+  where
+    aux 1000 p =
       ERROR("Possibly nonterminating rewrite:\n" ++
             prettyShow p)
-    aux _ [] _ Empty p _ = p
-    aux n ps _ Empty p t =
-      let q = Parallel (reverse ps) t
-          u = result q
-      in aux (n+1) [] 0 (singleton u) (p `Trans` q) u
-    aux m ps n (Cons (Var _) t) p u = aux m ps (n+1) t p u
-    aux m ps n (Cons t u) p v | q:_ <- strat t =
-      aux m ((n, q):ps) (n+len t) u p v
-    aux m ps n (ConsSym (Fun _ _) t) p u =
-      aux m ps (n+1) t p u
+    aux n p =
+      case anywhere1 strat p of
+        Nothing -> p
+        Just q -> aux (n+1) q
 
 normalForms :: Function f => Strategy f -> [Term f] -> Set (Term f)
 normalForms strat ts = go Set.empty Set.empty ts

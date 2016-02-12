@@ -42,7 +42,7 @@ library
     array
   hs-source-dirs:      src
   include-dirs:        src
-  ghc-options:         -W -fno-warn-incomplete-patterns
+  ghc-options:         -W -fno-warn-incomplete-patterns -fno-full-laziness
   default-language:    Haskell2010
 
 executable twee

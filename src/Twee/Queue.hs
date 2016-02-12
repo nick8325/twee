@@ -140,8 +140,8 @@ deleteLabel l q@Queue{queueLabels = ls} = q { queueLabels = Set.delete l ls }
 
 data Labelled a = Labelled { labelOf :: Label, peel :: a } deriving (Show, Functor)
 
-instance Eq a => Eq (Labelled a) where x == y = peel x == peel y
-instance Ord a => Ord (Labelled a) where compare = comparing peel
+instance Eq (Labelled a) where x == y = labelOf x == labelOf y
+instance Ord (Labelled a) where compare = comparing labelOf
 instance Symbolic a => Symbolic (Labelled a) where
   type ConstantOf (Labelled a) = ConstantOf a
   term = term . peel

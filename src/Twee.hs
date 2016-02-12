@@ -5,13 +5,13 @@
 module Twee where
 
 #include "errors.h"
-import Twee.Base hiding (empty)
+import Twee.Base hiding (empty, lookup)
 import Twee.Constraints hiding (funs)
 import Twee.Rule
 import qualified Twee.Indexes as Indexes
 import Twee.Indexes(Indexes, Rated(..))
 import qualified Twee.Index as Index
-import Twee.Index(Frozen)
+import Twee.Index(Index, Frozen)
 import Twee.Queue hiding (queue)
 import Twee.Utils
 import Control.Monad
@@ -36,6 +36,7 @@ data Twee f =
     maxSize           :: Maybe Int,
     labelledRules     :: {-# UNPACK #-} !(Indexes (Labelled (Modelled (Critical (Rule f))))),
     extraRules        :: {-# UNPACK #-} !(Indexes (Rule f)),
+    cancellationRules :: !(Index (Labelled (CancellationRule f))),
     goals             :: [Set (Term f)],
     totalCPs          :: Int,
     processedCPs      :: Int,
@@ -66,6 +67,7 @@ initialState mixFIFO mixPrio =
     maxSize           = Nothing,
     labelledRules     = Indexes.empty,
     extraRules        = Indexes.empty,
+    cancellationRules = Index.Nil,
     goals             = [],
     totalCPs          = 0,
     processedCPs      = 0,
@@ -245,12 +247,16 @@ instance Pretty JoinReason where
   pPrint SetJoining       = text "joined with set of normal forms"
   pPrint GroundJoined     = text "ground joined"
 
-normaliseCPQuickly, normaliseCP ::
+normaliseCPQuickly, normaliseCPReducing, normaliseCP ::
   Function f =>
   Twee f -> Critical (Equation f) -> Either JoinReason (Critical (Equation f))
 normaliseCPQuickly s cp =
   reduceCP s Initial id cp >>=
   reduceCP s Simplification (result . normaliseQuickly s)
+
+normaliseCPReducing s cp =
+  normaliseCPQuickly s cp >>=
+  reduceCP s Reducing (result . normalise s)
 
 normaliseCP s cp@(Critical info _) =
   case (cp1, cp2, cp3, cp4) of
@@ -261,8 +267,7 @@ normaliseCP s cp@(Critical info _) =
     (Left x, _, _, _) -> Left x
   where
     cp1 =
-      normaliseCPQuickly s cp >>=
-      reduceCP s Reducing (result . normalise s) >>=
+      normaliseCPReducing s cp >>=
       reduceCP s Subjoining (result . normaliseSub s (top info))
 
     cp2 =
@@ -311,8 +316,8 @@ complete1 = do
 
   res <- dequeueM
   case res of
-    Just (SingleCP (CP _ cp l1 l2)) -> do
-      res <- consider l1 l2 cp
+    Just (SingleCP (CP info cp l1 l2)) -> do
+      res <- consider (cpWeight info) l1 l2 cp
       when res renormaliseGoals
       return True
     Just (ManyCPs (CPs _ l lower upper size rule)) -> do
@@ -341,14 +346,14 @@ normaliseCPs = do
   put s { queue = emptyFrom queue }
   forM_ (toList queue) $ \cp ->
     case cp of
-      SingleCP (CP _ cp l1 l2) -> queueCP enqueueM l1 l2 cp
+      SingleCP (CP _ cp l1 l2) -> queueCP enqueueM trivial l1 l2 cp
       ManyCPs (CPs _ _ lower upper _ rule) -> queueCPs enqueueM lower upper (const ()) rule
   modify (\s -> s { totalCPs = totalCPs })
 
 consider ::
   Function f =>
-  Label -> Label -> Critical (Equation f) -> State (Twee f) Bool
-consider l1 l2 pair@(Critical _ eq0) = do
+  Int -> Label -> Label -> Critical (Equation f) -> State (Twee f) Bool
+consider w l1 l2 pair@(Critical _ eq0) = do
   traceM (Consider pair)
   modify' (\s -> s { processedCPs = processedCPs s + 1 })
   s <- get
@@ -357,11 +362,11 @@ consider l1 l2 pair@(Critical _ eq0) = do
       hard (Subsumed Subjoining) = True
       hard SetJoining = True
       hard _ = False
-      eqSize (t :=: u) = size t + size u
       tooBig (Critical _ (t :=: u)) =
         case maxSize s of
           Nothing -> False
           Just sz -> size t > sz || size u > sz
+      hardJoinable = isLeft . normaliseCPReducing s . Critical noCritInfo
   if tooBig pair then return False else
     case normaliseCP s pair of
       Left reason -> do
@@ -372,11 +377,13 @@ consider l1 l2 pair@(Critical _ eq0) = do
               r = rule t u
           addExtraRule r
         return False
-      Right (Critical info eq) | eqSize eq > eqSize eq0 -> do
-        queueCP enqueueM l1 l2 (Critical info eq)
-        return False
       Right pair | tooBig pair ->
         return False
+      Right pair@(Critical _ eq)
+        | cancelledWeight s hardJoinable eq > w -> do
+          traceM (Delay pair)
+          queueCP enqueueM hardJoinable l1 l2 pair
+          return False
       Right (Critical info eq) ->
         fmap or $ forM (map canonicalise (orient eq)) $ \(Rule _ t u0) -> do
           s <- get
@@ -392,7 +399,7 @@ consider l1 l2 pair@(Critical _ eq0) = do
               case groundJoin s (branches (And [])) eq of
                 Right eqs -> do
                   record GroundJoined
-                  mapM_ (consider l1 l2) [ eq { critInfo = info' } | eq <- eqs ]
+                  mapM_ (consider maxBound l1 l2) [ eq { critInfo = info' } | eq <- eqs ]
                   addExtraRule r
                   return False
                 Left model -> do
@@ -445,6 +452,7 @@ addRule :: Function f => Modelled (Critical (Rule f)) -> State (Twee f) Label
 addRule rule = do
   l <- newLabelM
   modify (\s -> s { labelledRules = Indexes.insert (Labelled l rule) (labelledRules s) })
+  modify (addCancellationRule l (critical (modelled rule)))
   return l
 
 addExtraRule :: Function f => Rule f -> State (Twee f) ()
@@ -453,10 +461,11 @@ addExtraRule rule = do
   modify (\s -> s { extraRules = Indexes.insert rule (extraRules s) })
 
 deleteRule :: Function f => Label -> Modelled (Critical (Rule f)) -> State (Twee f) ()
-deleteRule l rule =
+deleteRule l rule = do
   modify $ \s ->
     s { labelledRules = Indexes.delete (Labelled l rule) (labelledRules s),
         queue = deleteLabel l (queue s) }
+  modify (deleteCancellationRule l (critical (modelled rule)))
 
 data Simplification f = Simplify (Model f) (Modelled (Critical (Rule f))) | Reorient (Modelled (Critical (Rule f))) deriving Show
 
@@ -479,7 +488,7 @@ interreduce new = do
             Simplify model rule -> simplifyRule l model rule
             Reorient rule@(Modelled _ _ (Critical info (Rule _ t u))) -> do
               deleteRule l rule
-              queueCP enqueueM noLabel noLabel (Critical info (t :=: u))
+              queueCP enqueueM trivial noLabel noLabel (Critical info (t :=: u))
 
 reduceWith :: Function f => Twee f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
 reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
@@ -523,12 +532,88 @@ simplifyRule l model r@(Modelled _ positions (Critical info (Rule _ lhs rhs))) =
       labelledRules =
          Indexes.insert (Labelled l (Modelled model positions (Critical info (rule lhs (result (normalise s rhs))))))
            (Indexes.delete (Labelled l r) (labelledRules s)) }
+  modify (deleteCancellationRule l (critical (modelled r)))
+  modify (addCancellationRule l (critical (modelled r)))
 
 newEquation :: Function f => Equation f -> State (Twee f) ()
 newEquation (t :=: u) = do
-  consider noLabel noLabel (Critical (CritInfo minimalTerm 0) (t :=: u))
+  consider maxBound noLabel noLabel (Critical noCritInfo (t :=: u))
   renormaliseGoals
   return ()
+
+noCritInfo :: Function f => CritInfo f
+noCritInfo = CritInfo minimalTerm 0
+
+--------------------------------------------------------------------------------
+-- Cancellation rules.
+--------------------------------------------------------------------------------
+
+data CancellationRule f =
+  CancellationRule {
+    cr_unified :: [[Term f]],
+    cr_rule :: {-# UNPACK #-} !(Rule f) }
+  deriving Show
+
+instance (Numbered f, PrettyTerm f) => Pretty (CancellationRule f) where
+  pPrint (CancellationRule tss rule) =
+    pPrint rule <+> text "cancelling" <+> pPrint tss
+
+instance Symbolic (CancellationRule f) where
+  type ConstantOf (CancellationRule f) = f
+  term (CancellationRule _ rule) = term rule
+  termsDL (CancellationRule tss rule) =
+    termsDL rule `mplus` termsDL tss
+  replace sub (CancellationRule tss rule) =
+    CancellationRule (replace sub tss) (replace sub rule)
+
+toCancellationRule :: Rule f -> Maybe (CancellationRule f)
+toCancellationRule (Rule or l r)
+  -- XXX experiment with:
+  -- Having unoriented rules
+  -- Replacing constants with variables
+  | Oriented <- or, not (null vs) =
+    Just (CancellationRule tss (Rule or' l' r))
+  | otherwise = Nothing
+  where
+    vs = usort (vars l) \\ usort (vars r)
+    n = bound l `max` bound r
+
+    l' = build (freshenVars n (singleton l))
+    freshenVars !_ Empty = mempty
+    freshenVars n (Cons (Var x) ts) =
+      var y `mappend` freshenVars (n+1) ts
+      where
+        y = if x `elem` vs then MkVar n else x
+    freshenVars n (Cons (Fun f ts) us) =
+      fun f (freshenVars (n+1) ts) `mappend`
+      freshenVars (n+lenList ts+1) us
+
+    tss = map (map (build . var . snd)) (partitionBy fst pairs)
+    pairs = concat (zipWith f (vars l) (vars l'))
+      where
+        f x y
+          | x `elem` vs = [(x, y)]
+          | otherwise = []
+
+    or' = subst (var . f) or
+      where
+        f x = fromMaybe __ (lookup x pairs)
+
+addCancellationRule :: Label -> Rule f -> Twee f -> Twee f
+addCancellationRule l r s =
+  case toCancellationRule r of
+    Nothing -> s
+    Just c -> s {
+      cancellationRules =
+          Index.insert (Labelled l c) (cancellationRules s) }
+
+deleteCancellationRule :: Label -> Rule f -> Twee f -> Twee f
+deleteCancellationRule l r s =
+  case toCancellationRule r of
+    Nothing -> s
+    Just c -> s {
+      cancellationRules =
+          Index.delete (Labelled l c) (cancellationRules s) }
 
 --------------------------------------------------------------------------------
 -- Critical pairs.
@@ -705,10 +790,10 @@ criticalPairs1 s ns r rs = do
 queueCP ::
   Function f =>
   (Passive f -> State (Twee f) ()) ->
-  Label -> Label -> Critical (Equation f) -> State (Twee f) ()
-queueCP enq l1 l2 eq = do
+  (Equation f -> Bool) -> Label -> Label -> Critical (Equation f) -> State (Twee f) ()
+queueCP enq joinable l1 l2 eq = do
   s <- get
-  case toCP s l1 l2 eq of
+  case toCP s l1 l2 joinable eq of
     Nothing -> return ()
     Just cp -> enq (SingleCP cp)
 
@@ -742,47 +827,52 @@ toCPs ::
   Function f =>
   Twee f -> Label -> Label -> Labelled (Rule f) -> [CP f]
 toCPs s lower upper (Labelled l rule) =
-  catMaybes [toCP s l l' eqn | Labelled l' eqn <- criticalPairs s lower upper rule]
+  catMaybes [toCP s l l' trivial eqn | Labelled l' eqn <- criticalPairs s lower upper rule]
 
 toCP ::
   Function f =>
-  Twee f -> Label -> Label -> Critical (Equation f) -> Maybe (CP f)
-toCP s l1 l2 cp = fmap toCP' (norm cp)
+  Twee f -> Label -> Label -> (Equation f -> Bool) -> Critical (Equation f) -> Maybe (CP f)
+toCP s l1 l2 joinable cp = fmap toCP' (norm cp)
   where
-    norm (Critical info (t :=: u)) = do
+    norm eq@(Critical info (t :=: u)) = do
       guard (t /= u)
       let t' = result (normaliseQuickly s t)
           u' = result (normaliseQuickly s u)
+          eq' = Critical info (t' :=: u')
       guard (t' /= u')
-      return (Critical info (t' :=: u'))
+      return eq'
 
     toCP' (Critical info (t :=: u)) =
-      CP (CPInfo (weight t'' u'') (-(overlap info)) l2 l1) (Critical info' (t' :=: u')) l1 l2
+      CP (CPInfo w (-(overlap info)) l2 l1) (Critical info' (t' :=: u')) l1 l2
       where
         Critical info' (t' :=: u') = Critical info (order (t :=: u))
-        (t'' :=: u'') = unpack (t' :=: u')
+        w = cancelledWeight s joinable (t' :=: u')
 
-    unpack (Fun f (Cons t (Cons u Empty)) :=: false@(Fun g Empty))
-      | size (fromFun f) <= 0 && size (fromFun g) <= 0 =
-        if isJust (unify t u) then false :=: false else order (t :=: u)
-    unpack eq = eq
+cancelledWeight :: Function f => Twee f -> (Equation f -> Bool) -> Equation f -> Int
+cancelledWeight s joinable (t :=: u)
+  -- | length cs > 1 && w /= weight s (t :=: u) && Debug.Trace.trace ("Cancelled " ++ prettyShow (t :=: u) ++ " into " ++ prettyShow (tail cs)) False = __
+  | otherwise = w
+  where
+    cs = cancellations s joinable (t :=: u)
+    w = minimum (zipWith (+) [0..] (map (weight s) cs))
 
-    weight t u
-      | useUnorientablePenalty s && u `lessEq` t = f t u + penalty t u
-      | otherwise    = (f t u `max` f u t) + penalty t u
-      where
-        f t u = lhsWeight s*size' t + rhsWeight s*size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u) + if useGroundPenalty s && null (vars u) then 5 else 0
-        size' t =
-          size t +
-          -- Lots of different constants are probably bad
-          length (usort [ x | x <- funs t, arity x == 0 ]) +
-          -- Lots of (maybe the same) constants are probably slightly bad
-          ilog (length [ x | x <- funs t, arity x == 0 ]) +
-          -- Expressions of the form f(f(f(f(f(...))))) where f is size 0
-          -- are definitely bad!
-          ilog (length [ x | (x,y) <- zip (funs t) (tail (funs t)), x == y, arity x == 1 && size x == 0 ])
-        ilog n | n < 4 = 0
-        ilog n = 1 + ilog (n `div` 4)
+weight :: Function f => Twee f -> Equation f -> Int
+weight s (t :=: u)
+  | useUnorientablePenalty s && u `lessEq` t = f t u + penalty t u
+  | otherwise    = (f t u `max` f u t) + penalty t u
+  where
+    f t u = lhsWeight s*size' t + rhsWeight s*size u + length (vars u \\ vars t) + length (usort (vars t) \\ vars u) + if useGroundPenalty s && null (vars u) then 5 else 0
+    size' t =
+      size t +
+      -- Lots of different constants are probably bad
+      length (usort [ x | x <- funs t, arity x == 0 ]) +
+      -- Lots of (maybe the same) constants are probably slightly bad
+      ilog (length [ x | x <- funs t, arity x == 0 ]) +
+      -- Expressions of the form f(f(f(f(f(...))))) where f is size 0
+      -- are definitely bad!
+      ilog (length [ x | (x,y) <- zip (funs t) (tail (funs t)), x == y, arity x == 1 && size x == 0 ])
+    ilog n | n < 4 = 0
+    ilog n = 1 + ilog (n `div` 4)
 
     penalty t u
       | useSkolemPenalty s &&
@@ -791,6 +881,28 @@ toCP s l1 l2 cp = fmap toCP' (norm cp)
         -- be instantiated with with terms of size > 1 to not be joinable
         (length (vars t) + length (vars u)) `div` 3
       | otherwise = 0
+
+cancellations :: Function f => Twee f -> (Equation f -> Bool) -> Equation f -> [Equation f]
+cancellations s joinable (t :=: u) =
+  t :=: u:
+  case cands of
+    [] -> []
+    _  -> cancellations s joinable (minimumBy (comparing size) cands)
+  where
+    cands =
+      [ t' :=: u' | (sub, t') <- cancel t, let u' = result (normaliseQuickly s (subst sub u)), not (joinable (t' :=: u')) ] ++
+      [ t' :=: u' | (sub, u') <- cancel u, let t' = result (normaliseQuickly s (subst sub t)), not (joinable (t' :=: u')) ]
+    cancel t = do
+      (i, u) <- zip [0..] (subterms t)
+      Labelled _ (CancellationRule tss (Rule _ _ u')) <-
+        Index.lookup u (Index.freeze (cancellationRules s))
+      sub <- maybeToList (unifyMany [(t, u) | t:ts <- tss, u <- ts])
+      let t' = result (normaliseQuickly s (subst sub (build (emitReplacement i u' (singleton t)))))
+      guard (size t' < size t)
+      return (sub, t')
+
+    unifyMany ps =
+      unifyList (buildList (map fst ps)) (buildList (map snd ps))
 
 --------------------------------------------------------------------------------
 -- Tracing.
@@ -802,6 +914,7 @@ data Event f =
   | NewCP (Passive f)
   | Reduce (Simplification f) (Rule f)
   | Consider (Critical (Equation f))
+  | Delay (Critical (Equation f))
   | Discharge (Critical (Equation f)) (Model f)
   | NormaliseCPs (Twee f)
 
@@ -811,6 +924,7 @@ trace Twee{..} (ExtraRule rule) = traceIf tracing (hang (text "Extra rule") 2 (p
 trace Twee{..} (NewCP cp) = traceIf moreTracing (hang (text "Critical pair") 2 (pPrint cp))
 trace Twee{..} (Reduce red rule) = traceIf tracing (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
 trace Twee{..} (Consider eq) = traceIf moreTracing (sep [text "Considering", nest 2 (pPrint eq), text "under", nest 2 (pPrint (top (critInfo eq)))])
+trace Twee{..} (Delay eq) = traceIf tracing (sep [text "Delaying", nest 2 (pPrint eq), text "under", nest 2 (pPrint (top (critInfo eq)))])
 trace Twee{..} (Discharge eq fs) = traceIf tracing (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
 trace Twee{..} (NormaliseCPs s) = traceIf tracing (text "" $$ text "Normalising unprocessed critical pairs." $$ text (report s) $$ text "")
 
