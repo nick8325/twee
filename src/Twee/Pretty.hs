@@ -92,8 +92,8 @@ invisible =
       f [t] = pPrintPrec l p t
       f (t:ts) =
         pPrintParen (p > 10) $
-          hang (pPrint t) 2
-            (fsep (map (pPrintPrec l 11) ts))
+          pPrint t <+>
+            (hsep (map (pPrintPrec l 11) ts))
     in f
 
 -- | For functions that should be printed curried.
@@ -103,8 +103,8 @@ curried =
       f [] = d
       f xs =
         pPrintParen (p > 10) $
-          hang d 2
-            (fsep (map (pPrintPrec l 11) xs))
+          d <+>
+            (hsep (map (pPrintPrec l 11) xs))
     in f
 
 -- | For functions that should be printed uncurried.
@@ -113,7 +113,7 @@ uncurried =
     let
       f [] = d
       f xs =
-        d <> parens (fsep (punctuate comma (map (pPrintPrec l 0) xs)))
+        d <> parens (hsep (punctuate comma (map (pPrintPrec l 0) xs)))
     in f
 
 -- | A helper function that deals with under- and oversaturated applications.
@@ -125,8 +125,8 @@ fixedArity arity style =
         | length xs < arity = pPrintTerm curried l p (parens d) xs
         | length xs > arity =
             pPrintParen (p > 10) $
-              fsep (parens (pPrintTerm style l 0 d ys):
-                    map (nest 2 . pPrintPrec l 11) zs)
+              hsep (parens (pPrintTerm style l 0 d ys):
+                    map (pPrintPrec l 11) zs)
         | otherwise = pPrintTerm style l p d xs
         where
           (ys, zs) = splitAt arity xs
@@ -155,11 +155,11 @@ infixStyle pOp =
   fixedArity 2 $
   TermStyle $ \l p d [x, y] ->
     pPrintParen (p > fromIntegral pOp) $
-      hang (pPrintPrec l (fromIntegral pOp+1) x <+> d) 2
-           (pPrintPrec l (fromIntegral pOp+1) y)
+      pPrintPrec l (fromIntegral pOp+1) x <+> d <+>
+      pPrintPrec l (fromIntegral pOp+1) y
 
 -- | For tuples.
 tupleStyle :: TermStyle
 tupleStyle =
   TermStyle $ \l _ _ xs ->
-    parens (sep (punctuate comma (map (pPrintPrec l 0) xs)))
+    parens (hsep (punctuate comma (map (pPrintPrec l 0) xs)))

@@ -62,9 +62,9 @@ instance Symbolic (Orientation f) where
 
 instance (Numbered f, PrettyTerm f) => Pretty (Rule f) where
   pPrint (Rule Oriented l r) = pPrintRule l r
-  pPrint (Rule (WeaklyOriented ts) l r) = pPrintRule l r <+> text "(weak on" <+> pPrint ts <> text ")"
-  pPrint (Rule (Permutative ts) l r) = pPrintRule l r <+> text "(permutative on" <+> pPrint ts <> text ")"
-  pPrint (Rule Unoriented l r) = pPrintRule l r <+> text "(unoriented)"
+  pPrint (Rule (WeaklyOriented ts) l r) = hang (pPrintRule l r) 2 (text "(weak on" <+> pPrint ts <> text ")")
+  pPrint (Rule (Permutative ts) l r) = hang (pPrintRule l r) 2 (text "(permutative on" <+> pPrint ts <> text ")")
+  pPrint (Rule Unoriented l r) = hang (pPrintRule l r) 2 (text "(unoriented)")
 
 pPrintRule :: (Numbered f, PrettyTerm f) => Term f -> Term f -> Doc
 pPrintRule l r = hang (pPrint l <+> text "->") 2 (pPrint r)
