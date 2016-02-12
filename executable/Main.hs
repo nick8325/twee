@@ -35,17 +35,14 @@ import qualified Twee.Label as Label
 
 parseInitialState :: OptionParser (Twee f)
 parseInitialState =
-  go <$> maxSize <*> unorientable <*> skolem <*> ground <*> general
+  go <$> maxSize <*> general
      <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> lweight <*> rweight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> interreduce <*> cancel <*> cancelConsts
   where
-    go maxSize unorientable skolem ground general groundJoin conn set setGoals tracing moreTracing lweight rweight splits cpSetSize mixFIFO mixPrio skipComposite interreduce cancel cancelConsts =
+    go maxSize general groundJoin conn set setGoals tracing moreTracing lweight rweight splits cpSetSize mixFIFO mixPrio skipComposite interreduce cancel cancelConsts =
       (initialState mixFIFO mixPrio) {
         maxSize = maxSize,
         cpSplits = splits,
         minimumCPSetSize = cpSetSize,
-        useUnorientablePenalty = unorientable,
-        useSkolemPenalty = skolem,
-        useGroundPenalty = ground,
         useGeneralSuperpositions = general,
         useGroundJoining = groundJoin,
         useConnectedness = conn,
@@ -60,9 +57,6 @@ parseInitialState =
         lhsWeight = lweight,
         rhsWeight = rweight }
     maxSize = flag "max-size" ["Maximum critical pair size"] Nothing (Just <$> argNum)
-    unorientable = bool "unorientable-penalty" ["Penalise unorientable critical pairs"]
-    skolem = bool "skolem-penalty" ["Penalise critical pairs whose Skolemisation is joinable"]
-    ground = bool "ground-penalty" ["Penalise ground critical pairs"]
     general = not <$> bool "no-general-superpositions" ["Disable considering only general superpositions"]
     groundJoin = not <$> bool "no-ground-join" ["Disable ground joinability testing"]
     conn = not <$> bool "no-connectedness" ["Disable connectedness testing"]

@@ -44,9 +44,6 @@ data Twee f =
     minimumCPSetSize  :: Int,
     cpSplits          :: Int,
     queue             :: !(Queue (Mix (Either1 FIFO Heap)) (Passive f)),
-    useUnorientablePenalty  :: Bool,
-    useSkolemPenalty  :: Bool,
-    useGroundPenalty  :: Bool,
     useGeneralSuperpositions :: Bool,
     useGroundJoining  :: Bool,
     useConnectedness  :: Bool,
@@ -77,9 +74,6 @@ initialState mixFIFO mixPrio =
     minimumCPSetSize  = 20,
     cpSplits          = 20,
     queue             = empty (emptyMix mixFIFO mixPrio (Left1 emptyFIFO) (Right1 emptyHeap)),
-    useUnorientablePenalty  = False,
-    useSkolemPenalty  = False,
-    useGroundPenalty  = False,
     useGeneralSuperpositions = True,
     useGroundJoining  = True,
     useConnectedness  = True,
@@ -857,11 +851,10 @@ toCP s l1 l2 joinable cp = fmap toCP' (norm cp)
       guard (t' /= u')
       return eq'
 
-    toCP' (Critical info (t :=: u)) =
-      CP (CPInfo w (-(overlap info)) l2 l1) (Critical info' (t' :=: u')) l1 l2
+    toCP' eq@(Critical info (t :=: u)) =
+      CP (CPInfo w (-(overlap info)) l2 l1) eq l1 l2
       where
-        Critical info' (t' :=: u') = Critical info (order (t :=: u))
-        w = cancelledWeight s joinable (t' :=: u')
+        w = cancelledWeight s joinable (t :=: u)
 
 cancelledWeight :: Function f => Twee f -> (Equation f -> Bool) -> Equation f -> Int
 cancelledWeight s _ eq | not (useCancellation s) = weight s eq
@@ -873,20 +866,12 @@ cancelledWeight s joinable (t :=: u)
     w = minimum (zipWith (*) [2..] (map (weight s) cs))
 
 weight :: Function f => Twee f -> Equation f -> Int
-weight s (t :=: u)
-  | useUnorientablePenalty s && u `lessEq` t = f t u + penalty t u
-  | otherwise    = (f t u `max` f u t) + penalty t u
+weight s (t :=: u) =
+  lhsWeight s*size2 + rhsWeight s*size1
   where
-    f t u = lhsWeight s*size' t + rhsWeight s*size' u + if useGroundPenalty s && null (vars u) then 5 else 0
     size' t = 2*(size t + len t) - length (vars t)
-
-    penalty t u
-      | useSkolemPenalty s &&
-        result (normaliseSkolem s t) == result (normaliseSkolem s u) =
-        -- Arbitrary heuristic: assume one in three of the variables need to
-        -- be instantiated with with terms of size > 1 to not be joinable
-        (length (vars t) + length (vars u)) `div` 3
-      | otherwise = 0
+    (size1, size2) = minmax (size' t) (size' u)
+    minmax x y = (min x y, max x y)
 
 cancellations :: Function f => Twee f -> (Equation f -> Bool) -> Equation f -> [Equation f]
 cancellations s joinable (t :=: u) =
