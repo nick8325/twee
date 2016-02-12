@@ -582,7 +582,8 @@ toCancellationRule s (Rule or l r)
   where
     consts = unifyConstantsInCancellation s
 
-    vs = usort (vars l) \\ usort (vars r)
+    -- Variables that occur on lhs more than once, but not rhs
+    vs = usort (vars l \\ usort (vars l)) \\ usort (vars r)
     cs = usort [ c | consts, Fun c Empty <- subterms l ]
 
     n = bound l `max` bound r
