@@ -357,7 +357,7 @@ normaliseCPs = do
 consider ::
   Function f =>
   Int -> Label -> Label -> Critical (Equation f) -> State (Twee f) Bool
-consider w l1 l2 pair@(Critical _ eq0) = do
+consider w l1 l2 pair = do
   traceM (Consider pair)
   modify' (\s -> s { processedCPs = processedCPs s + 1 })
   s <- get
@@ -848,7 +848,7 @@ toCP ::
   Twee f -> Label -> Label -> (Equation f -> Bool) -> Critical (Equation f) -> Maybe (CP f)
 toCP s l1 l2 joinable cp = fmap toCP' (norm cp)
   where
-    norm eq@(Critical info (t :=: u)) = do
+    norm (Critical info (t :=: u)) = do
       guard (t /= u)
       let t' = result (normaliseQuickly s t)
           u' = result (normaliseQuickly s u)

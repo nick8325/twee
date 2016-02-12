@@ -246,7 +246,7 @@ anywhere1 :: (Numbered f, PrettyTerm f) => Strategy f -> Reduction f -> Maybe (R
 anywhere1 strat p = aux [] 0 (singleton t) p t
   where
     aux _ !_ !_ _ !_ | False = __
-    aux [] _ Empty p _ = Nothing
+    aux [] _ Empty _ _ = Nothing
     aux ps _ Empty p t = Just (p `Trans` Parallel (reverse ps) t)
     aux ps n (Cons (Var _) t) p u = aux ps (n+1) t p u
     aux ps n (Cons t u) p v | q:_ <- strat t =
