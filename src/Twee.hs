@@ -608,6 +608,9 @@ addCancellationRule :: Function f => Label -> Rule f -> Twee f -> Twee f
 addCancellationRule l r s =
   case toCancellationRule r of
     Nothing -> s
+    Just c
+      | moreTracing s &&
+        Debug.Trace.traceShow (sep [text "Adding cancellation rule", nest 2 (pPrint c)]) False -> __
     Just c -> s {
       cancellationRules =
           Index.insert (Labelled l c) (cancellationRules s) }
@@ -855,7 +858,7 @@ toCP s l1 l2 joinable cp = fmap toCP' (norm cp)
 
 cancelledWeight :: Function f => Twee f -> (Equation f -> Bool) -> Equation f -> Int
 cancelledWeight s joinable (t :=: u)
-  -- | length cs > 1 && w /= weight s (t :=: u) && Debug.Trace.trace ("Cancelled " ++ prettyShow (t :=: u) ++ " into " ++ prettyShow (tail cs)) False = __
+  | moreTracing s && length cs > 1 && w /= weight s (t :=: u) && Debug.Trace.trace ("Cancelled " ++ prettyShow (t :=: u) ++ " into " ++ prettyShow (tail cs)) False = __
   | otherwise = w
   where
     cs = cancellations s joinable (t :=: u)
