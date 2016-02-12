@@ -575,8 +575,10 @@ instance Symbolic (CancellationRule f) where
     CancellationRule (replace sub tss) (replace sub rule)
 
 toCancellationRule :: Function f => Twee f -> Rule f -> Maybe (CancellationRule f)
+toCancellationRule _ (Rule Permutative{} _ _) = Nothing
+toCancellationRule _ (Rule WeaklyOriented{} _ _) = Nothing
 toCancellationRule s (Rule or l r)
-  | Oriented <- or, not (null vs) =
+  | not (null vs) =
     Just (CancellationRule tss (Rule or' l' r))
   | otherwise = Nothing
   where
