@@ -875,7 +875,7 @@ bestCancellation s joinable (t :=: u)
   | otherwise = (w, best)
   where
     cs   = cancellations s joinable (t :=: u)
-    ws   = map (weight s) cs
+    ws   = zipWith (+) [0..] (map (weight s) cs)
     w    = minimum ws
     best = snd (minimumBy (comparing fst) (zip ws cs))
 
