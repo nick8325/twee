@@ -275,7 +275,8 @@ normaliseCP s cp@(Critical info _) =
       reduceCP s Subjoining (result . normaliseSub s (top info))
 
     cp2 =
-      reduceCP s Subjoining (result . normaliseSub s (flipCP (top info))) (flipCP cp)
+      normaliseCPReducing s cp >>=
+      reduceCP s Subjoining (result . normaliseSub s (flipCP (top info))) . flipCP
 
     cp3 = setJoin cp
     cp4 = setJoin (flipCP cp)
