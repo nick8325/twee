@@ -383,8 +383,15 @@ consider w l1 l2 pair = do
           traceM (Delay pair)
           queueCP enqueueM hardJoinable l1 l2 pair
           return False
+      Right pair@(Critical _ eq)
+        | (_, eq') <- bestCancellation s hardJoinable eq,
+          eq /= eq' -> do
+            res <- consider maxBound l1 l2 (Critical noCritInfo eq')
+            traceM (Delay pair)
+            queueCP enqueueM hardJoinable l1 l2 pair
+            return res
       Right (Critical info eq) ->
-        fmap or $ forM (map canonicalise (orient eq)) $ \(Rule _ t u0) -> do
+        fmap or $ forM (map canonicalise (orient eq)) $ \r0@(Rule _ t u0) -> do
           s <- get
           let u = result (normaliseSub s t u0)
               r = rule t u
@@ -393,6 +400,7 @@ consider w l1 l2 pair = do
             Left reason -> do
               when (hard reason) $ record reason
               addExtraRule r
+              addExtraRule r0
               return False
             Right eq ->
               case groundJoin s (branches (And [])) eq of
@@ -400,6 +408,7 @@ consider w l1 l2 pair = do
                   record GroundJoined
                   mapM_ (consider maxBound l1 l2) [ eq { critInfo = info' } | eq <- eqs ]
                   addExtraRule r
+                  addExtraRule r0
                   return False
                 Left model -> do
                   traceM (NewRule r)
@@ -857,13 +866,18 @@ toCP s l1 l2 joinable cp = fmap toCP' (norm cp)
         w = cancelledWeight s joinable (t :=: u)
 
 cancelledWeight :: Function f => Twee f -> (Equation f -> Bool) -> Equation f -> Int
-cancelledWeight s _ eq | not (useCancellation s) = weight s eq
-cancelledWeight s joinable (t :=: u)
+cancelledWeight s joinable eq = fst (bestCancellation s joinable eq)
+
+bestCancellation :: Function f => Twee f -> (Equation f -> Bool) -> Equation f -> (Int, Equation f)
+bestCancellation s _ eq | not (useCancellation s) = (weight s eq, eq)
+bestCancellation s joinable (t :=: u)
   | moreTracing s && length cs > 1 && w /= weight s (t :=: u) && Debug.Trace.trace ("Cancelled " ++ prettyShow (t :=: u) ++ " into " ++ prettyShow (tail cs)) False = __
-  | otherwise = w
+  | otherwise = (w, best)
   where
-    cs = cancellations s joinable (t :=: u)
-    w = minimum (zipWith (*) [2..] (map (weight s) cs))
+    cs   = cancellations s joinable (t :=: u)
+    ws   = map (weight s) cs
+    w    = minimum ws
+    best = snd (minimumBy (comparing fst) (zip ws cs))
 
 weight :: Function f => Twee f -> Equation f -> Int
 weight s (t :=: u) =
@@ -881,6 +895,7 @@ cancellations s joinable (t :=: u) =
     _  -> cancellations s joinable (minimumBy (comparing size) cands)
   where
     cands =
+      filter (\eq -> size eq < size (t :=: u)) $
       [ t' :=: u' | (sub, t') <- cancel t, let u' = result (normaliseQuickly s (subst sub u)), not (joinable (t' :=: u')) ] ++
       [ t' :=: u' | (sub, u') <- cancel u, let t' = result (normaliseQuickly s (subst sub t)), not (joinable (t' :=: u')) ]
     cancel t = do
@@ -889,7 +904,6 @@ cancellations s joinable (t :=: u) =
         Index.lookup u (Index.freeze (cancellationRules s))
       sub <- maybeToList (unifyMany [(t, u) | t:ts <- tss, u <- ts])
       let t' = result (normaliseQuickly s (subst sub (build (emitReplacement i u' (singleton t)))))
-      guard (size t' < size t)
       return (sub, t')
 
     unifyMany ps =
