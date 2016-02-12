@@ -859,7 +859,7 @@ cancelledWeight s joinable (t :=: u)
   | otherwise = w
   where
     cs = cancellations s joinable (t :=: u)
-    w = minimum (zipWith (+) [0..] (map (weight s) cs))
+    w = minimum (zipWith (*) [2..] (map (weight s) cs))
 
 weight :: Function f => Twee f -> Equation f -> Int
 weight s (t :=: u)
