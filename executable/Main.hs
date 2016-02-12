@@ -36,9 +36,9 @@ import qualified Twee.Label as Label
 parseInitialState :: OptionParser (Twee f)
 parseInitialState =
   go <$> maxSize <*> unorientable <*> skolem <*> ground <*> general
-     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> lweight <*> rweight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> interreduce
+     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> lweight <*> rweight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> interreduce <*> cancel <*> cancelConsts
   where
-    go maxSize unorientable skolem ground general groundJoin conn set setGoals tracing moreTracing lweight rweight splits cpSetSize mixFIFO mixPrio skipComposite interreduce =
+    go maxSize unorientable skolem ground general groundJoin conn set setGoals tracing moreTracing lweight rweight splits cpSetSize mixFIFO mixPrio skipComposite interreduce cancel cancelConsts =
       (initialState mixFIFO mixPrio) {
         maxSize = maxSize,
         cpSplits = splits,
@@ -51,6 +51,8 @@ parseInitialState =
         useConnectedness = conn,
         useSetJoining = set,
         useSetJoiningForGoals = setGoals,
+        useCancellation = cancel,
+        unifyConstantsInCancellation = cancelConsts,
         useInterreduction = interreduce,
         skipCompositeSuperpositions = skipComposite,
         tracing = tracing,
@@ -75,6 +77,8 @@ parseInitialState =
     mixFIFO = flag "mix-fifo" ["Take this many CPs at a time from FIFO (default 0)"] 0 argNum
     mixPrio = flag "mix-prio" ["Take this many CPs at a time from priority queue (default 10)"] 10 argNum
     interreduce = not <$> bool "no-interreduce" ["Disable interreduction"]
+    cancel = not <$> bool "no-cancellation" ["Disable cancellation"]
+    cancelConsts = bool "unify-consts-in-cancellation" ["Allow unification with a constant in cancellation"]
     skipComposite = not <$> bool "composite-superpositions" ["Generate composite superpositions"]
 
 data Order = KBO | LPO

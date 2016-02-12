@@ -52,6 +52,8 @@ data Twee f =
     useConnectedness  :: Bool,
     useSetJoining     :: Bool,
     useSetJoiningForGoals :: Bool,
+    useCancellation :: Bool,
+    unifyConstantsInCancellation :: Bool,
     useInterreduction :: Bool,
     skipCompositeSuperpositions :: Bool,
     tracing :: Bool,
@@ -84,6 +86,8 @@ initialState mixFIFO mixPrio =
     useSetJoining     = False,
     useSetJoiningForGoals = True,
     useInterreduction = True,
+    useCancellation = True,
+    unifyConstantsInCancellation = False,
     skipCompositeSuperpositions = True,
     tracing = True,
     moreTracing = False,
@@ -566,14 +570,16 @@ instance Symbolic (CancellationRule f) where
   replace sub (CancellationRule tss rule) =
     CancellationRule (replace sub tss) (replace sub rule)
 
-toCancellationRule :: Function f => Rule f -> Maybe (CancellationRule f)
-toCancellationRule (Rule or l r)
+toCancellationRule :: Function f => Twee f -> Rule f -> Maybe (CancellationRule f)
+toCancellationRule s (Rule or l r)
   | Oriented <- or, not (null vs) =
     Just (CancellationRule tss (Rule or' l' r))
   | otherwise = Nothing
   where
+    consts = unifyConstantsInCancellation s
+
     vs = usort (vars l) \\ usort (vars r)
-    cs = usort [ c | Fun c Empty <- subterms l ]
+    cs = usort [ c | consts, Fun c Empty <- subterms l ]
 
     n = bound l `max` bound r
 
@@ -583,7 +589,7 @@ toCancellationRule (Rule or l r)
       var y `mappend` freshenVars (n+1) ts
       where
         y = if x `elem` vs then MkVar n else x
-    freshenVars i (Cons (Fun f Empty) ts) =
+    freshenVars i (Cons (Fun f Empty) ts) | f `elem` cs =
       var (MkVar m) `mappend` freshenVars (i+1) ts
       where
         m = n + fromMaybe __ (elemIndex f cs)
@@ -606,7 +612,7 @@ toCancellationRule (Rule or l r)
 
 addCancellationRule :: Function f => Label -> Rule f -> Twee f -> Twee f
 addCancellationRule l r s =
-  case toCancellationRule r of
+  case toCancellationRule s r of
     Nothing -> s
     Just c
       | moreTracing s &&
@@ -617,7 +623,7 @@ addCancellationRule l r s =
 
 deleteCancellationRule :: Function f => Label -> Rule f -> Twee f -> Twee f
 deleteCancellationRule l r s =
-  case toCancellationRule r of
+  case toCancellationRule s r of
     Nothing -> s
     Just c -> s {
       cancellationRules =
@@ -857,6 +863,7 @@ toCP s l1 l2 joinable cp = fmap toCP' (norm cp)
         w = cancelledWeight s joinable (t' :=: u')
 
 cancelledWeight :: Function f => Twee f -> (Equation f -> Bool) -> Equation f -> Int
+cancelledWeight s _ eq | not (useCancellation s) = weight s eq
 cancelledWeight s joinable (t :=: u)
   | moreTracing s && length cs > 1 && w /= weight s (t :=: u) && Debug.Trace.trace ("Cancelled " ++ prettyShow (t :=: u) ++ " into " ++ prettyShow (tail cs)) False = __
   | otherwise = w
