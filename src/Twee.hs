@@ -191,14 +191,14 @@ rules k = rulesFor 1 k `Index.union` Indexes.freeze 0 (extraRules k)
 allRules k = rulesFor 1 k `Index.union` Indexes.freeze 1 (extraRules k)
 
 normaliseQuickly :: Function f => Twee f -> Term f -> Reduction f
-normaliseQuickly s = normaliseWith (rewrite "simplify" simplifies (easyRules s))
+normaliseQuickly s t = normaliseWith (rewrite "simplify" simplifies (easyRules s)) t
 
 normalise :: Function f => Twee f -> Term f -> Reduction f
-normalise s = normaliseWith (rewrite "reduce" reduces (rules s))
+normalise s t = normaliseWith (rewrite "reduce" reduces (rules s)) t
 
 normaliseIn :: Function f => Twee f -> Model f -> Term f -> Reduction f
-normaliseIn s model =
-  normaliseWith (rewrite "model" (reducesInModel model) (rules s))
+normaliseIn s model t =
+  normaliseWith (rewrite "model" (reducesInModel model) (rules s)) t
 
 normaliseSub :: Function f => Twee f -> Term f -> Term f -> Reduction f
 normaliseSub s top t
@@ -207,7 +207,7 @@ normaliseSub s top t
   | otherwise = Parallel [] t
 
 normaliseSkolem :: Function f => Twee f -> Term f -> Reduction f
-normaliseSkolem s = normaliseWith (rewrite "skolem" reducesSkolem (rules s))
+normaliseSkolem s t = normaliseWith (rewrite "skolem" reducesSkolem (rules s)) t
 
 reduceCP ::
   Function f =>
