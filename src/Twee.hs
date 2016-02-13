@@ -50,6 +50,7 @@ data Twee f =
     useSetJoining     :: Bool,
     useSetJoiningForGoals :: Bool,
     useCancellation :: Bool,
+    maxCancellationSize :: Maybe Int,
     unifyConstantsInCancellation :: Bool,
     useInterreduction :: Bool,
     skipCompositeSuperpositions :: Bool,
@@ -81,6 +82,7 @@ initialState mixFIFO mixPrio =
     useSetJoiningForGoals = True,
     useInterreduction = True,
     useCancellation = True,
+    maxCancellationSize = Nothing,
     unifyConstantsInCancellation = False,
     skipCompositeSuperpositions = True,
     tracing = True,
@@ -618,6 +620,8 @@ toCancellationRule s (Rule or l r)
         f x = fromMaybe __ (lookup x pairs)
 
 addCancellationRule :: Function f => Label -> Rule f -> Twee f -> Twee f
+addCancellationRule _ (Rule _ t u) s
+  | Just n <- maxCancellationSize s, size (t :=: u) > n = s
 addCancellationRule l r s =
   case toCancellationRule s r of
     Nothing -> s
