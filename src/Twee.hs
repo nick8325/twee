@@ -886,13 +886,13 @@ bestCancellation s joinable (t :=: u)
     w    = minimum ws
     best = snd (minimumBy (comparing fst) (zip ws cs))
 
-weight :: Function f => Twee f -> Equation f -> Int
-weight s (t :=: u) =
-  lhsWeight s*size2 + rhsWeight s*size1
+weight, weight' :: Function f => Twee f -> Equation f -> Int
+weight s eq = weight' s (order eq)
+
+weight' s (t :=: u) =
+  lhsWeight s*size' t + rhsWeight s*size' u
   where
     size' t = 2*(size t + len t) - length (vars t)
-    (size1, size2) = minmax (size' t) (size' u)
-    minmax x y = (min x y, max x y)
 
 cancellations :: Function f => Twee f -> (Equation f -> Bool) -> Equation f -> [Equation f]
 cancellations s joinable (t :=: u) =
