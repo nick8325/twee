@@ -54,6 +54,8 @@ data Twee f =
     unifyConstantsInCancellation :: Bool,
     useInterreduction :: Bool,
     skipCompositeSuperpositions :: Bool,
+    tweakneq :: Bool,
+    tweakftuk :: Bool,
     tracing :: Bool,
     moreTracing :: Bool,
     lhsWeight         :: Int,
@@ -85,6 +87,8 @@ initialState mixFIFO mixPrio =
     maxCancellationSize = Nothing,
     unifyConstantsInCancellation = False,
     skipCompositeSuperpositions = True,
+    tweakneq = True,
+    tweakftuk = False,
     tracing = True,
     moreTracing = False,
     lhsWeight         = 2,
@@ -889,6 +893,10 @@ bestCancellation s joinable (t :=: u)
 weight, weight' :: Function f => Twee f -> Equation f -> Int
 weight s eq = weight' s (order eq)
 
+weight' s (Fun f (Cons t (Cons u Empty)) :=: k@(Fun _ Empty))
+  | (tweakneq s && size f <= 0 && size k <= 0) ||
+    (tweakftuk s && not (null (vars t ++ vars u))) =
+    weight s (t :=: u) + weight' s (build (con f) :=: k)
 weight' s (t :=: u) =
   lhsWeight s*size' t + rhsWeight s*size' u
   where
