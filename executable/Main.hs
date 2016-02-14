@@ -78,8 +78,8 @@ parseInitialState =
     cancelSize = flag "max-cancellation-size" ["Maximum size of cancellation laws"] Nothing (Just <$> argNum)
     cancelConsts = bool "unify-consts-in-cancellation" ["Allow unification with a constant in cancellation"]
     skipComposite = not <$> bool "composite-superpositions" ["Generate composite superpositions"]
-    tweakneq = not <$> bool "no-tweak-neq" ["Don't weigh $equals(t,u) = $false as if it was t = u"]
-    tweakftuk = not <$> bool "tweak-ftuk" ["Weigh f(t,u) = k as if it was t = u"]
+    tweakneq = bool "tweak-neq" ["Don't weigh $equals(t,u) = $false as if it was t = u"]
+    tweakftuk = bool "tweak-ftuk" ["Weigh f(t,u) = k as if it was t = u"]
 
 data Order = KBO | LPO
 
