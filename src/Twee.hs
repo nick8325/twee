@@ -51,6 +51,7 @@ data Twee f =
     useSetJoiningForGoals :: Bool,
     useCancellation :: Bool,
     maxCancellationSize :: Maybe Int,
+    atomicCancellation :: Bool,
     unifyConstantsInCancellation :: Bool,
     useInterreduction :: Bool,
     skipCompositeSuperpositions :: Bool,
@@ -82,6 +83,7 @@ initialState mixFIFO mixPrio =
     useSetJoiningForGoals = True,
     useInterreduction = True,
     useCancellation = True,
+    atomicCancellation = True,
     maxCancellationSize = Nothing,
     unifyConstantsInCancellation = False,
     skipCompositeSuperpositions = True,
@@ -580,11 +582,15 @@ toCancellationRule :: Function f => Twee f -> Rule f -> Maybe (CancellationRule 
 toCancellationRule _ (Rule Permutative{} _ _) = Nothing
 toCancellationRule _ (Rule WeaklyOriented{} _ _) = Nothing
 toCancellationRule s (Rule or l r)
-  | not (null vs) =
+  | not (null vs) &&
+    (not (atomicCancellation s) || atomic r) =
     Just (CancellationRule tss (Rule or' l' r))
   | otherwise = Nothing
   where
     consts = unifyConstantsInCancellation s
+    atomic (Var _) = True
+    atomic (Fun _ Empty) = True
+    atomic _ = False
 
     -- Variables that occur on lhs more than once, but not rhs
     vs = usort (vars l \\ usort (vars l)) \\ usort (vars r)
