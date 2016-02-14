@@ -36,9 +36,9 @@ import qualified Twee.Label as Label
 parseInitialState :: OptionParser (Twee f)
 parseInitialState =
   go <$> maxSize <*> general
-     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> lweight <*> rweight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> interreduce <*> cancel <*> cancelSize <*> cancelConsts <*> tweakneq <*> tweakftuk
+     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> lweight <*> rweight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> interreduce <*> cancel <*> cancelSize <*> cancelConsts
   where
-    go maxSize general groundJoin conn set setGoals tracing moreTracing lweight rweight splits cpSetSize mixFIFO mixPrio skipComposite interreduce cancel cancelSize cancelConsts tweakneq tweakftuk =
+    go maxSize general groundJoin conn set setGoals tracing moreTracing lweight rweight splits cpSetSize mixFIFO mixPrio skipComposite interreduce cancel cancelSize cancelConsts =
       (initialState mixFIFO mixPrio) {
         maxSize = maxSize,
         cpSplits = splits,
@@ -52,8 +52,6 @@ parseInitialState =
         maxCancellationSize = cancelSize,
         unifyConstantsInCancellation = cancelConsts,
         useInterreduction = interreduce,
-        tweakneq = tweakneq,
-        tweakftuk = tweakftuk,
         skipCompositeSuperpositions = skipComposite,
         tracing = tracing,
         moreTracing = moreTracing,
@@ -78,8 +76,6 @@ parseInitialState =
     cancelSize = flag "max-cancellation-size" ["Maximum size of cancellation laws"] Nothing (Just <$> argNum)
     cancelConsts = bool "unify-consts-in-cancellation" ["Allow unification with a constant in cancellation"]
     skipComposite = not <$> bool "composite-superpositions" ["Generate composite superpositions"]
-    tweakneq = bool "tweak-neq" ["Don't weigh $equals(t,u) = $false as if it was t = u"]
-    tweakftuk = bool "tweak-ftuk" ["Weigh f(t,u) = k as if it was t = u"]
 
 data Order = KBO | LPO
 
