@@ -894,8 +894,7 @@ weight, weight' :: Function f => Twee f -> Equation f -> Int
 weight s eq = weight' s (order eq)
 
 weight' s (Fun f (Cons t (Cons u Empty)) :=: k@(Fun _ Empty))
-  | (tweakneq s && size f <= 0 && size k <= 0) ||
-    (tweakftuk s && not (null (vars t ++ vars u))) =
+  | tweakftuk s || (tweakneq s && size f <= 0 && size k <= 0) =
     weight s (t :=: u) + weight' s (build (con f) :=: k)
 weight' s (t :=: u) =
   lhsWeight s*size' t + rhsWeight s*size' u
