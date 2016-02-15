@@ -501,7 +501,8 @@ interreduce new = do
             Simplify model rule -> simplifyRule l model rule
             Reorient rule@(Modelled _ _ (Critical info (Rule _ t u))) -> do
               deleteRule l rule
-              queueCP enqueueM trivial noLabel noLabel (Critical info (t :=: u))
+              consider maxBound noLabel noLabel (Critical info (t :=: u))
+              return ()
 
 reduceWith :: Function f => Twee f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
 reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
