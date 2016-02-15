@@ -379,6 +379,7 @@ consider w l1 l2 pair = do
           let u = result (normaliseSub s t u0)
               r = rule t u
           addExtraRule r
+        traceM (Joined pair reason)
         return False
       Right pair | tooBig pair ->
         return False
@@ -932,6 +933,7 @@ data Event f =
   | NewCP (Passive f)
   | Reduce (Simplification f) (Rule f)
   | Consider (Critical (Equation f))
+  | Joined (Critical (Equation f)) JoinReason
   | Delay (Critical (Equation f))
   | Cancel (Critical (Equation f))
   | Discharge (Critical (Equation f)) (Model f)
@@ -943,6 +945,7 @@ trace Twee{..} (ExtraRule rule) = traceIf tracing (hang (text "Extra rule") 2 (p
 trace Twee{..} (NewCP cp) = traceIf moreTracing (hang (text "Critical pair") 2 (pPrint cp))
 trace Twee{..} (Reduce red rule) = traceIf tracing (sep [pPrint red, nest 2 (text "using"), nest 2 (pPrint rule)])
 trace Twee{..} (Consider eq) = traceIf moreTracing (sep [text "Considering", nest 2 (pPrint eq), text "under", nest 2 (pPrint (top (critInfo eq)))])
+trace Twee{..} (Joined eq reason) = traceIf moreTracing (sep [text "Joined", nest 2 (pPrint eq), text "under", nest 2 (pPrint (top (critInfo eq))), text "by", nest 2 (pPrint reason)])
 trace Twee{..} (Delay eq) = traceIf moreTracing (sep [text "Delaying", nest 2 (pPrint eq)])
 trace Twee{..} (Cancel eq) = traceIf tracing (sep [text "Cancelled", nest 2 (pPrint eq)])
 trace Twee{..} (Discharge eq fs) = traceIf tracing (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
