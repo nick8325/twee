@@ -898,7 +898,7 @@ weight s eq = weight' s (order eq)
 weight' s (t :=: u) =
   lhsWeight s*size' t + rhsWeight s*size' u
   where
-    size' t = 2*(size t + len t) - length (vars t)
+    size' t = 4*(size t + len t) - length (vars t) - length (nub (vars t))
 
 cancellations :: Function f => Twee f -> (Equation f -> Bool) -> Equation f -> [Equation f]
 cancellations s joinable (t :=: u) =
