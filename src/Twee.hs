@@ -54,6 +54,7 @@ data Twee f =
     atomicCancellation :: Bool,
     unifyConstantsInCancellation :: Bool,
     useInterreduction :: Bool,
+    useUnsafeInterreduction :: Bool,
     skipCompositeSuperpositions :: Bool,
     tracing :: Bool,
     moreTracing :: Bool,
@@ -82,6 +83,7 @@ initialState mixFIFO mixPrio =
     useSetJoining     = False,
     useSetJoiningForGoals = True,
     useInterreduction = True,
+    useUnsafeInterreduction = True,
     useCancellation = True,
     atomicCancellation = True,
     maxCancellationSize = Nothing,
@@ -488,6 +490,7 @@ addExtraRule rule = do
     modify (\s -> s { extraRules = Indexes.insert rule (extraRules s) })
 
 extraRuleSafe :: Function f => Twee f -> Rule f -> Bool
+extraRuleSafe s _ | useUnsafeInterreduction s = True
 extraRuleSafe s (Rule _ l _) =
   null $ do
     Index.Match (Rule _ l' _) _ <- Index.matches l (allRules s)

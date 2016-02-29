@@ -36,9 +36,9 @@ import qualified Twee.Label as Label
 parseInitialState :: OptionParser (Twee f)
 parseInitialState =
   go <$> maxSize <*> general
-     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> lweight <*> rweight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> interreduce <*> cancel <*> cancelSize <*> cancelConsts <*> atomicCancellation
+     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> lweight <*> rweight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> interreduce <*> unsafeInterreduce <*> cancel <*> cancelSize <*> cancelConsts <*> atomicCancellation
   where
-    go maxSize general groundJoin conn set setGoals tracing moreTracing lweight rweight splits cpSetSize mixFIFO mixPrio skipComposite interreduce cancel cancelSize cancelConsts atomicCancellation =
+    go maxSize general groundJoin conn set setGoals tracing moreTracing lweight rweight splits cpSetSize mixFIFO mixPrio skipComposite interreduce unsafeInterreduce cancel cancelSize cancelConsts atomicCancellation =
       (initialState mixFIFO mixPrio) {
         maxSize = maxSize,
         cpSplits = splits,
@@ -53,6 +53,7 @@ parseInitialState =
         atomicCancellation = atomicCancellation,
         unifyConstantsInCancellation = cancelConsts,
         useInterreduction = interreduce,
+        useUnsafeInterreduction = unsafeInterreduce,
         skipCompositeSuperpositions = skipComposite,
         tracing = tracing,
         moreTracing = moreTracing,
@@ -73,6 +74,7 @@ parseInitialState =
     mixFIFO = flag "mix-fifo" ["Take this many CPs at a time from FIFO (default 0)"] 0 argNum
     mixPrio = flag "mix-prio" ["Take this many CPs at a time from priority queue (default 10)"] 10 argNum
     interreduce = not <$> bool "no-interreduce" ["Disable interreduction"]
+    unsafeInterreduce = not <$> bool "safe-interreduce" ["Disable some incomplete interreductions"]
     cancel = not <$> bool "no-cancellation" ["Disable cancellation"]
     cancelSize = flag "max-cancellation-size" ["Maximum size of cancellation laws"] Nothing (Just <$> argNum)
     cancelConsts = bool "unify-consts-in-cancellation" ["Allow unification with a constant in cancellation"]
