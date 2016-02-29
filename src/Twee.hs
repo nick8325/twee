@@ -508,18 +508,17 @@ instance (Numbered f, PrettyTerm f) => Pretty (Simplification f) where
 
 interreduce :: Function f => Rule f -> State (Twee f) ()
 interreduce new = do
-  useInterreduction <- gets useInterreduction
-  when useInterreduction $ do
-    rules <- gets (\s -> Indexes.elems (labelledRules s))
-    forM_ rules $ \(Labelled l old) -> do
-      s <- get
-      case reduceWith s l new old of
-        Nothing -> return ()
-        Just red -> do
-          traceM (Reduce red new)
-          case red of
-            Simplify model rule -> simplifyRule l model rule
-            Reorient rule@(Modelled _ _ (Critical info (Rule _ t u))) -> do
+  rules <- gets (\s -> Indexes.elems (labelledRules s))
+  forM_ rules $ \(Labelled l old) -> do
+    s <- get
+    case reduceWith s l new old of
+      Nothing -> return ()
+      Just red -> do
+        traceM (Reduce red new)
+        case red of
+          Simplify model rule -> simplifyRule l model rule
+          Reorient rule@(Modelled _ _ (Critical info (Rule _ t u))) ->
+            when (useInterreduction s) $ do
               deleteRule l rule
               consider maxBound noLabel noLabel (Critical info (t :=: u))
               return ()
