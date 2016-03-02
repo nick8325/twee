@@ -1,0 +1,10 @@
+This is twee, a prover for equational problems.
+
+To install, run cabal install.
+
+Afterwards, invoke as twee nameofproblem.p. The problem should be in
+TPTP format (http://www.tptp.org). You can find a few examples in the
+tests directory. All axioms and conjectures must be equations, but you
+can freely use types and quantifiers.
+
+Twee is experimental software, use at your own risk!
