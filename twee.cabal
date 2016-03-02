@@ -56,4 +56,4 @@ executable twee
                        reflection,
                        split,
                        jukebox >= 0.2
-  ghc-options:         -W -fno-warn-incomplete-patterns
+  ghc-options:         -W -fno-warn-incomplete-patterns -fno-full-laziness
