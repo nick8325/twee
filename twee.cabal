@@ -1,6 +1,6 @@
 name:                twee
 version:             0.1
-synopsis:            An equational theorem prover based on Knuth-Bendix completion
+synopsis:            An equational theorem prover
 homepage:            http://github.com/nick8325/twee
 license:             BSD3
 license-file:        LICENSE
@@ -9,7 +9,24 @@ maintainer:          nicsma@chalmers.se
 category:            Theorem Provers
 build-type:          Simple
 cabal-version:       >=1.10
-extra-source-files:  src/errors.h
+extra-source-files:  README src/errors.h tests/*.p
+description:
+   Twee is an experimental equational theorem prover based on
+   Knuth-Bendix completion.
+   .
+   Given a set of equational axioms and a set of equational
+   conjectures it will try to prove the conjectures.
+   It will terminate if the conjectures are true but normally
+   fail to terminate if they are false.
+   .
+   The input problem should be in TPTP format (see
+   http://www.tptp.org). You can use types and quantifiers, but apart
+   from that the problem must be equational.
+
+source-repository head
+  type:     git
+  location: git://github.com/nick8325/twee.git
+  branch:   master
 
 library
   exposed-modules:
