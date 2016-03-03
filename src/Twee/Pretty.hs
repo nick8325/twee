@@ -125,7 +125,7 @@ fixedArity arity style =
         | length xs < arity = pPrintTerm curried l p (parens d) xs
         | length xs > arity =
             pPrintParen (p > 10) $
-              hsep (parens (pPrintTerm style l 0 d ys):
+              hsep (pPrintTerm style l 11 d ys:
                     map (pPrintPrec l 11) zs)
         | otherwise = pPrintTerm style l p d xs
         where
