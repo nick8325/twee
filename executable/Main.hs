@@ -263,7 +263,7 @@ runTwee state order precedence obligs = do
     case () of
       _ | identical (goals s) -> Unsatisfiable
         | isJust (maxSize s) -> NoAnswer GaveUp
-        | otherwise -> Satisfiable
+        | otherwise -> NoAnswer GaveUp -- don't trust completeness
 
 main = do
   let twee = Tool "twee" "twee - the Wonderful Equation Engine" "1" "Proves equations."
