@@ -152,7 +152,7 @@ instance Numbered f => Numbered (Extended f) where
   toInt (Function f) = 2*toInt f+2
 
 instance Pretty f => Pretty (Extended f) where
-  pPrintPrec _ _ Minimal = text "⊥"
+  pPrintPrec _ _ Minimal = text "?"
   pPrintPrec _ _ (Skolem n) = text "sk" <> pPrint n
   pPrintPrec l p (Function f) = pPrintPrec l p f
 
