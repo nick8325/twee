@@ -54,7 +54,6 @@ library
     heaps,
     ghc-prim,
     primitive,
-    reflection,
     array
   hs-source-dirs:      src
   include-dirs:        src
@@ -70,7 +69,6 @@ executable twee
                        transformers,
                        pretty,
                        array,
-                       reflection,
                        split,
                        jukebox >= 0.2
   ghc-options:         -W -fno-warn-incomplete-patterns -fno-full-laziness

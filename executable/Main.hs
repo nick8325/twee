@@ -20,7 +20,6 @@ import qualified Data.Map.Strict as Map
 import qualified Twee.KBO as KBO
 import qualified Twee.LPO as LPO
 import qualified Data.Set as Set
-import Data.Reflection
 import qualified Data.IntMap as IntMap
 import Data.IntMap(IntMap)
 import Data.List.Split
@@ -135,25 +134,20 @@ instance PrettyTerm Constant where
         _ -> uncurried
   termStyle _ = uncurried
 
-instance Given (IntMap Constant) => Numbered Constant where
-  fromInt 0 = Builtin CFalse
-  fromInt 1 = Builtin CTrue
-  fromInt 2 = Builtin CEquals
-  fromInt n = IntMap.findWithDefault __ (n-3) given
-  toInt Constant{conIndex = n} = n+3
-  toInt (Builtin CFalse) = 0
-  toInt (Builtin CTrue)  = 1
-  toInt (Builtin CEquals) = 2
+instance Label.Labelled Constant where
+  cache = constantCache
 
-instance (Given Order, Given (IntMap Constant)) => Ordered (Extended Constant) where
-  lessEq =
-    case given of
-      KBO -> KBO.lessEq
-      LPO -> LPO.lessEq
-  lessIn =
-    case given of
-      KBO -> KBO.lessIn
-      LPO -> LPO.lessIn
+{-# NOINLINE constantCache #-}
+constantCache :: Label.Cache Constant
+constantCache = Label.mkCache
+
+instance Numbered Constant where
+  fromInt n = fromMaybe __ (Label.find n)
+  toInt = Label.label
+
+instance Ordered (Extended Constant) where
+  lessEq = KBO.lessEq
+  lessIn = KBO.lessIn
 
 instance Label.Labelled Jukebox.Function where
   cache = functionCache
@@ -189,7 +183,6 @@ toTwee prob = (lefts eqs, goals)
       app f (map tm ts)
 
 addNarrowing ::
-  Given (IntMap Constant) =>
   ([Equation (Extended Constant)], [Term (Extended Constant)]) ->
   ([Equation (Extended Constant)], [Term (Extended Constant)])
 addNarrowing (axioms, goals)
@@ -223,7 +216,6 @@ runTwee state order precedence obligs = do
       fs2 = zipWith (\i (c ::: (FunType args _)) -> Constant i (length args) 1 (show c)) [1..] fs1
       m   = IntMap.fromList [(conIndex f, f) | f <- fs2]
       m'  = Map.fromList (zip fs1 (map Function fs2))
-  give m $ give order $ do
   let replace = build . mapFun (toFun . flip (Map.findWithDefault __) m' . fromFun)
       axioms1 = [replace t :=: replace u | t :=: u <- axioms0]
       goals1  = map replace goals0
