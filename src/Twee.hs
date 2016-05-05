@@ -766,12 +766,6 @@ passiveCount :: Passive f -> Int
 passiveCount SingleCP{} = 1
 passiveCount (ManyCPs x) = count x
 
-data InitialCP f =
-  InitialCP {
-    cpId :: (Term f, Label),
-    cpOK :: Bool,
-    cpCP :: Labelled (Critical (Equation f)) }
-
 criticalPairs :: Function f => Twee f -> Label -> Label -> Rule f -> [Labelled (Critical (Equation f))]
 criticalPairs s lower upper rule =
   criticalPairs1 s (ruleOverlaps s (lhs rule)) rule (map (fmap (critical . modelled)) rules) ++
