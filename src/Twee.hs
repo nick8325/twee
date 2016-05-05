@@ -26,6 +26,7 @@ import Data.Set(Set)
 import Data.Either
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
+import Data.List.Split
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
@@ -350,7 +351,7 @@ normaliseCPs = do
   forM_ (toList queue) $ \cp ->
     case cp of
       SingleCP (CP _ cp l1 l2) -> queueCP enqueueM trivial l1 l2 cp
-      ManyCPs (CPs _ _ lower upper _ rule) -> queueCPs enqueueM lower upper (const ()) rule
+      ManyCPs (CPs _ _ lower upper _ rule) -> queueCPs enqueueM lower upper (const []) rule
   modify (\s -> s { totalCPs = totalCPs })
 
 consider ::
@@ -848,13 +849,13 @@ queueCP enq joinable l1 l2 eq = do
     Just cp -> enq (SingleCP cp)
 
 queueCPs ::
-  (Function f, Ord a) =>
+  Function f =>
   (Passive f -> State (Twee f) ()) ->
-  Label -> Label -> (Label -> a) -> Labelled (Rule f) -> State (Twee f) ()
+  Label -> Label -> ([Label] -> [Label]) -> Labelled (Rule f) -> State (Twee f) ()
 queueCPs enq lower upper f rule = do
   s <- get
-  let cps = toCPs s lower upper rule
-      cpss = partitionBy (f . l2) cps
+  let cps = sortBy (comparing l2) (toCPs s lower upper rule)
+      cpss = slurp (f (map l2 cps)) cps
   forM_ cpss $ \xs -> do
     if length xs <= minimumCPSetSize s then
       mapM_ (enq . SingleCP) xs
@@ -863,6 +864,12 @@ queueCPs enq lower upper f rule = do
           l1' = minimum (map l2 xs)
           l2' = maximum (map l2 xs) in
       enq (ManyCPs (CPs (info best) (l2 best) l1' l2' (length xs) rule))
+  where
+    slurp [] cps = [cps]
+    slurp (l:ls) cps =
+      cps1:slurp ls cps2
+      where
+        (cps1, cps2) = span ((< l) . l2) cps
 
 queueCPsSplit ::
   Function f =>
@@ -870,7 +877,7 @@ queueCPsSplit ::
   Label -> Label -> Labelled (Rule f) -> State (Twee f) ()
 queueCPsSplit enq l u rule = do
   s <- get
-  let f x = fromIntegral (cpSplits s)*(x-l) `div` (u-l+1)
+  let f xs = drop 1 (map head (chunksOf (1 `max` (length xs `div` cpSplits s)) xs))
   queueCPs enq l u f rule
 
 toCPs ::
