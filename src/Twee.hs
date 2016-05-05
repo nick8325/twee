@@ -45,6 +45,7 @@ data Twee f =
     minimumCPSetSize  :: Int,
     cpSplits          :: Int,
     queue             :: !(Queue (Mix (Either1 FIFO Heap)) (Passive f)),
+    renormalise :: Bool,
     useGeneralSuperpositions :: Bool,
     useGroundJoining  :: Bool,
     useConnectedness  :: Bool,
@@ -78,6 +79,7 @@ initialState mixFIFO mixPrio =
     minimumCPSetSize  = 20,
     cpSplits          = 20,
     queue             = empty (emptyMix mixFIFO mixPrio (Left1 emptyFIFO) (Right1 emptyHeap)),
+    renormalise = False,
     useGeneralSuperpositions = True,
     useGroundJoining  = True,
     useConnectedness  = True,
@@ -346,13 +348,14 @@ renormaliseGoals = do
 normaliseCPs :: forall f. Function f => State (Twee f) ()
 normaliseCPs = do
   s@Twee{..} <- get
-  traceM (NormaliseCPs s)
-  put s { queue = emptyFrom queue }
-  forM_ (toList queue) $ \cp ->
-    case cp of
-      SingleCP (CP _ cp l1 l2) -> queueCP enqueueM trivial l1 l2 cp
-      ManyCPs (CPs _ _ lower upper _ rule) -> queueCPs enqueueM lower upper (const []) rule
-  modify (\s -> s { totalCPs = totalCPs })
+  when renormalise $ do
+    traceM (NormaliseCPs s)
+    put s { queue = emptyFrom queue }
+    forM_ (toList queue) $ \cp ->
+      case cp of
+        SingleCP (CP _ cp l1 l2) -> queueCP enqueueM trivial l1 l2 cp
+        ManyCPs (CPs _ _ lower upper _ rule) -> queueCPs enqueueM lower upper (const []) rule
+    modify (\s -> s { totalCPs = totalCPs })
 
 consider ::
   Function f =>

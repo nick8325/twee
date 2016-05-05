@@ -35,9 +35,9 @@ import qualified Twee.Label as Label
 parseInitialState :: OptionParser (Twee f)
 parseInitialState =
   go <$> maxSize <*> general
-     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> lweight <*> rweight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> interreduce <*> unsafeInterreduce <*> cancel <*> cancelSize <*> cancelConsts <*> atomicCancellation
+     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> lweight <*> rweight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> interreduce <*> unsafeInterreduce <*> cancel <*> cancelSize <*> cancelConsts <*> atomicCancellation <*> norm
   where
-    go maxSize general groundJoin conn set setGoals tracing moreTracing lweight rweight splits cpSetSize mixFIFO mixPrio skipComposite interreduce unsafeInterreduce cancel cancelSize cancelConsts atomicCancellation =
+    go maxSize general groundJoin conn set setGoals tracing moreTracing lweight rweight splits cpSetSize mixFIFO mixPrio skipComposite interreduce unsafeInterreduce cancel cancelSize cancelConsts atomicCancellation norm =
       (initialState mixFIFO mixPrio) {
         maxSize = maxSize,
         cpSplits = splits,
@@ -49,6 +49,7 @@ parseInitialState =
         useSetJoiningForGoals = setGoals,
         useCancellation = cancel,
         maxCancellationSize = cancelSize,
+        renormalise = norm,
         atomicCancellation = atomicCancellation,
         unifyConstantsInCancellation = cancelConsts,
         useInterreduction = interreduce,
@@ -69,6 +70,7 @@ parseInitialState =
     lweight = flag "lhs-weight" ["Weight given to LHS of critical pair (default 4)"] 4 argNum
     rweight = flag "rhs-weight" ["Weight given to RHS of critical pair (default 1)"] 1 argNum
     splits = flag "cp-split" ["Split CP sets into this many pieces on selection (default 20)"] 20 argNum
+    norm = bool "normalise-cps" ["Normalise critical pairs every so often"]
     cpSetSize = flag "cp-set-minimum" ["Decay CP sets into single CPs when they get this small (default 20)"] 20 argNum
     mixFIFO = flag "mix-fifo" ["Take this many CPs at a time from FIFO (default 0)"] 0 argNum
     mixPrio = flag "mix-prio" ["Take this many CPs at a time from priority queue (default 10)"] 10 argNum
