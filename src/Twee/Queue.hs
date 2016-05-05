@@ -40,7 +40,8 @@ instance Heuristic FIFO where
   remove (FIFO xs (y:ys)) = Just (y, FIFO xs ys)
 
   reinsert x (FIFO xs ys) = FIFO xs (x:ys)
-  members (FIFO xs ys) = ys ++ reverse xs
+  --members (FIFO xs ys) = ys ++ reverse xs
+  members _ = []
 
 data Either1 h1 h2 a = Left1 (h1 a) | Right1 (h2 a) deriving Show
 
@@ -84,7 +85,8 @@ instance Heuristic h => Heuristic (Mix h) where
     mix { left = reinsert x (left mix),
           right = reinsert x (right mix) }
 
-  members mix = members (left mix)
+  members mix =
+    members (left mix) ++ members (right mix)
 
 data Queue h a =
   Queue {
