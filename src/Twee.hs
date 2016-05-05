@@ -730,7 +730,10 @@ instance (Numbered f, PrettyTerm f) => Pretty (CP f) where
 data CPs f =
   CPs {
     best  :: {-# UNPACK #-} !CPInfo,
+    -- The label of the rule having the best critical pair.
+    -- This is l2 in the single critical pair.
     label :: {-# UNPACK #-} !Label,
+    -- The range of rules that the CP set represents.
     lower :: {-# UNPACK #-} !Label,
     upper :: {-# UNPACK #-} !Label,
     count :: {-# UNPACK #-} !Int,
@@ -857,8 +860,8 @@ queueCPs enq lower upper f rule = do
       mapM_ (enq . SingleCP) xs
     else
       let best = minimum xs
-          l1' = minimum (map l1 xs)
-          l2' = minimum (map l2 xs) in
+          l1' = minimum (map l2 xs)
+          l2' = maximum (map l2 xs) in
       enq (ManyCPs (CPs (info best) (l2 best) l1' l2' (length xs) rule))
 
 queueCPsSplit ::
