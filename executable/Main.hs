@@ -35,9 +35,9 @@ import qualified Twee.Label as Label
 parseInitialState :: OptionParser (Twee f)
 parseInitialState =
   go <$> maxSize <*> general
-     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> lweight <*> rweight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> interreduce <*> unsafeInterreduce <*> cancel <*> cancelSize <*> cancelConsts <*> atomicCancellation <*> norm
+     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> lweight <*> rweight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> cancel <*> cancelSize <*> cancelConsts <*> atomicCancellation <*> norm
   where
-    go maxSize general groundJoin conn set setGoals tracing moreTracing lweight rweight splits cpSetSize mixFIFO mixPrio skipComposite interreduce unsafeInterreduce cancel cancelSize cancelConsts atomicCancellation norm =
+    go maxSize general groundJoin conn set setGoals tracing moreTracing lweight rweight splits cpSetSize mixFIFO mixPrio skipComposite cancel cancelSize cancelConsts atomicCancellation norm =
       (initialState mixFIFO mixPrio) {
         maxSize = maxSize,
         cpSplits = splits,
@@ -52,8 +52,6 @@ parseInitialState =
         renormalise = norm,
         atomicCancellation = atomicCancellation,
         unifyConstantsInCancellation = cancelConsts,
-        useInterreduction = interreduce,
-        useUnsafeInterreduction = unsafeInterreduce,
         skipCompositeSuperpositions = skipComposite,
         tracing = tracing,
         moreTracing = moreTracing,
@@ -74,8 +72,6 @@ parseInitialState =
     cpSetSize = flag "cp-set-minimum" ["Decay CP sets into single CPs when they get this small (default 20)"] 20 argNum
     mixFIFO = flag "mix-fifo" ["Take this many CPs at a time from FIFO (default 0)"] 0 argNum
     mixPrio = flag "mix-prio" ["Take this many CPs at a time from priority queue (default 10)"] 10 argNum
-    interreduce = bool "interreduce" ["Enable interreduction of left hand sides"]
-    unsafeInterreduce = not <$> bool "safe-interreduce" ["Disable some incomplete interreductions"]
     cancel = not <$> bool "no-cancellation" ["Disable cancellation"]
     cancelSize = flag "max-cancellation-size" ["Maximum size of cancellation laws (default 2)"] (Just 2) (Just <$> argNum)
     cancelConsts = bool "unify-consts-in-cancellation" ["Allow unification with a constant in cancellation"]

@@ -55,8 +55,6 @@ data Twee f =
     maxCancellationSize :: Maybe Int,
     atomicCancellation :: Bool,
     unifyConstantsInCancellation :: Bool,
-    useInterreduction :: Bool,
-    useUnsafeInterreduction :: Bool,
     skipCompositeSuperpositions :: Bool,
     tracing :: Bool,
     moreTracing :: Bool,
@@ -85,8 +83,6 @@ initialState mixFIFO mixPrio =
     useConnectedness  = True,
     useSetJoining     = False,
     useSetJoiningForGoals = True,
-    useInterreduction = False,
-    useUnsafeInterreduction = True,
     useCancellation = True,
     atomicCancellation = True,
     maxCancellationSize = Nothing,
@@ -373,6 +369,7 @@ consider w l1 l2 pair = do
         case maxSize s of
           Nothing -> False
           Just sz -> size t > sz || size u > sz
+      hardJoinable = isLeft . normaliseCPReducing s . Critical noCritInfo
   if tooBig pair then return False else
     case normaliseCP s pair of
       Left reason -> do
@@ -387,17 +384,16 @@ consider w l1 l2 pair = do
       Right pair | tooBig pair ->
         return False
       Right pair@(Critical _ eq)
-        | cancelledWeight s (groundJoinableEq s) eq > w -> do
+        | cancelledWeight s hardJoinable eq > w -> do
           traceM (Delay pair)
-          queueCP enqueueM (groundJoinableEq s) l1 l2 pair
+          queueCP enqueueM hardJoinable l1 l2 pair
           return False
       Right pair@(Critical _ eq)
-        | (_, eq') <- bestCancellation s (groundJoinableEq s) eq,
+        | (_, eq') <- bestCancellation s hardJoinable eq,
           eq /= eq' -> do
-            traceM (Cancel pair eq')
+            traceM (Cancel pair)
             res <- consider maxBound l1 l2 (Critical noCritInfo eq')
-            s <- get
-            queueCP enqueueM (groundJoinableEq s) l1 l2 pair
+            queueCP enqueueM hardJoinable l1 l2 pair
             return res
       Right (Critical info eq) ->
         fmap or $ forM (map canonicalise (orient eq)) $ \r0@(Rule _ t u0) -> do
@@ -425,18 +421,6 @@ consider w l1 l2 pair = do
                   queueCPsSplit enqueueM noLabel l (Labelled l r)
                   interreduce r
                   return True
-
-groundJoinableEq :: Function f => Twee f -> Equation f -> Bool
-groundJoinableEq s eq = groundJoinable s (Critical noCritInfo eq)
-
-groundJoinable :: Function f => Twee f -> Critical (Equation f) -> Bool
-groundJoinable s pair =
-  case normaliseCP s pair of
-    Left _ -> True
-    Right pair' ->
-      case groundJoin s (branches (And [])) pair' of
-        Left _ -> False
-        Right pairs -> all (groundJoinable s) pairs
 
 groundJoin :: Function f =>
   Twee f -> [Branch f] -> Critical (Equation f) -> Either (Model f) [Critical (Equation f)]
@@ -486,17 +470,8 @@ addRule rule = do
 
 addExtraRule :: Function f => Rule f -> State (Twee f) ()
 addExtraRule rule = do
-  s <- get
-  when (extraRuleSafe s rule) $ do
-    traceM (ExtraRule rule)
-    modify (\s -> s { extraRules = Indexes.insert rule (extraRules s) })
-
-extraRuleSafe :: Function f => Twee f -> Rule f -> Bool
-extraRuleSafe s _ | useUnsafeInterreduction s = True
-extraRuleSafe s (Rule _ l _) =
-  null $ do
-    Index.Match (Rule _ l' _) _ <- Index.matches l (allRules s)
-    guard (l' `isInstanceOf` l)
+  traceM (ExtraRule rule)
+  modify (\s -> s { extraRules = Indexes.insert rule (extraRules s) })
 
 deleteRule :: Function f => Label -> Modelled (Critical (Rule f)) -> State (Twee f) ()
 deleteRule l rule = do
@@ -522,11 +497,10 @@ interreduce new = do
         traceM (Reduce red new)
         case red of
           Simplify model rule -> simplifyRule l model rule
-          Reorient rule@(Modelled _ _ (Critical info (Rule _ t u))) ->
-            when (useInterreduction s) $ do
-              deleteRule l rule
-              consider maxBound noLabel noLabel (Critical info (t :=: u))
-              return ()
+          Reorient rule@(Modelled _ _ (Critical info (Rule _ t u))) -> do
+            deleteRule l rule
+            queueCP enqueueM trivial noLabel noLabel (Critical info (t :=: u))
+            return ()
 
 reduceWith :: Function f => Twee f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
 reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
@@ -912,7 +886,9 @@ cancelledWeight s joinable eq = fst (bestCancellation s joinable eq)
 
 bestCancellation :: Function f => Twee f -> (Equation f -> Bool) -> Equation f -> (Int, Equation f)
 bestCancellation s _ eq | not (useCancellation s) = (weight s eq, eq)
-bestCancellation s joinable (t :=: u) = (w, best)
+bestCancellation s joinable (t :=: u)
+  | moreTracing s && length cs > 1 && w /= weight s (t :=: u) && Debug.Trace.trace ("Cancelled " ++ prettyShow (t :=: u) ++ " into " ++ prettyShow (tail cs)) False = __
+  | otherwise = (w, best)
   where
     cs   = cancellations s joinable (t :=: u)
     ws   = zipWith (+) [0..] (map (weight s) cs)
@@ -961,7 +937,7 @@ data Event f =
   | Consider (Critical (Equation f))
   | Joined (Critical (Equation f)) JoinReason
   | Delay (Critical (Equation f))
-  | Cancel (Critical (Equation f)) (Equation f)
+  | Cancel (Critical (Equation f))
   | Discharge (Critical (Equation f)) (Model f)
   | NormaliseCPs (Twee f)
 
@@ -973,7 +949,7 @@ trace Twee{..} (Reduce red rule) = traceIf tracing (sep [pPrint red, nest 2 (tex
 trace Twee{..} (Consider eq) = traceIf moreTracing (sep [text "Considering", nest 2 (pPrint eq), text "under", nest 2 (pPrint (top (critInfo eq)))])
 trace Twee{..} (Joined eq reason) = traceIf moreTracing (sep [text "Joined", nest 2 (pPrint eq), text "under", nest 2 (pPrint (top (critInfo eq))), text "by", nest 2 (pPrint reason)])
 trace Twee{..} (Delay eq) = traceIf moreTracing (sep [text "Delaying", nest 2 (pPrint eq)])
-trace Twee{..} (Cancel eq eq') = traceIf tracing (sep [text "Cancelled", nest 2 (pPrint eq), text "into", nest 2 (pPrint eq')])
+trace Twee{..} (Cancel eq) = traceIf tracing (sep [text "Cancelled", nest 2 (pPrint eq)])
 trace Twee{..} (Discharge eq fs) = traceIf tracing (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
 trace Twee{..} (NormaliseCPs s) = traceIf tracing (text "" $$ text "Normalising unprocessed critical pairs." $$ text (report s) $$ text "")
 
