@@ -327,8 +327,6 @@ complete1 = do
       return True
     Just (ManyCPs (CPs _ l lower upper size rule)) -> do
       s <- get
-      modify (\s@Twee{..} -> s { totalCPs = totalCPs - size })
-
       queueCPsSplit reenqueueM lower (l-1) rule
       mapM_ (reenqueueM . SingleCP) (toCPs s l l rule)
       queueCPsSplit reenqueueM (l+1) upper rule
