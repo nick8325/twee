@@ -15,6 +15,7 @@ import Twee.Utils
 import qualified Data.Set as Set
 import Data.Set(Set)
 import qualified Twee.Term as Term
+import Twee.Bench
 
 --------------------------------------------------------------------------------
 -- Rewrite rules.
@@ -257,8 +258,12 @@ anywhere1 strat p = aux [] 0 (singleton t) p t
     t = result p
 
 normaliseWith :: (Numbered f, PrettyTerm f) => Strategy f -> Term f -> Reduction f
-normaliseWith strat t = aux 0 (Parallel [] t)
+normaliseWith strat t = stamp ("normalising terms (" ++ describe res ++ ")") res
   where
+    describe (Parallel [] _) = "already in normal form"
+    describe _ = "not in normal form"
+
+    res = aux 0 (Parallel [] t)
     aux 1000 p =
       ERROR("Possibly nonterminating rewrite:\n" ++
             prettyShow p)
@@ -268,7 +273,7 @@ normaliseWith strat t = aux 0 (Parallel [] t)
         Just q -> aux (n+1) q
 
 normalForms :: Function f => Strategy f -> [Term f] -> Set (Term f)
-normalForms strat ts = go Set.empty Set.empty ts
+normalForms strat ts = stamp "computing all normal forms" $ go Set.empty Set.empty ts
   where
     go _ norm [] = norm
     go dead norm (t:ts)

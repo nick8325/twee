@@ -224,15 +224,16 @@ reduceCP s stage f (Critical top (t :=: u))
   | subsumed s t' u' = Left (Subsumed stage)
   | otherwise = Right (Critical top (t' :=: u'))
   where
-    t' = f t
-    u' = f u
+    t' = stamp "reduce lhs of critical pair" $ f t
+    u' = stamp "reduce rhs of critical pair" $ f u
 
-    subsumed s t u = here || there t u
+    subsumed s t u = stamp "checking critical pair for subsumption" $ subsumed1 s t u
+    subsumed1 s t u = here || there t u
       where
         here =
           or [ rhs x == u | x <- Index.lookup t rs ]
         there (Var x) (Var y) | x == y = True
-        there (Fun f ts) (Fun g us) | f == g = and (zipWith (subsumed s) (fromTermList ts) (fromTermList us))
+        there (Fun f ts) (Fun g us) | f == g = and (zipWith (subsumed1 s) (fromTermList ts) (fromTermList us))
         there _ _ = False
         rs = allRules s
 
@@ -312,20 +313,20 @@ complete = do
   when res complete
 
 complete1 :: Function f => StateT (Twee f) IO Bool
-complete1 = stampM "complete1" $ do
+complete1 = stampM "completion loop" $ do
   Twee{..} <- get
   let Label n = nextLabel queue
-  when (n >= renormaliseAt) $ do
+  when (n >= renormaliseAt) $ stampM "normalise critical pairs" $ do
     normaliseCPs
     modify (\s -> s { renormaliseAt = renormaliseAt * 3 `div` 2 })
 
-  res <- dequeueM
+  res <- stampM "dequeue" dequeueM
   case res of
-    Just (SingleCP (CP info cp l1 l2)) -> do
+    Just (SingleCP (CP info cp l1 l2)) -> stampM "consider critical pair" $ do
       res <- consider (cpWeight info) l1 l2 cp
       when res renormaliseGoals
       return True
-    Just (ManyCPs (CPs _ l lower upper size rule)) -> do
+    Just (ManyCPs (CPs _ l lower upper size rule)) -> stampM "split critical pair" $ do
       s <- get
       queueCPsSplit reenqueueM lower (l-1) rule
       mapM_ (reenqueueM . SingleCP) (toCPs s l l rule)
@@ -426,6 +427,7 @@ consider w l1 l2 pair = do
 groundJoin :: Function f =>
   Twee f -> [Branch f] -> Critical (Equation f) -> Either (Model f) [Critical (Equation f)]
 groundJoin s ctx r@(Critical info (t :=: u)) =
+  stamp "ground joinability testing" $
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
     ([], instances) ->
       let rs = [ subst sub r | sub <- instances ] in
@@ -748,13 +750,15 @@ passiveCount (ManyCPs x) = count x
 
 criticalPairs :: Function f => Twee f -> Label -> Label -> Rule f -> [Labelled (Critical (Equation f))]
 criticalPairs s lower upper rule =
-  criticalPairs1 s (ruleOverlaps s (lhs rule)) rule (map (fmap (critical . modelled)) rules) ++
-  [ cp
-  | Labelled l' (Modelled _ ns (Critical _ old)) <- rules,
-    cp <- criticalPairs1 s ns old [Labelled l' rule] ]
+  stamp "finding critical pairs" (length res `seq` res)
   where
     rules = filter (p . labelOf) (Indexes.elems (labelledRules s))
     p l = lower <= l && l <= upper
+    res =
+      criticalPairs1 s (ruleOverlaps s (lhs rule)) rule (map (fmap (critical . modelled)) rules) ++
+      [ cp
+      | Labelled l' (Modelled _ ns (Critical _ old)) <- rules,
+        cp <- criticalPairs1 s ns old [Labelled l' rule] ]
 
 ruleOverlaps :: Twee f -> Term f -> [Int]
 ruleOverlaps s t = aux 0 Set.empty (singleton t)
@@ -830,7 +834,7 @@ queueCPs ::
   Function f =>
   (Passive f -> StateT (Twee f) IO ()) ->
   Label -> Label -> ([Label] -> [Label]) -> Labelled (Rule f) -> StateT (Twee f) IO ()
-queueCPs enq lower upper f rule = do
+queueCPs enq lower upper f rule = stampM "adding critical pairs" $ do
   s <- get
   let cps = sortBy (comparing l2) (toCPs s lower upper rule)
       cpss = slurp (f (map l2 cps)) cps
