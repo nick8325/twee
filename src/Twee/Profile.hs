@@ -1,6 +1,6 @@
--- Basic support for benchmarking.
+-- Basic support for profiling.
 {-# LANGUAGE BangPatterns #-}
-module Twee.Bench(stamp, stampM, profile) where
+module Twee.Profile(stamp, stampM, profile) where
 
 import System.IO.Unsafe
 import Data.IORef

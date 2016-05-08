@@ -45,7 +45,7 @@ library
     Twee.KBO
     Twee.LPO
     Twee.Label
-    Twee.Bench
+    Twee.Profile
   build-depends:
     base >= 4 && < 5,
     containers,

@@ -15,7 +15,7 @@ import Twee.Utils
 import qualified Data.Set as Set
 import Data.Set(Set)
 import qualified Twee.Term as Term
-import Twee.Bench
+import Twee.Profile
 
 --------------------------------------------------------------------------------
 -- Rewrite rules.

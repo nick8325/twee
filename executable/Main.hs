@@ -31,7 +31,7 @@ import Jukebox.Name
 import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
 import qualified Twee.Label as Label
-import Twee.Bench
+import Twee.Profile
 
 parseInitialState :: OptionParser (Twee f)
 parseInitialState =

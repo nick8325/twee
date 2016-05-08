@@ -27,7 +27,7 @@ import Data.Either
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
 import Data.List.Split
-import Twee.Bench
+import Twee.Profile
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
