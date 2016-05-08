@@ -31,6 +31,7 @@ import Jukebox.Name
 import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
 import qualified Twee.Label as Label
+import Twee.Bench
 
 parseInitialState :: OptionParser (Twee f)
 parseInitialState =
@@ -204,7 +205,7 @@ addNarrowing _ =
   ERROR("Don't know how to handle several non-ground goals")
 
 runTwee :: Twee (Extended Constant) -> Order -> [String] -> Problem Clause -> IO Answer
-runTwee state order precedence obligs = do
+runTwee state order precedence obligs = stampM "twee" $ do
   let (axioms0, goals0) = toTwee obligs
       prec c = (isNothing (elemIndex (base c) precedence),
                 fmap negate (elemIndex (base c) precedence),
@@ -233,12 +234,12 @@ runTwee state order precedence obligs = do
       goals <- gets goals
       when (res && (length goals <= 1 || not (identical goals))) loop
 
-    s =
-      flip execState (addGoals (map Set.singleton goals2) state) $ do
-        mapM_ newEquation axioms2
-        loop
+  s <-
+    flip execStateT (addGoals (map Set.singleton goals2) state) $ do
+      mapM_ newEquation axioms2
+      loop
 
-    rs = map (critical . modelled . peel) (Indexes.elems (labelledRules s))
+  let rs = map (critical . modelled . peel) (Indexes.elems (labelledRules s))
 
   putStrLn "\nFinal rules:"
   mapM_ prettyPrint rs
@@ -265,3 +266,4 @@ main = do
        clausifyBox =>>=
        allObligsBox <*>
          (runTwee <$> parseInitialState <*> parseOrder <*> parsePrecedence))
+  profile

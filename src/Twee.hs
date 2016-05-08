@@ -27,6 +27,7 @@ import Data.Either
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
 import Data.List.Split
+import Twee.Bench
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
@@ -120,26 +121,26 @@ report Twee{..} =
     Label n = nextLabel queue
     s = sum (map passiveCount (toList queue))
 
-enqueueM :: Function f => Passive f -> State (Twee f) ()
+enqueueM :: Function f => Passive f -> StateT (Twee f) IO ()
 enqueueM cps = do
   traceM (NewCP cps)
   modify' $ \s -> s {
     queue    = enqueue cps (queue s),
     totalCPs = totalCPs s + passiveCount cps }
 
-reenqueueM :: Function f => Passive f -> State (Twee f) ()
+reenqueueM :: Function f => Passive f -> StateT (Twee f) IO ()
 reenqueueM cps = do
   modify' $ \s -> s {
     queue    = reenqueue cps (queue s) }
 
-dequeueM :: Function f => State (Twee f) (Maybe (Passive f))
+dequeueM :: Function f => StateT (Twee f) IO (Maybe (Passive f))
 dequeueM =
   state $ \s ->
     case dequeue (queue s) of
       Nothing -> (Nothing, s)
       Just (x, q) -> (Just x, s { queue = q })
 
-newLabelM :: State (Twee f) Label
+newLabelM :: StateT (Twee f) IO Label
 newLabelM =
   state $ \s ->
     case newLabel (queue s) of
@@ -305,13 +306,13 @@ normaliseCP s cp@(Critical info _) =
 -- Completion loop.
 --------------------------------------------------------------------------------
 
-complete :: Function f => State (Twee f) ()
+complete :: Function f => StateT (Twee f) IO ()
 complete = do
   res <- complete1
   when res complete
 
-complete1 :: Function f => State (Twee f) Bool
-complete1 = do
+complete1 :: Function f => StateT (Twee f) IO Bool
+complete1 = stampM "complete1" $ do
   Twee{..} <- get
   let Label n = nextLabel queue
   when (n >= renormaliseAt) $ do
@@ -333,7 +334,7 @@ complete1 = do
     Nothing ->
       return False
 
-renormaliseGoals :: Function f => State (Twee f) ()
+renormaliseGoals :: Function f => StateT (Twee f) IO ()
 renormaliseGoals = do
   Twee{..} <- get
   if useSetJoiningForGoals then
@@ -341,7 +342,7 @@ renormaliseGoals = do
   else
     modify $ \s -> s { goals = map (Set.fromList . map (result . normaliseWith (rewrite "goal" reduces (rules s))) . Set.toList) goals }
 
-normaliseCPs :: forall f. Function f => State (Twee f) ()
+normaliseCPs :: forall f. Function f => StateT (Twee f) IO ()
 normaliseCPs = do
   s@Twee{..} <- get
   when renormalise $ do
@@ -355,7 +356,7 @@ normaliseCPs = do
 
 consider ::
   Function f =>
-  Int -> Label -> Label -> Critical (Equation f) -> State (Twee f) Bool
+  Int -> Label -> Label -> Critical (Equation f) -> StateT (Twee f) IO Bool
 consider w l1 l2 pair = do
   traceM (Consider pair)
   modify' (\s -> s { processedCPs = processedCPs s + 1 })
@@ -461,19 +462,19 @@ optimise x f p =
     y:_ -> optimise y f p
     _   -> x
 
-addRule :: Function f => Modelled (Critical (Rule f)) -> State (Twee f) Label
+addRule :: Function f => Modelled (Critical (Rule f)) -> StateT (Twee f) IO Label
 addRule rule = do
   l <- newLabelM
   modify (\s -> s { labelledRules = Indexes.insert (Labelled l rule) (labelledRules s) })
   modify (addCancellationRule l (critical (modelled rule)))
   return l
 
-addExtraRule :: Function f => Rule f -> State (Twee f) ()
+addExtraRule :: Function f => Rule f -> StateT (Twee f) IO ()
 addExtraRule rule = do
   traceM (ExtraRule rule)
   modify (\s -> s { extraRules = Indexes.insert rule (extraRules s) })
 
-deleteRule :: Function f => Label -> Modelled (Critical (Rule f)) -> State (Twee f) ()
+deleteRule :: Function f => Label -> Modelled (Critical (Rule f)) -> StateT (Twee f) IO ()
 deleteRule l rule = do
   modify $ \s ->
     s { labelledRules = Indexes.delete (Labelled l rule) (labelledRules s),
@@ -486,7 +487,7 @@ instance (Numbered f, PrettyTerm f) => Pretty (Simplification f) where
   pPrint (Simplify _ rule) = text "Simplify" <+> pPrint rule
   pPrint (Reorient rule) = text "Reorient" <+> pPrint rule
 
-interreduce :: Function f => Rule f -> State (Twee f) ()
+interreduce :: Function f => Rule f -> StateT (Twee f) IO ()
 interreduce new = do
   rules <- gets (\s -> Indexes.elems (labelledRules s))
   forM_ rules $ \(Labelled l old) -> do
@@ -537,7 +538,7 @@ reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
     isWeak (Rule (WeaklyOriented _) _ _) = True
     isWeak _ = False
 
-simplifyRule :: Function f => Label -> Model f -> Modelled (Critical (Rule f)) -> State (Twee f) ()
+simplifyRule :: Function f => Label -> Model f -> Modelled (Critical (Rule f)) -> StateT (Twee f) IO ()
 simplifyRule l model r@(Modelled _ positions (Critical info (Rule _ lhs rhs))) = do
   modify $ \s ->
     s {
@@ -547,7 +548,7 @@ simplifyRule l model r@(Modelled _ positions (Critical info (Rule _ lhs rhs))) =
   modify (deleteCancellationRule l (critical (modelled r)))
   modify (addCancellationRule l (critical (modelled r)))
 
-newEquation :: Function f => Equation f -> State (Twee f) ()
+newEquation :: Function f => Equation f -> StateT (Twee f) IO ()
 newEquation (t :=: u) = do
   consider maxBound noLabel noLabel (Critical noCritInfo (t :=: u))
   renormaliseGoals
@@ -817,8 +818,8 @@ criticalPairs1 s ns r rs = do
 
 queueCP ::
   Function f =>
-  (Passive f -> State (Twee f) ()) ->
-  (Equation f -> Bool) -> Label -> Label -> Critical (Equation f) -> State (Twee f) ()
+  (Passive f -> StateT (Twee f) IO ()) ->
+  (Equation f -> Bool) -> Label -> Label -> Critical (Equation f) -> StateT (Twee f) IO ()
 queueCP enq joinable l1 l2 eq = do
   s <- get
   case toCP s l1 l2 joinable eq of
@@ -827,8 +828,8 @@ queueCP enq joinable l1 l2 eq = do
 
 queueCPs ::
   Function f =>
-  (Passive f -> State (Twee f) ()) ->
-  Label -> Label -> ([Label] -> [Label]) -> Labelled (Rule f) -> State (Twee f) ()
+  (Passive f -> StateT (Twee f) IO ()) ->
+  Label -> Label -> ([Label] -> [Label]) -> Labelled (Rule f) -> StateT (Twee f) IO ()
 queueCPs enq lower upper f rule = do
   s <- get
   let cps = sortBy (comparing l2) (toCPs s lower upper rule)
@@ -850,8 +851,8 @@ queueCPs enq lower upper f rule = do
 
 queueCPsSplit ::
   Function f =>
-  (Passive f -> State (Twee f) ()) ->
-  Label -> Label -> Labelled (Rule f) -> State (Twee f) ()
+  (Passive f -> StateT (Twee f) IO ()) ->
+  Label -> Label -> Labelled (Rule f) -> StateT (Twee f) IO ()
 queueCPsSplit enq l u rule = do
   s <- get
   let f xs = drop 1 (map head (chunksOf (1 `max` (length xs `div` cpSplits s)) xs))
@@ -953,7 +954,7 @@ trace Twee{..} (Cancel eq) = traceIf tracing (sep [text "Cancelled", nest 2 (pPr
 trace Twee{..} (Discharge eq fs) = traceIf tracing (sep [text "Discharge", nest 2 (pPrint eq), text "under", nest 2 (pPrint fs)])
 trace Twee{..} (NormaliseCPs s) = traceIf tracing (text "" $$ text "Normalising unprocessed critical pairs." $$ text (report s) $$ text "")
 
-traceM :: Function f => Event f -> State (Twee f) ()
+traceM :: Function f => Event f -> StateT (Twee f) IO ()
 traceM x = do
   s <- get
   trace s x (return ())
