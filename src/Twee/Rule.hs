@@ -258,10 +258,10 @@ anywhere1 strat p = aux [] 0 (singleton t) p t
     t = result p
 
 normaliseWith :: (Numbered f, PrettyTerm f) => Strategy f -> Term f -> Reduction f
-normaliseWith strat t = stamp ("normalising terms (" ++ describe res ++ ")") res
+normaliseWith strat t = stamp (describe res) res
   where
-    describe (Parallel [] _) = "already in normal form"
-    describe _ = "not in normal form"
+    describe (Parallel [] _) = "normalising terms (already in normal form)"
+    describe _ = "normalising terms (not in normal form)"
 
     res = aux 0 (Parallel [] t)
     aux 1000 p =
