@@ -330,8 +330,10 @@ children t =
     UnsafeConsSym _ ts -> ts
 
 fromTermList :: TermList f -> [Term f]
-fromTermList Empty = []
-fromTermList (Cons t ts) = t:fromTermList ts
+fromTermList t = unfoldr op t
+  where
+    op Empty = Nothing
+    op (Cons t ts) = Just (t, ts)
 
 instance Show (Term f) where
   show (Var x) = show x
