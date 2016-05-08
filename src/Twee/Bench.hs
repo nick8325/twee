@@ -92,10 +92,10 @@ report f cs = mapM_ pr ts
     ts = filter ((>= tot `div` 100) . snd) (f (concatMap (timings []) cs))
     tot = sum (map callTime cs)
     pr (str, n) =
-      printf "%20s %.2f Mclocks (%.2f%% of total)\n"
-        (take 20 str)
-          (fromIntegral n / 10^6 :: Double)
-          (100 * fromIntegral n / fromIntegral tot :: Double)
+      printf "%10.2f Mclocks (%6.2f%% of total): %s\n"
+        (fromIntegral n / 10^6 :: Double)
+        (100 * fromIntegral n / fromIntegral tot :: Double)
+        str
 
 profile :: IO ()
 profile = do
