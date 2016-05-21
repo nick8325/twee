@@ -55,7 +55,8 @@ library
     heaps,
     ghc-prim,
     primitive,
-    array
+    array,
+    rdtsc
   hs-source-dirs:      src
   include-dirs:        src
   ghc-options:         -W -fno-warn-incomplete-patterns

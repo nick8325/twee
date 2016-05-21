@@ -1,96 +1,98 @@
 -- Basic support for profiling.
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns, RecordWildCards, CPP #-}
 module Twee.Profile(stamp, stampM, profile) where
 
+#include "errors.h"
 import System.IO.Unsafe
 import Data.IORef
 import System.CPUTime.Rdtsc
 import Data.List
-import Twee.Utils
 import Data.Ord
 import Text.Printf
-import Control.Parallel
+import GHC.Conc.Sync
 import Data.Word
 import Control.Monad.IO.Class
+import qualified Data.Map.Strict as Map
+import Data.Map(Map)
 
-data Event = Enter !String !Word64 | Exit !String !Word64 deriving Show
-data Call = Call { callName :: String, callTime :: Word64, callSub :: [Call] } deriving Show
+data Record =
+  Record {
+    rec_individual :: {-# UNPACK #-} !Word64,
+    rec_cumulative :: {-# UNPACK #-} !Word64 }
+
+plus :: Record -> Record -> Record
+x `plus` y =
+  Record
+    (rec_individual x + rec_individual y)
+    (rec_cumulative x + rec_cumulative y)
+
+data Running =
+  Running {
+    run_started  :: {-# UNPACK #-} !Word64,
+    run_skipped  :: {-# UNPACK #-} !Word64,
+    run_overhead :: {-# UNPACK #-} !Word64 }
+
+data State =
+  State {
+    st_map      :: !(Map String Record),
+    st_overhead :: {-# UNPACK #-} !Word64,
+    st_running  :: {-# UNPACK #-} !Running,
+    st_stack    :: [Running] }
 
 {-# NOINLINE eventLog #-}
-eventLog :: IORef [Event]
-eventLog = unsafePerformIO (newIORef [])
+eventLog :: IORef State
+eventLog = unsafePerformIO (newIORef (State Map.empty 0 (Running 0 0 0) []))
 
-newEvent :: (Word64 -> Event) -> IO ()
-newEvent e = do
-  time <- rdtsc
-  let !ev = e time
-  atomicModifyIORef' eventLog (\evs -> (ev:evs, ()))
+enter :: IO ()
+enter = do
+  State{..} <- readIORef eventLog
+  tsc <- rdtsc
+  let !running = Running tsc 0 0
+  writeIORef eventLog (State st_map st_overhead running (st_running:st_stack))
+
+exit :: String -> IO ()
+exit str = do
+  State st_map st_overhead Running{..} st_stack <- readIORef eventLog
+  tsc <- rdtsc
+  length str `pseq` do
+    let cumulative = tsc - run_started - run_overhead
+        individual = cumulative - run_skipped
+        rec = Record individual cumulative
+        m = Map.insertWith plus str rec st_map
+    case st_stack of
+      [] -> ERROR("mismatched enter/exit")
+      Running{..}:st_stack -> m `pseq` do
+        tsc' <- rdtsc
+        let overhead = tsc' - tsc
+            run =
+              Running run_started
+                (run_skipped+cumulative)
+                (run_overhead+overhead)
+        writeIORef eventLog $! State m (st_overhead + overhead) run st_stack
 
 stamp :: String -> a -> a
 stamp str x =
   unsafePerformIO $ do
-    newEvent (Enter str)
-    x `pseq` newEvent (Exit $! str)
+    enter
+    x `pseq` exit str
     return x
 
 stampM :: MonadIO m => String -> m a -> m a
 stampM str mx = do
-  liftIO (newEvent (Enter str))
+  liftIO enter
   x <- mx
-  liftIO (newEvent (Exit $! str))
+  liftIO (exit str)
   return x
 
-getLog :: IO [Event]
-getLog = fmap reverse (readIORef eventLog)
-
-getCalls :: IO [Call]
-getCalls = do
-  time <- rdtsc
-  fmap (toCalls time) getLog
-
-toCalls :: Word64 -> [Event] -> [Call]
-toCalls t xs = ys
-  where
-    (ys, []) = toCalls1 t xs
-
-toCalls1 t (Enter str m:xs) =
-  case toCalls1 t xs of
-    (ys, Exit str' n:zs) | str == str' ->
-      let (as, bs) = toCalls1 t zs in
-      (Call str (n-m) ys:as, bs)
-
-    (ys, []) ->
-      ([Call str (t-m) ys], [])
-
-toCalls1 _ xs = ([], xs)
-
-type Timing = ([String], Word64)
-
-timings :: [String] -> Call -> [Timing]
-timings funcs call =
-  (funcs', callTime call - sum (map callTime (callSub call))):
-  concatMap (timings funcs') (callSub call)
-  where
-    funcs' = callName call:funcs
-
-total :: ([String] -> [String]) -> [Timing] -> [(String, Word64)]
-total f ts =
-  sortBy (comparing ord)
-  [ (fst y, sum (map snd ys))
-  | ys@(y:_) <- partitionBy fst xs ]
-  where
-    xs = [(str, n) | (funcs, n) <- ts, str <- usort (f funcs)]
-    ord (str, n) = (-n, str)
-
-cumulative, individual :: [Timing] -> [(String, Word64)]
-cumulative = total id
-individual = total (take 1)
-
-report :: ([Timing] -> [(String, Word64)]) -> [Call] -> IO ()
+report :: (Record -> Word64) -> Map String Record -> IO ()
 report f cs = mapM_ pr ts
   where
-    ts = filter ((>= tot `div` 100) . snd) (f (concatMap (timings []) cs))
-    tot = sum (map callTime cs)
+    ts =
+      sortBy (comparing (negate . snd)) $
+      sortBy (comparing fst) $
+      Map.toList $
+      Map.filter (>= tot `div` 100) (fmap f cs)
+    tot = sum (map rec_individual (Map.elems cs))
     pr (str, n) =
       printf "%10.2f Mclocks (%6.2f%% of total): %s\n"
         (fromIntegral n / 10^6 :: Double)
@@ -99,9 +101,10 @@ report f cs = mapM_ pr ts
 
 profile :: IO ()
 profile = do
-  calls <- getCalls
+  State{..} <- readIORef eventLog
+  let log = Map.insert "OVERHEAD" (Record st_overhead st_overhead) st_map
   putStrLn "Individual time:"
-  report individual calls
+  report rec_individual log
   putStrLn ""
   putStrLn "Cumulative time:"
-  report cumulative calls
+  report rec_cumulative log
