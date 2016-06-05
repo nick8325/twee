@@ -56,7 +56,11 @@ library
     ghc-prim,
     primitive,
     array,
-    rdtsc
+    rdtsc,
+    hashable,
+    symbol,
+    unordered-containers,
+    split
   hs-source-dirs:      src
   include-dirs:        src
   ghc-options:         -W -fno-warn-incomplete-patterns

@@ -1,5 +1,5 @@
 -- Basic support for profiling.
-{-# LANGUAGE BangPatterns, RecordWildCards, CPP #-}
+{-# LANGUAGE BangPatterns, RecordWildCards, CPP, OverloadedStrings #-}
 module Twee.Profile(stamp, stampM, profile) where
 
 #include "errors.h"
@@ -12,8 +12,14 @@ import Text.Printf
 import GHC.Conc.Sync
 import Data.Word
 import Control.Monad.IO.Class
-import qualified Data.Map.Strict as Map
-import Data.Map(Map)
+import qualified Data.HashMap.Strict as HashMap
+import Data.HashMap.Strict(HashMap)
+import Data.Symbol
+import Data.Symbol.Unsafe
+import Data.Hashable
+
+instance Hashable Symbol where
+  hashWithSalt s (Symbol n _) = hashWithSalt s n
 
 data Record =
   Record {
@@ -34,14 +40,14 @@ data Running =
 
 data State =
   State {
-    st_map      :: !(Map String Record),
+    st_map      :: !(HashMap Symbol Record),
     st_overhead :: {-# UNPACK #-} !Word64,
     st_running  :: {-# UNPACK #-} !Running,
     st_stack    :: [Running] }
 
 {-# NOINLINE eventLog #-}
 eventLog :: IORef State
-eventLog = unsafePerformIO (newIORef (State Map.empty 0 (Running 0 0 0) []))
+eventLog = unsafePerformIO (newIORef (State HashMap.empty 0 (Running 0 0 0) []))
 
 enter :: IO ()
 enter = do
@@ -50,15 +56,15 @@ enter = do
   let !running = Running tsc 0 0
   writeIORef eventLog (State st_map st_overhead running (st_running:st_stack))
 
-exit :: String -> IO ()
+exit :: Symbol -> IO ()
 exit str = do
   State st_map st_overhead Running{..} st_stack <- readIORef eventLog
   tsc <- rdtsc
-  length str `pseq` do
+  str `pseq` do
     let cumulative = tsc - run_started - run_overhead
         individual = cumulative - run_skipped
         rec = Record individual cumulative
-        m = Map.insertWith plus str rec st_map
+        m = HashMap.insertWith plus str rec st_map
     case st_stack of
       [] -> ERROR("mismatched enter/exit")
       Running{..}:st_stack -> m `pseq` do
@@ -70,39 +76,39 @@ exit str = do
                 (run_overhead+overhead)
         writeIORef eventLog $! State m (st_overhead + overhead) run st_stack
 
-stamp :: String -> a -> a
+stamp :: Symbol -> a -> a
 stamp str x =
   unsafePerformIO $ do
     enter
     x `pseq` exit str
     return x
 
-stampM :: MonadIO m => String -> m a -> m a
+stampM :: MonadIO m => Symbol -> m a -> m a
 stampM str mx = do
   liftIO enter
   x <- mx
   liftIO (exit str)
   return x
 
-report :: (Record -> Word64) -> Map String Record -> IO ()
+report :: (Record -> Word64) -> HashMap Symbol Record -> IO ()
 report f cs = mapM_ pr ts
   where
     ts =
       sortBy (comparing (negate . snd)) $
       sortBy (comparing fst) $
-      Map.toList $
-      Map.filter (>= tot `div` 100) (fmap f cs)
-    tot = sum (map rec_individual (Map.elems cs))
+      HashMap.toList $
+      HashMap.filter (>= tot `div` 100) (fmap f cs)
+    tot = sum (map rec_individual (HashMap.elems cs))
     pr (str, n) =
       printf "%10.2f Mclocks (%6.2f%% of total): %s\n"
         (fromIntegral n / 10^6 :: Double)
         (100 * fromIntegral n / fromIntegral tot :: Double)
-        str
+        (unintern str)
 
 profile :: IO ()
 profile = do
   State{..} <- readIORef eventLog
-  let log = Map.insert "OVERHEAD" (Record st_overhead st_overhead) st_map
+  let log = HashMap.insert "OVERHEAD" (Record st_overhead st_overhead) st_map
   putStrLn "Individual time:"
   report rec_individual log
   putStrLn ""

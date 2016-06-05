@@ -1,5 +1,5 @@
 -- Term indexing (perfect discrimination trees).
-{-# LANGUAGE BangPatterns, CPP, TypeFamilies, RecordWildCards #-}
+{-# LANGUAGE BangPatterns, CPP, TypeFamilies, RecordWildCards, OverloadedStrings #-}
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
 {-# OPTIONS_GHC -funfolding-creation-threshold=1000000 -funfolding-use-threshold=1000000 #-}
@@ -13,6 +13,7 @@ import qualified Twee.Term as Term
 import Twee.Array
 import qualified Data.List as List
 import Data.Maybe
+import Twee.Profile
 
 data Index a =
   Index {
@@ -121,17 +122,17 @@ matchesList = flip matchesList_
 
 {-# INLINEABLE lookup #-}
 lookup :: Symbolic a => TermOf a -> Frozen a -> [a]
-lookup t idx = [subst sub x | Match x sub <- matches t idx]
+lookup t idx = stamp "lookup" [subst sub x | Match x sub <- matches t idx]
 
 {-# INLINE matches #-}
 matches :: TermOf a -> Frozen a -> [Match a]
-matches t idx = matchesList (Term.singleton t) idx
+matches t idx = stamp "finding first match in index" (matchesList (Term.singleton t) idx)
 
 freeze :: Index a -> Frozen a
 freeze idx = Frozen $ \t -> find t idx []
 
 find :: TermListOf a -> Index a -> [Match a] -> [Match a]
-find t idx xs = aux t idx xs
+find t idx xs = stamp "finding first match in index" (aux t idx xs)
   where
     aux !_ !_ _ | False = __
     aux _ Nil rest = rest
@@ -152,7 +153,7 @@ find t idx xs = aux t idx xs
     {-# INLINE try #-}
     try [] rest = rest
     try xs rest =
-      {-# SCC "try" #-}
+      stamp "find in index" $
       [ Match x sub
       | Entry u x <- xs,
         sub <- maybeToList (matchList (Term.singleton u) t) ] ++

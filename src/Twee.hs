@@ -1,7 +1,7 @@
 -- Knuth-Bendix completion, with lots of exciting tricks for
 -- unorientable equations.
 
-{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, RecordWildCards, ScopedTypeVariables, UndecidableInstances, StandaloneDeriving, PatternGuards, BangPatterns #-}
+{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, RecordWildCards, ScopedTypeVariables, UndecidableInstances, StandaloneDeriving, PatternGuards, BangPatterns, OverloadedStrings #-}
 module Twee where
 
 #include "errors.h"
@@ -313,7 +313,10 @@ complete = do
   when res complete
 
 complete1 :: Function f => StateT (Twee f) IO Bool
-complete1 = stampM "completion loop" $ do
+complete1 = stampM "completion loop" complete2
+
+complete2 :: Function f => StateT (Twee f) IO Bool
+complete2 = do
   Twee{..} <- get
   let Label n = nextLabel queue
   when (n >= renormaliseAt) $ stampM "normalise critical pairs" $ do
@@ -331,7 +334,7 @@ complete1 = stampM "completion loop" $ do
       queueCPsSplit reenqueueM lower (l-1) rule
       mapM_ (reenqueueM . SingleCP) (toCPs s l l rule)
       queueCPsSplit reenqueueM (l+1) upper rule
-      complete1
+      complete2
     Nothing ->
       return False
 
