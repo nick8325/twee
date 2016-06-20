@@ -53,7 +53,7 @@ insert x0 !idx = aux (Term.singleton t) idx
     aux t Nil = Singleton t x
     aux t (Singleton u x) = aux t (expand u x)
     aux Empty idx@Index{..} = idx { size = 0, here = x:here }
-    aux t@(ConsSym (Fun (MkFun f) _) u) idx =
+    aux t@(ConsSym (Fun (MkFun f _) _) u) idx =
       idx {
         size = lenList t `min` size idx,
         fun  = update f idx' (fun idx) }
@@ -74,7 +74,7 @@ expand (ConsSym s t) x =
   where
     (fun, var) =
       case s of
-        Fun (MkFun f) _ ->
+        Fun (MkFun f _) _ ->
           (update f (Singleton t x) newArray, Nil)
         Var _ ->
           (newArray, Singleton t x)
@@ -88,7 +88,7 @@ delete x0 !idx = aux (Term.singleton t) idx
       | t == u && x == y = Nil
       | otherwise        = idx
     aux Empty idx = idx { here = List.delete x (here idx) }
-    aux (ConsSym (Fun (MkFun f) _) t) idx =
+    aux (ConsSym (Fun (MkFun f _) _) t) idx =
       idx { fun = update f (aux t (fun idx ! f)) (fun idx) }
     aux (ConsSym (Var _) t) idx =
       idx { var = aux t (var idx) }
@@ -104,7 +104,7 @@ elem x0 !idx = aux (Term.singleton t) idx
       | t == u && x == y = True
       | otherwise        = False
     aux Empty idx = List.elem x (here idx)
-    aux (ConsSym (Fun (MkFun f) _) t) idx =
+    aux (ConsSym (Fun (MkFun f _) _) t) idx =
       aux t (fun idx ! f)
     aux (ConsSym (Var _) t) idx = aux t (var idx)
     t  = term x0
@@ -142,7 +142,7 @@ find t idx xs = stamp "finding first match in index" (aux t idx xs)
     aux t (Singleton u x) rest
       | isJust (matchList u t) = {-# SCC "try_singleton" #-} try [x] rest
       | otherwise = rest
-    aux t@(ConsSym (Fun (MkFun n) _) ts) Index{fun = fun, var = var} rest =
+    aux t@(ConsSym (Fun (MkFun n _) _) ts) Index{fun = fun, var = var} rest =
       case var of
         Nil -> aux ts (fun ! n) rest
         _   -> aux ts (fun ! n) (aux us var rest)

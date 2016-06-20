@@ -460,11 +460,11 @@ class Numbered f where
   fromInt :: Int -> f
   toInt   :: f -> Int
 
-fromFun :: Numbered f => Fun f -> f
-fromFun (MkFun n) = fromInt n
+fromFun :: Fun f -> f
+fromFun (MkFun _ x) = x
 
 toFun :: Numbered f => f -> Fun f
-toFun f = MkFun (toInt f)
+toFun f = MkFun (toInt f) f
 
 instance (Ord f, Numbered f) => Ord (Fun f) where
   compare = comparing fromFun

@@ -29,7 +29,7 @@ data Symbol =
 
 instance Show Symbol where
   show Symbol{..}
-    | isFun = show (MkFun index) ++ "=" ++ show size
+    | isFun = show (MkFun index __) ++ "=" ++ show size
     | otherwise = show (MkVar index)
 
 -- Convert symbols to/from Int64 for storage in flatterms.
@@ -61,25 +61,27 @@ data TermList f =
   TermList {
     low   :: {-# UNPACK #-} !Int,
     high  :: {-# UNPACK #-} !Int,
-    array :: {-# UNPACK #-} !ByteArray }
+    array :: {-# UNPACK #-} !ByteArray,
+    funs  :: {-# UNPACK #-} !(Array f) }
 
 at :: Int -> TermList f -> Term f
-at n (TermList lo hi arr)
+at n (TermList lo hi arr funs)
   | n < 0 || n + lo >= hi = ERROR("term index out of bounds")
   | otherwise =
-    case TermList (lo+n) hi arr of
+    case TermList (lo+n) hi arr funs of
       Cons t _ -> t
 
 {-# INLINE lenList #-}
 -- The length (number of symbols in) a flatterm.
 lenList :: TermList f -> Int
-lenList (TermList low high _) = high - low
+lenList (TermList low high _ _) = high - low
 
 -- A term is a special case of a termlist.
 -- We store it as the termlist together with the root symbol.
 data Term f =
   Term {
     root     :: {-# UNPACK #-} !Int64,
+    rootFun  :: f,
     termlist :: {-# UNPACK #-} !(TermList f) }
 
 instance Eq (Term f) where
@@ -107,11 +109,12 @@ pattern UnsafeConsSym t ts <- (unsafePatHead -> Just (t, ts, _))
 {-# INLINE unsafePatHead #-}
 unsafePatHead :: TermList f -> Maybe (Term f, TermList f, TermList f)
 unsafePatHead TermList{..} =
-  Just (Term x (TermList low (low+size) array),
-        TermList (low+1) high array,
-        TermList (low+size) high array)
+  Just (Term x f (TermList low (low+size) array funs),
+        TermList (low+1) high array funs,
+        TermList (low+size) high array funs)
   where
     x = indexByteArray array low
+    f = indexArray funs low
     Symbol{..} = toSymbol x
 
 {-# INLINE patHead #-}
@@ -123,25 +126,26 @@ patHead t@TermList{..}
 -- Pattern synonyms for single terms.
 -- * Var :: Var -> Term f
 -- * Fun :: Fun f -> TermList f -> Term f
-newtype Fun f = MkFun Int deriving Eq
+
+data Fun f = MkFun {- UNPACK #-} !Int !f
+instance Eq (Fun f) where
+  MkFun m _ == MkFun n _ = m == n
+
 newtype Var   = MkVar Int deriving (Eq, Ord, Enum)
-instance Show (Fun f) where show (MkFun x) = "f" ++ show x
+instance Show (Fun f) where show (MkFun x _) = "f" ++ show x
 instance Show Var     where show (MkVar x) = "x" ++ show x
 
-pattern Var x <- Term (patRoot -> Left x) _
-pattern Fun f ts <- Term (patRoot -> Right (f :: Fun f)) (patNext -> (ts :: TermList f))
+pattern Var x <- (patTerm -> Left x)
+pattern Fun f ts <- (patTerm -> Right (f, ts))
 
-{-# INLINE patRoot #-}
-patRoot :: Int64 -> Either Var (Fun f)
-patRoot root
-  | isFun     = Right (MkFun index)
+{-# INLINE patTerm #-}
+patTerm :: Term f -> Either Var (Fun f, TermList f)
+patTerm t@Term{..}
+  | isFun     = Right (MkFun index rootFun, ts)
   | otherwise = Left (MkVar index)
   where
     Symbol{..} = toSymbol root
-
-{-# INLINE patNext #-}
-patNext :: TermList f -> TermList f
-patNext (TermList lo hi array) = TermList (lo+1) hi array
+    UnsafeConsSym _ ts = singleton t
 
 -- Convert a term to a termlist.
 {-# INLINE singleton #-}
@@ -184,9 +188,9 @@ newtype Builder f =
     unBuilder ::
       -- Takes: the term array and size, and current position in the term.
       -- Returns the final position, which may be out of bounds.
-      forall s. Builder1 s }
+      forall s. Builder1 s f }
 
-type Builder1 s = State# s -> MutableByteArray# s -> Int# -> Int# -> (# State# s, Int# #)
+type Builder1 s f = State# s -> MutableByteArray# s -> MutableArray# s f -> Int# -> Int# -> (# State# s, Int# #)
 
 instance Monoid (Builder f) where
   {-# INLINE mempty #-}
@@ -200,88 +204,102 @@ buildTermList builder = runST $ do
   let
     Builder m = builder
     loop n@(I# n#) = do
-      MutableByteArray marray# <-
+      MutableByteArray mbytearray# <-
         newByteArray (n * sizeOf (fromSymbol __))
+      MutableArray marray# <- newArray n __
       n' <-
         ST $ \s ->
-          case m s marray# n# 0# of
+          case m s mbytearray# marray# n# 0# of
             (# s, n# #) -> (# s, I# n# #)
       if n' <= n then do
-        !array <- unsafeFreezeByteArray (MutableByteArray marray#)
-        return (TermList 0 n' array)
+        !bytearray <- unsafeFreezeByteArray (MutableByteArray mbytearray#)
+        !array <- unsafeFreezeArray (MutableArray marray#)
+        return (TermList 0 n' bytearray array)
        else loop (n'*2)
   loop 16
 
+{-# INLINE getByteArray #-}
+getByteArray :: (MutableByteArray s -> Builder1 s f) -> Builder1 s f
+getByteArray k = \s bytearray array n i -> k (MutableByteArray bytearray) s bytearray array n i
+
 {-# INLINE getArray #-}
-getArray :: (MutableByteArray s -> Builder1 s) -> Builder1 s
-getArray k = \s array n i -> k (MutableByteArray array) s array n i
+getArray :: (MutableArray s f -> Builder1 s f) -> Builder1 s f
+getArray k = \s bytearray array n i -> k (MutableArray array) s bytearray array n i
 
 {-# INLINE getSize #-}
-getSize :: (Int -> Builder1 s) -> Builder1 s
-getSize k = \s array n i -> k (I# n) s array n i
+getSize :: (Int -> Builder1 s f) -> Builder1 s f
+getSize k = \s bytearray array n i -> k (I# n) s bytearray array n i
 
 {-# INLINE getIndex #-}
-getIndex :: (Int -> Builder1 s) -> Builder1 s
-getIndex k = \s array n i -> k (I# i) s array n i
+getIndex :: (Int -> Builder1 s f) -> Builder1 s f
+getIndex k = \s bytearray array n i -> k (I# i) s bytearray array n i
 
 {-# INLINE putIndex #-}
-putIndex :: Int -> Builder1 s
-putIndex (I# i) = \s _ _ _ -> (# s, i #)
+putIndex :: Int -> Builder1 s f
+putIndex (I# i) = \s _ _ _ _ -> (# s, i #)
 
 {-# INLINE liftST #-}
-liftST :: ST s () -> Builder1 s
+liftST :: ST s () -> Builder1 s f
 liftST (ST m) =
-  \s _ _ i ->
+  \s _ _ _ i ->
   case m s of
     (# s, () #) -> (# s, i #)
 
 {-# INLINE built #-}
-built :: Builder1 s
-built = \s _ _ i -> (# s, i #)
+built :: Builder1 s f
+built = \s _ _ _ i -> (# s, i #)
 
 {-# INLINE then_ #-}
-then_ :: Builder1 s -> Builder1 s -> Builder1 s
+then_ :: Builder1 s f -> Builder1 s f -> Builder1 s f
 then_ m1 m2 =
-  \s array n i ->
-    case m1 s array n i of
-      (# s, i #) -> m2 s array n i
+  \s bytearray array n i ->
+    case m1 s bytearray array n i of
+      (# s, i #) -> m2 s bytearray array n i
 
 {-# INLINE checked #-}
-checked :: Int -> Builder1 s -> Builder1 s
+checked :: Int -> Builder1 s f -> Builder1 s f
 checked j m =
   getSize $ \n ->
   getIndex $ \i ->
   if i + j <= n then m else putIndex (i + j)
 
 {-# INLINE emitSymbolBuilder #-}
-emitSymbolBuilder :: Symbol -> Builder f -> Builder f
-emitSymbolBuilder x inner =
+emitSymbolBuilder :: (Int -> Builder f) -> Symbol -> Builder f -> Builder f
+emitSymbolBuilder aux x inner =
   Builder $ checked 1 $
-    getArray $ \array ->
+    getByteArray $ \bytearray ->
     getIndex $ \n ->
+    unBuilder (aux n) `then_`
     putIndex (n+1) `then_`
     unBuilder inner `then_`
     getIndex (\m ->
-      liftST $ writeByteArray array n (fromSymbol x { size = m - n }))
+      liftST $ writeByteArray bytearray n (fromSymbol x { size = m - n }))
 
 -- Emit a function symbol.
 -- The second argument is called to emit the function's arguments.
 {-# INLINE emitFun #-}
 emitFun :: Fun f -> Builder f -> Builder f
-emitFun (MkFun f) inner = emitSymbolBuilder (Symbol True f 0) inner
+emitFun (MkFun n f) inner = emitSymbolBuilder aux (Symbol True n 0) inner
+  where
+    aux n =
+      Builder $
+        getArray $ \array ->
+        liftST $ writeArray array n f
 
 -- Emit a variable.
 {-# INLINE emitVar #-}
 emitVar :: Var -> Builder f
-emitVar (MkVar x) = emitSymbolBuilder (Symbol False x 1) mempty
+emitVar (MkVar x) = emitSymbolBuilder (\_ -> Builder built) (Symbol False x 1) mempty
 
 -- Emit a whole termlist.
 {-# INLINE emitTermList #-}
 emitTermList :: TermList f -> Builder f
-emitTermList (TermList lo hi array) =
+emitTermList (TermList lo hi array funs) =
   Builder $ checked (hi-lo) $
+    getByteArray $ \mbytearray ->
     getArray $ \marray ->
     getIndex $ \n ->
     let k = sizeOf (fromSymbol __) in
-    liftST (copyByteArray marray (n*k) array (lo*k) ((hi-lo)*k)) `then_`
+    liftST (copyByteArray mbytearray (n*k) array (lo*k) ((hi-lo)*k)) `then_`
+    liftST (copyArray marray n funs lo (hi-lo)) `then_`
     putIndex (n + hi-lo)
