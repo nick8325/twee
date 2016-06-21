@@ -49,6 +49,7 @@ data State =
 eventLog :: IORef State
 eventLog = unsafePerformIO (newIORef (State HashMap.empty 0 (Running 0 0 0) []))
 
+{-# NOINLINE enter #-}
 enter :: IO ()
 enter = do
   State{..} <- readIORef eventLog
@@ -56,6 +57,7 @@ enter = do
   let !running = Running tsc 0 0
   writeIORef eventLog (State st_map st_overhead running (st_running:st_stack))
 
+{-# NOINLINE exit #-}
 exit :: Symbol -> IO ()
 exit str = do
   State st_map st_overhead Running{..} st_stack <- readIORef eventLog
@@ -76,6 +78,7 @@ exit str = do
                 (run_overhead+overhead)
         writeIORef eventLog $! State m (st_overhead + overhead) run st_stack
 
+{-# NOINLINE stamp #-}
 stamp :: Symbol -> a -> a
 stamp str x =
   unsafePerformIO $ do
