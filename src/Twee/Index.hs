@@ -58,7 +58,7 @@ withPrefix t idx@Index{..} =
 
 {-# INLINEABLE insert #-}
 insert :: Symbolic a => a -> Index a -> Index a
-insert x0 !idx = aux (Term.singleton t) idx
+insert x0 !idx = aux (toKey (Term.singleton t)) idx
   where
     aux t Nil = singletonEntry t x
     aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
@@ -92,9 +92,18 @@ expand idx@Index{prefix = ConsSym t ts} =
         (update f idx { prefix = ts } newArray)
         Nil
 
+toKey :: TermList a -> TermList a
+toKey = buildList . aux
+  where
+    aux Empty = mempty
+    aux (ConsSym (Fun f _) t) =
+      con f `mappend` aux t
+    aux (ConsSym (Var _) t) =
+      Term.var (MkVar 0) `mappend` aux t
+
 {-# INLINEABLE delete #-}
 delete :: (Eq a, Symbolic a) => a -> Index a -> Index a
-delete x0 !idx = aux (Term.singleton t) idx
+delete x0 !idx = aux (toKey (Term.singleton t)) idx
   where
     aux _ Nil = Nil
     aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
@@ -112,7 +121,7 @@ delete x0 !idx = aux (Term.singleton t) idx
 
 {-# INLINEABLE elem #-}
 elem :: (Eq a, Symbolic a) => a -> Index a -> Bool
-elem x0 !idx = aux (Term.singleton t) idx
+elem x0 !idx = aux (toKey (Term.singleton t)) idx
   where
     aux _ Nil = False
     aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
@@ -158,7 +167,7 @@ find t idx xs = stamp "finding first match in index" (aux t idx xs)
     aux t Index{..} rest =
       pref t prefix here fun var rest
 
-    pref !_ !_ _ _ _ _ | False = __
+    pref !_ !_ _ !_ _ _ | False = __
     pref Empty Empty here _ _ rest = try here rest
     pref Empty _ _ _ _ _ = __
     pref (Cons _ ts) (Cons (Var _) us) here fun var rest =
