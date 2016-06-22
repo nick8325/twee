@@ -154,41 +154,41 @@ matches :: TermOf a -> Frozen a -> [Match a]
 matches t idx = stamp "finding first match in index" (matchesList (Term.singleton t) idx)
 
 freeze :: Index a -> Frozen a
-freeze idx = Frozen $ \t -> find t idx []
+freeze idx = Frozen $ \t -> find t idx
 
-find :: TermListOf a -> Index a -> [Match a] -> [Match a]
-find t idx xs = stamp "finding first match in index" (aux t idx xs)
+find :: TermListOf a -> Index a -> [Match a]
+find t idx = stamp "finding first match in index" (aux t idx)
   where
     {-# INLINE aux #-}
-    aux !_ !_ _ | False = __
-    aux _ Nil rest = rest
-    aux t Index{size = size, prefix = prefix} rest
-      | lenList t < size + lenList prefix = rest
-    aux t Index{..} rest =
-      pref t prefix here fun var rest
+    aux !_ !_ | False = __
+    aux _ Nil = []
+    aux t Index{size = size, prefix = prefix}
+      | lenList t < size + lenList prefix = []
+    aux t Index{..} =
+      pref t prefix here fun var
 
-    pref !_ !_ _ !_ _ _ | False = __
-    pref Empty Empty here _ _ rest = try here rest
-    pref Empty _ _ _ _ _ = __
-    pref (Cons _ ts) (Cons (Var _) us) here fun var rest =
-      pref ts us here fun var rest
-    pref (ConsSym (Fun f _) ts) (ConsSym (Fun g _) us) here fun var rest
-      | f == g = pref ts us here fun var rest
-    pref _ (Cons _ _) _ _ _ rest = rest
-    pref t@(ConsSym (Fun (MkFun n _) _) ts) Empty _ fun var rest =
-      aux us var (aux ts (fun ! n) rest)
+    pref !_ !_ _ !_ _ | False = __
+    pref Empty Empty here _ _ = try here
+    pref Empty _ _ _ _ = __
+    pref (Cons _ ts) (Cons (Var _) us) here fun var =
+      pref ts us here fun var
+    pref (ConsSym (Fun f _) ts) (ConsSym (Fun g _) us) here fun var
+      | f == g = pref ts us here fun var
+    pref _ (Cons _ _) _ _ _ = []
+    pref t@(ConsSym (Fun (MkFun n _) _) ts) Empty _ fun var =
+      aux us var ++ aux ts fn
       where
         Cons _ us = t
-    pref (Cons _ ts) Empty _ _ var rest = aux ts var rest
+        !fn = fun ! n
+    pref (Cons _ ts) Empty _ _ var = aux ts var
 
     {-# INLINE try #-}
-    try [] rest = rest
-    try xs rest =
+    try [] = []
+    try xs =
       stamp "find in index" $
       [ Match x sub
       | Entry u x <- xs,
-        sub <- maybeToList (matchList (Term.singleton u) t) ] ++
-      rest
+        sub <- maybeToList (matchList (Term.singleton u) t) ]
 
 elems :: Index a -> [a]
 elems Nil = []
