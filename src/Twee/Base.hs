@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances, TypeFamilies, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, CPP, ConstraintKinds, UndecidableInstances, DeriveFunctor, StandaloneDeriving #-}
 module Twee.Base(
   Symbolic(..), terms, subst, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
-  vars, isGround, funs, occ, canonicalise,
+  vars, isGround, funs, occ, occVar, canonicalise,
   Minimal(..), minimalTerm, isMinimal,
   Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..), extended, unextended,
   module Twee.Term, module Twee.Pretty) where
@@ -85,6 +85,10 @@ funs x = [ f | t <- DList.toList (termsDL x), Fun f _ <- subtermsList t ]
 {-# INLINE occ #-}
 occ :: Symbolic a => FunOf a -> a -> Int
 occ x t = length (filter (== x) (funs t))
+
+{-# INLINE occVar #-}
+occVar :: Symbolic a => Var -> a -> Int
+occVar x t = length (filter (== x) (vars t))
 
 canonicalise :: Symbolic a => a -> a
 canonicalise t = replace (Term.substList sub) t

@@ -35,7 +35,7 @@ instance Arity Func where
   arity (F 1) = 2
 instance Skolem Func
 
-instance Arbitrary Var where arbitrary = fmap MkVar (choose (0, 1))
+instance Arbitrary Var where arbitrary = fmap MkVar (choose (0, 3))
 instance (Numbered f, Arbitrary f) => Arbitrary (Fun f) where
   arbitrary = fmap toFun arbitrary
 
@@ -121,7 +121,7 @@ prop_index ts0 u =
   sort (catMaybes [fmap (Index.Match t) (match t u) | t <- ts]) ===
   sort (Index.matches u (Index.freeze idx))
   where
-    ts = map canonicalise ts0
+    ts = map Index.indexCanonicalise ts0
     idx = foldr Index.insert Index.Nil ts
 
 
