@@ -113,8 +113,8 @@ unsafePatHead TermList{..} =
         TermList (low+1) high array funs,
         TermList (low+size) high array funs)
   where
-    x = indexByteArray array low
-    f = indexArray funs low
+    !x = indexByteArray array low
+    f  = indexArray funs low
     Symbol{..} = toSymbol x
 
 {-# INLINE patHead #-}
@@ -145,7 +145,7 @@ patTerm t@Term{..}
   | otherwise = Left (MkVar index)
   where
     Symbol{..} = toSymbol root
-    UnsafeConsSym _ ts = singleton t
+    !(UnsafeConsSym _ ts) = singleton t
 
 -- Convert a term to a termlist.
 {-# INLINE singleton #-}
