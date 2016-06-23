@@ -2,7 +2,7 @@
 {-# LANGUAGE BangPatterns, CPP, TypeFamilies, RecordWildCards, OverloadedStrings #-}
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
-{-# OPTIONS_GHC -O2 -funfolding-creation-threshold=10000 -funfolding-use-threshold=10000 -fllvm #-}
+{-# OPTIONS_GHC -O2 -funfolding-creation-threshold=100000 -funfolding-use-threshold=100000 -fllvm #-}
 module Twee.Index where
 
 #include "errors.h"
