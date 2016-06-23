@@ -8,7 +8,7 @@ module Twee.Index where
 #include "errors.h"
 import qualified Prelude
 import Prelude hiding (filter, map, null)
-import Twee.Base hiding (var, fun, empty, size, singleton, prefix)
+import Twee.Base hiding (var, fun, empty, size, singleton, prefix, funs)
 import qualified Twee.Term as Term
 import Twee.Array
 import qualified Data.List as List
@@ -16,6 +16,7 @@ import Data.Maybe
 import Twee.Profile
 import Twee.Utils
 import Control.Monad
+import Twee.Term.Core(TermList(..))
 
 data Index a =
   Index {
@@ -61,16 +62,16 @@ varIndexToList vidx = [(0, var0 vidx), (1, var1 vidx), (2, hole vidx)]
 varIndexCapacity :: Int
 varIndexCapacity = 2
 
-data Subst2 f = Subst2 {-# UNPACK #-} !(TermList f) {-# UNPACK #-} !(TermList f)
+data Subst2 f = Subst2 {-# UNPACK #-} !Int {-# UNPACK #-} !Int {-# UNPACK #-} !Int {-# UNPACK #-} !Int
 
 emptySubst2 :: Subst2 a
-emptySubst2 = Subst2 emptyTermList emptyTermList
+emptySubst2 = Subst2 0 0 0 0
 
 extend2 :: Var -> TermList f -> Subst2 f -> Maybe (Subst2 f)
-extend2 (MkVar 0) t (Subst2 Empty mu) = Just (Subst2 t mu)
-extend2 (MkVar 0) t (Subst2 t' _) | t /= t' = Nothing
-extend2 (MkVar 1) u (Subst2 mt Empty) = Just (Subst2 mt u)
-extend2 (MkVar 1) u (Subst2 _ u') | u /= u' = Nothing
+extend2 (MkVar 0) t (Subst2 _ 0 x y) = Just (Subst2 (low t) (high t) x y)
+extend2 (MkVar 0) t (Subst2 x y _ _) | t /= TermList x y (array t) (funs t) = Nothing
+extend2 (MkVar 1) u (Subst2 x y _ 0) = Just (Subst2 x y (low u) (high u))
+extend2 (MkVar 1) u (Subst2 _ _ x y) | u /= TermList x y (array u) (funs u) = Nothing
 extend2 _ _ sub = Just sub
 
 {-# INLINE null #-}
