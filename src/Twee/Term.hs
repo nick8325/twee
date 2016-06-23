@@ -2,7 +2,7 @@
 -- This module implements the usual term manipulation stuff
 -- (matching, unification, etc.) on top of the primitives
 -- in Twee.Term.Core.
-{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes, FlexibleContexts, ViewPatterns, FlexibleInstances, UndecidableInstances, ScopedTypeVariables, RecordWildCards, MultiParamTypeClasses, FunctionalDependencies, GADTs, OverloadedStrings #-}
+{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes, FlexibleContexts, ViewPatterns, FlexibleInstances, ScopedTypeVariables, RecordWildCards, TypeFamilies, GADTs, OverloadedStrings #-}
 module Twee.Term(
   module Twee.Term,
   -- Stuff from Twee.Term.Core.
@@ -26,30 +26,35 @@ import Twee.Profile
 -- A type class for builders.
 --------------------------------------------------------------------------------
 
-class Build f a | a -> f where
-  builder :: a -> Builder f
+class Build a where
+  type BuildFun a
+  builder :: a -> Builder (BuildFun a)
 
-instance Build f (Builder f) where
+instance Build (Builder f) where
+  type BuildFun (Builder f) = f
   builder = id
 
-instance Build f (Term f) where
+instance Build (Term f) where
+  type BuildFun (Term f) = f
   builder = emitTerm
 
-instance Build f (TermList f) where
+instance Build (TermList f) where
+  type BuildFun (TermList f) = f
   builder = emitTermList
 
-instance Build f a => Build f [a] where
+instance Build a => Build [a] where
+  type BuildFun [a] = BuildFun a
   {-# INLINE builder #-}
   builder = mconcat . map builder
 
 {-# INLINE build #-}
-build :: Build f a => a -> Term f
+build :: Build a => a -> Term (BuildFun a)
 build x =
   case buildList x of
     Cons t Empty -> t
 
 {-# INLINE buildList #-}
-buildList :: Build f a => a -> TermList f
+buildList :: Build a => a -> TermList (BuildFun a)
 buildList x = buildTermList (builder x)
 
 {-# INLINE con #-}
@@ -57,7 +62,7 @@ con :: Fun f -> Builder f
 con x = emitFun x mempty
 
 {-# INLINE fun #-}
-fun :: Build f a => Fun f -> a -> Builder f
+fun :: Build a => Fun (BuildFun a) -> a -> Builder (BuildFun a)
 fun f ts = emitFun f (builder ts)
 
 var :: Var -> Builder f
@@ -91,14 +96,19 @@ forMSubst_ sub f = foldSubst (\x t m -> do { f x t; m }) (return ()) sub
 -- Substitution.
 --------------------------------------------------------------------------------
 
-class Substitution f s | s -> f where
-  evalSubst :: s -> Var -> Builder f
+class Substitution s where
+  type SubstFun s
+  evalSubst :: s -> Var -> Builder (SubstFun s)
 
-instance (Build f a, v ~ Var) => Substitution f (v -> a) where
+instance (Build a, v ~ Var) => Substitution (v -> a) where
+  type SubstFun (v -> a) = BuildFun a
+
   {-# INLINE evalSubst #-}
   evalSubst sub x = builder (sub x)
 
-instance Substitution f (Subst f) where
+instance Substitution (Subst f) where
+  type SubstFun (Subst f) = f
+
   {-# INLINE evalSubst #-}
   evalSubst sub x =
     case lookupList x sub of
@@ -106,11 +116,11 @@ instance Substitution f (Subst f) where
       Just ts -> builder ts
 
 {-# INLINE subst #-}
-subst :: Substitution f s => s -> Term f -> Builder f
+subst :: Substitution s => s -> Term (SubstFun s) -> Builder (SubstFun s)
 subst sub t = substList sub (singleton t)
 
 {-# INLINE substList #-}
-substList :: Substitution f s => s -> TermList f -> Builder f
+substList :: Substitution s => s -> TermList (SubstFun s) -> Builder (SubstFun s)
 substList sub ts = aux ts
   where
     aux Empty = mempty
@@ -154,7 +164,7 @@ unsafeExtendList :: Var -> TermList f -> Subst f -> Subst f
 unsafeExtendList (MkVar x) !t (Subst sub) = Subst (IntMap.insert x t sub)
 
 -- Composition of substitutions.
-substCompose :: Substitution f s => Subst f -> s -> Subst f
+substCompose :: Substitution s => Subst (SubstFun s) -> s -> Subst (SubstFun s)
 substCompose (Subst !sub1) !sub2 =
   Subst (IntMap.map (buildList . substList sub2) sub1)
 
@@ -254,7 +264,8 @@ matchList !pat !t
 newtype TriangleSubst f = Triangle { unTriangle :: Subst f }
   deriving Show
 
-instance Substitution f (TriangleSubst f) where
+instance Substitution (TriangleSubst f) where
+  type SubstFun (TriangleSubst f) = f
   evalSubst (Triangle sub) x = substTri sub x
 
 {-# INLINE substTri #-}

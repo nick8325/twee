@@ -28,7 +28,7 @@ terms :: Symbolic a => a -> [TermListOf a]
 terms = DList.toList . termsDL
 
 {-# INLINE subst #-}
-subst :: (Symbolic a, Substitution (ConstantOf a) s) => s -> a -> a
+subst :: (Symbolic a, Substitution s, SubstFun s ~ ConstantOf a) => s -> a -> a
 subst sub x = replace (substList sub) x
 
 type TermOf a = Term (ConstantOf a)
