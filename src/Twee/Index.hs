@@ -103,7 +103,7 @@ withPrefix t idx@Index{..} =
 
 {-# INLINEABLE insert #-}
 insert :: Symbolic a => a -> Index a -> Index a
-insert x0 !idx = aux (toKey (Term.singleton t)) idx
+insert x0 !idx = stamp "index insert" (aux (toKey (Term.singleton t)) idx)
   where
     aux t Nil = singletonEntry t e
     aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
@@ -161,7 +161,7 @@ indexCanonicalise t = subst f u
 
 {-# INLINEABLE delete #-}
 delete :: (Eq a, Symbolic a) => a -> Index a -> Index a
-delete x0 !idx = aux (toKey (Term.singleton t)) idx
+delete x0 !idx = stamp "index delete" (aux (toKey (Term.singleton t)) idx)
   where
     aux _ Nil = Nil
     aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =

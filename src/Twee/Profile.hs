@@ -100,7 +100,7 @@ report f cs = mapM_ pr ts
       sortBy (comparing (negate . snd)) $
       sortBy (comparing fst) $
       HashMap.toList $
-      HashMap.filter (>= tot `div` 100) (fmap f cs)
+      HashMap.filter (>= tot `div` 200) (fmap f cs)
     tot = sum (map rec_individual (HashMap.elems cs))
     pr (str, n) =
       printf "%10.2f Mclocks (%6.2f%% of total): %s\n"

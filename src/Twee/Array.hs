@@ -49,6 +49,6 @@ update n x arr = runST $ do
   let size = arraySize arr `max` (n+1)
   marr <- P.newArray size def
   P.copyArray marr 0 (arrayContents arr) 0 (arraySize arr)
-  P.writeArray marr n x
+  P.writeArray marr n $! x
   arr' <- P.unsafeFreezeArray marr
   return (Array size arr')
