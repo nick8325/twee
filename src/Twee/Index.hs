@@ -2,7 +2,7 @@
 {-# LANGUAGE BangPatterns, CPP, TypeFamilies, RecordWildCards, OverloadedStrings #-}
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
-{-# OPTIONS_GHC -O2 -funfolding-creation-threshold=10000 -funfolding-use-threshold=10000 #-}
+{-# OPTIONS_GHC -O2 -funfolding-creation-threshold=10000 -funfolding-use-threshold=10000 -fllvm #-}
 module Twee.Index where
 
 #include "errors.h"
@@ -12,7 +12,6 @@ import Twee.Base hiding (var, fun, empty, size, singleton, prefix)
 import qualified Twee.Term as Term
 import Twee.Array
 import qualified Data.List as List
-import qualified Data.DList as DList
 import Data.Maybe
 import Twee.Profile
 import Twee.Utils
@@ -68,16 +67,16 @@ varIndexToList vidx = [(0, var0 vidx), (1, var1 vidx), (2, hole vidx)]
 varIndexCapacity :: Int
 varIndexCapacity = 2
 
-data Subst2 f = Subst2 !(Maybe (TermList f)) !(Maybe (TermList f))
+data Subst2 f = Subst2 {-# UNPACK #-} !(TermList f) {-# UNPACK #-} !(TermList f)
 
 emptySubst2 :: Subst2 a
-emptySubst2 = Subst2 Nothing Nothing
+emptySubst2 = Subst2 emptyTermList emptyTermList
 
 extend2 :: Var -> TermList f -> Subst2 f -> Maybe (Subst2 f)
-extend2 (MkVar 0) t (Subst2 Nothing mu) = Just (Subst2 (Just t) mu)
-extend2 (MkVar 0) t (Subst2 (Just t') _) | t /= t' = Nothing
-extend2 (MkVar 1) u (Subst2 mt Nothing) = Just (Subst2 mt (Just u))
-extend2 (MkVar 1) u (Subst2 _ (Just u')) | u /= u' = Nothing
+extend2 (MkVar 0) t (Subst2 Empty mu) = Just (Subst2 t mu)
+extend2 (MkVar 0) t (Subst2 t' _) | t /= t' = Nothing
+extend2 (MkVar 1) u (Subst2 mt Empty) = Just (Subst2 mt u)
+extend2 (MkVar 1) u (Subst2 _ u') | u /= u' = Nothing
 extend2 _ _ sub = Just sub
 
 {-# INLINE null #-}
@@ -160,7 +159,6 @@ indexCanonicalise t = subst f u
         Just n  -> MkVar n
     repeatedVars = [x | x <- usort (vars u), occVar x u > 1]
 
-
 {-# INLINEABLE delete #-}
 delete :: (Eq a, Symbolic a) => a -> Index a -> Index a
 delete x0 !idx = aux (toKey (Term.singleton t)) idx
@@ -219,41 +217,60 @@ matches t idx = matchesList (Term.singleton t) idx
 freeze :: Index a -> Frozen a
 freeze idx = Frozen $ \t -> find t idx
 
-find :: TermListOf a -> Index a -> [Match a]
-find t idx = stamp "finding first match in index" (DList.toList (aux emptySubst2 t idx))
-  where
-    {-# INLINE aux #-}
-    aux !_ !_ !_ | False = __
-    aux _ _ Nil = mzero
-    aux _ t Index{size = size, prefix = prefix}
-      | lenList t < size + lenList prefix = mzero
-    aux sub t Index{..} =
-      pref sub t prefix here fun var
+data Stack a =
+  Frame {
+    frame_subst :: {-# UNPACK #-} !(Subst2 (ConstantOf a)),
+    frame_term  :: {-# UNPACK #-} !(TermListOf a),
+    frame_index :: !(Index a),
+    frame_rest  :: !(Stack a) }
+  | Stop
 
-    pref !_ !_ !_ _ !_ !_ | False = __
-    pref _ Empty Empty here _ _ =
-      DList.fromList
+find :: TermListOf a -> Index a -> [Match a]
+find t idx = stamp "finding first match in index" (loop (initial t idx))
+  where
+    initial t idx = Frame emptySubst2 t idx Stop
+
+    {-# INLINE loop #-}
+    loop Stop = []
+    loop Frame{..} = step frame_subst frame_term frame_index frame_rest
+
+    {-# INLINE step #-}
+    step !_ !_ _ _ | False = __
+    step _ _ Nil rest = loop rest
+    step _ t Index{size = size, prefix = prefix} rest
+      | lenList t < size + lenList prefix = loop rest
+    step sub t Index{..} rest =
+      pref sub t prefix here fun var rest
+
+    pref !_ !_ !_ _ !_ !_ _ | False = __
+    pref _ Empty Empty [] _ _ rest = loop rest
+    pref _ Empty Empty here _ _ rest =
       [ Match x sub
       | Entry u x <- here,
-        sub <- maybeToList (matchList u t) ]
-    pref _ Empty _ _ _ _ = __
-    pref sub (Cons t ts) (Cons (Var x) us) here fun var = do
-      sub <- DList.fromList (maybeToList (extend2 x (Term.singleton t) sub))
-      pref sub ts us here fun var
-    pref sub (ConsSym (Fun f _) ts) (ConsSym (Fun g _) us) here fun var
-      | f == g = pref sub ts us here fun var
-    pref _ _ (Cons _ _) _ _ _ = mzero
-    pref sub t@(ConsSym (Fun (MkFun n _) _) ts) Empty _ fun var =
-      tryVar sub t var `mplus` aux sub ts fn
-      where
-        !fn = fun ! n
-    pref sub t@Cons{} Empty _ _ var = tryVar sub t var
+        sub <- maybeToList (matchList u t) ] ++
+      loop rest
+    pref _ Empty _ _ _ _ _ = __
+    pref sub (Cons t ts) (Cons (Var x) us) here fun var rest =
+      case extend2 x (Term.singleton t) sub of
+        Nothing  -> loop rest
+        Just sub -> pref sub ts us here fun var rest
+    pref sub (ConsSym (Fun f _) ts) (ConsSym (Fun g _) us) here fun var rest
+      | f == g = pref sub ts us here fun var rest
+    pref _ _ (Cons _ _) _ _ _ rest = loop rest
+    pref sub t@(ConsSym (Fun (MkFun n _) _) ts) Empty _ fun var rest =
+      tryVar sub t var $
+      case fun ! n of
+        Nil -> rest
+        idx -> Frame sub ts idx rest
+    pref sub t@Cons{} Empty _ _ var rest = tryVar sub t var rest
 
-    {-# INLINE tryVar #-}
-    tryVar sub (UnsafeCons t ts) var = do
-      (x, idx@Index{}) <- DList.fromList (varIndexToList var)
-      sub <- DList.fromList (maybeToList (extend2 (MkVar x) (Term.singleton t) sub))
-      aux sub ts idx
+    tryVar sub (UnsafeCons t ts) var rest =
+      loop (foldr op rest (varIndexToList var))
+      where
+        op (x, idx@Index{}) rest
+          | Just sub <- extend2 (MkVar x) (Term.singleton t) sub =
+              Frame sub ts idx rest
+        op _ rest = rest
 
 elems :: Index a -> [a]
 elems Nil = []
