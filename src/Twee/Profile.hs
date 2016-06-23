@@ -2,6 +2,7 @@
 {-# LANGUAGE BangPatterns, RecordWildCards, CPP, OverloadedStrings #-}
 module Twee.Profile(stamp, stampM, profile) where
 
+#ifdef PROFILE
 #include "errors.h"
 import System.IO.Unsafe
 import Data.IORef
@@ -117,3 +118,16 @@ profile = do
   putStrLn ""
   putStrLn "Cumulative time:"
   report rec_cumulative log
+#else
+import Data.Symbol
+import Control.Monad.IO.Class
+
+stamp :: Symbol -> a -> a
+stamp _ = id
+
+stampM :: MonadIO m => Symbol -> m a -> m a
+stampM _ = id
+
+profile :: IO ()
+profile = return ()
+#endif
