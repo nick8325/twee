@@ -21,19 +21,13 @@ data Index a =
   Index {
     size   :: {-# UNPACK #-} !Int, -- size of smallest term, not including prefix
     prefix :: {-# UNPACK #-} !(TermListOf a),
-    here   :: [Entry a],
+    here   :: [a],
     fun    :: {-# UNPACK #-} !(Array (Index a)),
     var    :: {-# UNPACK #-} !(VarIndex a) } |
   Nil
   deriving Show
 
 instance Default (Index a) where def = Nil
-
-data Entry a =
-  Entry {
-    e_key   :: {-# UNPACK #-} !(TermListOf a),
-    e_value :: a }
-  deriving (Eq, Show)
 
 data VarIndex a =
   VarIndex {
@@ -86,12 +80,10 @@ null _ = False
 
 {-# INLINEABLE singleton #-}
 singleton :: Symbolic a => a -> Index a
-singleton x = singletonEntry t (Entry t x)
-  where
-    t = Term.singleton (term x)
+singleton x = singletonEntry (key x) x
 
 {-# INLINE singletonEntry #-}
-singletonEntry :: TermListOf a -> Entry a -> Index a
+singletonEntry :: TermListOf a -> a -> Index a
 singletonEntry t x = Index 0 t [x] newArray newVarIndex
 
 {-# INLINE withPrefix #-}
@@ -103,15 +95,15 @@ withPrefix t idx@Index{..} =
 
 {-# INLINEABLE insert #-}
 insert :: Symbolic a => a -> Index a -> Index a
-insert x0 !idx = stamp "index insert" (aux (toKey (Term.singleton t)) idx)
+insert x !idx = stamp "index insert" (aux (key x) idx)
   where
-    aux t Nil = singletonEntry t e
+    aux t Nil = singletonEntry t x
     aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
       withPrefix (Term.singleton t) (aux ts idx{prefix = us})
     aux t idx@Index{prefix = Cons{}} = aux t (expand idx)
 
     aux Empty idx =
-      idx { size = 0, here = e:here idx }
+      idx { size = 0, here = x:here idx }
     aux t@(ConsSym (Fun (MkFun f _) _) u) idx =
       idx {
         size = lenList t `min` size idx,
@@ -124,9 +116,6 @@ insert x0 !idx = stamp "index insert" (aux (toKey (Term.singleton t)) idx)
         var  = updateVarIndex v idx' (var idx) }
       where
         idx' = aux u (lookupVarIndex v (var idx))
-    t = term x
-    x = indexCanonicalise x0
-    e = Entry (Term.singleton t) x
 
 {-# INLINE expand #-}
 expand :: Index a -> Index a
@@ -139,29 +128,24 @@ expand idx@Index{prefix = ConsSym t ts} =
       Index (size idx + 1 + lenList ts) emptyTermList []
         (update f idx { prefix = ts } newArray) newVarIndex
 
-toKey :: TermList a -> TermList a
-toKey = buildList . aux
+key :: Symbolic a => a -> TermListOf a
+key x = buildList . aux . Term.singleton $ t
   where
+    t = term x
+    repeatedVars = [x | x <- usort (vars t), occVar x t > 1]
+
     aux Empty = mempty
     aux (ConsSym (Fun f _) t) =
       con f `mappend` aux t
-    aux (ConsSym (Var (MkVar x)) t) =
-      Term.var (MkVar (x `min` varIndexCapacity)) `mappend` aux t
-
-indexCanonicalise :: Symbolic a => a -> a
-indexCanonicalise t = subst f u
-  where
-    u = subst (\(MkVar n) -> Term.var (MkVar (n+varIndexCapacity))) (canonicalise t)
-    f x =
-      Term.var $
+    aux (ConsSym (Var x) t) =
+      Term.var (
       case List.elemIndex x (take varIndexCapacity repeatedVars) of
-        Nothing -> x
-        Just n  -> MkVar n
-    repeatedVars = [x | x <- usort (vars u), occVar x u > 1]
+         Nothing -> MkVar 2
+         Just n  -> MkVar n) `mappend` aux t
 
 {-# INLINEABLE delete #-}
 delete :: (Eq a, Symbolic a) => a -> Index a -> Index a
-delete x0 !idx = stamp "index delete" (aux (toKey (Term.singleton t)) idx)
+delete x !idx = stamp "index delete" (aux (key x) idx)
   where
     aux _ Nil = Nil
     aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
@@ -169,53 +153,42 @@ delete x0 !idx = stamp "index delete" (aux (toKey (Term.singleton t)) idx)
     aux _ idx@Index{prefix = Cons{}} = idx
 
     aux Empty idx =
-      idx { here = List.delete e (here idx) }
+      idx { here = List.delete x (here idx) }
     aux (ConsSym (Fun (MkFun f _) _) t) idx =
       idx { fun = update f (aux t (fun idx ! f)) (fun idx) }
     aux (ConsSym (Var v) t) idx =
       idx { var = updateVarIndex v (aux t (lookupVarIndex v (var idx))) (var idx) }
-    t = term x
-    x = canonicalise x0
-    e = Entry (Term.singleton t) x
 
 {-# INLINEABLE elem #-}
 elem :: (Eq a, Symbolic a) => a -> Index a -> Bool
-elem x0 !idx = aux (toKey (Term.singleton t)) idx
+elem x !idx = aux (key x) idx
   where
     aux _ Nil = False
     aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
       aux ts idx{prefix = us}
     aux _ idx@Index{prefix = Cons{}} = False
 
-    aux Empty idx = List.elem e (here idx)
+    aux Empty idx = List.elem x (here idx)
     aux (ConsSym (Fun (MkFun f _) _) t) idx =
       aux t (fun idx ! f)
     aux (ConsSym (Var v) t) idx =
       aux t (lookupVarIndex v (var idx))
-    t = term x
-    x = canonicalise x0
-    e = Entry (Term.singleton t) x
 
-data Match a =
-  Match {
-    matchResult :: a,
-    matchSubst  :: SubstOf a }
+newtype Frozen a = Frozen { matchesList_ :: TermListOf a -> [a] }
 
-newtype Frozen a = Frozen { matchesList_ :: TermListOf a -> [Match a] }
-
-matchesList :: TermListOf a -> Frozen a -> [Match a]
+matchesList :: TermListOf a -> Frozen a -> [a]
 matchesList = flip matchesList_
 
 {-# INLINEABLE lookup #-}
 lookup :: Symbolic a => TermOf a -> Frozen a -> [a]
-lookup t idx = [subst sub x | Match x sub <- matches t idx]
+lookup t idx = [subst sub x | x <- matches t idx, sub <- maybeToList (match (term x) t)]
 
 {-# INLINE matches #-}
-matches :: TermOf a -> Frozen a -> [Match a]
+matches :: TermOf a -> Frozen a -> [a]
 matches t idx = matchesList (Term.singleton t) idx
 
 freeze :: Index a -> Frozen a
-freeze idx = Frozen $ \t -> find t idx
+freeze idx = Frozen $ \t -> concat (find t idx)
 
 data Stack a =
   Frame {
@@ -225,7 +198,7 @@ data Stack a =
     frame_rest  :: !(Stack a) }
   | Stop
 
-find :: TermListOf a -> Index a -> [Match a]
+find :: TermListOf a -> Index a -> [[a]]
 find t idx = stamp "finding first match in index" (loop (initial t idx))
   where
     initial t idx = Frame emptySubst2 t idx Stop
@@ -244,11 +217,7 @@ find t idx = stamp "finding first match in index" (loop (initial t idx))
 
     pref !_ !_ !_ _ !_ !_ _ | False = __
     pref _ Empty Empty [] _ _ rest = loop rest
-    pref _ Empty Empty here _ _ rest =
-      [ Match x sub
-      | Entry u x <- here,
-        sub <- maybeToList (matchList u t) ] ++
-      loop rest
+    pref _ Empty Empty here _ _ rest = here:loop rest
     pref _ Empty _ _ _ _ _ = __
     pref sub (Cons t ts) (Cons (Var x) us) here fun var rest =
       case extend2 x (Term.singleton t) sub of
@@ -275,18 +244,17 @@ find t idx = stamp "finding first match in index" (loop (initial t idx))
 elems :: Index a -> [a]
 elems Nil = []
 elems idx =
-  List.map e_value (here idx) ++
+  here idx ++
   concatMap elems (Prelude.map snd (toList (fun idx))) ++
   concatMap elems (varIndexElems (var idx))
 
 {-# INLINE map #-}
 map :: (ConstantOf a ~ ConstantOf b) => (a -> b) -> Frozen a -> Frozen b
-map f (Frozen matches) = Frozen $ \t -> [Match (f x) sub | Match x sub <- matches t]
+map f (Frozen matches) = Frozen $ \t -> List.map f (matches t)
 
 {-# INLINE filter #-}
 filter :: (a -> Bool) -> Frozen a -> Frozen a
-filter p (Frozen matches) = Frozen $ \t ->
-  [ m | m@(Match x _) <- matches t, p x ]
+filter p (Frozen matches) = Frozen $ \t -> List.filter p (matches t)
 
 {-# INLINE union #-}
 union :: Frozen a -> Frozen a -> Frozen a
