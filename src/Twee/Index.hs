@@ -2,7 +2,7 @@
 {-# LANGUAGE BangPatterns, CPP, TypeFamilies, RecordWildCards, OverloadedStrings #-}
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
-{-# OPTIONS_GHC -O2 #-}
+{-# OPTIONS_GHC -O2 -funfolding-creation-threshold=10000 -funfolding-use-threshold=10000 #-}
 module Twee.Index where
 
 #include "errors.h"
@@ -12,9 +12,11 @@ import Twee.Base hiding (var, fun, empty, size, singleton, prefix)
 import qualified Twee.Term as Term
 import Twee.Array
 import qualified Data.List as List
+import qualified Data.DList as DList
 import Data.Maybe
 import Twee.Profile
 import Twee.Utils
+import Control.Monad
 
 data Index a =
   Index {
@@ -218,38 +220,39 @@ freeze :: Index a -> Frozen a
 freeze idx = Frozen $ \t -> find t idx
 
 find :: TermListOf a -> Index a -> [Match a]
-find t idx = stamp "finding first match in index" (aux emptySubst2 t idx)
+find t idx = stamp "finding first match in index" (DList.toList (aux emptySubst2 t idx))
   where
     {-# INLINE aux #-}
     aux !_ !_ !_ | False = __
-    aux _ _ Nil = []
+    aux _ _ Nil = mzero
     aux _ t Index{size = size, prefix = prefix}
-      | lenList t < size + lenList prefix = []
+      | lenList t < size + lenList prefix = mzero
     aux sub t Index{..} =
       pref sub t prefix here fun var
 
     pref !_ !_ !_ _ !_ !_ | False = __
     pref _ Empty Empty here _ _ =
+      DList.fromList
       [ Match x sub
       | Entry u x <- here,
         sub <- maybeToList (matchList u t) ]
     pref _ Empty _ _ _ _ = __
     pref sub (Cons t ts) (Cons (Var x) us) here fun var = do
-      sub <- maybeToList (extend2 x (Term.singleton t) sub)
+      sub <- DList.fromList (maybeToList (extend2 x (Term.singleton t) sub))
       pref sub ts us here fun var
     pref sub (ConsSym (Fun f _) ts) (ConsSym (Fun g _) us) here fun var
       | f == g = pref sub ts us here fun var
-    pref _ _ (Cons _ _) _ _ _ = []
+    pref _ _ (Cons _ _) _ _ _ = mzero
     pref sub t@(ConsSym (Fun (MkFun n _) _) ts) Empty _ fun var =
-      tryVar sub t var ++ aux sub ts fn
+      tryVar sub t var `mplus` aux sub ts fn
       where
         !fn = fun ! n
     pref sub t@Cons{} Empty _ _ var = tryVar sub t var
 
     {-# INLINE tryVar #-}
     tryVar sub (UnsafeCons t ts) var = do
-      (x, idx@Index{}) <- varIndexToList var
-      sub <- maybeToList (extend2 (MkVar x) (Term.singleton t) sub)
+      (x, idx@Index{}) <- DList.fromList (varIndexToList var)
+      sub <- DList.fromList (maybeToList (extend2 (MkVar x) (Term.singleton t) sub))
       aux sub ts idx
 
 elems :: Index a -> [a]
