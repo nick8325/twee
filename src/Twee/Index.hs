@@ -85,7 +85,7 @@ expand idx@Index{prefix = ConsSym t ts} =
         (update f idx { prefix = ts } newArray) newArray
 
 toKey :: TermList a -> TermList a
-toKey = buildList . aux
+toKey = buildList . aux . canonicalise
   where
     aux Empty = mempty
     aux (ConsSym (Fun f _) t) =
