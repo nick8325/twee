@@ -198,6 +198,7 @@ data Stack a =
     frame_rest  :: !(Stack a) }
   | Stop
 
+{-# NOINLINE find #-}
 find :: TermListOf a -> Index a -> [[a]]
 find t idx = stamp "finding first match in index" (loop (initial t idx))
   where
