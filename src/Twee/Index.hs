@@ -208,7 +208,6 @@ find t idx = stamp "finding first match in index" (loop (initial t idx))
     loop Stop = []
     loop Frame{..} = step frame_subst frame_term frame_index frame_rest
 
-    {-# INLINE step #-}
     step !_ !_ _ _ | False = __
     step _ _ Nil rest = loop rest
     step _ t Index{size = size, prefix = prefix} rest
@@ -227,15 +226,21 @@ find t idx = stamp "finding first match in index" (loop (initial t idx))
     pref sub (ConsSym (Fun f _) ts) (ConsSym (Fun g _) us) here fun var rest
       | f == g = pref sub ts us here fun var rest
     pref _ _ (Cons _ _) _ _ _ rest = loop rest
-    pref sub t@(ConsSym (Fun (MkFun n _) _) ts) Empty _ fun var rest =
-      tryVar sub t var $
-      case fun ! n of
+    pref sub t@(Cons u us) Empty _ fun var rest =
+      loop $ tryFun sub v vs fun (tryVar sub u us var rest)
+      where
+        UnsafeConsSym v vs = t
+
+    {-# INLINE tryFun #-}
+    tryFun sub (Fun (MkFun f _) _) ts fun rest =
+      case fun ! f of
         Nil -> rest
         idx -> Frame sub ts idx rest
-    pref sub t@Cons{} Empty _ _ var rest = tryVar sub t var rest
+    tryFun _ _ _ _ rest = rest
 
-    tryVar sub (UnsafeCons t ts) var rest =
-      loop (foldr op rest (varIndexToList var))
+    {-# INLINE tryVar #-}
+    tryVar sub t ts var rest =
+      foldr op rest (varIndexToList var)
       where
         op (x, idx@Index{}) rest
           | Just sub <- extend2 (MkVar x) (Term.singleton t) sub =
