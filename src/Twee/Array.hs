@@ -15,6 +15,7 @@ data Array a =
 
 class Default a where def :: a
 
+{-# INLINE toList #-}
 toList :: Array a -> [(Int, a)]
 toList arr =
   [ (i, x)
