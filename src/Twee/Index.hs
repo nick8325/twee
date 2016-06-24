@@ -43,14 +43,14 @@ newVarIndex = VarIndex Nil Nil Nil
 
 {-# INLINE lookupVarIndex #-}
 lookupVarIndex :: Var -> VarIndex a -> Index a
-lookupVarIndex (MkVar 0) vidx = var0 vidx
-lookupVarIndex (MkVar 1) vidx = var1 vidx
+lookupVarIndex (V 0) vidx = var0 vidx
+lookupVarIndex (V 1) vidx = var1 vidx
 lookupVarIndex _ vidx = hole vidx
 
 {-# INLINE updateVarIndex #-}
 updateVarIndex :: Var -> Index a -> VarIndex a -> VarIndex a
-updateVarIndex (MkVar 0) idx vidx = vidx { var0 = idx }
-updateVarIndex (MkVar 1) idx vidx = vidx { var1 = idx }
+updateVarIndex (V 0) idx vidx = vidx { var0 = idx }
+updateVarIndex (V 1) idx vidx = vidx { var1 = idx }
 updateVarIndex _ idx vidx = vidx { hole = idx }
 
 varIndexElems :: VarIndex a -> [Index a]
@@ -68,10 +68,10 @@ emptySubst2 :: Subst2 a
 emptySubst2 = Subst2 0 0 0 0
 
 extend2 :: Var -> TermList f -> Subst2 f -> Maybe (Subst2 f)
-extend2 (MkVar 0) t (Subst2 _ 0 x y) = Just (Subst2 (low t) (high t) x y)
-extend2 (MkVar 0) t (Subst2 x y _ _) | t /= TermList x y (array t) (funs t) = Nothing
-extend2 (MkVar 1) u (Subst2 x y _ 0) = Just (Subst2 x y (low u) (high u))
-extend2 (MkVar 1) u (Subst2 _ _ x y) | u /= TermList x y (array u) (funs u) = Nothing
+extend2 (V 0) t (Subst2 _ 0 x y) = Just (Subst2 (low t) (high t) x y)
+extend2 (V 0) t (Subst2 x y _ _) | t /= TermList x y (array t) (funs t) = Nothing
+extend2 (V 1) u (Subst2 x y _ 0) = Just (Subst2 x y (low u) (high u))
+extend2 (V 1) u (Subst2 _ _ x y) | u /= TermList x y (array u) (funs u) = Nothing
 extend2 _ _ sub = Just sub
 
 {-# INLINE null #-}
@@ -105,12 +105,12 @@ insert x !idx = stamp "index insert" (aux (key x) idx)
 
     aux Empty idx =
       idx { size = 0, here = x:here idx }
-    aux t@(ConsSym (Fun (MkFun f _) _) u) idx =
+    aux t@(ConsSym (Fun f _) u) idx =
       idx {
         size = lenList t `min` size idx,
-        fun  = update f idx' (fun idx) }
+        fun  = update (funid f) idx' (fun idx) }
       where
-        idx' = aux u (fun idx ! f)
+        idx' = aux u (fun idx ! funid f)
     aux t@(ConsSym (Var v) u) idx =
       idx {
         size = lenList t `min` size idx,
@@ -125,9 +125,9 @@ expand idx@Index{prefix = ConsSym t ts} =
     Var v ->
       Index (size idx + 1 + lenList ts) emptyTermList [] newArray
         (updateVarIndex v idx { prefix = ts } newVarIndex)
-    Fun (MkFun f _) us ->
+    Fun f us ->
       Index (size idx + 1 + lenList ts) emptyTermList []
-        (update f idx { prefix = ts } newArray) newVarIndex
+        (update (funid f) idx { prefix = ts } newArray) newVarIndex
 
 key :: Symbolic a => a -> TermListOf a
 key x = buildList . aux . Term.singleton $ t
@@ -141,8 +141,8 @@ key x = buildList . aux . Term.singleton $ t
     aux (ConsSym (Var x) t) =
       Term.var (
       case List.elemIndex x (take varIndexCapacity repeatedVars) of
-         Nothing -> MkVar 2
-         Just n  -> MkVar n) `mappend` aux t
+         Nothing -> V 2
+         Just n  -> V n) `mappend` aux t
 
 {-# INLINEABLE delete #-}
 delete :: (Eq a, Symbolic a) => a -> Index a -> Index a
@@ -155,8 +155,8 @@ delete x !idx = stamp "index delete" (aux (key x) idx)
 
     aux Empty idx =
       idx { here = List.delete x (here idx) }
-    aux (ConsSym (Fun (MkFun f _) _) t) idx =
-      idx { fun = update f (aux t (fun idx ! f)) (fun idx) }
+    aux (ConsSym (Fun f _) t) idx =
+      idx { fun = update (funid f) (aux t (fun idx ! funid f)) (fun idx) }
     aux (ConsSym (Var v) t) idx =
       idx { var = updateVarIndex v (aux t (lookupVarIndex v (var idx))) (var idx) }
 
@@ -170,8 +170,8 @@ elem x !idx = aux (key x) idx
     aux _ idx@Index{prefix = Cons{}} = False
 
     aux Empty idx = List.elem x (here idx)
-    aux (ConsSym (Fun (MkFun f _) _) t) idx =
-      aux t (fun idx ! f)
+    aux (ConsSym (Fun f _) t) idx =
+      aux t (fun idx ! funid f)
     aux (ConsSym (Var v) t) idx =
       aux t (lookupVarIndex v (var idx))
 
@@ -233,8 +233,8 @@ find t idx = stamp "finding first match in index" (loop (initial t idx))
         UnsafeConsSym v vs = t
 
     {-# INLINE tryFun #-}
-    tryFun sub (Fun (MkFun f _) _) ts fun rest =
-      case fun ! f of
+    tryFun sub (Fun f _) ts fun rest =
+      case fun ! funid f of
         Nil -> rest
         idx -> Frame sub ts idx rest
     tryFun _ _ _ _ rest = rest
@@ -244,7 +244,7 @@ find t idx = stamp "finding first match in index" (loop (initial t idx))
       foldr op rest (varIndexToList var)
       where
         op (x, idx@Index{}) rest
-          | Just sub <- extend2 (MkVar x) (Term.singleton t) sub =
+          | Just sub <- extend2 (V x) (Term.singleton t) sub =
               Frame sub ts idx rest
         op _ rest = rest
 

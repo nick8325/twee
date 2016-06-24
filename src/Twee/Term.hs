@@ -2,7 +2,7 @@
 -- This module implements the usual term manipulation stuff
 -- (matching, unification, etc.) on top of the primitives
 -- in Twee.Term.Core.
-{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, RankNTypes, FlexibleContexts, ViewPatterns, FlexibleInstances, ScopedTypeVariables, RecordWildCards, TypeFamilies, GADTs, OverloadedStrings #-}
+{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, ViewPatterns, FlexibleInstances, ScopedTypeVariables, RecordWildCards, TypeFamilies, GADTs, OverloadedStrings #-}
 module Twee.Term(
   module Twee.Term,
   -- Stuff from Twee.Term.Core.
@@ -74,7 +74,7 @@ var = emitVar
 
 {-# INLINE listSubstList #-}
 listSubstList :: Subst f -> [(Var, TermList f)]
-listSubstList (Subst sub) = [(MkVar x, t) | (x, t) <- IntMap.toList sub]
+listSubstList (Subst sub) = [(V x, t) | (x, t) <- IntMap.toList sub]
 
 {-# INLINE listSubst #-}
 listSubst :: Subst f -> [(Var, Term f)]
@@ -140,14 +140,14 @@ substSize (Subst sub)
 -- Look up a variable.
 {-# INLINE lookupList #-}
 lookupList :: Var -> Subst f -> Maybe (TermList f)
-lookupList (MkVar x) (Subst sub) = IntMap.lookup x sub
+lookupList x (Subst sub) = IntMap.lookup (varid x) sub
 
 -- Add a new binding to a substitution.
 {-# INLINE extendList #-}
 extendList :: Var -> TermList f -> Subst f -> Maybe (Subst f)
-extendList (MkVar x) !t (Subst sub) =
-  case IntMap.lookup x sub of
-    Nothing -> Just $! Subst (IntMap.insert x t sub)
+extendList x !t (Subst sub) =
+  case IntMap.lookup (varid x) sub of
+    Nothing -> Just $! Subst (IntMap.insert (varid x) t sub)
     Just u
       | t == u    -> Just (Subst sub)
       | otherwise -> Nothing
@@ -155,13 +155,13 @@ extendList (MkVar x) !t (Subst sub) =
 -- Remove a binding from a substitution.
 {-# INLINE retract #-}
 retract :: Var -> Subst f -> Subst f
-retract (MkVar x) (Subst sub) = Subst (IntMap.delete x sub)
+retract x (Subst sub) = Subst (IntMap.delete (varid x) sub)
 
 -- Add a new binding to a substitution.
 -- Overwrites any existing binding.
 {-# INLINE unsafeExtendList #-}
 unsafeExtendList :: Var -> TermList f -> Subst f -> Subst f
-unsafeExtendList (MkVar x) !t (Subst sub) = Subst (IntMap.insert x t sub)
+unsafeExtendList x !t (Subst sub) = Subst (IntMap.insert (varid x) t sub)
 
 -- Composition of substitutions.
 substCompose :: Substitution s => Subst (SubstFun s) -> s -> Subst (SubstFun s)
@@ -209,10 +209,10 @@ canonicalise :: [TermList f] -> Subst f
 canonicalise [] = emptySubst
 canonicalise (t:ts) = loop emptySubst vars t ts
   where
-    n = maximum (0:map boundList (t:ts))
+    n = maximum (V 0:map boundList (t:ts))
     vars =
       buildTermList $
-        mconcat [emitVar (MkVar i) | i <- [0..n]]
+        mconcat [emitVar x | x <- [V 0..n]]
 
     loop !_ !_ !_ !_ | False = __
     loop sub _ Empty [] = sub
@@ -360,7 +360,7 @@ instance Show (Subst f) where
     show
       [ (i, t)
       | i <- [0..substSize subst-1],
-        Just t <- [lookup (MkVar i) subst] ]
+        Just t <- [lookup (V i) subst] ]
 
 {-# INLINE lookup #-}
 lookup :: Var -> Subst f -> Maybe (Term f)
@@ -382,17 +382,17 @@ emitTerm t = emitTermList (singleton t)
 
 -- Find the lowest-numbered variable that doesn't appear in a term.
 {-# INLINE bound #-}
-bound :: Term f -> Int
+bound :: Term f -> Var
 bound t = boundList (singleton t)
 
 {-# INLINE boundList #-}
-boundList :: TermList f -> Int
-boundList t = aux 0 t
+boundList :: TermList f -> Var
+boundList t = aux (V 0) t
   where
     aux n Empty = n
     aux n (ConsSym Fun{} t) = aux n t
-    aux n (ConsSym (Var (MkVar x)) t)
-      | x >= n = aux (x+1) t
+    aux n (ConsSym (Var x) t)
+      | x >= n = aux (succ x) t
       | otherwise = aux n t
 
 -- Check if a variable occurs in a term.
@@ -469,19 +469,11 @@ mapFunList f ts = aux ts
 --------------------------------------------------------------------------------
 
 class Numbered f where
-  fromInt :: Int -> f
-  toInt   :: f -> Int
-
-fromFun :: Fun f -> f
-fromFun (MkFun _ x) = x
+  toInt :: f -> Int
 
 toFun :: Numbered f => f -> Fun f
-toFun f = MkFun (toInt f) f
+toFun f = F (toInt f) f
 
-instance (Ord f, Numbered f) => Ord (Fun f) where
-  compare = comparing fromFun
-
-pattern App f ts <- Fun (fromFun -> f) (fromTermList -> ts)
-
-app :: Numbered a => a -> [Term a] -> Term a
-app f ts = build (fun (toFun f) ts)
+pattern App :: Numbered a => () => a -> [Term a] -> Term a
+pattern App f ts <- Fun (fromFun -> f) (fromTermList -> ts) where
+  App f ts = build (fun (toFun f) ts)

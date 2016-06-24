@@ -32,7 +32,7 @@ pPrintSet :: [Doc] -> Doc
 pPrintSet = braces . fsep . punctuate comma
 
 instance Pretty Var where
-  pPrint (MkVar x) = text "X" <> pPrint (x+1)
+  pPrint x = text "X" <> pPrint (varid x+1)
 
 instance (Pretty k, Pretty v) => Pretty (Map k v) where
   pPrint = pPrintSet . map binding . Map.toList

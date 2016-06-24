@@ -286,7 +286,7 @@ normaliseCP s cp@(Critical info _) =
     flipCP t = replace (substList sub) t
       where
         n = maximum (0:map fromEnum (vars t))
-        sub (MkVar x) = var (MkVar (n - x))
+        sub (V x) = var (V (n - x))
 
     -- XXX shouldn't this also check subsumption?
     setJoin (Critical info (t :=: u))
@@ -602,16 +602,16 @@ toCancellationRule s (Rule or l r)
     vs = usort (vars l \\ usort (vars l)) \\ usort (vars r)
     cs = usort [ c | consts, Fun c Empty <- subterms l ]
 
-    n = bound l `max` bound r
+    V n = bound l `max` bound r
 
     l' = build (freshenVars (n + length cs) (singleton l))
     freshenVars !_ Empty = mempty
     freshenVars n (Cons (Var x) ts) =
       var y `mappend` freshenVars (n+1) ts
       where
-        y = if x `elem` vs then MkVar n else x
+        y = if x `elem` vs then V n else x
     freshenVars i (Cons (Fun f Empty) ts) | f `elem` cs =
-      var (MkVar m) `mappend` freshenVars (i+1) ts
+      var (V m) `mappend` freshenVars (i+1) ts
       where
         m = n + fromMaybe __ (elemIndex f cs)
     freshenVars n (Cons (Fun f ts) us) =
@@ -620,7 +620,7 @@ toCancellationRule s (Rule or l r)
 
     tss =
       map (map (build . var . snd)) (partitionBy fst pairs) ++
-      zipWith (\i c -> [build (con c), build (var (MkVar i))]) [n..] cs
+      zipWith (\i c -> [build (con c), build (var (V i))]) [n..] cs
     pairs = concat (zipWith f (subterms l) (subterms l'))
       where
         f (Var x) (Var y)
@@ -804,8 +804,8 @@ emitReplacement n t = aux n
 
 criticalPairs1 :: Function f => Twee f -> [Int] -> Rule f -> [Labelled (Rule f)] -> [Labelled (Critical (Equation f))]
 criticalPairs1 s ns r rs = do
-  let b = maximum (0:[ bound t | Labelled _ (Rule _ t _) <- rs ])
-      Rule or t u = subst (\(MkVar x) -> var (MkVar (x+b))) r
+  let V b = maximum (V 0:[ bound t | Labelled _ (Rule _ t _) <- rs ])
+      Rule or t u = subst (\(V x) -> var (V (x+b))) r
   Labelled l (Rule or' t' u') <- rs
   (sub, pos) <- overlaps ns t t'
   let left = subst sub u

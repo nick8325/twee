@@ -3,7 +3,7 @@ module Twee.Base(
   Symbolic(..), terms, subst, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise,
   Minimal(..), minimalTerm, isMinimal,
-  Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..), extended, unextended,
+  Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..),
   module Twee.Term, module Twee.Pretty) where
 
 #include "errors.h"
@@ -135,7 +135,7 @@ instance (Numbered f, Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTe
 
 data Extended f =
     Minimal
-  | Skolem Int
+  | Skolem Var
   | Function f
   deriving (Eq, Ord, Show, Functor)
 
@@ -143,21 +143,16 @@ instance Minimal (Extended f) where
   minimal = Minimal
 
 instance Skolem (Extended f) where
-  skolem (MkVar x) = Skolem x
+  skolem = Skolem
 
 instance Numbered f => Numbered (Extended f) where
-  fromInt 0 = Minimal
-  fromInt n
-    | odd n     = Skolem ((n-1) `div` 2)
-    | otherwise = Function (fromInt ((n-2) `div` 2))
-
   toInt Minimal = 0
-  toInt (Skolem n) = 2*n+1
+  toInt (Skolem (V n)) = 2*n+1
   toInt (Function f) = 2*toInt f+2
 
 instance Pretty f => Pretty (Extended f) where
   pPrintPrec _ _ Minimal = text "?"
-  pPrintPrec _ _ (Skolem n) = text "sk" <> pPrint n
+  pPrintPrec _ _ (Skolem (V n)) = text "sk" <> pPrint n
   pPrintPrec l p (Function f) = pPrintPrec l p f
 
 instance PrettyTerm f => PrettyTerm (Extended f) where
@@ -171,21 +166,3 @@ instance Sized f => Sized (Extended f) where
 instance Arity f => Arity (Extended f) where
   arity (Function f) = arity f
   arity _ = 0
-
-{-# INLINEABLE extended #-}
-extended :: Numbered f => TermList f -> Builder (Extended f)
-extended Empty = mempty
-extended (Cons (Var x) ts) = var x `mappend` extended ts
-extended (Cons (Fun f ts) us) =
-  fun (toFun (Function (fromFun f))) (extended ts) `mappend`
-  extended us
-
-{-# INLINEABLE unextended #-}
-unextended :: Numbered f => TermList (Extended f) -> Builder f
-unextended Empty = mempty
-unextended (Cons (Var x) ts) = var x `mappend` unextended ts
-unextended (Cons (Fun f ts) us) =
-  case fromFun f of
-    Function g -> fun (toFun g) (unextended ts) `mappend` unextended us
-    Minimal    -> var (MkVar 0) `mappend` unextended us
-    Skolem n   -> var (MkVar n) `mappend` unextended us

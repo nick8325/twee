@@ -1,7 +1,9 @@
 -- Terms and substitutions, implemented using flatterms.
 -- This module contains all the low-level icky bits
 -- and provides primitives for building higher-level stuff.
-{-# LANGUAGE BangPatterns, CPP, PatternGuards, PatternSynonyms, ViewPatterns, RecordWildCards, GeneralizedNewtypeDeriving, RankNTypes, MagicHash, UnboxedTuples, MultiParamTypeClasses, FlexibleInstances, FunctionalDependencies, ScopedTypeVariables #-}
+{-# LANGUAGE CPP, PatternSynonyms, ViewPatterns,
+    MagicHash, UnboxedTuples, BangPatterns,
+    RankNTypes, RecordWildCards, GeneralizedNewtypeDeriving #-}
 module Twee.Term.Core where
 
 #include "errors.h"
@@ -29,8 +31,8 @@ data Symbol =
 
 instance Show Symbol where
   show Symbol{..}
-    | isFun = show (MkFun index __) ++ "=" ++ show size
-    | otherwise = show (MkVar index)
+    | isFun = show (F index ()) ++ "=" ++ show size
+    | otherwise = show (V index)
 
 -- Convert symbols to/from Int64 for storage in flatterms.
 -- The encoding:
@@ -127,13 +129,15 @@ patHead t@TermList{..}
 -- * Var :: Var -> Term f
 -- * Fun :: Fun f -> TermList f -> Term f
 
-data Fun f = MkFun {- UNPACK #-} !Int !f
+data Fun f = F { funid :: {- UNPACK #-} !Int, fromFun :: !f }
 instance Eq (Fun f) where
-  MkFun m _ == MkFun n _ = m == n
+  f == g = funid f == funid g
+instance Ord f => Ord (Fun f) where
+  compare = comparing fromFun
 
-newtype Var   = MkVar Int deriving (Eq, Ord, Enum)
-instance Show (Fun f) where show (MkFun x _) = "f" ++ show x
-instance Show Var     where show (MkVar x) = "x" ++ show x
+newtype Var = V { varid :: Int } deriving (Eq, Ord, Enum)
+instance Show (Fun f) where show f = "f" ++ show (funid f)
+instance Show Var     where show x = "x" ++ show (varid x)
 
 pattern Var x <- (patTerm -> Left x)
 pattern Fun f ts <- (patTerm -> Right (f, ts))
@@ -141,8 +145,8 @@ pattern Fun f ts <- (patTerm -> Right (f, ts))
 {-# INLINE patTerm #-}
 patTerm :: Term f -> Either Var (Fun f, TermList f)
 patTerm t@Term{..}
-  | isFun     = Right (MkFun index rootFun, ts)
-  | otherwise = Left (MkVar index)
+  | isFun     = Right (F index rootFun, ts)
+  | otherwise = Left (V index)
   where
     Symbol{..} = toSymbol root
     !(UnsafeConsSym _ ts) = singleton t
@@ -279,7 +283,7 @@ emitSymbolBuilder aux x inner =
 -- The second argument is called to emit the function's arguments.
 {-# INLINE emitFun #-}
 emitFun :: Fun f -> Builder f -> Builder f
-emitFun (MkFun n f) inner = emitSymbolBuilder aux (Symbol True n 0) inner
+emitFun (F n f) inner = emitSymbolBuilder aux (Symbol True n 0) inner
   where
     aux n =
       Builder $
@@ -289,7 +293,7 @@ emitFun (MkFun n f) inner = emitSymbolBuilder aux (Symbol True n 0) inner
 -- Emit a variable.
 {-# INLINE emitVar #-}
 emitVar :: Var -> Builder f
-emitVar (MkVar x) = emitSymbolBuilder (\_ -> Builder built) (Symbol False x 1) mempty
+emitVar x = emitSymbolBuilder (\_ -> Builder built) (Symbol False (varid x) 1) mempty
 
 -- Emit a whole termlist.
 {-# INLINE emitTermList #-}

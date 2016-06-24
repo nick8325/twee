@@ -141,7 +141,6 @@ constantCache :: Label.Cache Constant
 constantCache = Label.mkCache
 
 instance Numbered Constant where
-  fromInt n = fromMaybe __ (Label.find n)
   toInt = Label.label
 
 instance Ordered (Extended Constant) where
@@ -156,7 +155,6 @@ functionCache :: Label.Cache Jukebox.Function
 functionCache = Label.mkCache
 
 instance Numbered Jukebox.Function where
-  fromInt n = fromMaybe __ (Label.find n)
   toInt = Label.label
 
 toTwee :: Problem Clause -> ([Equation Jukebox.Function], [Term Jukebox.Function])
@@ -177,30 +175,30 @@ toTwee prob = (lefts eqs, goals)
         _ -> ERROR("Problem is not unit equality")
 
     tm (Jukebox.Var (Unique x _ _ ::: _)) =
-      build (var (MkVar (fromIntegral x)))
+      build (var (V (fromIntegral x)))
     tm (f :@: ts) =
-      app f (map tm ts)
+      App f (map tm ts)
 
 addNarrowing ::
   ([Equation (Extended Constant)], [Term (Extended Constant)]) ->
   ([Equation (Extended Constant)], [Term (Extended Constant)])
 addNarrowing (axioms, goals)
-  | length goals < 2 = (axioms, [app false [], app true []])
+  | length goals < 2 = (axioms, [App false [], App true []])
     where
       false  = Function (Builtin CFalse)
       true   = Function (Builtin CTrue)
 addNarrowing (axioms, goals)
   | length goals >= 2 && all isGround goals = (axioms, goals)
 addNarrowing (axioms, [t, u])
-  | otherwise = (axioms ++ equalities, [app false [], app true []])
+  | otherwise = (axioms ++ equalities, [App false [], App true []])
     where
       false  = Function (Builtin CFalse)
       true   = Function (Builtin CTrue)
       equals = Function (Builtin CEquals)
 
       equalities =
-        [app equals [build (var (MkVar 0)), build (var (MkVar 0))] :=: app true [],
-         app equals [t, u] :=: app false []]
+        [App equals [build (var (V 0)), build (var (V 0))] :=: App true [],
+         App equals [t, u] :=: App false []]
 addNarrowing _ =
   ERROR("Don't know how to handle several non-ground goals")
 
