@@ -2,7 +2,7 @@
 module Twee.Array where
 
 #include "errors.h"
-import qualified Data.Primitive as P
+import qualified Data.Primitive.SmallArray as P
 import Control.Monad.ST
 import Data.List
 
@@ -11,7 +11,7 @@ import Data.List
 data Array a =
   Array {
     arraySize     :: {-# UNPACK #-} !Int,
-    arrayContents :: {-# UNPACK #-} !(P.Array a) }
+    arrayContents :: {-# UNPACK #-} !(P.SmallArray a) }
 
 class Default a where def :: a
 
@@ -20,7 +20,7 @@ toList :: Array a -> [(Int, a)]
 toList arr =
   [ (i, x)
   | i <- [0..arraySize arr-1],
-    let x = P.indexArray (arrayContents arr) i ]
+    let x = P.indexSmallArray (arrayContents arr) i ]
 
 instance Show a => Show (Array a) where
   show arr =
@@ -32,23 +32,23 @@ instance Show a => Show (Array a) where
 
 newArray :: Default a => Array a
 newArray = runST $ do
-  marr <- P.newArray 0 def
-  arr  <- P.unsafeFreezeArray marr
+  marr <- P.newSmallArray 0 def
+  arr  <- P.unsafeFreezeSmallArray marr
   return (Array 0 arr)
 
 {-# INLINE (!) #-}
 (!) :: Default a => Array a -> Int -> a
 arr ! n
   | 0 <= n && n < arraySize arr =
-    P.indexArray (arrayContents arr) n
+    P.indexSmallArray (arrayContents arr) n
   | otherwise = def
 
 {-# INLINEABLE update #-}
 update :: Default a => Int -> a -> Array a -> Array a
 update n x arr = runST $ do
   let size = arraySize arr `max` (n+1)
-  marr <- P.newArray size def
-  P.copyArray marr 0 (arrayContents arr) 0 (arraySize arr)
-  P.writeArray marr n $! x
-  arr' <- P.unsafeFreezeArray marr
+  marr <- P.newSmallArray size def
+  P.copySmallArray (arrayContents arr) 0 marr 0 (arraySize arr)
+  P.writeSmallArray marr n $! x
+  arr' <- P.unsafeFreezeSmallArray marr
   return (Array size arr')

@@ -30,6 +30,7 @@ source-repository head
 
 library
   exposed-modules:
+    Data.Primitive.SmallArray
     Twee
     Twee.Array
     Twee.Base
