@@ -1,5 +1,5 @@
 -- A priority queue, with orphan murder.
-{-# LANGUAGE TypeFamilies, GeneralizedNewtypeDeriving, DeriveFunctor, RecordWildCards, BangPatterns #-}
+{-# LANGUAGE TypeFamilies, GeneralizedNewtypeDeriving, DeriveFunctor, RecordWildCards #-}
 module Twee.Queue(module Twee.Queue, Heap.Heap) where
 
 import Twee.Base

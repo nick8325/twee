@@ -1,6 +1,6 @@
 -- | Pretty-printing of terms and assorted other values.
 
-{-# LANGUAGE Rank2Types, FlexibleContexts #-}
+{-# LANGUAGE Rank2Types #-}
 module Twee.Pretty(module Twee.Pretty, module Text.PrettyPrint.HughesPJClass, Pretty(..)) where
 
 import Text.PrettyPrint.HughesPJClass

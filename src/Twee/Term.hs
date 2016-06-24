@@ -2,7 +2,7 @@
 -- This module implements the usual term manipulation stuff
 -- (matching, unification, etc.) on top of the primitives
 -- in Twee.Term.Core.
-{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, ViewPatterns, FlexibleInstances, ScopedTypeVariables, RecordWildCards, TypeFamilies, GADTs, OverloadedStrings #-}
+{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings #-}
 module Twee.Term(
   module Twee.Term,
   -- Stuff from Twee.Term.Core.

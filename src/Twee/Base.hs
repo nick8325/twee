@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeSynonymInstances, TypeFamilies, FlexibleContexts, FlexibleInstances, GeneralizedNewtypeDeriving, CPP, ConstraintKinds, UndecidableInstances, DeriveFunctor, StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor #-}
 module Twee.Base(
   Symbolic(..), terms, subst, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise,

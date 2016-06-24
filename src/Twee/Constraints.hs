@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, CPP, FlexibleContexts, UndecidableInstances, StandaloneDeriving, RecordWildCards, GADTs, ScopedTypeVariables, PatternGuards, PatternSynonyms #-}
+{-# LANGUAGE CPP, FlexibleContexts, UndecidableInstances, StandaloneDeriving, RecordWildCards #-}
 module Twee.Constraints where
 
 #include "errors.h"

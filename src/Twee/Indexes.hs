@@ -1,5 +1,5 @@
 -- Term indexing, where the inserted values can be given categories.
-{-# LANGUAGE CPP, TypeFamilies, ScopedTypeVariables #-}
+{-# LANGUAGE CPP, ScopedTypeVariables #-}
 module Twee.Indexes where
 
 #include "errors.h"
