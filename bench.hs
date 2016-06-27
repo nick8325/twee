@@ -7,8 +7,8 @@ import Data.Int
 import Data.Maybe
 import Twee.Term.Core hiding (subst)
 
-instance Num (Fun Int) where fromInteger = MkFun . fromInteger
-instance Num Var where fromInteger = MkVar . fromInteger
+instance Num (Fun Int) where fromInteger n = F (fromInteger n) (fromInteger n)
+instance Num Var where fromInteger = V . fromInteger
 
 t0, t1, u0, u1, t2, t, u :: Term Int
 t0 = build $ fun 0 [var 0, fun 0 [var 0, fun 0 [fun 0 [var 0, var 1], var 2]]]
@@ -61,7 +61,7 @@ main = do
     bench "unify-subst-closed2" (whnf (build . uncurry subst) (csub', u2)),
     bench "mgu-tri" (whnf (uncurry mgu1) (t2, u2)),
     bench "mgu-close" (whnf (uncurry mgu2) (t2, u2)),
-    bench "make-constant" (whnf (build . uncurry fun) (MkFun 0, emptyTermList)),
+    bench "make-constant" (whnf (build . uncurry fun) (F 0 0, emptyTermList)),
     bench "baseline" (whnf (uncurry (+)) (0 :: Int, 0))]
 
 prop :: Bool -> NonNegative (Small Int) -> NonNegative (Small Int) -> Property
