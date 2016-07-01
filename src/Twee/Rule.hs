@@ -231,19 +231,16 @@ steps r = aux r []
     aux (Trans p q) = aux p . aux q
     aux (Parallel ps _) = foldr (.) id (map (aux . snd) ps)
 
-anywhere1 :: (Numbered f, PrettyTerm f) => Strategy f -> Reduction f -> Maybe (Reduction f)
-anywhere1 strat p = aux [] 0 (singleton t) p t
+anywhere1 :: (Numbered f, PrettyTerm f) => Strategy f -> TermList f -> [(Int, Reduction f)]
+anywhere1 strat t = aux [] 0 t
   where
-    aux _ !_ !_ _ !_ | False = __
-    aux [] _ Empty _ _ = Nothing
-    aux ps _ Empty p t = Just (p `Trans` Parallel (reverse ps) t)
-    aux ps n (Cons (Var _) t) p u = aux ps (n+1) t p u
-    aux ps n (Cons t u) p v | q:_ <- strat t =
-      aux ((n, q):ps) (n+len t) u p v
-    aux ps n (ConsSym (Fun _ _) t) p u =
-      aux ps (n+1) t p u
-
-    t = result p
+    aux _ !_ !_ | False = __
+    aux ps _ Empty = reverse ps
+    aux ps n (Cons (Var _) t) = aux ps (n+1) t
+    aux ps n (Cons t u) | q:_ <- strat t =
+      aux ((n, q):ps) (n+len t) u
+    aux ps n (ConsSym (Fun _ _) t) =
+      aux ps (n+1) t
 
 normaliseWith :: (Numbered f, PrettyTerm f) => Strategy f -> Term f -> Reduction f
 normaliseWith strat t = stamp (describe res) res
@@ -256,9 +253,10 @@ normaliseWith strat t = stamp (describe res) res
       ERROR("Possibly nonterminating rewrite:\n" ++
             prettyShow p)
     aux n p =
-      case anywhere1 strat p of
-        Nothing -> p
-        Just q -> aux (n+1) q
+      case anywhere1 strat (singleton t) of
+        [] -> p
+        rs -> aux (n+1) (p `Trans` Parallel rs t)
+      where t = result p
 
 normalForms :: Function f => Strategy f -> [Term f] -> Set (Term f)
 normalForms strat ts = stamp "computing all normal forms" $ go Set.empty Set.empty ts
