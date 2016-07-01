@@ -255,15 +255,12 @@ instance Pretty JoinReason where
   pPrint SetJoining       = text "joined with set of normal forms"
   pPrint GroundJoined     = text "ground joined"
 
-normaliseCPQuickly, normaliseCPReducing, normaliseCP ::
+normaliseCPQuickly, normaliseCP ::
   Function f =>
   Twee f -> Critical (Equation f) -> Either JoinReason (Critical (Equation f))
 normaliseCPQuickly s cp =
   reduceCP s Initial id cp >>=
-  reduceCP s Simplification (result . normaliseQuickly s)
-
-normaliseCPReducing s cp =
-  normaliseCPQuickly s cp >>=
+  reduceCP s Simplification (result . normaliseQuickly s) >>=
   reduceCP s Reducing (result . normalise s)
 
 normaliseCP s cp@(Critical info _) =
@@ -274,12 +271,14 @@ normaliseCP s cp@(Critical info _) =
     (Right _, Left x, _, _) -> Left x
     (Left x, _, _, _) -> Left x
   where
+    cp0 = normaliseCPQuickly s cp
+
     cp1 =
-      normaliseCPReducing s cp >>=
+      cp0 >>=
       reduceCP s Subjoining (result . normaliseSub s (top info))
 
     cp2 =
-      normaliseCPReducing s cp >>=
+      cp0 >>=
       reduceCP s Subjoining (result . normaliseSub s (flipCP (top info))) . flipCP
 
     cp3 = setJoin cp
@@ -377,7 +376,7 @@ consider w l1 l2 pair = do
         case maxSize s of
           Nothing -> False
           Just sz -> size t > sz || size u > sz
-      hardJoinable = isLeft . normaliseCPReducing s . Critical noCritInfo
+      hardJoinable = isLeft . normaliseCPQuickly s . Critical noCritInfo
   if tooBig pair then return False else
     case normaliseCP s pair of
       Left reason -> do
