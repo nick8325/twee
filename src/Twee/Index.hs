@@ -12,10 +12,8 @@ import Twee.Base hiding (var, fun, empty, size, singleton, prefix, funs)
 import qualified Twee.Term as Term
 import Twee.Array
 import qualified Data.List as List
-import Data.Maybe
 import Twee.Profile
 import Twee.Utils
-import Control.Monad
 import Twee.Term.Core(TermList(..))
 
 data Index f a =
@@ -124,7 +122,7 @@ expand idx@Index{prefix = ConsSym t ts} =
     Var v ->
       Index (size idx + 1 + lenList ts) emptyTermList [] newArray
         (updateVarIndex v idx { prefix = ts } newVarIndex)
-    Fun f us ->
+    Fun f _ ->
       Index (size idx + 1 + lenList ts) emptyTermList []
         (update (funid f) idx { prefix = ts } newArray) newVarIndex
 
@@ -165,7 +163,7 @@ elem !t x !idx = aux (key t) idx
     aux _ Nil = False
     aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
       aux ts idx{prefix = us}
-    aux _ idx@Index{prefix = Cons{}} = False
+    aux _ Index{prefix = Cons{}} = False
 
     aux Empty idx = List.elem x (here idx)
     aux (ConsSym (Fun f _) t) idx =

@@ -2,17 +2,9 @@
 {-# LANGUAGE TypeFamilies #-}
 module Twee.Index.Simple(module Twee.Index, module Twee.Index.Simple) where
 
-import qualified Prelude
 import Prelude hiding (filter, map, null)
 import Twee.Base hiding (var, fun, empty, size, singleton, prefix, funs)
-import qualified Twee.Term as Term
-import Twee.Array
-import qualified Data.List as List
 import Data.Maybe
-import Twee.Profile
-import Twee.Utils
-import Control.Monad
-import Twee.Term.Core(TermList(..))
 import qualified Twee.Index as Index
 import Twee.Index(null, matchesList, matches, freeze, elems, map, filter, union)
 

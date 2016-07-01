@@ -18,10 +18,7 @@ import Data.Ord
 import qualified Twee.Index.Split as Indexes
 import qualified Data.Map.Strict as Map
 import qualified Twee.KBO as KBO
-import qualified Twee.LPO as LPO
 import qualified Data.Set as Set
-import qualified Data.IntMap as IntMap
-import Data.IntMap(IntMap)
 import Data.List.Split
 import Data.List
 import Data.Maybe
@@ -203,7 +200,7 @@ addNarrowing _ =
   ERROR("Don't know how to handle several non-ground goals")
 
 runTwee :: Twee (Extended Constant) -> Order -> [String] -> Problem Clause -> IO Answer
-runTwee state order precedence obligs = stampM "twee" $ do
+runTwee state _order precedence obligs = stampM "twee" $ do
   let (axioms0, goals0) = toTwee obligs
       prec c = (isNothing (elemIndex (base c) precedence),
                 fmap negate (elemIndex (base c) precedence),
@@ -211,9 +208,8 @@ runTwee state order precedence obligs = stampM "twee" $ do
       fs0 = map fromFun (usort (funs (axioms0, goals0)))
       fs1 = sortBy (comparing prec) fs0
       fs2 = zipWith (\i (c ::: (FunType args _)) -> Constant i (length args) 1 (show c)) [1..] fs1
-      m   = IntMap.fromList [(conIndex f, f) | f <- fs2]
-      m'  = Map.fromList (zip fs1 (map Function fs2))
-  let replace = build . mapFun (toFun . flip (Map.findWithDefault __) m' . fromFun)
+      m  = Map.fromList (zip fs1 (map Function fs2))
+  let replace = build . mapFun (toFun . flip (Map.findWithDefault __) m . fromFun)
       axioms1 = [replace t :=: replace u | t :=: u <- axioms0]
       goals1  = map replace goals0
       (axioms2, goals2) = addNarrowing (axioms1, goals1)

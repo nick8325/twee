@@ -332,7 +332,7 @@ complete2 = do
       res <- consider (cpWeight info) l1 l2 cp
       when res renormaliseGoals
       return True
-    Just (ManyCPs (CPs _ l lower upper size rule)) -> stampM "split critical pair" $ do
+    Just (ManyCPs (CPs _ l lower upper _ rule)) -> stampM "split critical pair" $ do
       s <- get
       queueCPsSplit reenqueueM lower (l-1) rule
       mapM_ (reenqueueM . SingleCP) (toCPs s l l rule)

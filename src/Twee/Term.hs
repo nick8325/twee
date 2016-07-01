@@ -16,7 +16,6 @@ import Prelude hiding (lookup)
 import Twee.Term.Core
 import Data.List hiding (lookup)
 import Data.Maybe
-import Data.Ord
 import Data.Monoid
 import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
