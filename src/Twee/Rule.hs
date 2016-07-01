@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, CPP, BangPatterns, OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, CPP, BangPatterns, OverloadedStrings, DeriveGeneric #-}
 module Twee.Rule where
 
 #include "errors.h"
@@ -16,6 +16,7 @@ import qualified Data.Set as Set
 import Data.Set(Set)
 import qualified Twee.Term as Term
 import Twee.Profile
+import GHC.Generics
 
 --------------------------------------------------------------------------------
 -- Rewrite rules.
@@ -26,14 +27,14 @@ data Rule f =
     orientation :: Orientation f,
     lhs :: Term f,
     rhs :: Term f }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
 
 data Orientation f =
     Oriented
   | WeaklyOriented [Term f]
   | Permutative [(Term f, Term f)]
   | Unoriented
-  deriving Show
+  deriving (Show, Generic)
 
 instance Eq (Orientation f) where _ == _ = True
 instance Ord (Orientation f) where compare _ _ = EQ
@@ -45,21 +46,11 @@ oriented _ = False
 
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
-  termsDL Rule{..} = termsDL (lhs, (rhs, orientation))
-  replace f (Rule or l r) = Rule (replace f or) (replace f l) (replace f r)
 instance Singular (Rule f) where
   term = lhs
 
 instance Symbolic (Orientation f) where
   type ConstantOf (Orientation f) = f
-  termsDL Oriented = mempty
-  termsDL (WeaklyOriented ts) = termsDL ts
-  termsDL (Permutative ts) = termsDL ts
-  termsDL Unoriented = mempty
-  replace _ Oriented = Oriented
-  replace f (WeaklyOriented ts) = WeaklyOriented (replace f ts)
-  replace f (Permutative ts) = Permutative (replace f ts)
-  replace _ Unoriented = Unoriented
 
 instance (Numbered f, PrettyTerm f) => Pretty (Rule f) where
   pPrint (Rule Oriented l r) = pPrintRule l r
@@ -74,13 +65,11 @@ pPrintRule l r = hang (pPrint l <+> text "->") 2 (pPrint r)
 -- Equations.
 --------------------------------------------------------------------------------
 
-data Equation f = Term f :=: Term f deriving (Eq, Ord, Show)
+data Equation f = Term f :=: Term f deriving (Eq, Ord, Show, Generic)
 type EquationOf a = Equation (ConstantOf a)
 
 instance Symbolic (Equation f) where
   type ConstantOf (Equation f) = f
-  termsDL (t :=: u) = termsDL (t, u)
-  replace f (t :=: u) = replace f t :=: replace f u
 
 instance (Numbered f, PrettyTerm f) => Pretty (Equation f) where
   pPrint (x :=: y) = hang (pPrint x <+> text "=") 2 (pPrint y)

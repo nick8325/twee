@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor #-}
+{-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, DeriveGeneric, TypeOperators, MultiParamTypeClasses #-}
 module Twee.Base(
   Symbolic(..), Singular(..), terms, subst, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise,
@@ -15,6 +15,7 @@ import qualified Twee.Term as Term
 import Twee.Pretty
 import Twee.Constraints hiding (funs)
 import Data.DList(DList)
+import GHC.Generics
 
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where
@@ -22,6 +23,37 @@ class Symbolic a where
 
   termsDL :: a -> DList (TermListOf a)
   replace :: (TermListOf a -> BuilderOf a) -> a -> a
+
+  default termsDL :: (Generic a, GSymbolic (ConstantOf a) (Rep a)) => a -> DList (TermListOf a)
+  termsDL = gtermsDL . from
+  default replace :: (Generic a, GSymbolic (ConstantOf a) (Rep a)) => (TermListOf a -> BuilderOf a) -> a -> a
+  replace sub = to . greplace sub . from
+
+class GSymbolic k f where
+  gtermsDL :: f a -> DList (TermList k)
+  greplace :: (TermList k -> Builder k) -> f a -> f a
+
+instance GSymbolic k V1 where
+  gtermsDL _ = __
+  greplace _ x = x
+instance GSymbolic k U1 where
+
+  gtermsDL _ = mzero
+  greplace _ x = x
+instance (GSymbolic k f, GSymbolic k g) => GSymbolic k (f :*: g) where
+  gtermsDL (x :*: y) = gtermsDL x `mplus` gtermsDL y
+  greplace sub (x :*: y) = greplace sub x :*: greplace sub y
+instance (GSymbolic k f, GSymbolic k g) => GSymbolic k (f :+: g) where
+  gtermsDL (L1 x) = gtermsDL x
+  gtermsDL (R1 x) = gtermsDL x
+  greplace sub (L1 x) = L1 (greplace sub x)
+  greplace sub (R1 x) = R1 (greplace sub x)
+instance GSymbolic k f => GSymbolic k (M1 i c f) where
+  gtermsDL (M1 x) = gtermsDL x
+  greplace sub (M1 x) = M1 (greplace sub x)
+instance (Symbolic a, ConstantOf a ~ k) => GSymbolic k (K1 i a) where
+  gtermsDL (K1 x) = termsDL x
+  greplace sub (K1 x) = K1 (replace sub x)
 
 class Symbolic a => Singular a where
   term :: a -> TermOf a
@@ -52,23 +84,16 @@ instance Symbolic (TermList f) where
   termsDL   = return
   replace f = buildList . f
 
-instance (ConstantOf a ~ ConstantOf b,
-          Symbolic a, Symbolic b) => Symbolic (a, b) where
+instance (ConstantOf a ~ ConstantOf b, Symbolic a, Symbolic b) => Symbolic (a, b) where
   type ConstantOf (a, b) = ConstantOf a
-  termsDL (x, y) = termsDL x `mplus` termsDL y
-  replace f (x, y) = (replace f x, replace f y)
 
 instance (ConstantOf a ~ ConstantOf b,
           ConstantOf a ~ ConstantOf c,
           Symbolic a, Symbolic b, Symbolic c) => Symbolic (a, b, c) where
   type ConstantOf (a, b, c) = ConstantOf a
-  termsDL (x, y, z) = termsDL x `mplus` termsDL y `mplus` termsDL z
-  replace f (x, y, z) = (replace f x, replace f y, replace f z)
 
 instance Symbolic a => Symbolic [a] where
   type ConstantOf [a] = ConstantOf a
-  termsDL = msum . map termsDL
-  replace f = map (replace f)
 
 {-# INLINE vars #-}
 vars :: Symbolic a => a -> [Var]

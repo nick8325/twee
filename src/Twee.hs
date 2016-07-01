@@ -1,7 +1,7 @@
 -- Knuth-Bendix completion, with lots of exciting tricks for
 -- unorientable equations.
 
-{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, RecordWildCards, ScopedTypeVariables, UndecidableInstances, StandaloneDeriving, PatternGuards, BangPatterns, OverloadedStrings #-}
+{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, RecordWildCards, ScopedTypeVariables, UndecidableInstances, StandaloneDeriving, PatternGuards, BangPatterns, OverloadedStrings, DeriveGeneric #-}
 module Twee where
 
 #include "errors.h"
@@ -28,6 +28,7 @@ import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
 import Data.List.Split
 import Twee.Profile
+import GHC.Generics
 
 --------------------------------------------------------------------------------
 -- Completion engine state.
@@ -572,7 +573,7 @@ data CancellationRule f =
   CancellationRule {
     cr_unified :: [[Term f]],
     cr_rule :: {-# UNPACK #-} !(Rule f) }
-  deriving Show
+  deriving (Show, Generic)
 
 instance (Numbered f, PrettyTerm f) => Pretty (CancellationRule f) where
   pPrint (CancellationRule tss rule) =
@@ -580,10 +581,6 @@ instance (Numbered f, PrettyTerm f) => Pretty (CancellationRule f) where
 
 instance Symbolic (CancellationRule f) where
   type ConstantOf (CancellationRule f) = f
-  termsDL (CancellationRule tss rule) =
-    termsDL rule `mplus` termsDL tss
-  replace sub (CancellationRule tss rule) =
-    CancellationRule (replace sub tss) (replace sub rule)
 
 instance Singular (CancellationRule f) where
   term (CancellationRule _ rule) = term rule
@@ -664,6 +661,7 @@ data Critical a =
   Critical {
     critInfo :: CritInfo (ConstantOf a),
     critical :: a }
+  deriving Generic
 
 data CritInfo f =
   CritInfo {
@@ -681,9 +679,6 @@ deriving instance Show f => Show (CritInfo f)
 
 instance Symbolic a => Symbolic (Critical a) where
   type ConstantOf (Critical a) = ConstantOf a
-
-  termsDL Critical{..} = termsDL (critical, critInfo)
-  replace f Critical{..} = Critical (replace f critInfo) (replace f critical)
 
 instance Singular a => Singular (Critical a) where
   term = term . critical
