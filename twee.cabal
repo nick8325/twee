@@ -37,7 +37,8 @@ library
     Twee.Pretty
     Twee.Constraints
     Twee.Index
-    Twee.Indexes
+    Twee.Index.Simple
+    Twee.Index.Split
     Twee.Queue
     Twee.Rule
     Twee.Term
