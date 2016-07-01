@@ -146,9 +146,10 @@ instance Eq (Labelled a) where x == y = labelOf x == labelOf y
 instance Ord (Labelled a) where compare = comparing labelOf
 instance Symbolic a => Symbolic (Labelled a) where
   type ConstantOf (Labelled a) = ConstantOf a
-  term = term . peel
   termsDL = termsDL . peel
   replace f (Labelled l x) = Labelled l (replace f x)
+instance Singular a => Singular (Labelled a) where
+  term = term . peel
 instance Pretty a => Pretty (Labelled a) where pPrint = pPrint . peel
 
 moveLabel :: Functor f => Labelled (f a) -> f (Labelled a)

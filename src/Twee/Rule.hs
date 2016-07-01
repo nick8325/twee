@@ -4,8 +4,8 @@ module Twee.Rule where
 #include "errors.h"
 import Twee.Base
 import Twee.Constraints
-import qualified Twee.Index as Index
-import Twee.Index(Frozen)
+import qualified Twee.Index.Simple as Index
+import Twee.Index.Simple(Frozen)
 import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
@@ -45,13 +45,13 @@ oriented _ = False
 
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
-  term = lhs
   termsDL Rule{..} = termsDL (lhs, (rhs, orientation))
   replace f (Rule or l r) = Rule (replace f or) (replace f l) (replace f r)
+instance Singular (Rule f) where
+  term = lhs
 
 instance Symbolic (Orientation f) where
   type ConstantOf (Orientation f) = f
-  term = __
   termsDL Oriented = mempty
   termsDL (WeaklyOriented ts) = termsDL ts
   termsDL (Permutative ts) = termsDL ts
@@ -79,7 +79,6 @@ type EquationOf a = Equation (ConstantOf a)
 
 instance Symbolic (Equation f) where
   type ConstantOf (Equation f) = f
-  term = __
   termsDL (t :=: u) = termsDL (t, u)
   replace f (t :=: u) = replace f t :=: replace f u
 

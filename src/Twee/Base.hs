@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor #-}
 module Twee.Base(
-  Symbolic(..), terms, subst, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
+  Symbolic(..), Singular(..), terms, subst, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise,
   Minimal(..), minimalTerm, isMinimal,
   Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..),
@@ -20,9 +20,11 @@ import Data.DList(DList)
 class Symbolic a where
   type ConstantOf a
 
-  term    :: a -> TermOf a
   termsDL :: a -> DList (TermListOf a)
   replace :: (TermListOf a -> BuilderOf a) -> a -> a
+
+class Symbolic a => Singular a where
+  term :: a -> TermOf a
 
 terms :: Symbolic a => a -> [TermListOf a]
 terms = DList.toList . termsDL
@@ -39,20 +41,20 @@ type FunOf a = Fun (ConstantOf a)
 
 instance Symbolic (Term f) where
   type ConstantOf (Term f) = f
-  term      = id
   termsDL   = return . singleton
   replace f = build . f . singleton
 
+instance Singular (Term f) where
+  term = id
+
 instance Symbolic (TermList f) where
   type ConstantOf (TermList f) = f
-  term      = __
   termsDL   = return
   replace f = buildList . f
 
 instance (ConstantOf a ~ ConstantOf b,
           Symbolic a, Symbolic b) => Symbolic (a, b) where
   type ConstantOf (a, b) = ConstantOf a
-  term (x, _) = term x
   termsDL (x, y) = termsDL x `mplus` termsDL y
   replace f (x, y) = (replace f x, replace f y)
 
@@ -60,13 +62,11 @@ instance (ConstantOf a ~ ConstantOf b,
           ConstantOf a ~ ConstantOf c,
           Symbolic a, Symbolic b, Symbolic c) => Symbolic (a, b, c) where
   type ConstantOf (a, b, c) = ConstantOf a
-  term (x, _, _) = term x
   termsDL (x, y, z) = termsDL x `mplus` termsDL y `mplus` termsDL z
   replace f (x, y, z) = (replace f x, replace f y, replace f z)
 
 instance Symbolic a => Symbolic [a] where
   type ConstantOf [a] = ConstantOf a
-  term _ = __
   termsDL = msum . map termsDL
   replace f = map (replace f)
 

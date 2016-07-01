@@ -8,10 +8,10 @@ module Twee where
 import Twee.Base hiding (empty, lookup)
 import Twee.Constraints hiding (funs)
 import Twee.Rule
-import qualified Twee.Indexes as Indexes
-import Twee.Indexes(Indexes, Rated(..))
-import qualified Twee.Index as Index
-import Twee.Index(Index, Frozen)
+import qualified Twee.Index.Split as Indexes
+import Twee.Index.Split(Indexes, Rated(..))
+import qualified Twee.Index.Simple as Index
+import Twee.Index.Simple(Index, Frozen)
 import Twee.Queue hiding (queue)
 import Twee.Utils
 import Control.Monad
@@ -70,7 +70,7 @@ initialState mixFIFO mixPrio =
     maxSize           = Nothing,
     labelledRules     = Indexes.empty,
     extraRules        = Indexes.empty,
-    cancellationRules = Index.Nil,
+    cancellationRules = Index.nil,
     goals             = [],
     totalCPs          = 0,
     processedCPs      = 0,
@@ -163,9 +163,11 @@ deriving instance (Show a, Show (ConstantOf a)) => Show (Modelled a)
 instance Symbolic a => Symbolic (Modelled a) where
   type ConstantOf (Modelled a) = ConstantOf a
 
-  term = term . modelled
   termsDL = termsDL . modelled
   replace f Modelled{..} = Modelled model positions (replace f modelled)
+
+instance Singular a => Singular (Modelled a) where
+  term = term . modelled
 
 --------------------------------------------------------------------------------
 -- Rewriting.
@@ -578,11 +580,13 @@ instance (Numbered f, PrettyTerm f) => Pretty (CancellationRule f) where
 
 instance Symbolic (CancellationRule f) where
   type ConstantOf (CancellationRule f) = f
-  term (CancellationRule _ rule) = term rule
   termsDL (CancellationRule tss rule) =
     termsDL rule `mplus` termsDL tss
   replace sub (CancellationRule tss rule) =
     CancellationRule (replace sub tss) (replace sub rule)
+
+instance Singular (CancellationRule f) where
+  term (CancellationRule _ rule) = term rule
 
 toCancellationRule :: Function f => Twee f -> Rule f -> Maybe (CancellationRule f)
 toCancellationRule _ (Rule Permutative{} _ _) = Nothing
@@ -678,14 +682,15 @@ deriving instance Show f => Show (CritInfo f)
 instance Symbolic a => Symbolic (Critical a) where
   type ConstantOf (Critical a) = ConstantOf a
 
-  term = term . critical
   termsDL Critical{..} = termsDL (critical, critInfo)
   replace f Critical{..} = Critical (replace f critInfo) (replace f critical)
+
+instance Singular a => Singular (Critical a) where
+  term = term . critical
 
 instance Symbolic (CritInfo f) where
   type ConstantOf (CritInfo f) = f
 
-  term = __
   termsDL = termsDL . top
   replace f CritInfo{..} = CritInfo (replace f top) overlap
 

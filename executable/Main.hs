@@ -15,7 +15,7 @@ import Twee.Rule
 import Twee.Utils
 import Twee.Queue
 import Data.Ord
-import qualified Twee.Indexes as Indexes
+import qualified Twee.Index.Split as Indexes
 import qualified Data.Map.Strict as Map
 import qualified Twee.KBO as KBO
 import qualified Twee.LPO as LPO

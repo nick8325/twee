@@ -1,11 +1,11 @@
 -- Term indexing, where the inserted values can be given categories.
 {-# LANGUAGE CPP, ScopedTypeVariables #-}
-module Twee.Indexes where
+module Twee.Index.Split where
 
 #include "errors.h"
 import Twee.Base hiding (empty)
-import qualified Twee.Index as Index
-import Twee.Index(Index)
+import qualified Twee.Index.Simple as Index
+import Twee.Index.Simple(Index)
 import Data.Array
 
 class Rated a where
@@ -19,19 +19,19 @@ newtype Indexes a =
 
 {-# INLINE empty #-}
 empty :: forall a. Rated a => Indexes a
-empty = Indexes (listArray (0, maxRating (undefined :: a)) (repeat Index.Nil))
+empty = Indexes (listArray (0, maxRating (undefined :: a)) (repeat Index.nil))
 
 {-# INLINE singleton #-}
-singleton :: (Symbolic a, Rated a) => a -> Indexes a
+singleton :: (Singular a, Rated a) => a -> Indexes a
 singleton x = insert x empty
 
 {-# INLINE insert #-}
-insert :: forall a. (Symbolic a, Rated a) => a -> Indexes a -> Indexes a
+insert :: forall a. (Singular a, Rated a) => a -> Indexes a -> Indexes a
 insert x (Indexes idxs) =
   Indexes (idxs // [(i, Index.insert x (idxs ! i)) | i <- [rating x..maxRating (undefined :: a)]])
 
 {-# INLINE delete #-}
-delete :: forall a. (Eq a, Symbolic a, Rated a) => a -> Indexes a -> Indexes a
+delete :: forall a. (Eq a, Singular a, Rated a) => a -> Indexes a -> Indexes a
 delete x (Indexes idxs) =
   Indexes (idxs // [(i, Index.delete x (idxs ! i)) | i <- [rating x..maxRating (undefined :: a)]])
 
