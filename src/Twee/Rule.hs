@@ -239,7 +239,7 @@ anywhere1 strat t = aux [] 0 t
     aux ps n (Cons (Var _) t) = aux ps (n+1) t
     aux ps n (Cons t u) | q:_ <- strat t =
       aux ((n, q):ps) (n+len t) u
-    aux ps n (ConsSym (Fun _ _) t) =
+    aux ps n (ConsSym _ t) =
       aux ps (n+1) t
 
 normaliseWith :: (Numbered f, PrettyTerm f) => Strategy f -> Term f -> Reduction f
