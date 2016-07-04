@@ -231,6 +231,7 @@ steps r = aux r []
     aux (Trans p q) = aux p . aux q
     aux (Parallel ps _) = foldr (.) id (map (aux . snd) ps)
 
+{-# INLINE anywhere1 #-}
 anywhere1 :: (Numbered f, PrettyTerm f) => Strategy f -> TermList f -> [(Int, Reduction f)]
 anywhere1 strat t = aux [] 0 t
   where
@@ -242,6 +243,7 @@ anywhere1 strat t = aux [] 0 t
     aux ps n (ConsSym _ t) =
       aux ps (n+1) t
 
+{-# INLINE normaliseWith #-}
 normaliseWith :: (Numbered f, PrettyTerm f) => Strategy f -> Term f -> Reduction f
 normaliseWith strat t = stamp (describe res) res
   where
