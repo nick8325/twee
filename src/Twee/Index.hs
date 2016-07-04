@@ -181,7 +181,7 @@ matches :: Term f -> Frozen f a -> [a]
 matches t idx = matchesList (Term.singleton t) idx
 
 freeze :: Index f a -> Frozen f a
-freeze idx = Frozen $ \t -> concat (find t idx)
+freeze idx = Frozen $ \t -> run (Frame emptySubst2 t idx Stop)
 
 data Stack f a =
   Frame {
@@ -189,38 +189,37 @@ data Stack f a =
     frame_term  :: {-# UNPACK #-} !(TermList f),
     frame_index :: !(Index f a),
     frame_rest  :: !(Stack f a) }
+  | Yield {
+    yield_found :: [a],
+    yield_rest  :: !(Stack f a) }
   | Stop
 
-{-# NOINLINE find #-}
-find :: TermList f -> Index f a -> [[a]]
-find t idx = stamp "finding first match in index" (loop (initial t idx))
+{-# NOINLINE run #-}
+run :: Stack f a -> [a]
+run Stop = []
+run Frame{..} = run (stamp "index lookup" $ step frame_subst frame_term frame_index frame_rest)
+run Yield{..} = yield_found ++ run yield_rest
+
+step !_ !_ _ _ | False = __
+step _ _ Nil rest = rest
+step _ t Index{size = size, prefix = prefix} rest
+  | lenList t < size + lenList prefix = rest
+step sub t Index{..} rest =
+  pref sub t prefix here fun var rest
   where
-    initial t idx = Frame emptySubst2 t idx Stop
-
-    {-# INLINE loop #-}
-    loop Stop = []
-    loop Frame{..} = step frame_subst frame_term frame_index frame_rest
-
-    step !_ !_ _ _ | False = __
-    step _ _ Nil rest = loop rest
-    step _ t Index{size = size, prefix = prefix} rest
-      | lenList t < size + lenList prefix = loop rest
-    step sub t Index{..} rest =
-      pref sub t prefix here fun var rest
-
     pref !_ !_ !_ _ !_ !_ _ | False = __
-    pref _ Empty Empty [] _ _ rest = loop rest
-    pref _ Empty Empty here _ _ rest = here:loop rest
+    pref _ Empty Empty [] _ _ rest = rest
+    pref _ Empty Empty here _ _ rest = Yield here rest
     pref _ Empty _ _ _ _ _ = __
     pref sub (Cons t ts) (Cons (Var x) us) here fun var rest =
       case extend2 x (Term.singleton t) sub of
-        Nothing  -> loop rest
+        Nothing  -> rest
         Just sub -> pref sub ts us here fun var rest
     pref sub (ConsSym (Fun f _) ts) (ConsSym (Fun g _) us) here fun var rest
       | f == g = pref sub ts us here fun var rest
-    pref _ _ (Cons _ _) _ _ _ rest = loop rest
+    pref _ _ (Cons _ _) _ _ _ rest = rest
     pref sub t@(Cons u us) Empty _ fun var rest =
-      loop $ tryFun sub v vs fun (tryVar sub u us var rest)
+      tryFun sub v vs fun (tryVar sub u us var rest)
       where
         UnsafeConsSym v vs = t
 
