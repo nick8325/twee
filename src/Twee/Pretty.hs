@@ -52,18 +52,21 @@ supply names =
 
 -- * Pretty-printing of terms.
 
-instance (Numbered f, Pretty f) => Pretty (Fun f) where
+instance Pretty f => Pretty (Fun f) where
   pPrintPrec l p = pPrintPrec l p . fromFun
 
-instance (Numbered f, PrettyTerm f) => Pretty (Term f) where
+instance PrettyTerm f => PrettyTerm (Fun f) where
+  termStyle f = termStyle (fromFun f)
+
+instance PrettyTerm f => Pretty (Term f) where
   pPrintPrec l p (Var x) = pPrintPrec l p x
   pPrintPrec l p (Fun f xs) =
-    pPrintTerm (termStyle (fromFun f)) l p (pPrint f) (termListToList xs)
+    pPrintTerm (termStyle f) l p (pPrint f) (termListToList xs)
 
-instance (Numbered f, PrettyTerm f) => Pretty (TermList f) where
+instance PrettyTerm f => Pretty (TermList f) where
   pPrintPrec _ _ = pPrint . termListToList
 
-instance (Numbered f, PrettyTerm f) => Pretty (Subst f) where
+instance PrettyTerm f => Pretty (Subst f) where
   pPrint sub = text "{" <> fsep (punctuate (text ",") docs) <> text "}"
     where
       docs =
