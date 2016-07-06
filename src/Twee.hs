@@ -490,7 +490,7 @@ deleteRule l rule = do
 
 data Simplification f = Simplify (Model f) (Modelled (Critical (Rule f))) | Reorient (Modelled (Critical (Rule f))) deriving Show
 
-instance (Numbered f, PrettyTerm f) => Pretty (Simplification f) where
+instance PrettyTerm f => Pretty (Simplification f) where
   pPrint (Simplify _ rule) = text "Simplify" <+> pPrint rule
   pPrint (Reorient rule) = text "Reorient" <+> pPrint rule
 
@@ -574,7 +574,7 @@ data CancellationRule f =
     cr_rule :: {-# UNPACK #-} !(Rule f) }
   deriving (Show, Generic)
 
-instance (Numbered f, PrettyTerm f) => Pretty (CancellationRule f) where
+instance PrettyTerm f => Pretty (CancellationRule f) where
   pPrint (CancellationRule tss rule) =
     pPrint rule <+> text "cancelling" <+> pPrint tss
 
@@ -707,7 +707,7 @@ data CP f =
 instance Eq (CP f) where x == y = info x == info y
 instance Ord (CP f) where compare = comparing info
 instance Labels (CP f) where labels x = [l1 x, l2 x]
-instance (Numbered f, PrettyTerm f) => Pretty (CP f) where
+instance PrettyTerm f => Pretty (CP f) where
   pPrint = pPrint . cp
 
 data CPs f =
@@ -726,7 +726,7 @@ data CPs f =
 instance Eq (CPs f) where x == y = best x == best y
 instance Ord (CPs f) where compare = comparing best
 instance Labels (CPs f) where labels (CPs _ _ _ _ _ (Labelled l _)) = [l]
-instance (Numbered f, PrettyTerm f) => Pretty (CPs f) where
+instance PrettyTerm f => Pretty (CPs f) where
   pPrint CPs{..} = text "Family of size" <+> pPrint count <+> text "from" <+> pPrint from
 
 data Passive f =
@@ -742,7 +742,7 @@ instance Ord (Passive f) where
 instance Labels (Passive f) where
   labels (SingleCP x) = labels x
   labels (ManyCPs x) = labels x
-instance (Numbered f, PrettyTerm f) => Pretty (Passive f) where
+instance PrettyTerm f => Pretty (Passive f) where
   pPrint (SingleCP cp) = pPrint cp
   pPrint (ManyCPs cps) = pPrint cps
 

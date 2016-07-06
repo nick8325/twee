@@ -27,6 +27,7 @@ import Jukebox.Toolbox
 import Jukebox.Name
 import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
+import Twee.Label hiding (Labelled)
 import qualified Twee.Label as Label
 import Twee.Profile
 
@@ -130,15 +131,18 @@ instance PrettyTerm Constant where
         _ -> uncurried
   termStyle _ = uncurried
 
-instance Label.Labelled Constant where
+instance Label.Labelled (Extended Constant) where
   cache = constantCache
 
 {-# NOINLINE constantCache #-}
-constantCache :: Label.Cache Constant
-constantCache = Label.mkCache
+constantCache :: Cache (Extended Constant)
+constantCache = mkCache
 
-instance Numbered Constant where
-  toInt = Label.label
+instance Minimal (Extended Constant) where
+  minimal = auto Minimal
+
+instance Skolem (Extended Constant) where
+  skolem x = auto (Skolem x)
 
 instance Ordered (Extended Constant) where
   lessEq = KBO.lessEq
@@ -148,19 +152,16 @@ instance Label.Labelled Jukebox.Function where
   cache = functionCache
 
 {-# NOINLINE functionCache #-}
-functionCache :: Label.Cache Jukebox.Function
-functionCache = Label.mkCache
-
-instance Numbered Jukebox.Function where
-  toInt = Label.label
+functionCache :: Cache Jukebox.Function
+functionCache = mkCache
 
 toTwee :: Problem Clause -> ([Equation Jukebox.Function], [Term Jukebox.Function])
 toTwee prob = (lefts eqs, goals)
   where
     eq Input{what = Clause (Bind _ [Pos (t Jukebox.:=: u)])} =
-      Left (tm t :=: tm u)
+      Left (build (tm t) :=: build (tm u))
     eq Input{what = Clause (Bind _ [Neg (t Jukebox.:=: u)])} =
-      Right (tm t :=: tm u)
+      Right (build (tm t) :=: build (tm u))
     eq _ = ERROR("Problem is not unit equality")
 
     eqs = map eq prob
@@ -172,30 +173,30 @@ toTwee prob = (lefts eqs, goals)
         _ -> ERROR("Problem is not unit equality")
 
     tm (Jukebox.Var (Unique x _ _ ::: _)) =
-      build (var (V (fromIntegral x)))
+      var (V (fromIntegral x))
     tm (f :@: ts) =
-      App f (map tm ts)
+      fun (auto f) (map tm ts)
 
 addNarrowing ::
   ([Equation (Extended Constant)], [Term (Extended Constant)]) ->
   ([Equation (Extended Constant)], [Term (Extended Constant)])
 addNarrowing (axioms, goals)
-  | length goals < 2 = (axioms, [App false [], App true []])
+  | length goals < 2 = (axioms, map build [con false, con true])
     where
-      false  = Function (Builtin CFalse)
-      true   = Function (Builtin CTrue)
+      false  = auto (Function (Builtin CFalse))
+      true   = auto (Function (Builtin CTrue))
 addNarrowing (axioms, goals)
   | length goals >= 2 && all isGround goals = (axioms, goals)
 addNarrowing (axioms, [t, u])
-  | otherwise = (axioms ++ equalities, [App false [], App true []])
+  | otherwise = (axioms ++ equalities, map build [con false, con true])
     where
-      false  = Function (Builtin CFalse)
-      true   = Function (Builtin CTrue)
-      equals = Function (Builtin CEquals)
+      false  = auto (Function (Builtin CFalse))
+      true   = auto (Function (Builtin CTrue))
+      equals = auto (Function (Builtin CEquals))
 
       equalities =
-        [App equals [build (var (V 0)), build (var (V 0))] :=: App true [],
-         App equals [t, u] :=: App false []]
+        [build (fun equals [var (V 0), var (V 0)]) :=: build (con true),
+         build (fun equals [t, u]) :=: build (con false)]
 addNarrowing _ =
   ERROR("Don't know how to handle several non-ground goals")
 
@@ -204,12 +205,12 @@ runTwee state _order precedence obligs = stampM "twee" $ do
   let (axioms0, goals0) = toTwee obligs
       prec c = (isNothing (elemIndex (base c) precedence),
                 fmap negate (elemIndex (base c) precedence),
-                negate (occ (toFun c) (axioms0, goals0)))
+                negate (occ (auto c) (axioms0, goals0)))
       fs0 = map fromFun (usort (funs (axioms0, goals0)))
       fs1 = sortBy (comparing prec) fs0
       fs2 = zipWith (\i (c ::: (FunType args _)) -> Constant i (length args) 1 (show c)) [1..] fs1
       m  = Map.fromList (zip fs1 (map Function fs2))
-  let replace = build . mapFun (toFun . flip (Map.findWithDefault __) m . fromFun)
+  let replace = build . mapFun (auto . flip (Map.findWithDefault __) m . fromFun)
       axioms1 = [replace t :=: replace u | t :=: u <- axioms0]
       goals1  = map replace goals0
       (axioms2, goals2) = addNarrowing (axioms1, goals1)

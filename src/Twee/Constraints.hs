@@ -37,7 +37,7 @@ fromTerm (Fun f Empty) = Just (Constant f)
 fromTerm (Var x) = Just (Variable x)
 fromTerm _ = Nothing
 
-instance (Numbered f, PrettyTerm f) => Pretty (Atom f) where
+instance PrettyTerm f => Pretty (Atom f) where
   pPrint = pPrint . toTerm
 
 data Formula f =
@@ -49,7 +49,7 @@ data Formula f =
 deriving instance Eq (Fun f) => Eq (Formula f)
 deriving instance Ord (Fun f) => Ord (Formula f)
 
-instance (Numbered f, PrettyTerm f) => Pretty (Formula f) where
+instance PrettyTerm f => Pretty (Formula f) where
   pPrintPrec _ _ (Less t u) = hang (pPrint t <+> text "<") 2 (pPrint u)
   pPrintPrec _ _ (LessEq t u) = hang (pPrint t <+> text "<=") 2 (pPrint u)
   pPrintPrec _ _ (And []) = text "true"
@@ -108,7 +108,7 @@ data Branch f =
 deriving instance Eq (Fun f) => Eq (Branch f)
 deriving instance Ord (Fun f) => Ord (Branch f)
 
-instance (Numbered f, PrettyTerm f) => Pretty (Branch f) where
+instance PrettyTerm f => Pretty (Branch f) where
   pPrint Branch{..} =
     braces $ fsep $ punctuate (text ",") $
       [pPrint x <+> text "<" <+> pPrint y | (x, y) <- less ] ++
@@ -120,7 +120,7 @@ trueBranch = Branch [] [] []
 norm :: Eq f => Branch f -> Atom f -> Atom f
 norm Branch{..} x = fromMaybe x (lookup x equals)
 
-contradictory :: (Numbered f, Minimal f, Ord f) => Branch f -> Bool
+contradictory :: (Minimal f, Ord f) => Branch f -> Bool
 contradictory Branch{..} =
   or [f == minimal | (_, Constant f) <- less] ||
   or [f /= g | (Constant f, Constant g) <- equals] ||
@@ -130,7 +130,7 @@ contradictory Branch{..} =
     cyclic (AcyclicSCC _) = False
     cyclic (CyclicSCC _) = True
 
-formAnd :: (Numbered f, Minimal f, Ord f) => Formula f -> [Branch f] -> [Branch f]
+formAnd :: (Minimal f, Ord f) => Formula f -> [Branch f] -> [Branch f]
 formAnd f bs = usort (bs >>= add f)
   where
     add (Less t u) b = addLess t u b
@@ -139,7 +139,7 @@ formAnd f bs = usort (bs >>= add f)
     add (And (f:fs)) b = add f b >>= add (And fs)
     add (Or fs) b = usort (concat [ add f b | f <- fs ])
 
-branches :: (Numbered f, Minimal f, Ord f) => Formula f -> [Branch f]
+branches :: (Minimal f, Ord f) => Formula f -> [Branch f]
 branches x = aux [x]
   where
     aux [] = [Branch [] [] []]
@@ -151,7 +151,7 @@ branches x = aux [x]
       concatMap (addLess t u) (aux xs) ++
       concatMap (addEquals u t) (aux xs)
 
-addLess :: (Numbered f, Minimal f, Ord f) => Atom f -> Atom f -> Branch f -> [Branch f]
+addLess :: (Minimal f, Ord f) => Atom f -> Atom f -> Branch f -> [Branch f]
 addLess _ (Constant min) _ | min == minimal = []
 addLess (Constant min) _ b | min == minimal = [b]
 addLess t0 u0 b@Branch{..} =
@@ -161,7 +161,7 @@ addLess t0 u0 b@Branch{..} =
     t = norm b t0
     u = norm b u0
 
-addEquals :: (Numbered f, Minimal f, Ord f) => Atom f -> Atom f -> Branch f -> [Branch f]
+addEquals :: (Minimal f, Ord f) => Atom f -> Atom f -> Branch f -> [Branch f]
 addEquals t0 u0 b@Branch{..}
   | t == u || (t, u) `elem` equals = [b]
   | otherwise =
@@ -177,7 +177,7 @@ addEquals t0 u0 b@Branch{..}
       | x == t = u
       | otherwise = x
 
-addTerm :: (Numbered f, Minimal f, Ord f) => Atom f -> Branch f -> Branch f
+addTerm :: (Minimal f, Ord f) => Atom f -> Branch f -> Branch f
 addTerm (Constant f) b
   | f `notElem` funs b =
     b {
@@ -192,7 +192,7 @@ newtype Model f = Model (Map (Atom f) (Int, Int))
 -- x <  y if major x < major y
 -- x <= y if major x = major y and minor x < minor y
 
-instance (Numbered f, PrettyTerm f) => Pretty (Model f) where
+instance PrettyTerm f => Pretty (Model f) where
   pPrint (Model m)
     | Map.size m <= 1 = text "empty"
     | otherwise = fsep (go (sortBy (comparing snd) (Map.toList m)))
@@ -213,7 +213,7 @@ modelToLiterals (Model m) = go (sortBy (comparing snd) (Map.toList m))
       where
         rel = if i == j then LessEq else Less
 
-modelFromOrder :: (Numbered f, Minimal f, Ord f) => [Atom f] -> Model f
+modelFromOrder :: (Minimal f, Ord f) => [Atom f] -> Model f
 modelFromOrder xs =
   Model (Map.fromList [(x, (i, i)) | (x, i) <- zip xs [0..]])
 
@@ -233,10 +233,10 @@ weakenModel (Model m) =
     -- We must never make two constants equal
     ok xs = length [x | (Constant x, _) <- xs] <= 1
 
-varInModel :: (Numbered f, Minimal f, Ord f) => Model f -> Var -> Bool
+varInModel :: (Minimal f, Ord f) => Model f -> Var -> Bool
 varInModel (Model m) x = Variable x `Map.member` m
 
-varGroups :: (Numbered f, Minimal f, Ord f) => Model f -> [(Fun f, [Var], Maybe (Fun f))]
+varGroups :: (Minimal f, Ord f) => Model f -> [(Fun f, [Var], Maybe (Fun f))]
 varGroups (Model m) = filter nonempty (go minimal (map fst (sortBy (comparing snd) (Map.toList m))))
   where
     go f xs =
@@ -250,14 +250,11 @@ varGroups (Model m) = filter nonempty (go minimal (map fst (sortBy (comparing sn
     nonempty (_, [], _) = False
     nonempty _ = True
 
-class Minimal a where
-  minimal :: a
-
-instance (Numbered f, Minimal f) => Minimal (Fun f) where
-  minimal = toFun minimal
+class Minimal f where
+  minimal :: Fun f
 
 {-# INLINE lessEqInModel #-}
-lessEqInModel :: (Numbered f, Minimal f, Ord f) => Model f -> Atom f -> Atom f -> Maybe Strictness
+lessEqInModel :: (Minimal f, Ord f) => Model f -> Atom f -> Atom f -> Maybe Strictness
 lessEqInModel (Model m) x y
   | Just (a, _) <- Map.lookup x m,
     Just (b, _) <- Map.lookup y m,
@@ -270,7 +267,7 @@ lessEqInModel (Model m) x y
   | Constant a <- x, a == minimal = Just Nonstrict
   | otherwise = Nothing
 
-solve :: (Numbered f, Minimal f, Ord f, PrettyTerm f) => [Atom f] -> Branch f -> Either (Model f) (Subst f)
+solve :: (Minimal f, Ord f, PrettyTerm f) => [Atom f] -> Branch f -> Either (Model f) (Subst f)
 solve xs branch@Branch{..}
   | null equals && not (all true less) =
     ERROR("Model " ++ prettyShow model ++ " is not a model of " ++ prettyShow branch ++ " (edges = " ++ prettyShow edges ++ ", vs = " ++ prettyShow vs ++ ")")

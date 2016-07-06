@@ -10,6 +10,7 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.IntMap.Strict(IntMap)
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
+import Twee.Term
 
 class Ord a => Labelled a where
   cache :: Cache a
@@ -46,3 +47,6 @@ find n =
   unsafeDupablePerformIO $ do
     CacheState{..} <- readIORef cache
     return (IntMap.lookup n to)
+
+auto :: Labelled f => f -> Fun f
+auto f = F (label f) f

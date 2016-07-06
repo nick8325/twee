@@ -462,21 +462,3 @@ mapFunList f ts = aux ts
     aux Empty = mempty
     aux (Cons (Var x) ts) = var x `mappend` aux ts
     aux (Cons (Fun ff ts) us) = fun (f ff) (aux ts) `mappend` aux us
-
---------------------------------------------------------------------------------
--- Typeclass for getting at the 'f' in a 'Term f'.
---------------------------------------------------------------------------------
-
-class Numbered f where
-  toInt :: f -> Int
-
-toFun :: Numbered f => f -> Fun f
-toFun f = F (toInt f) f
-
-pattern App :: Numbered a => () => a -> [Term a] -> Term a
-pattern App f ts <- Fun (fromFun -> f) (fromTermList -> ts) where
-  App f ts = build (fun (toFun f) ts)
-
-instance (Numbered a, Numbered b) => Numbered (Either a b) where
-  toInt (Left x)  = 2*toInt x
-  toInt (Right x) = 2*toInt x+1

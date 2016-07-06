@@ -52,13 +52,13 @@ instance Singular (Rule f) where
 instance Symbolic (Orientation f) where
   type ConstantOf (Orientation f) = f
 
-instance (Numbered f, PrettyTerm f) => Pretty (Rule f) where
+instance PrettyTerm f => Pretty (Rule f) where
   pPrint (Rule Oriented l r) = pPrintRule l r
   pPrint (Rule (WeaklyOriented ts) l r) = hang (pPrintRule l r) 2 (text "(weak on" <+> pPrint ts <> text ")")
   pPrint (Rule (Permutative ts) l r) = hang (pPrintRule l r) 2 (text "(permutative on" <+> pPrint ts <> text ")")
   pPrint (Rule Unoriented l r) = hang (pPrintRule l r) 2 (text "(unoriented)")
 
-pPrintRule :: (Numbered f, PrettyTerm f) => Term f -> Term f -> Doc
+pPrintRule :: PrettyTerm f => Term f -> Term f -> Doc
 pPrintRule l r = hang (pPrint l <+> text "->") 2 (pPrint r)
 
 --------------------------------------------------------------------------------
@@ -71,10 +71,10 @@ type EquationOf a = Equation (ConstantOf a)
 instance Symbolic (Equation f) where
   type ConstantOf (Equation f) = f
 
-instance (Numbered f, PrettyTerm f) => Pretty (Equation f) where
+instance PrettyTerm f => Pretty (Equation f) where
   pPrint (x :=: y) = hang (pPrint x <+> text "=") 2 (pPrint y)
 
-instance (Numbered f, Sized f) => Sized (Equation f) where
+instance Sized f => Sized (Equation f) where
   size (x :=: y) = size x + size y
 
 order :: Function f => Equation f -> Equation f
@@ -202,10 +202,10 @@ result t = build (emitReduction t)
       fun f (emitParallel (n+1) ps t) `mappend`
       emitParallel (n + 1 + lenList t) ps u
 
-instance (Numbered f, PrettyTerm f) => Pretty (Reduction f) where
+instance PrettyTerm f => Pretty (Reduction f) where
   pPrint = pPrintReduction
 
-pPrintReduction :: (Numbered f, PrettyTerm f) => Reduction f -> Doc
+pPrintReduction :: PrettyTerm f => Reduction f -> Doc
 pPrintReduction p =
   case flatten p of
     [p] -> pp p
@@ -232,7 +232,7 @@ steps r = aux r []
     aux (Parallel ps _) = foldr (.) id (map (aux . snd) ps)
 
 {-# INLINE anywhere1 #-}
-anywhere1 :: (Numbered f, PrettyTerm f) => Strategy f -> TermList f -> [(Int, Reduction f)]
+anywhere1 :: PrettyTerm f => Strategy f -> TermList f -> [(Int, Reduction f)]
 anywhere1 strat t = aux [] 0 t
   where
     aux _ !_ !_ | False = __
@@ -244,7 +244,7 @@ anywhere1 strat t = aux [] 0 t
       aux ps (n+1) t
 
 {-# INLINE normaliseWith #-}
-normaliseWith :: (Numbered f, PrettyTerm f) => Strategy f -> Term f -> Reduction f
+normaliseWith :: PrettyTerm f => Strategy f -> Term f -> Reduction f
 normaliseWith strat t = stamp (describe res) res
   where
     describe (Parallel [] _) = "normalising terms (already in normal form)"

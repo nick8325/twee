@@ -120,60 +120,46 @@ canonicalise t = replace (Term.substList sub) t
   where
     sub = Term.canonicalise (DList.toList (termsDL t))
 
-isMinimal :: (Numbered f, Minimal f) => Term f -> Bool
+isMinimal :: Minimal f => Term f -> Bool
 isMinimal (Fun f Empty) | f == minimal = True
 isMinimal _ = False
 
-minimalTerm :: (Numbered f, Minimal f) => Term f
+minimalTerm :: Minimal f => Term f
 minimalTerm = build (con minimal)
 
 class Skolem f where
-  skolem  :: Var -> f
-
-instance (Numbered f, Skolem f) => Skolem (Fun f) where
-  skolem = toFun . skolem
+  skolem  :: Var -> Fun f
 
 class Arity f where
   arity :: f -> Int
 
-instance (Numbered f, Arity f) => Arity (Fun f) where
+instance Arity f => Arity (Fun f) where
   arity = arity . fromFun
 
 class Sized a where
   size  :: a -> Int
 
-instance (Sized f, Numbered f) => Sized (Fun f) where
+instance Sized f => Sized (Fun f) where
   size = size . fromFun
 
-instance (Sized f, Numbered f) => Sized (TermList f) where
+instance Sized f => Sized (TermList f) where
   size = aux 0
     where
       aux n Empty = n
       aux n (ConsSym (Fun f _) t) = aux (n+size f) t
       aux n (Cons (Var _) t) = aux (n+1) t
 
-instance (Sized f, Numbered f) => Sized (Term f) where
+instance Sized f => Sized (Term f) where
   size = size . singleton
 
-class    (Numbered f, Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f) => Function f
-instance (Numbered f, Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f) => Function f
+class    (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f) => Function f
+instance (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f) => Function f
 
 data Extended f =
     Minimal
   | Skolem Var
   | Function f
   deriving (Eq, Ord, Show, Functor)
-
-instance Minimal (Extended f) where
-  minimal = Minimal
-
-instance Skolem (Extended f) where
-  skolem = Skolem
-
-instance Numbered f => Numbered (Extended f) where
-  toInt Minimal = 0
-  toInt (Skolem (V n)) = 2*n+1
-  toInt (Function f) = 2*toInt f+2
 
 instance Pretty f => Pretty (Extended f) where
   pPrintPrec _ _ Minimal = text "?"
