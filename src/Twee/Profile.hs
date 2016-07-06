@@ -25,7 +25,8 @@ instance Hashable Symbol where
 data Record =
   Record {
     rec_individual :: {-# UNPACK #-} !Word64,
-    rec_cumulative :: {-# UNPACK #-} !Word64 }
+    rec_cumulative :: {-# UNPACK #-} !Word64,
+    rec_count      :: {-# UNPACK #-} !Word64 }
 
 data Running =
   Running {
@@ -63,10 +64,10 @@ exit old_st str = do
         individual = cumulative - run_skipped
         -- To make sure recursive functions are accounted for properly,
         -- we reset cumulative time to what it was on entry
-        Record _ c2 = HashMap.lookupDefault (Record 0 0) str old_st
-        plus (Record i1 c1) (Record i2 _) =
-          Record (i1+i2) (c1+c2)
-        rec = Record individual cumulative
+        Record _ c2 _ = HashMap.lookupDefault (Record 0 0 0) str old_st
+        plus (Record i1 c1 m) (Record i2 _ n) =
+          Record (i1+i2) (c1+c2) (m+n)
+        rec = Record individual cumulative 1
         m = HashMap.insertWith plus str rec st_map
     case st_stack of
       [] -> ERROR("mismatched enter/exit")
@@ -98,21 +99,24 @@ report :: (Record -> Word64) -> HashMap Symbol Record -> IO ()
 report f cs = mapM_ pr ts
   where
     ts =
-      sortBy (comparing (negate . snd)) $
+      sortBy (comparing (negate . f . snd)) $
       sortBy (comparing fst) $
       HashMap.toList $
-      HashMap.filter (>= tot `div` 200) (fmap f cs)
+      HashMap.filter ((>= tot `div` 200) . f) cs
     tot = sum (map rec_individual (HashMap.elems cs))
-    pr (str, n) =
-      printf "%10.2f Mclocks (%6.2f%% of total): %s\n"
+    pr (str, rec) =
+      printf "%10.2f Mclocks (%6.2f%% of total): %s, %d calls\n"
         (fromIntegral n / 10^6 :: Double)
         (100 * fromIntegral n / fromIntegral tot :: Double)
         (unintern str)
+        (rec_count rec)
+      where
+        n = f rec
 
 profile :: IO ()
 profile = do
   State{..} <- readIORef eventLog
-  let log = HashMap.insert "OVERHEAD" (Record st_overhead st_overhead) st_map
+  let log = HashMap.insert "OVERHEAD" (Record st_overhead st_overhead 0) st_map
   putStrLn "Individual time:"
   report rec_individual log
   putStrLn ""
