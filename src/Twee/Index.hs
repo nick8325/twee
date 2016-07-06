@@ -1,11 +1,9 @@
 -- Term indexing (perfect-ish discrimination trees).
-{-# LANGUAGE BangPatterns, CPP, RecordWildCards, OverloadedStrings #-}
+{-# LANGUAGE BangPatterns, RecordWildCards, OverloadedStrings #-}
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
-{-# OPTIONS_GHC -O2 -funfolding-creation-threshold=100000 -funfolding-use-threshold=100000 -fllvm #-}
-module Twee.Index where
+module Twee.Index(module Twee.Index, module Twee.Index.Lookup) where
 
-#include "errors.h"
 import qualified Prelude
 import Prelude hiding (filter, map, null)
 import Twee.Base hiding (var, fun, empty, size, singleton, prefix, funs)
@@ -14,63 +12,7 @@ import Twee.Array
 import qualified Data.List as List
 import Twee.Profile
 import Twee.Utils
-import Twee.Term.Core(TermList(..))
-
-data Index f a =
-  Index {
-    size   :: {-# UNPACK #-} !Int, -- size of smallest term, not including prefix
-    prefix :: {-# UNPACK #-} !(TermList f),
-    here   :: [a],
-    fun    :: {-# UNPACK #-} !(Array (Index f a)),
-    var    :: {-# UNPACK #-} !(VarIndex f a) } |
-  Nil
-  deriving Show
-
-instance Default (Index f a) where def = Nil
-
-data VarIndex f a =
-  VarIndex {
-    var0 :: !(Index f a),
-    var1 :: !(Index f a),
-    hole :: !(Index f a) }
-  deriving Show
-
-{-# INLINE newVarIndex #-}
-newVarIndex :: VarIndex f a
-newVarIndex = VarIndex Nil Nil Nil
-
-{-# INLINE lookupVarIndex #-}
-lookupVarIndex :: Var -> VarIndex f a -> Index f a
-lookupVarIndex (V 0) vidx = var0 vidx
-lookupVarIndex (V 1) vidx = var1 vidx
-lookupVarIndex _ vidx = hole vidx
-
-{-# INLINE updateVarIndex #-}
-updateVarIndex :: Var -> Index f a -> VarIndex f a -> VarIndex f a
-updateVarIndex (V 0) idx vidx = vidx { var0 = idx }
-updateVarIndex (V 1) idx vidx = vidx { var1 = idx }
-updateVarIndex _ idx vidx = vidx { hole = idx }
-
-varIndexElems :: VarIndex f a -> [Index f a]
-varIndexElems vidx = [var0 vidx, var1 vidx, hole vidx]
-
-varIndexToList :: VarIndex f a -> [(Int, Index f a)]
-varIndexToList vidx = [(0, var0 vidx), (1, var1 vidx), (2, hole vidx)]
-
-varIndexCapacity :: Int
-varIndexCapacity = 2
-
-data Subst2 f = Subst2 {-# UNPACK #-} !Int {-# UNPACK #-} !Int {-# UNPACK #-} !Int {-# UNPACK #-} !Int
-
-emptySubst2 :: Subst2 f
-emptySubst2 = Subst2 0 0 0 0
-
-extend2 :: Var -> TermList f -> Subst2 f -> Maybe (Subst2 f)
-extend2 (V 0) t (Subst2 _ 0 x y) = Just (Subst2 (low t) (high t) x y)
-extend2 (V 0) t (Subst2 x y _ _) | t /= TermList x y (array t) (funs t) = Nothing
-extend2 (V 1) u (Subst2 x y _ 0) = Just (Subst2 x y (low u) (high u))
-extend2 (V 1) u (Subst2 _ _ x y) | u /= TermList x y (array u) (funs u) = Nothing
-extend2 _ _ sub = Just sub
+import Twee.Index.Lookup
 
 {-# INLINE null #-}
 null :: Index f a -> Bool
@@ -183,61 +125,11 @@ matches t idx = matchesList (Term.singleton t) idx
 freeze :: Index f a -> Frozen f a
 freeze idx = Frozen $ \t -> run (Frame emptySubst2 t idx Stop)
 
-data Stack f a =
-  Frame {
-    frame_subst :: {-# UNPACK #-} !(Subst2 f),
-    frame_term  :: {-# UNPACK #-} !(TermList f),
-    frame_index :: !(Index f a),
-    frame_rest  :: !(Stack f a) }
-  | Yield {
-    yield_found :: [a],
-    yield_rest  :: !(Stack f a) }
-  | Stop
-
 {-# NOINLINE run #-}
 run :: Stack f a -> [a]
 run Stop = []
 run Frame{..} = run (stamp "index lookup (inner)" $ step frame_subst frame_term frame_index frame_rest)
 run Yield{..} = stamp "index lookup (found)" $ yield_found ++ run yield_rest
-
-step !_ !_ _ _ | False = __
-step _ _ Nil rest = rest
-step _ t Index{size = size, prefix = prefix} rest
-  | lenList t < size + lenList prefix = rest
-step sub t Index{..} rest =
-  pref sub t prefix here fun var rest
-  where
-    pref !_ !_ !_ _ !_ !_ _ | False = __
-    pref _ Empty Empty [] _ _ rest = rest
-    pref _ Empty Empty here _ _ rest = Yield here rest
-    pref _ Empty _ _ _ _ _ = __
-    pref sub (Cons t ts) (Cons (Var x) us) here fun var rest =
-      case extend2 x (Term.singleton t) sub of
-        Nothing  -> rest
-        Just sub -> pref sub ts us here fun var rest
-    pref sub (ConsSym (Fun f _) ts) (ConsSym (Fun g _) us) here fun var rest
-      | f == g = pref sub ts us here fun var rest
-    pref _ _ (Cons _ _) _ _ _ rest = rest
-    pref sub t@(Cons u us) Empty _ fun var rest =
-      tryFun sub v vs fun (tryVar sub u us var rest)
-      where
-        UnsafeConsSym v vs = t
-
-    {-# INLINE tryFun #-}
-    tryFun sub (Fun f _) ts fun rest =
-      case fun ! funid f of
-        Nil -> rest
-        idx -> Frame sub ts idx rest
-    tryFun _ _ _ _ rest = rest
-
-    {-# INLINE tryVar #-}
-    tryVar sub t ts var rest =
-      foldr op rest (varIndexToList var)
-      where
-        op (x, idx@Index{}) rest
-          | Just sub <- extend2 (V x) (Term.singleton t) sub =
-              Frame sub ts idx rest
-        op _ rest = rest
 
 elems :: Index f a -> [a]
 elems Nil = []
