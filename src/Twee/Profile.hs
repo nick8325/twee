@@ -56,8 +56,8 @@ enter = do
 {-# NOINLINE exit #-}
 exit :: HashMap Symbol Record -> Symbol -> IO ()
 exit old_st str = do
-  State st_map st_overhead Running{..} st_stack <- readIORef eventLog
   tsc <- rdtsc
+  State st_map st_overhead Running{..} st_stack <- readIORef eventLog
   str `pseq` do
     let cumulative = tsc - run_started - run_overhead
         individual = cumulative - run_skipped
