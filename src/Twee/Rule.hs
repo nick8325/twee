@@ -156,7 +156,7 @@ rule t u = Rule o t u
 
           aux (Fun f ts) (Fun g us)
             | f == g =
-              fmap concat (zipWithM makePermutative (fromTermList ts) (fromTermList us))
+              fmap concat (zipWithM makePermutative (unpack ts) (unpack us))
 
           aux _ _ = mzero
 

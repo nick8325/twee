@@ -236,7 +236,7 @@ reduceCP s stage f (Critical top (t :=: u))
         here =
           or [ rhs x == u | x <- Index.lookup t rs ]
         there (Var x) (Var y) | x == y = True
-        there (Fun f ts) (Fun g us) | f == g = and (zipWith (subsumed1 s) (fromTermList ts) (fromTermList us))
+        there (Fun f ts) (Fun g us) | f == g = and (zipWith (subsumed1 s) (unpack ts) (unpack us))
         there _ _ = False
         rs = allRules s
 

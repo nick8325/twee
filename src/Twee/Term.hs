@@ -340,8 +340,8 @@ children t =
   case singleton t of
     UnsafeConsSym _ ts -> ts
 
-fromTermList :: TermList f -> [Term f]
-fromTermList t = unfoldr op t
+unpack :: TermList f -> [Term f]
+unpack t = unfoldr op t
   where
     op Empty = Nothing
     op (Cons t ts) = Just (t, ts)
@@ -349,10 +349,10 @@ fromTermList t = unfoldr op t
 instance Show (Term f) where
   show (Var x) = show x
   show (Fun f Empty) = show f
-  show (Fun f ts) = show f ++ "(" ++ intercalate "," (map show (fromTermList ts)) ++ ")"
+  show (Fun f ts) = show f ++ "(" ++ intercalate "," (map show (unpack ts)) ++ ")"
 
 instance Show (TermList f) where
-  show = show . fromTermList
+  show = show . unpack
 
 instance Show (Subst f) where
   show subst =
