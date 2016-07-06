@@ -27,12 +27,6 @@ data Record =
     rec_individual :: {-# UNPACK #-} !Word64,
     rec_cumulative :: {-# UNPACK #-} !Word64 }
 
-plus :: Record -> Record -> Record
-x `plus` y =
-  Record
-    (rec_individual x + rec_individual y)
-    (rec_cumulative x + rec_cumulative y)
-
 data Running =
   Running {
     run_started  :: {-# UNPACK #-} !Word64,
@@ -51,21 +45,27 @@ eventLog :: IORef State
 eventLog = unsafePerformIO (newIORef (State HashMap.empty 0 (Running 0 0 0) []))
 
 {-# NOINLINE enter #-}
-enter :: IO ()
+enter :: IO (HashMap Symbol Record)
 enter = do
   State{..} <- readIORef eventLog
   tsc <- rdtsc
   let !running = Running tsc 0 0
   writeIORef eventLog (State st_map st_overhead running (st_running:st_stack))
+  return st_map
 
 {-# NOINLINE exit #-}
-exit :: Symbol -> IO ()
-exit str = do
+exit :: HashMap Symbol Record -> Symbol -> IO ()
+exit old_st str = do
   State st_map st_overhead Running{..} st_stack <- readIORef eventLog
   tsc <- rdtsc
   str `pseq` do
     let cumulative = tsc - run_started - run_overhead
         individual = cumulative - run_skipped
+        -- To make sure recursive functions are accounted for properly,
+        -- we reset cumulative time to what it was on entry
+        Record _ c2 = HashMap.lookupDefault (Record 0 0) str old_st
+        plus (Record i1 c1) (Record i2 _) =
+          Record (i1+i2) (c1+c2)
         rec = Record individual cumulative
         m = HashMap.insertWith plus str rec st_map
     case st_stack of
@@ -83,15 +83,15 @@ exit str = do
 stamp :: Symbol -> a -> a
 stamp str x =
   unsafePerformIO $ do
-    enter
-    x `pseq` exit str
+    m <- enter
+    x `pseq` exit m str
     return x
 
 stampM :: MonadIO m => Symbol -> m a -> m a
 stampM str mx = do
-  liftIO enter
+  m <- liftIO enter
   x <- mx
-  liftIO (exit str)
+  liftIO (exit m str)
   return x
 
 report :: (Record -> Word64) -> HashMap Symbol Record -> IO ()
