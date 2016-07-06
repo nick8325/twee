@@ -174,7 +174,7 @@ elem !t x !idx = aux (key t) idx
 newtype Frozen f a = Frozen { matchesList_ :: TermList f -> [a] }
 
 matchesList :: TermList f -> Frozen f a -> [a]
-matchesList = flip matchesList_
+matchesList t xs = stamp "index lookup" (matchesList_ xs t)
 
 {-# INLINE matches #-}
 matches :: Term f -> Frozen f a -> [a]
@@ -197,8 +197,8 @@ data Stack f a =
 {-# NOINLINE run #-}
 run :: Stack f a -> [a]
 run Stop = []
-run Frame{..} = run (stamp "index lookup" $ step frame_subst frame_term frame_index frame_rest)
-run Yield{..} = yield_found ++ run yield_rest
+run Frame{..} = run (stamp "index lookup (inner)" $ step frame_subst frame_term frame_index frame_rest)
+run Yield{..} = stamp "index lookup (found)" $ yield_found ++ run yield_rest
 
 step !_ !_ _ _ | False = __
 step _ _ Nil rest = rest
