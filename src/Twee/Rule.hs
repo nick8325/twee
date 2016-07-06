@@ -181,7 +181,7 @@ data Reduction f =
 result :: Reduction f -> Term f
 result (Parallel [] t) = t
 result (Trans _ p) = result p
-result t = build (emitReduction t)
+result t = stamp "executing rewrite" (build (emitReduction t))
   where
     emitReduction (Step r sub) = Term.subst sub (rhs r)
     emitReduction (Trans _ p) = emitReduction p

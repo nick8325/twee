@@ -145,8 +145,8 @@ instance Skolem (Extended Constant) where
   skolem x = auto (Skolem x)
 
 instance Ordered (Extended Constant) where
-  lessEq = KBO.lessEq
-  lessIn = KBO.lessIn
+  lessEq t u = stamp "KBO" (KBO.lessEq t u)
+  lessIn model t u = stamp "KBO in model" (KBO.lessIn model t u)
 
 instance Label.Labelled Jukebox.Function where
   cache = functionCache
