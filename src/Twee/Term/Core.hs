@@ -133,8 +133,8 @@ patHead t@TermList{..}
 data Fun f = F { fun_id :: {- UNPACK #-} !Int, fun_value :: !f }
 instance Eq (Fun f) where
   f == g = fun_id f == fun_id g
-instance Ord f => Ord (Fun f) where
-  compare = comparing fun_value
+instance Ord (Fun f) where
+  compare = comparing fun_id
 
 newtype Var = V { var_id :: Int } deriving (Eq, Ord, Enum)
 instance Show (Fun f) where show f = "f" ++ show (fun_id f)
