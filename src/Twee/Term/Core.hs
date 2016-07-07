@@ -221,7 +221,7 @@ buildTermList builder = runST $ do
         !array <- unsafeFreezeSmallArray (SmallMutableArray marray#)
         return (TermList 0 n' bytearray array)
        else loop (n'*2)
-  loop 16
+  loop 32
 
 {-# INLINE getByteArray #-}
 getByteArray :: (MutableByteArray s -> Builder1 s f) -> Builder1 s f
