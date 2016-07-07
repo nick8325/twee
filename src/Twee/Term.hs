@@ -54,7 +54,7 @@ build x =
 
 {-# INLINE buildList #-}
 buildList :: Build a => a -> TermList (BuildFun a)
-buildList x = buildTermList (builder x)
+buildList x = stamp "buildList" (buildTermList (builder x))
 
 {-# INLINE con #-}
 con :: Fun f -> Builder f
