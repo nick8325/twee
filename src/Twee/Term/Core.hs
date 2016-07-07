@@ -8,6 +8,7 @@ module Twee.Term.Core where
 
 #include "errors.h"
 import Data.Primitive
+import Data.Primitive.SmallArray
 import Control.Monad.ST.Strict
 import Data.Bits
 import Data.Int
@@ -64,7 +65,7 @@ data TermList f =
     low   :: {-# UNPACK #-} !Int,
     high  :: {-# UNPACK #-} !Int,
     array :: {-# UNPACK #-} !ByteArray,
-    funs  :: {-# UNPACK #-} !(Array f) }
+    funs  :: {-# UNPACK #-} !(SmallArray f) }
 
 at :: Int -> TermList f -> Term f
 at n (TermList lo hi arr funs)
@@ -116,7 +117,7 @@ unsafePatHead TermList{..} =
         TermList (low+size) high array funs)
   where
     !x = indexByteArray array low
-    f  = indexArray funs low
+    f  = indexSmallArray funs low
     Symbol{..} = toSymbol x
 
 {-# INLINE patHead #-}
@@ -194,7 +195,7 @@ newtype Builder f =
       -- Returns the final position, which may be out of bounds.
       forall s. Builder1 s f }
 
-type Builder1 s f = State# s -> MutableByteArray# s -> MutableArray# s f -> Int# -> Int# -> (# State# s, Int# #)
+type Builder1 s f = State# s -> MutableByteArray# s -> SmallMutableArray# s f -> Int# -> Int# -> (# State# s, Int# #)
 
 instance Monoid (Builder f) where
   {-# INLINE mempty #-}
@@ -210,14 +211,14 @@ buildTermList builder = runST $ do
     loop n@(I# n#) = do
       MutableByteArray mbytearray# <-
         newByteArray (n * sizeOf (fromSymbol __))
-      MutableArray marray# <- newArray n __
+      SmallMutableArray marray# <- newSmallArray n __
       n' <-
         ST $ \s ->
           case m s mbytearray# marray# n# 0# of
             (# s, n# #) -> (# s, I# n# #)
       if n' <= n then do
         !bytearray <- unsafeFreezeByteArray (MutableByteArray mbytearray#)
-        !array <- unsafeFreezeArray (MutableArray marray#)
+        !array <- unsafeFreezeSmallArray (SmallMutableArray marray#)
         return (TermList 0 n' bytearray array)
        else loop (n'*2)
   loop 16
@@ -227,8 +228,8 @@ getByteArray :: (MutableByteArray s -> Builder1 s f) -> Builder1 s f
 getByteArray k = \s bytearray array n i -> k (MutableByteArray bytearray) s bytearray array n i
 
 {-# INLINE getArray #-}
-getArray :: (MutableArray s f -> Builder1 s f) -> Builder1 s f
-getArray k = \s bytearray array n i -> k (MutableArray array) s bytearray array n i
+getArray :: (SmallMutableArray s f -> Builder1 s f) -> Builder1 s f
+getArray k = \s bytearray array n i -> k (SmallMutableArray array) s bytearray array n i
 
 {-# INLINE getSize #-}
 getSize :: (Int -> Builder1 s f) -> Builder1 s f
@@ -288,7 +289,7 @@ emitFun (F n f) inner = emitSymbolBuilder aux (Symbol True n 0) inner
     aux n =
       Builder $
         getArray $ \array ->
-        liftST $ writeArray array n f
+        liftST $ writeSmallArray array n f
 
 -- Emit a variable.
 {-# INLINE emitVar #-}
@@ -305,5 +306,5 @@ emitTermList (TermList lo hi array funs) =
     getIndex $ \n ->
     let k = sizeOf (fromSymbol __) in
     liftST (copyByteArray mbytearray (n*k) array (lo*k) ((hi-lo)*k)) `then_`
-    liftST (copyArray marray n funs lo (hi-lo)) `then_`
+    liftST (copySmallArray funs lo marray n (hi-lo)) `then_`
     putIndex (n + hi-lo)
