@@ -130,15 +130,15 @@ patHead t@TermList{..}
 -- * Var :: Var -> Term f
 -- * Fun :: Fun f -> TermList f -> Term f
 
-data Fun f = F { funid :: {- UNPACK #-} !Int, fromFun :: !f }
+data Fun f = F { fun_id :: {- UNPACK #-} !Int, fun_value :: !f }
 instance Eq (Fun f) where
-  f == g = funid f == funid g
+  f == g = fun_id f == fun_id g
 instance Ord f => Ord (Fun f) where
-  compare = comparing fromFun
+  compare = comparing fun_value
 
-newtype Var = V { varid :: Int } deriving (Eq, Ord, Enum)
-instance Show (Fun f) where show f = "f" ++ show (funid f)
-instance Show Var     where show x = "x" ++ show (varid x)
+newtype Var = V { var_id :: Int } deriving (Eq, Ord, Enum)
+instance Show (Fun f) where show f = "f" ++ show (fun_id f)
+instance Show Var     where show x = "x" ++ show (var_id x)
 
 pattern Var x <- (patTerm -> Left x)
 pattern Fun f ts <- (patTerm -> Right (f, ts))
@@ -294,7 +294,7 @@ emitFun (F n f) inner = emitSymbolBuilder aux (Symbol True n 0) inner
 -- Emit a variable.
 {-# INLINE emitVar #-}
 emitVar :: Var -> Builder f
-emitVar x = emitSymbolBuilder (\_ -> Builder built) (Symbol False (varid x) 1) mempty
+emitVar x = emitSymbolBuilder (\_ -> Builder built) (Symbol False (var_id x) 1) mempty
 
 -- Emit a whole termlist.
 {-# INLINE emitTermList #-}

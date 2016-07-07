@@ -139,14 +139,14 @@ substSize (Subst sub)
 -- Look up a variable.
 {-# INLINE lookupList #-}
 lookupList :: Var -> Subst f -> Maybe (TermList f)
-lookupList x (Subst sub) = IntMap.lookup (varid x) sub
+lookupList x (Subst sub) = IntMap.lookup (var_id x) sub
 
 -- Add a new binding to a substitution.
 {-# INLINE extendList #-}
 extendList :: Var -> TermList f -> Subst f -> Maybe (Subst f)
 extendList x !t (Subst sub) =
-  case IntMap.lookup (varid x) sub of
-    Nothing -> Just $! Subst (IntMap.insert (varid x) t sub)
+  case IntMap.lookup (var_id x) sub of
+    Nothing -> Just $! Subst (IntMap.insert (var_id x) t sub)
     Just u
       | t == u    -> Just (Subst sub)
       | otherwise -> Nothing
@@ -154,13 +154,13 @@ extendList x !t (Subst sub) =
 -- Remove a binding from a substitution.
 {-# INLINE retract #-}
 retract :: Var -> Subst f -> Subst f
-retract x (Subst sub) = Subst (IntMap.delete (varid x) sub)
+retract x (Subst sub) = Subst (IntMap.delete (var_id x) sub)
 
 -- Add a new binding to a substitution.
 -- Overwrites any existing binding.
 {-# INLINE unsafeExtendList #-}
 unsafeExtendList :: Var -> TermList f -> Subst f -> Subst f
-unsafeExtendList x !t (Subst sub) = Subst (IntMap.insert (varid x) t sub)
+unsafeExtendList x !t (Subst sub) = Subst (IntMap.insert (var_id x) t sub)
 
 -- Composition of substitutions.
 substCompose :: Substitution s => Subst (SubstFun s) -> s -> Subst (SubstFun s)

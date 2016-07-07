@@ -206,11 +206,11 @@ runTwee state _order precedence obligs = stampM "twee" $ do
       prec c = (isNothing (elemIndex (base c) precedence),
                 fmap negate (elemIndex (base c) precedence),
                 negate (occ (auto c) (axioms0, goals0)))
-      fs0 = map fromFun (usort (funs (axioms0, goals0)))
+      fs0 = map fun_value (usort (funs (axioms0, goals0)))
       fs1 = sortBy (comparing prec) fs0
       fs2 = zipWith (\i (c ::: (FunType args _)) -> Constant i (length args) 1 (show c)) [1..] fs1
       m  = Map.fromList (zip fs1 (map Function fs2))
-  let replace = build . mapFun (auto . flip (Map.findWithDefault __) m . fromFun)
+  let replace = build . mapFun (auto . flip (Map.findWithDefault __) m . fun_value)
       axioms1 = [replace t :=: replace u | t :=: u <- axioms0]
       goals1  = map replace goals0
       (axioms2, goals2) = addNarrowing (axioms1, goals1)

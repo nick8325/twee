@@ -134,13 +134,13 @@ class Arity f where
   arity :: f -> Int
 
 instance Arity f => Arity (Fun f) where
-  arity = arity . fromFun
+  arity = arity . fun_value
 
 class Sized a where
   size  :: a -> Int
 
 instance Sized f => Sized (Fun f) where
-  size = size . fromFun
+  size = size . fun_value
 
 instance Sized f => Sized (TermList f) where
   size = aux 0

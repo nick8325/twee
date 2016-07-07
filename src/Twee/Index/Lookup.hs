@@ -105,7 +105,7 @@ pref sub t@(Cons u us) Empty _ fun var rest =
 
     {-# INLINE tryFun #-}
     tryFun sub (Fun f _) ts fun rest =
-      case fun ! funid f of
+      case fun ! fun_id f of
         Nil -> rest
         idx -> Frame sub ts idx rest
     tryFun _ _ _ _ rest = rest
