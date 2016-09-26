@@ -31,20 +31,12 @@ data Overlap f =
     overlap_inner    :: {-# UNPACK #-} !(Term f) }
 
 overlaps :: Positions f -> Rule f -> Rule f -> [Overlap f]
-overlaps (Positions ns) (Rule _ outer outer') (Rule _ inner inner') =
-  DList.toList $ go 0 ns (singleton outer)
-  where
-    go !_ _ !_ | False = __
-    go _ [] _ = mzero
-    go _ _ Empty = mzero
-    go n (m:ms) (ConsSym t u)
-      | m == n = here `mplus` go (n+1) ms u
-      | otherwise = go (n+1) (m:ms) u
-      where
-        here = do
-          sub <- DList.fromList (maybeToList (unifyTri inner t))
-          let top = build (subst sub outer)
-              left = build (subst sub outer')
-              right = build (replacePositionSub (evalSubst sub) n (singleton inner') (singleton outer))
-              inner_ = build (subst sub inner)
-          return (Overlap top left right inner_)
+overlaps (Positions ns) (Rule _ !outer !outer') (Rule _ !inner !inner') = do
+  n <- ns
+  let t = at n (singleton outer)
+  sub <- maybeToList (unify inner t)
+  let top = subst sub outer
+      left = subst sub outer'
+      right = build (replacePositionSub (evalSubst sub) n (singleton inner') (singleton outer))
+      inner_ = subst sub inner
+  return (Overlap top left right inner_)

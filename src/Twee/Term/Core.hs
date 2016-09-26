@@ -69,10 +69,11 @@ data TermList f =
 
 at :: Int -> TermList f -> Term f
 at n (TermList lo hi arr funs)
-  | n < 0 || n + lo >= hi = ERROR("term index out of bounds")
+  -- Check that n+1 is in range so we know the term isn't Nil
+  | n < 0 || lo+n+1 >= hi = ERROR("term index out of bounds")
   | otherwise =
     case TermList (lo+n) hi arr funs of
-      Cons t _ -> t
+      UnsafeCons t _ -> t
 
 {-# INLINE lenList #-}
 -- The length (number of symbols in) a flatterm.

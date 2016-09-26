@@ -463,7 +463,7 @@ mapFunList f ts = aux ts
 
 {-# INLINEABLE replacePosition #-}
 replacePosition :: (Build a, BuildFun a ~ f) => Int -> a -> TermList f -> Builder f
-replacePosition n x = aux n
+replacePosition n !x = aux n
   where
     aux !_ !_ | False = __
     aux _ Empty = mempty
@@ -477,7 +477,7 @@ replacePosition n x = aux n
 
 {-# INLINEABLE replacePositionSub #-}
 replacePositionSub :: (Var -> Builder f) -> Int -> TermList f -> TermList f -> Builder f
-replacePositionSub sub n x = aux n
+replacePositionSub sub n !x = aux n
   where
     aux !_ !_ | False = __
     aux _ Empty = mempty

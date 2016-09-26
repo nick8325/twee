@@ -61,7 +61,6 @@ class Symbolic a => Singular a where
 terms :: Symbolic a => a -> [TermListOf a]
 terms = DList.toList . termsDL
 
-{-# INLINE subst #-}
 subst :: (Symbolic a, Substitution s, SubstFun s ~ ConstantOf a) => s -> a -> a
 subst sub x = replace (substList sub) x
 
