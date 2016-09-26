@@ -276,7 +276,6 @@ substTri sub x = aux x
         Nothing -> var x
         Just ts -> substList aux ts
 
-{-# INLINE unify #-}
 unify :: Term f -> Term f -> Maybe (Subst f)
 unify t u = unifyList (singleton t) (singleton u)
 
@@ -285,7 +284,6 @@ unifyList t u = do
   sub <- unifyListTri t u
   return $! close sub
 
-{-# INLINE unifyTri #-}
 unifyTri :: Term f -> Term f -> Maybe (TriangleSubst f)
 unifyTri t u = unifyListTri (singleton t) (singleton u)
 
@@ -462,3 +460,31 @@ mapFunList f ts = aux ts
     aux Empty = mempty
     aux (Cons (Var x) ts) = var x `mappend` aux ts
     aux (Cons (Fun ff ts) us) = fun (f ff) (aux ts) `mappend` aux us
+
+{-# INLINEABLE replacePosition #-}
+replacePosition :: (Build a, BuildFun a ~ f) => Int -> a -> TermList f -> Builder f
+replacePosition n x = aux n
+  where
+    aux !_ !_ | False = __
+    aux _ Empty = mempty
+    aux 0 (Cons _ t) = builder x `mappend` builder t
+    aux n (Cons (Var x) t) = var x `mappend` aux (n-1) t
+    aux n (Cons t@(Fun f ts) u)
+      | n < len t =
+        fun f (aux (n-1) ts) `mappend` builder u
+      | otherwise =
+        builder t `mappend` aux (n-len t) u
+
+{-# INLINEABLE replacePositionSub #-}
+replacePositionSub :: (Var -> Builder f) -> Int -> TermList f -> TermList f -> Builder f
+replacePositionSub sub n x = aux n
+  where
+    aux !_ !_ | False = __
+    aux _ Empty = mempty
+    aux 0 (Cons _ t) = substList sub x `mappend` substList sub t
+    aux n (Cons (Var x) t) = sub x `mappend` aux (n-1) t
+    aux n (Cons t@(Fun f ts) u)
+      | n < len t =
+        fun f (aux (n-1) ts) `mappend` substList sub u
+      | otherwise =
+        subst sub t `mappend` aux (n-len t) u

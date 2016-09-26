@@ -762,45 +762,6 @@ criticalPairs s lower upper rule =
       | Labelled l' (Modelled _ ns (Critical _ old)) <- rules,
         cp <- criticalPairs1 s ns old [Labelled l' rule] ]
 
-ruleOverlaps :: Twee f -> Term f -> [Int]
-ruleOverlaps s t = aux 0 Set.empty (singleton t)
-  where
-    aux !_ !_ Empty = []
-    aux n m (Cons (Var _) t) = aux (n+1) m t
-    aux n m (ConsSym t@Fun{} u)
-      | useGeneralSuperpositions s && t `Set.member` m = aux (n+1) m u
-      | otherwise = n:aux (n+1) (Set.insert t m) u
-
-overlaps :: [Int] -> Term f -> Term f -> [(Subst f, Int)]
-overlaps ns t1 t2@(Fun g _) = go 0 ns (singleton t1) []
-  where
-    go !_ _ !_ _ | False = __
-    go _ [] _ rest = rest
-    go _ _ Empty rest = rest
-    go n (m:ms) (ConsSym ~t@(Fun f _) u) rest
-      | m == n && f == g = here ++ go (n+1) ms u rest
-      | m == n = go (n+1) ms u rest
-      | otherwise = go (n+1) (m:ms) u rest
-      where
-        here =
-          case unify t t2 of
-            Nothing -> []
-            Just sub -> [(sub, n)]
-overlaps _ _ _ = []
-
-emitReplacement :: Int -> Term f -> TermList f -> Builder f
-emitReplacement n t = aux n
-  where
-    aux !_ !_ | False = __
-    aux _ Empty = mempty
-    aux 0 (Cons _ u) = builder t `mappend` builder u
-    aux n (Cons (Var x) u) = var x `mappend` aux (n-1) u
-    aux n (Cons t@(Fun f ts) u)
-      | n < len t =
-        fun f (aux (n-1) ts) `mappend` builder u
-      | otherwise =
-        builder t `mappend` aux (n-len t) u
-
 criticalPairs1 :: Function f => Twee f -> [Int] -> Rule f -> [Labelled (Rule f)] -> [Labelled (Critical (Equation f))]
 criticalPairs1 s ns r rs = do
   let V b = maximum (V 0:[ bound t | Labelled _ (Rule _ t _) <- rs ])

@@ -130,7 +130,7 @@ patHead t@TermList{..}
 -- * Var :: Var -> Term f
 -- * Fun :: Fun f -> TermList f -> Term f
 
-data Fun f = F { fun_id :: {- UNPACK #-} !Int, fun_value :: !f }
+data Fun f = F { fun_id :: {- UNPACK #-} !Int, fun_value :: f }
 instance Eq (Fun f) where
   f == g = fun_id f == fun_id g
 instance Ord (Fun f) where

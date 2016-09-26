@@ -15,7 +15,7 @@ import qualified Twee.Term as Term
 import Twee.Pretty
 import Twee.Constraints hiding (funs)
 import Data.DList(DList)
-import GHC.Generics
+import GHC.Generics hiding (Arity)
 
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where
