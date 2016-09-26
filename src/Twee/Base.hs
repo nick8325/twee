@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, DeriveGeneric, TypeOperators, MultiParamTypeClasses #-}
 module Twee.Base(
-  Symbolic(..), Singular(..), terms, subst, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
+  Symbolic(..), Singular(..), terms, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise,
   Minimal(..), minimalTerm, isMinimal,
   Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..),
@@ -22,47 +22,43 @@ class Symbolic a where
   type ConstantOf a
 
   termsDL :: a -> DList (TermListOf a)
-  replace :: (TermListOf a -> BuilderOf a) -> a -> a
+  subst :: (Substitution s, SubstFun s ~ ConstantOf a) => s -> a -> a
 
   default termsDL :: (Generic a, GSymbolic (ConstantOf a) (Rep a)) => a -> DList (TermListOf a)
   termsDL = gtermsDL . from
-  default replace :: (Generic a, GSymbolic (ConstantOf a) (Rep a)) => (TermListOf a -> BuilderOf a) -> a -> a
-  replace sub = to . greplace sub . from
+  default subst :: (Substitution s, SubstFun s ~ ConstantOf a, Generic a, GSymbolic (ConstantOf a) (Rep a)) => s -> a -> a
+  subst sub = to . gsubst sub . from
 
 class GSymbolic k f where
   gtermsDL :: f a -> DList (TermList k)
-  greplace :: (TermList k -> Builder k) -> f a -> f a
+  gsubst :: (Substitution s, SubstFun s ~ k) => s -> f a -> f a
 
 instance GSymbolic k V1 where
   gtermsDL _ = __
-  greplace _ x = x
+  gsubst _ x = x
 instance GSymbolic k U1 where
-
   gtermsDL _ = mzero
-  greplace _ x = x
+  gsubst _ x = x
 instance (GSymbolic k f, GSymbolic k g) => GSymbolic k (f :*: g) where
   gtermsDL (x :*: y) = gtermsDL x `mplus` gtermsDL y
-  greplace sub (x :*: y) = greplace sub x :*: greplace sub y
+  gsubst sub (x :*: y) = gsubst sub x :*: gsubst sub y
 instance (GSymbolic k f, GSymbolic k g) => GSymbolic k (f :+: g) where
   gtermsDL (L1 x) = gtermsDL x
   gtermsDL (R1 x) = gtermsDL x
-  greplace sub (L1 x) = L1 (greplace sub x)
-  greplace sub (R1 x) = R1 (greplace sub x)
+  gsubst sub (L1 x) = L1 (gsubst sub x)
+  gsubst sub (R1 x) = R1 (gsubst sub x)
 instance GSymbolic k f => GSymbolic k (M1 i c f) where
   gtermsDL (M1 x) = gtermsDL x
-  greplace sub (M1 x) = M1 (greplace sub x)
+  gsubst sub (M1 x) = M1 (gsubst sub x)
 instance (Symbolic a, ConstantOf a ~ k) => GSymbolic k (K1 i a) where
   gtermsDL (K1 x) = termsDL x
-  greplace sub (K1 x) = K1 (replace sub x)
+  gsubst sub (K1 x) = K1 (subst sub x)
 
 class Symbolic a => Singular a where
   term :: a -> TermOf a
 
 terms :: Symbolic a => a -> [TermListOf a]
 terms = DList.toList . termsDL
-
-subst :: (Symbolic a, Substitution s, SubstFun s ~ ConstantOf a) => s -> a -> a
-subst sub x = replace (substList sub) x
 
 type TermOf a = Term (ConstantOf a)
 type TermListOf a = TermList (ConstantOf a)
@@ -73,7 +69,11 @@ type FunOf a = Fun (ConstantOf a)
 instance Symbolic (Term f) where
   type ConstantOf (Term f) = f
   termsDL   = return . singleton
-  replace f = build . f . singleton
+  subst sub = build . Term.subst (evalSubst sub)
+
+{-# RULES "subst" subst = substTerm #-}
+substTerm :: Subst f -> Term f -> Term f
+substTerm sub t = build (Term.subst (evalSubst sub) t)
 
 instance Singular (Term f) where
   term = id
@@ -81,7 +81,11 @@ instance Singular (Term f) where
 instance Symbolic (TermList f) where
   type ConstantOf (TermList f) = f
   termsDL   = return
-  replace f = buildList . f
+  subst sub = buildList . Term.substList (evalSubst sub)
+
+{-# RULES "subst" subst = substTermList #-}
+substTermList :: Subst f -> TermList f -> TermList f
+substTermList sub t = buildList (Term.substList (evalSubst sub) t)
 
 instance (ConstantOf a ~ ConstantOf b, Symbolic a, Symbolic b) => Symbolic (a, b) where
   type ConstantOf (a, b) = ConstantOf a
@@ -115,7 +119,7 @@ occVar :: Symbolic a => Var -> a -> Int
 occVar x t = length (filter (== x) (vars t))
 
 canonicalise :: Symbolic a => a -> a
-canonicalise t = replace (Term.substList sub) t
+canonicalise t = subst sub t
   where
     sub = Term.canonicalise (DList.toList (termsDL t))
 
