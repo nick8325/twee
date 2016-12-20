@@ -2,51 +2,57 @@
 -- Inspired by the 'intern' package.
 
 {-# LANGUAGE RecordWildCards, ScopedTypeVariables #-}
-module Twee.Label where
+module Twee.Label(label) where
 
 import Data.IORef
 import System.IO.Unsafe
-import qualified Data.IntMap.Strict as IntMap
-import Data.IntMap.Strict(IntMap)
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
 import Twee.Term
+import Data.Typeable
+import GHC.Exts
+import Unsafe.Coerce
 
-class Ord a => Labelled a where
-  cache :: Cache a
-  initialId :: a -> Int
-  initialId _ = 0
-
-type Cache a = IORef (CacheState a)
-data CacheState a =
-  CacheState {
-    nextId :: {-# UNPACK #-} !Int,
-    to     :: !(IntMap a),
-    from   :: !(Map a Int) }
+data Cache a =
+  Cache {
+    cache_nextId :: {-# UNPACK #-} !Int,
+    cache_from   :: !(Map a Int) }
   deriving Show
 
-mkCache :: forall a. Labelled a => Cache a
-mkCache = unsafePerformIO (newIORef (CacheState (initialId (undefined :: a)) IntMap.empty Map.empty))
+{-# NOINLINE caches #-}
+caches :: IORef (Map TypeRep (Cache Any))
+caches = unsafePerformIO (newIORef Map.empty)
 
-label :: Labelled a => a -> Int
+toAny :: Cache a -> Cache Any
+toAny = unsafeCoerce
+
+fromAny :: Cache Any -> Cache a
+fromAny = unsafeCoerce
+
+{-# INLINE withCache #-}
+withCache :: forall a b. Typeable a => (Cache a -> (Maybe (Cache a), b)) -> b
+withCache update =
+  unsafeDupablePerformIO $
+    atomicModifyIORef' caches $ \caches ->
+      let
+        emptyCache = Cache 0 Map.empty
+        ty = typeOf (undefined :: a)
+        cache = Map.findWithDefault emptyCache ty caches
+        (mcache, res) = update (fromAny cache)
+      in
+        case mcache of
+          Nothing -> (caches, res)
+          Just cache ->
+            (Map.insert ty (toAny cache) caches, res)
+
+label :: (Typeable a, Ord a) => a -> Int
 label x =
   compare x x `seq`
-  unsafeDupablePerformIO $
-    atomicModifyIORef' cache $ \cache@CacheState{..} ->
-      case Map.lookup x from of
-        Nothing ->
-          (CacheState
-             (nextId+1)
-             (IntMap.insert nextId x to)
-             (Map.insert x nextId from),
-           nextId)
-        Just n -> (cache, n)
-
-find :: Labelled a => Int -> Maybe a
-find n =
-  unsafeDupablePerformIO $ do
-    CacheState{..} <- readIORef cache
-    return (IntMap.lookup n to)
-
-auto :: Labelled f => f -> Fun f
-auto f = F (label f) f
+  withCache $ \Cache{..} ->
+    case Map.lookup x cache_from of
+      Nothing ->
+        (Just $ Cache
+           (cache_nextId+1)
+           (Map.insert x cache_nextId cache_from),
+         cache_nextId)
+      Just n -> (Nothing, n)
