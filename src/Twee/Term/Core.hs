@@ -129,7 +129,7 @@ patHead t@TermList{..}
 
 -- Pattern synonyms for single terms.
 -- * Var :: Var -> Term f
--- * Fun :: Fun f -> TermList f -> Term f
+-- * App :: Fun f -> TermList f -> Term f
 
 data Fun f = F { fun_id :: {- UNPACK #-} !Int, fun_value :: f }
 instance Eq (Fun f) where
@@ -142,7 +142,7 @@ instance Show (Fun f) where show f = "f" ++ show (fun_id f)
 instance Show Var     where show x = "x" ++ show (var_id x)
 
 pattern Var x <- (patTerm -> Left x)
-pattern Fun f ts <- (patTerm -> Right (f, ts))
+pattern App f ts <- (patTerm -> Right (f, ts))
 
 {-# INLINE patTerm #-}
 patTerm :: Term f -> Either Var (Fun f, TermList f)
@@ -281,11 +281,10 @@ emitSymbolBuilder aux x inner =
     getIndex (\m ->
       liftST $ writeByteArray bytearray n (fromSymbol x { size = m - n }))
 
--- Emit a function symbol.
--- The second argument is called to emit the function's arguments.
-{-# INLINE emitFun #-}
-emitFun :: Fun f -> Builder f -> Builder f
-emitFun (F n f) inner = emitSymbolBuilder aux (Symbol True n 0) inner
+-- Emit a function application.
+{-# INLINE emitApp #-}
+emitApp :: Fun f -> Builder f -> Builder f
+emitApp (F n f) inner = emitSymbolBuilder aux (Symbol True n 0) inner
   where
     aux n =
       Builder $

@@ -8,7 +8,6 @@ import Data.IORef
 import System.IO.Unsafe
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
-import Twee.Term
 import Data.Typeable
 import GHC.Exts
 import Unsafe.Coerce

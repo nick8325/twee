@@ -11,11 +11,11 @@ import Data.Maybe
 import Control.Monad
 
 lessEq :: Function f => Term f -> Term f -> Bool
-lessEq (Fun f Empty) _ | f == minimal = True
+lessEq (App f Empty) _ | f == minimal = True
 lessEq (Var x) (Var y) | x == y = True
 lessEq _ (Var _) = False
 lessEq (Var x) t = x `elem` vars t
-lessEq t@(Fun f ts) u@(Fun g us) =
+lessEq t@(App f ts) u@(App g us) =
   (st < su ||
    (st == su && f < g) ||
    (st == su && f == g && lexLess ts us)) &&
@@ -56,7 +56,7 @@ sizeLessIn model t u =
       foldr (addSize id)
         (foldr (addSize negate) (0, Map.empty) (subterms t))
         (subterms u)
-    addSize op (Fun f _) (k, m) = (k + op (size f), m)
+    addSize op (App f _) (k, m) = (k + op (size f), m)
     addSize op (Var x) (k, m) = (k, Map.insertWith (+) x (op 1) m)
 
 minimumIn :: Function f => Model f -> Map Var Int -> Maybe Int
@@ -95,7 +95,7 @@ lexLessIn cond t u
       [ lessEqInModel cond a b
       | v <- properSubterms u, Just b <- [fromTerm v]] =
         Just Strict
-lexLessIn cond (Fun f ts) (Fun g us) =
+lexLessIn cond (App f ts) (App g us) =
   case compare f g of
     LT -> Just Strict
     GT -> Nothing

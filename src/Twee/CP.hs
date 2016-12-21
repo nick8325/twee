@@ -18,7 +18,7 @@ positions t = Positions (aux 0 Set.empty (singleton t))
   where
     aux !_ !_ Empty = []
     aux n m (Cons (Var _) t) = aux (n+1) m t
-    aux n m (ConsSym t@Fun{} u)
+    aux n m (ConsSym t@App{} u)
       | t `Set.member` m = aux (n+1) m u
       | otherwise = n:aux (n+1) (Set.insert t m) u
 

@@ -44,7 +44,7 @@ insert !t x !idx = stamp "index insert" (aux (key t) idx)
 
     aux Empty idx =
       idx { size = 0, here = x:here idx }
-    aux t@(ConsSym (Fun f _) u) idx =
+    aux t@(ConsSym (App f _) u) idx =
       idx {
         size = lenList t `min` size idx,
         fun  = update (fun_id f) idx' (fun idx) }
@@ -64,7 +64,7 @@ expand idx@Index{prefix = ConsSym t ts} =
     Var v ->
       Index (size idx + 1 + lenList ts) emptyTermList [] newArray
         (updateVarIndex v idx { prefix = ts } newVarIndex)
-    Fun f _ ->
+    App f _ ->
       Index (size idx + 1 + lenList ts) emptyTermList []
         (update (fun_id f) idx { prefix = ts } newArray) newVarIndex
 
@@ -74,7 +74,7 @@ key t = buildList . aux . Term.singleton $ t
     repeatedVars = [x | x <- usort (vars t), occVar x t > 1]
 
     aux Empty = mempty
-    aux (ConsSym (Fun f _) t) =
+    aux (ConsSym (App f _) t) =
       con f `mappend` aux t
     aux (ConsSym (Var x) t) =
       Term.var (
@@ -93,7 +93,7 @@ delete !t x !idx = stamp "index delete" (aux (key t) idx)
 
     aux Empty idx =
       idx { here = List.delete x (here idx) }
-    aux (ConsSym (Fun f _) t) idx =
+    aux (ConsSym (App f _) t) idx =
       idx { fun = update (fun_id f) (aux t (fun idx ! fun_id f)) (fun idx) }
     aux (ConsSym (Var v) t) idx =
       idx { var = updateVarIndex v (aux t (lookupVarIndex v (var idx))) (var idx) }
@@ -108,7 +108,7 @@ elem !t x !idx = aux (key t) idx
     aux _ Index{prefix = Cons{}} = False
 
     aux Empty idx = List.elem x (here idx)
-    aux (ConsSym (Fun f _) t) idx =
+    aux (ConsSym (App f _) t) idx =
       aux t (fun idx ! fun_id f)
     aux (ConsSym (Var v) t) idx =
       aux t (lookupVarIndex v (var idx))

@@ -9,7 +9,7 @@ module Twee.Term(
   Term, TermList, at, lenList,
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
-  Fun(..), Var(..), pattern Var, pattern Fun, singleton, Builder) where
+  Fun(..), Var(..), pattern Var, pattern App, singleton, Builder) where
 
 #include "errors.h"
 import Prelude hiding (lookup)
@@ -58,11 +58,11 @@ buildList x = stamp "buildList" (buildTermList (builder x))
 
 {-# INLINE con #-}
 con :: Fun f -> Builder f
-con x = emitFun x mempty
+con x = emitApp x mempty
 
-{-# INLINE fun #-}
-fun :: Build a => Fun (BuildFun a) -> a -> Builder (BuildFun a)
-fun f ts = emitFun f (builder ts)
+{-# INLINE app #-}
+app :: Build a => Fun (BuildFun a) -> a -> Builder (BuildFun a)
+app f ts = emitApp f (builder ts)
 
 var :: Var -> Builder f
 var = emitVar
@@ -124,7 +124,7 @@ substList sub ts = aux ts
   where
     aux Empty = mempty
     aux (Cons (Var x) ts) = evalSubst sub x <> aux ts
-    aux (Cons (Fun f ts) us) = fun f (aux ts) <> aux us
+    aux (Cons (App f ts) us) = app f (aux ts) <> aux us
 
 newtype Subst f =
   Subst {
@@ -194,7 +194,7 @@ idempotentOn :: Subst f -> TermList f -> Bool
 idempotentOn !sub = aux
   where
     aux Empty = True
-    aux (ConsSym Fun{} t) = aux t
+    aux (ConsSym App{} t) = aux t
     aux (Cons (Var x) t) = isNothing (lookupList x sub) && aux t
 
 -- Iterate a substitution to make it idempotent.
@@ -216,7 +216,7 @@ canonicalise (t:ts) = loop emptySubst vars t ts
     loop !_ !_ !_ !_ | False = __
     loop sub _ Empty [] = sub
     loop sub vs Empty (t:ts) = loop sub vs t ts
-    loop sub vs (ConsSym Fun{} t) ts = loop sub vs t ts
+    loop sub vs (ConsSym App{} t) ts = loop sub vs t ts
     loop sub vs0@(Cons v vs) (Cons (Var x) t) ts =
       case extend x v sub of
         Just sub -> loop sub vs  t ts
@@ -248,7 +248,7 @@ matchList !pat !t
     let loop !_ !_ !_ | False = __
         loop sub Empty _ = Just sub
         loop _ _ Empty = __
-        loop sub (ConsSym (Fun f _) pat) (ConsSym (Fun g _) t)
+        loop sub (ConsSym (App f _) pat) (ConsSym (App g _) t)
           | f == g = loop sub pat t
         loop sub (Cons (Var x) pat) (Cons t u) = do
           sub <- extend x t sub
@@ -293,7 +293,7 @@ unifyListTri !t !u = fmap Triangle (stamp "unify" (loop emptySubst t u))
     loop !_ !_ !_ | False = __
     loop sub Empty _ = Just sub
     loop _ _ Empty = __
-    loop sub (ConsSym (Fun f _) t) (ConsSym (Fun g _) u)
+    loop sub (ConsSym (App f _) t) (ConsSym (App g _) u)
       | f == g = loop sub t u
     loop sub (Cons (Var x) t) (Cons u v) = do
       sub <- var sub x u
@@ -320,7 +320,7 @@ unifyListTri !t !u = fmap Triangle (stamp "unify" (loop emptySubst t u))
       extend x t sub
 
     occurs !_ !_ Empty = Just ()
-    occurs sub x (ConsSym Fun{} t) = occurs sub x t
+    occurs sub x (ConsSym App{} t) = occurs sub x t
     occurs sub x (ConsSym (Var y) t)
       | x == y = Nothing
       | otherwise = do
@@ -346,8 +346,8 @@ unpack t = unfoldr op t
 
 instance Show (Term f) where
   show (Var x) = show x
-  show (Fun f Empty) = show f
-  show (Fun f ts) = show f ++ "(" ++ intercalate "," (map show (unpack ts)) ++ ")"
+  show (App f Empty) = show f
+  show (App f ts) = show f ++ "(" ++ intercalate "," (map show (unpack ts)) ++ ")"
 
 instance Show (TermList f) where
   show = show . unpack
@@ -387,7 +387,7 @@ boundList :: TermList f -> Var
 boundList t = aux (V 0) t
   where
     aux n Empty = n
-    aux n (ConsSym Fun{} t) = aux n t
+    aux n (ConsSym App{} t) = aux n t
     aux n (ConsSym (Var x) t)
       | x >= n = aux (succ x) t
       | otherwise = aux n t
@@ -402,7 +402,7 @@ occursList :: Var -> TermList f -> Bool
 occursList !x = aux
   where
     aux Empty = False
-    aux (ConsSym Fun{} t) = aux t
+    aux (ConsSym App{} t) = aux t
     aux (ConsSym (Var y) t) = x == y || aux t
 
 {-# INLINE termListToList #-}
@@ -437,9 +437,9 @@ properSubtermsList (ConsSym _ t) = subtermsList t
 properSubterms :: Term f -> [Term f]
 properSubterms = properSubtermsList . singleton
 
-isFun :: Term f -> Bool
-isFun Fun{} = True
-isFun _     = False
+isApp :: Term f -> Bool
+isApp App{} = True
+isApp _     = False
 
 isVar :: Term f -> Bool
 isVar Var{} = True
@@ -459,7 +459,7 @@ mapFunList f ts = aux ts
   where
     aux Empty = mempty
     aux (Cons (Var x) ts) = var x `mappend` aux ts
-    aux (Cons (Fun ff ts) us) = fun (f ff) (aux ts) `mappend` aux us
+    aux (Cons (App ff ts) us) = app (f ff) (aux ts) `mappend` aux us
 
 {-# INLINEABLE replacePosition #-}
 replacePosition :: (Build a, BuildFun a ~ f) => Int -> a -> TermList f -> Builder f
@@ -469,9 +469,9 @@ replacePosition n !x = aux n
     aux _ Empty = mempty
     aux 0 (Cons _ t) = builder x `mappend` builder t
     aux n (Cons (Var x) t) = var x `mappend` aux (n-1) t
-    aux n (Cons t@(Fun f ts) u)
+    aux n (Cons t@(App f ts) u)
       | n < len t =
-        fun f (aux (n-1) ts) `mappend` builder u
+        app f (aux (n-1) ts) `mappend` builder u
       | otherwise =
         builder t `mappend` aux (n-len t) u
 
@@ -483,8 +483,8 @@ replacePositionSub sub n !x = aux n
     aux _ Empty = mempty
     aux 0 (Cons _ t) = substList sub x `mappend` substList sub t
     aux n (Cons (Var x) t) = sub x `mappend` aux (n-1) t
-    aux n (Cons t@(Fun f ts) u)
+    aux n (Cons t@(App f ts) u)
       | n < len t =
-        fun f (aux (n-1) ts) `mappend` substList sub u
+        app f (aux (n-1) ts) `mappend` substList sub u
       | otherwise =
         subst sub t `mappend` aux (n-len t) u

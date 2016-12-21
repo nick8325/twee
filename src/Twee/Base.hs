@@ -108,7 +108,7 @@ isGround = null . vars
 
 {-# INLINE funs #-}
 funs :: Symbolic a => a -> [FunOf a]
-funs x = [ f | t <- DList.toList (termsDL x), Fun f _ <- subtermsList t ]
+funs x = [ f | t <- DList.toList (termsDL x), App f _ <- subtermsList t ]
 
 {-# INLINE occ #-}
 occ :: Symbolic a => FunOf a -> a -> Int
@@ -124,7 +124,7 @@ canonicalise t = subst sub t
     sub = Term.canonicalise (DList.toList (termsDL t))
 
 isMinimal :: Minimal f => Term f -> Bool
-isMinimal (Fun f Empty) | f == minimal = True
+isMinimal (App f Empty) | f == minimal = True
 isMinimal _ = False
 
 minimalTerm :: Minimal f => Term f
@@ -149,7 +149,7 @@ instance Sized f => Sized (TermList f) where
   size = aux 0
     where
       aux n Empty = n
-      aux n (ConsSym (Fun f _) t) = aux (n+size f) t
+      aux n (ConsSym (App f _) t) = aux (n+size f) t
       aux n (Cons (Var _) t) = aux (n+1) t
 
 instance Sized f => Sized (Term f) where

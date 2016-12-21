@@ -60,7 +60,7 @@ instance PrettyTerm f => PrettyTerm (Fun f) where
 
 instance PrettyTerm f => Pretty (Term f) where
   pPrintPrec l p (Var x) = pPrintPrec l p x
-  pPrintPrec l p (Fun f xs) =
+  pPrintPrec l p (App f xs) =
     pPrintTerm (termStyle f) l p (pPrint f) (termListToList xs)
 
 instance PrettyTerm f => Pretty (TermList f) where

@@ -95,7 +95,7 @@ pref sub (Cons t ts) (Cons (Var x) us) here fun var rest =
   case extend2 x (Term.singleton t) sub of
     Nothing  -> rest
     Just sub -> pref sub ts us here fun var rest
-pref sub (ConsSym (Fun f _) ts) (ConsSym (Fun g _) us) here fun var rest
+pref sub (ConsSym (App f _) ts) (ConsSym (App g _) us) here fun var rest
   | f == g = pref sub ts us here fun var rest
 pref _ _ (Cons _ _) _ _ _ rest = rest
 pref sub t@(Cons u us) Empty _ fun var rest =
@@ -104,7 +104,7 @@ pref sub t@(Cons u us) Empty _ fun var rest =
     UnsafeConsSym v vs = t
 
     {-# INLINE tryFun #-}
-    tryFun sub (Fun f _) ts fun rest =
+    tryFun sub (App f _) ts fun rest =
       case fun ! fun_id f of
         Nil -> rest
         idx -> Frame sub ts idx rest

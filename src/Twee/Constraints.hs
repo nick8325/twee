@@ -24,7 +24,7 @@ atoms :: Term f -> [Atom f]
 atoms t = aux (singleton t)
   where
     aux Empty = []
-    aux (Cons (Fun f Empty) t) = Constant f:aux t
+    aux (Cons (App f Empty) t) = Constant f:aux t
     aux (Cons (Var x) t) = Variable x:aux t
     aux (ConsSym _ t) = aux t
 
@@ -33,7 +33,7 @@ toTerm (Constant f) = build (con f)
 toTerm (Variable x) = build (var x)
 
 fromTerm :: Flat.Term f -> Maybe (Atom f)
-fromTerm (Fun f Empty) = Just (Constant f)
+fromTerm (App f Empty) = Just (Constant f)
 fromTerm (Var x) = Just (Variable x)
 fromTerm _ = Nothing
 

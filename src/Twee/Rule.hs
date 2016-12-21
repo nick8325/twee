@@ -154,7 +154,7 @@ rule t u = Rule o t u
               modify ((x, build $ var y):)
               return [(build $ var x, build $ var y)]
 
-          aux (Fun f ts) (Fun g us)
+          aux (App f ts) (App g us)
             | f == g =
               fmap concat (zipWithM makePermutative (unpack ts) (unpack us))
 
@@ -198,8 +198,8 @@ result t = stamp "executing rewrite" (build (emitReduction t))
       emitReduction p `mappend` emitParallel (n + len t) ps u
     emitParallel n ps (Cons (Var x) u) =
       var x `mappend` emitParallel (n + 1) ps u
-    emitParallel n ps (Cons (Fun f t) u) =
-      fun f (emitParallel (n+1) ps t) `mappend`
+    emitParallel n ps (Cons (App f t) u) =
+      app f (emitParallel (n+1) ps t) `mappend`
       emitParallel (n + 1 + lenList t) ps u
 
 instance PrettyTerm f => Pretty (Reduction f) where
