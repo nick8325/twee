@@ -14,11 +14,13 @@ module Twee.Term(
 #include "errors.h"
 import Prelude hiding (lookup)
 import Twee.Term.Core
+import Twee.Label
 import Data.List hiding (lookup)
 import Data.Maybe
 import Data.Monoid
 import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import Data.Typeable
 import Twee.Profile
 
 --------------------------------------------------------------------------------
@@ -436,6 +438,9 @@ properSubtermsList (ConsSym _ t) = subtermsList t
 {-# INLINE properSubterms #-}
 properSubterms :: Term f -> [Term f]
 properSubterms = properSubtermsList . singleton
+
+fun :: (Ord f, Typeable f) => f -> Fun f
+fun f = F (label f) f
 
 isApp :: Term f -> Bool
 isApp App{} = True
