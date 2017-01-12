@@ -68,8 +68,10 @@ type FunOf a = Fun (ConstantOf a)
 
 instance Symbolic (Term f) where
   type ConstantOf (Term f) = f
-  termsDL   = return . singleton
-  subst sub = build . Term.subst (evalSubst sub)
+  termsDL = return . singleton
+  subst sub t =
+    case subst sub (singleton t) of
+      Cons u Empty -> u
 
 {-# RULES "subst" subst = substTerm #-}
 substTerm :: Subst f -> Term f -> Term f

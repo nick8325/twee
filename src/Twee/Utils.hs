@@ -87,3 +87,13 @@ isSubsequenceOf :: Ord a => [a] -> [a] -> Bool
   | x == y = xs `isSubsequenceOf` ys
   | otherwise = (x:xs) `isSubsequenceOf` ys
 #endif
+
+{-# INLINE fixpoint #-}
+fixpoint :: Eq a => (a -> a) -> a -> a
+fixpoint f x = fxp x
+  where
+    fxp x
+      | x == y = x
+      | otherwise = fxp y
+      where
+        y = f x

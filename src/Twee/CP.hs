@@ -30,8 +30,10 @@ data Overlap f =
     overlap_right    :: {-# UNPACK #-} !(Term f),
     overlap_inner    :: {-# UNPACK #-} !(Term f) }
 
-overlaps :: Positions f -> Rule f -> Rule f -> [Overlap f]
-overlaps (Positions ns) (Rule _ !outer !outer') (Rule _ !inner !inner') = do
+-- Compute all overlaps of two rules. They should have no
+-- variables in common.
+overlaps1 :: Positions f -> Rule f -> Rule f -> [Overlap f]
+overlaps1 (Positions ns) (Rule _ !outer !outer') (Rule _ !inner !inner') = do
   n <- ns
   let t = at n (singleton outer)
   sub <- maybeToList (unify inner t)
@@ -40,3 +42,7 @@ overlaps (Positions ns) (Rule _ !outer !outer') (Rule _ !inner !inner') = do
       right = build (replacePositionSub (evalSubst sub) n (singleton inner') (singleton outer))
       inner_ = subst sub inner
   return (Overlap top left right inner_)
+
+-- Compute all overlaps of a rule with a set of rules.
+overlaps :: IntMap (Rule f) -> Rule f -> [Overlap f]
+overlaps = undefined

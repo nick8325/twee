@@ -1,11 +1,11 @@
 {-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, CPP, BangPatterns, OverloadedStrings, DeriveGeneric #-}
-module Twee.Rule where
+module Twee.Rule(simplify) where
 
 #include "errors.h"
 import Twee.Base
 import Twee.Constraints
 import qualified Twee.Index.Simple as Index
-import Twee.Index.Simple(Frozen)
+import Twee.Index.Simple(Index)
 import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
@@ -30,8 +30,7 @@ data Rule f =
   deriving (Eq, Ord, Show, Generic)
 
 data Orientation f =
-    Oriented
-  | WeaklyOriented [Term f]
+    Oriented [Term f]
   | Permutative [(Term f, Term f)]
   | Unoriented
   deriving (Show, Generic)
@@ -40,8 +39,7 @@ instance Eq (Orientation f) where _ == _ = True
 instance Ord (Orientation f) where compare _ _ = EQ
 
 oriented :: Orientation f -> Bool
-oriented Oriented = True
-oriented (WeaklyOriented _) = True
+oriented Oriented{} = True
 oriented _ = False
 
 instance Symbolic (Rule f) where
@@ -53,8 +51,8 @@ instance Symbolic (Orientation f) where
   type ConstantOf (Orientation f) = f
 
 instance PrettyTerm f => Pretty (Rule f) where
-  pPrint (Rule Oriented l r) = pPrintRule l r
-  pPrint (Rule (WeaklyOriented ts) l r) = hang (pPrintRule l r) 2 (text "(weak on" <+> pPrint ts <> text ")")
+  pPrint (Rule (Oriented []) l r) = pPrintRule l r
+  pPrint (Rule (Oriented ts) l r) = hang (pPrintRule l r) 2 (text "(weak on" <+> pPrint ts <> text ")")
   pPrint (Rule (Permutative ts) l r) = hang (pPrintRule l r) 2 (text "(permutative on" <+> pPrint ts <> text ")")
   pPrint (Rule Unoriented l r) = hang (pPrintRule l r) 2 (text "(unoriented)")
 
@@ -77,6 +75,8 @@ instance PrettyTerm f => Pretty (Equation f) where
 instance Sized f => Sized (Equation f) where
   size (x :=: y) = size x + size y
 
+-- Order an equation roughly left-to-right.
+-- However, there is no guarantee that the result is oriented.
 order :: Function f => Equation f -> Equation f
 order (l :=: r)
   | l == r = l :=: r
@@ -86,9 +86,11 @@ order (l :=: r)
       GT -> l :=: r
       EQ -> if lessEq l r then r :=: l else l :=: r
 
+-- Turn a rule into an equation.
 unorient :: Rule f -> Equation f
 unorient (Rule _ l r) = l :=: r
 
+-- Turn an equation into a set of rules.
 orient :: Function f => Equation f -> [Rule f]
 orient (l :=: r) | l == r = []
 orient (l :=: r) =
@@ -115,15 +117,17 @@ orient (l :=: r) =
       where
         sub = fromMaybe __ $ flattenSubst [(x, minimalTerm) | x <- xs]
 
+-- Turn a pair of terms t and u into a rule t -> u by computing the
+-- orientation info (e.g. oriented, permutative or unoriented).
 rule :: Function f => Term f -> Term f -> Rule f
 rule t u = Rule o t u
   where
     o | lessEq u t =
         case unify t u of
-          Nothing -> Oriented
+          Nothing -> Oriented []
           Just sub
             | allSubst (\_ (Cons t Empty) -> isMinimal t) sub ->
-              WeaklyOriented (map (build . var . fst) (listSubst sub))
+              Oriented (map (build . var . fst) (listSubst sub))
             | otherwise -> Unoriented
       | lessEq t u = ERROR("wrongly-oriented rule")
       | not (null (usort (vars u) \\ usort (vars t))) =
@@ -160,24 +164,60 @@ rule t u = Rule o t u
 
           aux _ _ = mzero
 
+-- Apply a function to both sides of an equation.
 bothSides :: (Term f -> Term f') -> Equation f -> Equation f'
 bothSides f (t :=: u) = f t :=: f u
 
+-- Is an equation of the form t = t?
 trivial :: Eq f => Equation f -> Bool
 trivial (t :=: u) = t == u
 
 --------------------------------------------------------------------------------
--- Rewriting.
+-- Rewriting, with proof output.
 --------------------------------------------------------------------------------
 
 type Strategy f = Term f -> [Reduction f]
 
+-- A multi-step rewrite proof t ->* u
 data Reduction f =
+    -- Apply a single rewrite rule to the root of a term
     Step (Rule f) (Subst f)
+    -- Reflexivity
   | Trans (Reduction f) (Reduction f)
+    -- Parallel rewriting given a list of (position, rewrite) pairs
+    -- and the initial term
   | Parallel [(Int, Reduction f)] (Term f)
   deriving Show
 
+instance PrettyTerm f => Pretty (Reduction f) where
+  pPrint = pPrintReduction
+
+pPrintReduction :: PrettyTerm f => Reduction f -> Doc
+pPrintReduction p =
+  case flatten p of
+    [p] -> pp p
+    ps -> pPrint (map pp ps)
+  where
+    flatten (Trans p q) = flatten p ++ flatten q
+    flatten p = [p]
+
+    pp p = sep [pp0 p, nest 2 (text "giving" <+> pPrint (result p))]
+    pp0 (Step rule sub) =
+      sep [pPrint rule,
+           nest 2 (text "at" <+> pPrint sub)]
+    pp0 (Parallel [] _) = text "refl"
+    pp0 (Parallel [(0, p)] _) = pp0 p
+    pp0 (Parallel ps _) =
+      sep (punctuate (text " and")
+        [hang (pPrint n <+> text "->") 2 (pPrint p) | (n, p) <- ps])
+
+-- Find the initial term of a rewrite proof
+initial :: Reduction f -> Term f
+initial (Step r sub) = subst sub (lhs r)
+initial (Trans p _) = initial p
+initial (Parallel _ t) = t
+
+-- Find the final term of a rewrite proof
 result :: Reduction f -> Term f
 result (Parallel [] t) = t
 result (Trans _ p) = result p
@@ -202,28 +242,7 @@ result t = stamp "executing rewrite" (build (emitReduction t))
       app f (emitParallel (n+1) ps t) `mappend`
       emitParallel (n + 1 + lenList t) ps u
 
-instance PrettyTerm f => Pretty (Reduction f) where
-  pPrint = pPrintReduction
-
-pPrintReduction :: PrettyTerm f => Reduction f -> Doc
-pPrintReduction p =
-  case flatten p of
-    [p] -> pp p
-    ps -> pPrint (map pp ps)
-  where
-    flatten (Trans p q) = flatten p ++ flatten q
-    flatten p = [p]
-
-    pp p = sep [pp0 p, nest 2 (text "giving" <+> pPrint (result p))]
-    pp0 (Step rule sub) =
-      sep [pPrint rule,
-           nest 2 (text "at" <+> pPrint sub)]
-    pp0 (Parallel [] _) = text "refl"
-    pp0 (Parallel [(0, p)] _) = pp0 p
-    pp0 (Parallel ps _) =
-      sep (punctuate (text " and")
-        [hang (pPrint n <+> text "->") 2 (pPrint p) | (n, p) <- ps])
-
+-- The list of all rewrite rules used in a proof
 steps :: Reduction f -> [(Rule f, Subst f)]
 steps r = aux r []
   where
@@ -231,18 +250,38 @@ steps r = aux r []
     aux (Trans p q) = aux p . aux q
     aux (Parallel ps _) = foldr (.) id (map (aux . snd) ps)
 
-{-# INLINE anywhere1 #-}
-anywhere1 :: PrettyTerm f => Strategy f -> TermList f -> [(Int, Reduction f)]
-anywhere1 strat t = aux [] 0 t
-  where
-    aux _ !_ !_ | False = __
-    aux ps _ Empty = reverse ps
-    aux ps n (Cons (Var _) t) = aux ps (n+1) t
-    aux ps n (Cons t u) | q:_ <- strat t =
-      aux ((n, q):ps) (n+len t) u
-    aux ps n (ConsSym _ t) =
-      aux ps (n+1) t
+--------------------------------------------------------------------------------
+-- Extra-fast rewriting, without proof output or unorientable rules.
+--------------------------------------------------------------------------------
 
+-- Compute the normal form of a term wrt only oriented rules.
+simplify :: Function f => Index (Rule f) -> Term f -> Term f
+simplify idx t
+  | t == u = t
+  | otherwise = simplify idx u
+  where
+    u = build (simp (singleton t))
+
+    simp Empty = mempty
+    simp (Cons (Var x) t) = var x `mappend` simp t
+    simp (Cons t u)
+      | ((rule, sub):_) <- rewrite t =
+          Term.subst sub (rhs rule) `mappend` simp u
+    simp (Cons (App f ts) us) =
+      app f (simp ts) `mappend` simp us
+
+    rewrite t = do
+      rule <- Index.matches t idx
+      guard (oriented (orientation rule))
+      sub <- maybeToList (match (lhs rule) t)
+      guard (reducesOriented rule sub)
+      return (rule, sub)
+
+--------------------------------------------------------------------------------
+-- Strategy combinators.
+--------------------------------------------------------------------------------
+
+-- Normalise a term wrt a particular strategy.
 {-# INLINE normaliseWith #-}
 normaliseWith :: PrettyTerm f => Strategy f -> Term f -> Reduction f
 normaliseWith strat t = stamp (describe res) res
@@ -260,6 +299,7 @@ normaliseWith strat t = stamp (describe res) res
         rs -> aux (n+1) (p `Trans` Parallel rs t)
       where t = result p
 
+-- Compute all normal forms of a term wrt a particular strategy.
 normalForms :: Function f => Strategy f -> [Term f] -> Set (Term f)
 normalForms strat ts = stamp "computing all normal forms" $ go Set.empty Set.empty ts
   where
@@ -273,6 +313,7 @@ normalForms strat ts = stamp "computing all normal forms" $ go Set.empty Set.emp
       where
         us = map result (anywhere strat t)
 
+-- Apply a strategy anywhere in a term.
 anywhere :: Strategy f -> Strategy f
 anywhere strat t = aux 0 (singleton t)
   where
@@ -281,6 +322,7 @@ anywhere strat t = aux 0 (singleton t)
     aux n (ConsSym u v) =
       [Parallel [(n,p)] t | p <- strat u] ++ aux (n+1) v
 
+-- Apply a strategy to all children of the root function.
 nested :: Strategy f -> Strategy f
 nested strat t = [Parallel [(1,p)] t | p <- aux 0 (children t)]
   where
@@ -289,29 +331,48 @@ nested strat t = [Parallel [(1,p)] t | p <- aux 0 (children t)]
     aux n (Cons u v) =
       [Parallel [(n,p)] t | p <- strat u] ++ aux (n+len t) v
 
+-- A version of 'anywhere' which does parallel reduction.
+{-# INLINE anywhere1 #-}
+anywhere1 :: PrettyTerm f => Strategy f -> TermList f -> [(Int, Reduction f)]
+anywhere1 strat t = aux [] 0 t
+  where
+    aux _ !_ !_ | False = __
+    aux ps _ Empty = reverse ps
+    aux ps n (Cons (Var _) t) = aux ps (n+1) t
+    aux ps n (Cons t u) | q:_ <- strat t =
+      aux ((n, q):ps) (n+len t) u
+    aux ps n (ConsSym _ t) =
+      aux ps (n+1) t
+
+--------------------------------------------------------------------------------
+-- Basic strategies. These only apply at the root of the term.
+--------------------------------------------------------------------------------
+
+-- A strategy which rewrites using an index.
 {-# INLINE rewrite #-}
-rewrite :: Function f => String -> (Rule f -> Subst f -> Bool) -> Frozen (Rule f) -> Strategy f
+rewrite :: Function f => String -> (Rule f -> Subst f -> Bool) -> Index (Rule f) -> Strategy f
 rewrite _phase p rules t = do
   rule <- Index.matches t rules
   tryRule p rule t
 
+-- A strategy which applies one rule only.
 tryRule :: Function f => (Rule f -> Subst f -> Bool) -> Rule f -> Strategy f
 tryRule p rule t = do
   sub <- maybeToList (match (lhs rule) t)
   guard (p rule sub)
   return (Step rule sub)
 
-simplifies :: Function f => Rule f -> Subst f -> Bool
-simplifies (Rule Oriented _ _) _ = True
-simplifies (Rule (WeaklyOriented ts) _ _) sub =
-  or [ not (isMinimal t) | t <- subst sub ts ]
-simplifies (Rule (Permutative _) _ _) _ = False
-simplifies (Rule Unoriented _ _) _ = False
-
+-- Check if a rule can be applied, given an ordering <= on terms.
 reducesWith :: Function f => (Term f -> Term f -> Bool) -> Rule f -> Subst f -> Bool
-reducesWith _ (Rule Oriented _ _) _ = True
-reducesWith _ (Rule (WeaklyOriented ts) _ _) sub =
-  or [ not (isMinimal t) | t <- subst sub ts ]
+reducesWith _ (Rule (Oriented ts) _ _) sub =
+  -- Be a bit careful here not to build new terms
+  -- (reducesWith is used in simplify).
+  -- This is the same as:
+  --   any (not . isMinimal) (subst sub ts)
+  any (not . isMinimal . expand) ts
+  where
+    expand t@(Var x) = fromMaybe t (Term.lookup x sub)
+    expand t = t
 reducesWith p (Rule (Permutative ts) _ _) sub =
   aux ts
   where
@@ -328,14 +389,23 @@ reducesWith p (Rule Unoriented t u) sub =
     t' = subst sub t
     u' = subst sub u
 
+-- Check if a rule can be applied normally.
 reduces :: Function f => Rule f -> Subst f -> Bool
-reduces rule = reducesWith lessEq rule
+reduces rule sub = reducesWith lessEq rule sub
 
+-- Check if a rule can be applied and is oriented.
+reducesOriented :: Function f => Rule f -> Subst f -> Bool
+reducesOriented rule sub =
+  oriented (orientation rule) && reducesWith undefined rule sub
+
+-- Check if a rule can be applied in various circumstances.
 reducesInModel :: Function f => Model f -> Rule f -> Subst f -> Bool
-reducesInModel cond rule = reducesWith (\t u -> isJust (lessIn cond t u)) rule
+reducesInModel cond rule sub =
+  reducesWith (\t u -> isJust (lessIn cond t u)) rule sub
 
 reducesSkolem :: Function f => Rule f -> Subst f -> Bool
-reducesSkolem = reducesWith (\t u -> lessEq (subst skolemise t) (subst skolemise u))
+reducesSkolem rule sub =
+  reducesWith (\t u -> lessEq (subst skolemise t) (subst skolemise u)) rule sub
   where
     skolemise = con . skolem
 

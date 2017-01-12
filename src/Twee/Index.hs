@@ -113,17 +113,13 @@ elem !t x !idx = aux (key t) idx
     aux (ConsSym (Var v) t) idx =
       aux t (lookupVarIndex v (var idx))
 
-newtype Frozen f a = Frozen { matchesList_ :: TermList f -> [a] }
-
-matchesList :: TermList f -> Frozen f a -> [a]
-matchesList t xs = stamp "index lookup" (matchesList_ xs t)
+matchesList :: TermList f -> Index f a -> [a]
+matchesList t idx =
+  stamp "index lookup" (run (Frame emptySubst2 t idx Stop))
 
 {-# INLINE matches #-}
-matches :: Term f -> Frozen f a -> [a]
+matches :: Term f -> Index f a -> [a]
 matches t idx = matchesList (Term.singleton t) idx
-
-freeze :: Index f a -> Frozen f a
-freeze idx = Frozen $ \t -> run (Frame emptySubst2 t idx Stop)
 
 {-# NOINLINE run #-}
 run :: Stack f a -> [a]
@@ -137,15 +133,3 @@ elems idx =
   here idx ++
   concatMap elems (Prelude.map snd (toList (fun idx))) ++
   concatMap elems (varIndexElems (var idx))
-
-{-# INLINE map #-}
-map :: (a -> b) -> Frozen f a -> Frozen f b
-map f (Frozen matches) = Frozen $ \t -> List.map f (matches t)
-
-{-# INLINE filter #-}
-filter :: (a -> Bool) -> Frozen f a -> Frozen f a
-filter p (Frozen matches) = Frozen $ \t -> List.filter p (matches t)
-
-{-# INLINE union #-}
-union :: Frozen f a -> Frozen f a -> Frozen f a
-union (Frozen f1) (Frozen f2) = Frozen $ \t -> f1 t ++ f2 t
