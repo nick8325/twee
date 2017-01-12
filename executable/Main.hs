@@ -31,6 +31,7 @@ import Jukebox.Name
 import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
 import qualified Twee.Label as Label
+import Jukebox.Monotonox.ToFOF
 
 parseInitialState :: OptionParser (Twee f)
 parseInitialState =
@@ -263,7 +264,7 @@ main = do
     greetingBox twee =>>
     allFilesBox <*>
       (parseProblemBox =>>=
-       toFofBox =>>=
+       (toFofIO <$> globalFlags <*> clausifyBox <*> pure (tags False)) =>>=
        clausifyBox =>>=
        allObligsBox <*>
          (runTwee <$> parseInitialState <*> parseOrder <*> parsePrecedence))
