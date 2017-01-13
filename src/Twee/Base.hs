@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, DeriveGeneric, TypeOperators, MultiParamTypeClasses #-}
 module Twee.Base(
   Symbolic(..), Singular(..), terms, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
-  vars, isGround, funs, occ, occVar, canonicalise,
+  vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding,
   Minimal(..), minimalTerm, isMinimal,
   Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..),
   module Twee.Term, module Twee.Pretty) where
@@ -120,10 +120,18 @@ occ x t = length (filter (== x) (funs t))
 occVar :: Symbolic a => Var -> a -> Int
 occVar x t = length (filter (== x) (vars t))
 
+{-# INLINEABLE canonicalise #-}
 canonicalise :: Symbolic a => a -> a
 canonicalise t = subst sub t
   where
     sub = Term.canonicalise (DList.toList (termsDL t))
+
+{-# INLINEABLE renameAvoiding #-}
+renameAvoiding :: (Symbolic a, Symbolic b) => a -> b -> b
+renameAvoiding x y =
+  subst (\(V x) -> var (V (x+n))) y
+  where
+    V n = maximum (V 0:map boundList (terms y))
 
 isMinimal :: Minimal f => Term f -> Bool
 isMinimal (App f Empty) | f == minimal = True

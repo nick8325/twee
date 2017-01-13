@@ -1,5 +1,5 @@
 {-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, CPP, BangPatterns, OverloadedStrings, DeriveGeneric #-}
-module Twee.Rule(simplify) where
+module Twee.Rule where
 
 #include "errors.h"
 import Twee.Base

@@ -9,6 +9,8 @@ import qualified Data.Set as Set
 import Control.Monad
 import Data.Maybe
 import qualified Data.DList as DList
+import qualified Data.IntMap.Strict as IntMap
+import Data.IntMap(IntMap)
 
 -- The set of positions at which a term can have critical overlaps.
 newtype Positions f = Positions [Int]
@@ -45,4 +47,6 @@ overlaps1 (Positions ns) (Rule _ !outer !outer') (Rule _ !inner !inner') = do
 
 -- Compute all overlaps of a rule with a set of rules.
 overlaps :: IntMap (Rule f) -> Rule f -> [Overlap f]
-overlaps = undefined
+overlaps rules r = undefined
+  where
+    r' = renameAvoiding (IntMap.elems rules) r
