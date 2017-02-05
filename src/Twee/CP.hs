@@ -36,11 +36,25 @@ data Overlap f =
     overlap_sub   :: TriangleSubst f }
 type OverlapOf a = Overlap (ConstantOf a)
 
+-- Compute all overlaps of a rule with a set of rules.
+-- N.B. This function is marked INLINE so that it fuses.
+{-# INLINE overlaps #-}
+overlaps :: (a -> Rule f) -> (a -> Positions f) -> [a] -> Positions f -> Rule f -> [(a, Overlap f)]
+overlaps rule positions rules p1 r1 =
+  [ (r2, o) | r2 <- rules, o <- symmetricOverlaps p1 r1' (positions r2) (rule r2) ]
+  where
+    !r1' = renameAvoiding (map rule rules) r1
+
 -- Compute all overlaps of two rules. They should have no
 -- variables in common.
-{-# INLINE overlaps1 #-}
-overlaps1 :: Positions f -> Rule f -> Rule f -> [Overlap f]
-overlaps1 (Positions ns) (Rule _ !outer !outer') (Rule _ !inner !inner') = do
+{-# INLINE symmetricOverlaps #-}
+symmetricOverlaps :: Positions f -> Rule f -> Positions f -> Rule f -> [Overlap f]
+symmetricOverlaps p1 r1 p2 r2 =
+  asymmetricOverlaps p1 r1 r2 ++ asymmetricOverlaps p2 r2 r1
+
+{-# INLINE asymmetricOverlaps #-}
+asymmetricOverlaps :: Positions f -> Rule f -> Rule f -> [Overlap f]
+asymmetricOverlaps (Positions ns) (Rule _ !outer !outer') (Rule _ !inner !inner') = do
   n <- ns
   let t = at n (singleton outer)
   sub <- maybeToList (unifyTri inner t)
@@ -51,23 +65,3 @@ overlaps1 (Positions ns) (Rule _ !outer !outer') (Rule _ !inner !inner') = do
       build (replacePositionSub (evalSubst sub) n (singleton inner') (singleton outer)),
     overlap_inner = subst sub inner,
     overlap_sub   = sub }
-
--- Compute all overlaps of a rule with a set of rules.
-{-# INLINE overlaps #-}
-overlaps :: (a -> Rule f) -> (a -> Positions f) -> [a] -> Positions f -> Rule f -> [(a, Overlap f)]
-overlaps rule positions rules p1 r1 =
-  [ (r2, o) | r2 <- rules, o <- overlaps1 (positions r2) (rule r2) r1' ] ++
-  [ (r2, o) | r2 <- rules, o <- overlaps1 p1 r1' (rule r2) ]
-  where
-    !r1' = renameAvoiding (map rule rules) r1
-
-data RulePos f =
-  RulePos {
-    rp_id   :: {-# UNPACK #-} !Int,
-    rp_rule :: {-# UNPACK #-} !(Rule f),
-    rp_pos  :: !(Positions f) }
-
-blah :: [RulePos f] -> RulePos f -> Int
-blah rules !r = foldl' min 0 (map (rp_id . fst) (filter (uncurry p) (overlaps rp_rule rp_pos rules (rp_pos r) (rp_rule r))))
-  where
-    p rp _ = rp_id rp >= 3
