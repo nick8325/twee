@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, DeriveGeneric, TypeOperators, MultiParamTypeClasses #-}
 module Twee.Base(
-  Symbolic(..), Singular(..), terms, TermOf, TermListOf, SubstOf, BuilderOf, FunOf,
+  Symbolic(..), subst, GSymbolic(..), Singular(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding,
   Minimal(..), minimalTerm, isMinimal,
   Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..),
@@ -22,16 +22,15 @@ class Symbolic a where
   type ConstantOf a
 
   termsDL :: a -> DList (TermListOf a)
-  subst :: (Substitution s, SubstFun s ~ ConstantOf a) => s -> a -> a
-
   default termsDL :: (Generic a, GSymbolic (ConstantOf a) (Rep a)) => a -> DList (TermListOf a)
   termsDL = gtermsDL . from
-  default subst :: (Substitution s, SubstFun s ~ ConstantOf a, Generic a, GSymbolic (ConstantOf a) (Rep a)) => s -> a -> a
-  subst sub = to . gsubst sub . from
+  subst_ :: (Var -> BuilderOf a) -> a -> a
+  default subst_ :: (Generic a, GSymbolic (ConstantOf a) (Rep a)) => (Var -> BuilderOf a) -> a -> a
+  subst_ sub = to . gsubst sub . from
 
 class GSymbolic k f where
   gtermsDL :: f a -> DList (TermList k)
-  gsubst :: (Substitution s, SubstFun s ~ k) => s -> f a -> f a
+  gsubst :: (Var -> Builder k) -> f a -> f a
 
 instance GSymbolic k V1 where
   gtermsDL _ = __
@@ -52,10 +51,13 @@ instance GSymbolic k f => GSymbolic k (M1 i c f) where
   gsubst sub (M1 x) = M1 (gsubst sub x)
 instance (Symbolic a, ConstantOf a ~ k) => GSymbolic k (K1 i a) where
   gtermsDL (K1 x) = termsDL x
-  gsubst sub (K1 x) = K1 (subst sub x)
+  gsubst sub (K1 x) = K1 (subst_ sub x)
 
 class Symbolic a => Singular a where
   term :: a -> TermOf a
+
+subst :: (Symbolic a, Substitution s, SubstFun s ~ ConstantOf a) => s -> a -> a
+subst sub x = subst_ (evalSubst sub) x
 
 terms :: Symbolic a => a -> [TermListOf a]
 terms = DList.toList . termsDL
@@ -63,19 +65,14 @@ terms = DList.toList . termsDL
 type TermOf a = Term (ConstantOf a)
 type TermListOf a = TermList (ConstantOf a)
 type SubstOf a = Subst (ConstantOf a)
+type TriangleSubstOf a = TriangleSubst (ConstantOf a)
 type BuilderOf a = Builder (ConstantOf a)
 type FunOf a = Fun (ConstantOf a)
 
 instance Symbolic (Term f) where
   type ConstantOf (Term f) = f
   termsDL = return . singleton
-  subst sub t =
-    case subst sub (singleton t) of
-      Cons u Empty -> u
-
-{-# RULES "subst" subst = substTerm #-}
-substTerm :: Subst f -> Term f -> Term f
-substTerm sub t = build (Term.subst (evalSubst sub) t)
+  subst_ sub = build . Term.subst sub
 
 instance Singular (Term f) where
   term = id
@@ -83,11 +80,7 @@ instance Singular (Term f) where
 instance Symbolic (TermList f) where
   type ConstantOf (TermList f) = f
   termsDL   = return
-  subst sub = buildList . Term.substList (evalSubst sub)
-
-{-# RULES "subst" subst = substTermList #-}
-substTermList :: Subst f -> TermList f -> TermList f
-substTermList sub t = buildList (Term.substList (evalSubst sub) t)
+  subst_ sub = buildList . Term.substList sub
 
 instance (ConstantOf a ~ ConstantOf b, Symbolic a, Symbolic b) => Symbolic (a, b) where
   type ConstantOf (a, b) = ConstantOf a

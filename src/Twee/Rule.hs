@@ -25,9 +25,10 @@ import GHC.Generics
 data Rule f =
   Rule {
     orientation :: Orientation f,
-    lhs :: Term f,
-    rhs :: Term f }
+    lhs :: {-# UNPACK #-} !(Term f),
+    rhs :: {-# UNPACK #-} !(Term f) }
   deriving (Eq, Ord, Show, Generic)
+type RuleOf a = Rule (ConstantOf a)
 
 data Orientation f =
     Oriented [Term f]
@@ -44,6 +45,7 @@ oriented _ = False
 
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
+
 instance Singular (Rule f) where
   term = lhs
 
@@ -101,10 +103,10 @@ orient (l :=: r) =
   --   g x z = g x k
   --   f x k = g x k
   -- where k is an arbitrary constant
-  [ rule l r' | ord /= Just LT && ord /= Just EQ ] ++
-  [ rule r l' | ord /= Just GT && ord /= Just EQ ] ++
-  [ rule l l' | not (null ls), ord /= Just GT ] ++
-  [ rule r r' | not (null rs), ord /= Just LT ]
+  [ makeRule l r' | ord /= Just LT && ord /= Just EQ ] ++
+  [ makeRule r l' | ord /= Just GT && ord /= Just EQ ] ++
+  [ makeRule l l' | not (null ls), ord /= Just GT ] ++
+  [ makeRule r r' | not (null rs), ord /= Just LT ]
   where
     ord = orientTerms l' r'
     l' = erase ls l
@@ -119,8 +121,8 @@ orient (l :=: r) =
 
 -- Turn a pair of terms t and u into a rule t -> u by computing the
 -- orientation info (e.g. oriented, permutative or unoriented).
-rule :: Function f => Term f -> Term f -> Rule f
-rule t u = Rule o t u
+makeRule :: Function f => Term f -> Term f -> Rule f
+makeRule t u = Rule o t u
   where
     o | lessEq u t =
         case unify t u of
