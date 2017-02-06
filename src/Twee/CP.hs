@@ -5,6 +5,7 @@ module Twee.CP where
 #include "errors.h"
 import Twee.Base
 import Twee.Rule
+import Twee.Index.Simple(Index)
 import qualified Data.Set as Set
 import Control.Monad
 import Data.Maybe
@@ -20,6 +21,7 @@ type PositionsOf a = Positions (ConstantOf a)
 positions :: Term f -> Positions f
 positions t = Positions (aux 0 Set.empty (singleton t))
   where
+    -- Consider only general superpositions.
     aux !_ !_ Empty = []
     aux n m (Cons (Var _) t) = aux (n+1) m t
     aux n m (ConsSym t@App{} u)
@@ -65,3 +67,8 @@ asymmetricOverlaps (Positions ns) (Rule _ !outer !outer') (Rule _ !inner !inner'
       build (replacePositionSub (evalSubst sub) n (singleton inner') (singleton outer)),
     overlap_inner = subst sub inner,
     overlap_sub   = sub }
+
+-- Is a superposition prime?
+isPrime :: Function f => Index (Rule f) -> Overlap f -> Bool
+isPrime idx overlap =
+  not (canSimplifyList idx (children (overlap_inner overlap)))

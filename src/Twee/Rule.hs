@@ -267,17 +267,29 @@ simplify idx t
     simp Empty = mempty
     simp (Cons (Var x) t) = var x `mappend` simp t
     simp (Cons t u)
-      | ((rule, sub):_) <- rewrite t =
-          Term.subst sub (rhs rule) `mappend` simp u
+      | Just (rule, sub) <- simpleRewrite idx t =
+        Term.subst sub (rhs rule) `mappend` simp u
     simp (Cons (App f ts) us) =
       app f (simp ts) `mappend` simp us
 
-    rewrite t = do
-      rule <- Index.matches t idx
-      guard (oriented (orientation rule))
-      sub <- maybeToList (match (lhs rule) t)
-      guard (reducesOriented rule sub)
-      return (rule, sub)
+-- Check if a term can be simplified.
+canSimplify :: Function f => Index (Rule f) -> Term f -> Bool
+canSimplify idx t = canSimplifyList idx (singleton t)
+
+canSimplifyList :: Function f => Index (Rule f) -> TermList f -> Bool
+canSimplifyList idx t =
+  any (isJust . simpleRewrite idx) (filter isApp (subtermsList t))
+
+-- Find a simplification step that applies to a term.
+simpleRewrite :: Function f => Index (Rule f) -> Term f -> Maybe (Rule f, Subst f)
+simpleRewrite idx t =
+  -- Use instead of maybeToList to make fusion work
+  foldr (\x _ -> Just x) Nothing $ do
+    rule <- Index.matches t idx
+    guard (oriented (orientation rule))
+    sub <- maybeToList (match (lhs rule) t)
+    guard (reducesOriented rule sub)
+    return (rule, sub)
 
 --------------------------------------------------------------------------------
 -- Strategy combinators.

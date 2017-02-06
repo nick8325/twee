@@ -430,14 +430,9 @@ subtermsList t = unfoldr op t
 subterms :: Term f -> [Term f]
 subterms = subtermsList . singleton
 
-{-# INLINE properSubtermsList #-}
-properSubtermsList :: TermList f -> [Term f]
-properSubtermsList Empty = []
-properSubtermsList (ConsSym _ t) = subtermsList t
-
 {-# INLINE properSubterms #-}
 properSubterms :: Term f -> [Term f]
-properSubterms = properSubtermsList . singleton
+properSubterms = subtermsList . children
 
 fun :: (Ord f, Typeable f) => f -> Fun f
 fun f = F (label f) f
