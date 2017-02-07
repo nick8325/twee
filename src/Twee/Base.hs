@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, DeriveGeneric, TypeOperators, MultiParamTypeClasses #-}
 module Twee.Base(
-  Symbolic(..), subst, GSymbolic(..), Singular(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
+  Symbolic(..), subst, GSymbolic(..), Has(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding,
   Minimal(..), minimalTerm, isMinimal,
   Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..),
@@ -53,9 +53,6 @@ instance (Symbolic a, ConstantOf a ~ k) => GSymbolic k (K1 i a) where
   gtermsDL (K1 x) = termsDL x
   gsubst sub (K1 x) = K1 (subst_ sub x)
 
-class Symbolic a => Singular a where
-  term :: a -> TermOf a
-
 subst :: (Symbolic a, Substitution s, SubstFun s ~ ConstantOf a) => s -> a -> a
 subst sub x = subst_ (evalSubst sub) x
 
@@ -74,9 +71,6 @@ instance Symbolic (Term f) where
   termsDL = return . singleton
   subst_ sub = build . Term.subst sub
 
-instance Singular (Term f) where
-  term = id
-
 instance Symbolic (TermList f) where
   type ConstantOf (TermList f) = f
   termsDL   = return
@@ -92,6 +86,12 @@ instance (ConstantOf a ~ ConstantOf b,
 
 instance Symbolic a => Symbolic [a] where
   type ConstantOf [a] = ConstantOf a
+
+class Has a b where
+  the :: a -> b
+
+instance Has a a where
+  the = id
 
 {-# INLINE vars #-}
 vars :: Symbolic a => a -> [Var]

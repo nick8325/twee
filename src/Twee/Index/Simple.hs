@@ -1,5 +1,5 @@
 -- Term indexing, a simple interface.
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies, FlexibleContexts #-}
 module Twee.Index.Simple(module Twee.Index, module Twee.Index.Simple) where
 
 import Prelude hiding (filter, map, null)
@@ -15,22 +15,22 @@ nil :: Index a
 nil = Index.Nil
 
 {-# INLINEABLE singleton #-}
-singleton :: Singular a => a -> Index a
-singleton x = Index.singleton (term x) x
+singleton :: (Symbolic a, Has a (TermOf a)) => a -> Index a
+singleton x = Index.singleton (the x) x
 
 {-# INLINEABLE insert #-}
-insert :: Singular a => a -> Index a -> Index a
-insert x idx = Index.insert (term x) x idx
+insert :: (Symbolic a, Has a (TermOf a)) => a -> Index a -> Index a
+insert x idx = Index.insert (the x) x idx
 
 {-# INLINEABLE delete #-}
-delete :: (Eq a, Singular a) => a -> Index a -> Index a
-delete x idx = Index.delete (term x) x idx
+delete :: (Eq a, Symbolic a, Has a (TermOf a)) => a -> Index a -> Index a
+delete x idx = Index.delete (the x) x idx
 
 {-# INLINEABLE elem #-}
-elem :: (Eq a, Singular a) => a -> Index a -> Bool
-elem x idx = Index.elem (term x) x idx
+elem :: (Eq a, Symbolic a, Has a (TermOf a)) => a -> Index a -> Bool
+elem x idx = Index.elem (the x) x idx
 
 {-# INLINEABLE lookup #-}
-lookup :: Singular a => TermOf a -> Index a -> [a]
+lookup :: (Symbolic a, Has a (TermOf a)) => TermOf a -> Index a -> [a]
 lookup t idx =
-  [subst sub x | x <- matches t idx, sub <- maybeToList (match (term x) t)]
+  [subst sub x | (sub, x) <- matches t idx]

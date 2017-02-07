@@ -1,11 +1,10 @@
 -- Critical pairs.
-{-# LANGUAGE BangPatterns, CPP #-}
+{-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables #-}
 module Twee.CP where
 
-#include "errors.h"
 import Twee.Base
 import Twee.Rule
-import Twee.Index.Simple(Index)
+import Twee.Index(Index)
 import qualified Data.Set as Set
 import Control.Monad
 import Data.Maybe
@@ -41,11 +40,11 @@ type OverlapOf a = Overlap (ConstantOf a)
 -- Compute all overlaps of a rule with a set of rules.
 -- N.B. This function is marked INLINE so that it fuses.
 {-# INLINE overlaps #-}
-overlaps :: (a -> Rule f) -> (a -> Positions f) -> [a] -> Positions f -> Rule f -> [(a, Overlap f)]
-overlaps rule positions rules p1 r1 =
-  [ (r2, o) | r2 <- rules, o <- symmetricOverlaps p1 r1' (positions r2) (rule r2) ]
+overlaps :: forall f a. (Has a (Rule f), Has a (Positions f)) => [a] -> Positions f -> Rule f -> [(a, Overlap f)]
+overlaps rules p1 r1 =
+  [ (r2, o) | r2 <- rules, o <- symmetricOverlaps p1 r1' (the r2) (the r2) ]
   where
-    !r1' = renameAvoiding (map rule rules) r1
+    !r1' = renameAvoiding (map the rules :: [Rule f]) r1
 
 -- Compute all overlaps of two rules. They should have no
 -- variables in common.
@@ -60,7 +59,12 @@ asymmetricOverlaps (Positions ns) (Rule _ !outer !outer') (Rule _ !inner !inner'
   n <- ns
   let t = at n (singleton outer)
   sub <- maybeToList (unifyTri inner t)
-  return Overlap {
+  return (makeOverlap n outer outer' inner inner' sub)
+
+-- Put this in a separate function to avoid code blowup
+makeOverlap :: Int -> Term f -> Term f -> Term f -> Term f -> TriangleSubst f -> Overlap f
+makeOverlap !n !outer !outer' !inner !inner' !sub =
+  Overlap {
     overlap_top   = subst sub outer,
     overlap_left  = subst sub outer',
     overlap_right =
@@ -69,6 +73,13 @@ asymmetricOverlaps (Positions ns) (Rule _ !outer !outer') (Rule _ !inner !inner'
     overlap_sub   = sub }
 
 -- Is a superposition prime?
-isPrime :: Function f => Index (Rule f) -> Overlap f -> Bool
+isPrime :: (Function f, Has a (Rule f)) => Index f a -> Overlap f -> Bool
 isPrime idx overlap =
   not (canSimplifyList idx (children (overlap_inner overlap)))
+
+-- Simplify an overlap.
+simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap f -> Overlap f
+simplifyOverlap idx overlap =
+  overlap {
+    overlap_left = simplify idx (overlap_left overlap),
+    overlap_right = simplify idx (overlap_right overlap) }

@@ -1,11 +1,12 @@
 -- Term indexing (perfect-ish discrimination trees).
-{-# LANGUAGE BangPatterns, RecordWildCards, OverloadedStrings #-}
+{-# LANGUAGE BangPatterns, RecordWildCards, OverloadedStrings, FlexibleContexts #-}
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
 module Twee.Index(module Twee.Index, module Twee.Index.Lookup) where
 
 import qualified Prelude
 import Prelude hiding (filter, map, null)
+import Data.Maybe
 import Twee.Base hiding (var, fun, empty, size, singleton, prefix, funs)
 import qualified Twee.Term as Term
 import Twee.Array
@@ -113,12 +114,23 @@ elem !t x !idx = aux (key t) idx
     aux (ConsSym (Var v) t) idx =
       aux t (lookupVarIndex v (var idx))
 
-matchesList :: TermList f -> Index f a -> [a]
-matchesList t idx =
+approxMatchesList :: TermList f -> Index f a -> [a]
+approxMatchesList t idx =
   stamp "index lookup" (run (Frame emptySubst2 t idx Stop))
 
+{-# INLINE approxMatches #-}
+approxMatches :: Term f -> Index f a -> [a]
+approxMatches t idx = approxMatchesList (Term.singleton t) idx
+
+{-# INLINE matchesList #-}
+matchesList :: Has a (Term f) => TermList f -> Index f a -> [(Subst f, a)]
+matchesList t idx =
+  [ (sub, x)
+  | x <- approxMatchesList t idx,
+    sub <- maybeToList (matchList (Term.singleton (the x)) t)]
+
 {-# INLINE matches #-}
-matches :: Term f -> Index f a -> [a]
+matches :: Has a (Term f) => Term f -> Index f a -> [(Subst f, a)]
 matches t idx = matchesList (Term.singleton t) idx
 
 {-# NOINLINE run #-}

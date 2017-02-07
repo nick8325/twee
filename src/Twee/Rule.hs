@@ -1,11 +1,11 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, CPP, BangPatterns, OverloadedStrings, DeriveGeneric #-}
+{-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, CPP, BangPatterns, OverloadedStrings, DeriveGeneric, MultiParamTypeClasses #-}
 module Twee.Rule where
 
 #include "errors.h"
 import Twee.Base
 import Twee.Constraints
-import qualified Twee.Index.Simple as Index
-import Twee.Index.Simple(Index)
+import qualified Twee.Index as Index
+import Twee.Index(Index)
 import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
@@ -46,8 +46,8 @@ oriented _ = False
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
 
-instance Singular (Rule f) where
-  term = lhs
+instance Has (Rule f) (Term f) where
+  the = lhs
 
 instance Symbolic (Orientation f) where
   type ConstantOf (Orientation f) = f
@@ -257,7 +257,7 @@ steps r = aux r []
 --------------------------------------------------------------------------------
 
 -- Compute the normal form of a term wrt only oriented rules.
-simplify :: Function f => Index (Rule f) -> Term f -> Term f
+simplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
 simplify idx t
   | t == u = t
   | otherwise = simplify idx u
@@ -273,19 +273,19 @@ simplify idx t
       app f (simp ts) `mappend` simp us
 
 -- Check if a term can be simplified.
-canSimplify :: Function f => Index (Rule f) -> Term f -> Bool
+canSimplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Bool
 canSimplify idx t = canSimplifyList idx (singleton t)
 
-canSimplifyList :: Function f => Index (Rule f) -> TermList f -> Bool
+canSimplifyList :: (Function f, Has a (Rule f)) => Index f a -> TermList f -> Bool
 canSimplifyList idx t =
   any (isJust . simpleRewrite idx) (filter isApp (subtermsList t))
 
 -- Find a simplification step that applies to a term.
-simpleRewrite :: Function f => Index (Rule f) -> Term f -> Maybe (Rule f, Subst f)
+simpleRewrite :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Maybe (Rule f, Subst f)
 simpleRewrite idx t =
   -- Use instead of maybeToList to make fusion work
   foldr (\x _ -> Just x) Nothing $ do
-    rule <- Index.matches t idx
+    rule <- the <$> Index.approxMatches t idx
     guard (oriented (orientation rule))
     sub <- maybeToList (match (lhs rule) t)
     guard (reducesOriented rule sub)
@@ -364,10 +364,10 @@ anywhere1 strat t = aux [] 0 t
 
 -- A strategy which rewrites using an index.
 {-# INLINE rewrite #-}
-rewrite :: Function f => String -> (Rule f -> Subst f -> Bool) -> Index (Rule f) -> Strategy f
+rewrite :: (Function f, Has a (Rule f)) => String -> (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
 rewrite _phase p rules t = do
-  rule <- Index.matches t rules
-  tryRule p rule t
+  rule <- Index.approxMatches t rules
+  tryRule p (the rule) t
 
 -- A strategy which applies one rule only.
 tryRule :: Function f => (Rule f -> Subst f -> Bool) -> Rule f -> Strategy f
