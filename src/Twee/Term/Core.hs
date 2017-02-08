@@ -162,13 +162,29 @@ singleton Term{..} = termlist
 -- internal representation of the termlists, but we cheat by
 -- comparing Int64s instead of Symbols.
 instance Eq (TermList f) where
-  {-# INLINE (==) #-}
-  t == u = lenList t == lenList u && eqSameLength t u
+  -- Manual worker-wrapper to prevent too much from being inlined.
+  t == u = eqTermList t u
 
-eqSameLength :: TermList f -> TermList f -> Bool
-eqSameLength Empty !_ = True
-eqSameLength (ConsSym s1 t) (UnsafeConsSym s2 u) =
-  root s1 == root s2 && eqSameLength t u
+{-# INLINE eqTermList #-}
+eqTermList :: TermList f -> TermList f -> Bool
+eqTermList
+  (TermList (I# low1) (I# high1) (ByteArray array1) (SmallArray funs1))
+  (TermList (I# low2) (I# high2) (ByteArray array2) (SmallArray funs2)) =
+    weqTermList low1 high1 array1 funs1 low2 high2 array2 funs2
+
+{-# NOINLINE weqTermList #-}
+weqTermList ::
+  Int# -> Int# -> ByteArray# -> SmallArray# f ->
+  Int# -> Int# -> ByteArray# -> SmallArray# f ->
+  Bool
+weqTermList low1 high1 array1 funs1 low2 high2 array2 funs2 =
+  lenList t == lenList u && eqSameLength t u
+  where
+    t = TermList (I# low1) (I# high1) (ByteArray array1) (SmallArray funs1)
+    u = TermList (I# low2) (I# high2) (ByteArray array2) (SmallArray funs2)
+    eqSameLength Empty !_ = True
+    eqSameLength (ConsSym s1 t) (UnsafeConsSym s2 u) =
+      root s1 == root s2 && eqSameLength t u
 
 instance Ord (TermList f) where
   {-# INLINE compare #-}

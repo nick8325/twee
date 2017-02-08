@@ -1,6 +1,6 @@
 -- | Miscellaneous utility functions.
 
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, MagicHash #-}
 module Twee.Utils where
 
 import Control.Arrow((&&&))
@@ -8,6 +8,9 @@ import Control.Exception
 import Data.List(groupBy, sortBy)
 import Data.Ord(comparing)
 import System.IO
+import GHC.Prim
+import GHC.Types
+import Data.Bits
 
 repeatM :: Monad m => m a -> m [a]
 repeatM = sequence . repeat
@@ -97,3 +100,11 @@ fixpoint f x = fxp x
       | otherwise = fxp y
       where
         y = f x
+
+-- From "Bit twiddling hacks": branchless max
+{-# INLINE intMax #-}
+intMax :: Int -> Int -> Int
+intMax x y =
+  x `xor` ((x `xor` y) .&. negate (x .<. y))
+  where
+    I# x .<. I# y = I# (x <# y)

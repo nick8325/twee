@@ -65,7 +65,9 @@ pPrintRule l r = hang (pPrint l <+> text "->") 2 (pPrint r)
 -- Equations.
 --------------------------------------------------------------------------------
 
-data Equation f = Term f :=: Term f deriving (Eq, Ord, Show, Generic)
+data Equation f =
+  {-# UNPACK #-} !(Term f) :=: {-# UNPACK #-} !(Term f)
+  deriving (Eq, Ord, Show, Generic)
 type EquationOf a = Equation (ConstantOf a)
 
 instance Symbolic (Equation f) where

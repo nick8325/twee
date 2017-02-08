@@ -7,7 +7,7 @@ module Twee.Index(module Twee.Index, module Twee.Index.Lookup) where
 import qualified Prelude
 import Prelude hiding (filter, map, null)
 import Data.Maybe
-import Twee.Base hiding (var, fun, empty, size, singleton, prefix, funs)
+import Twee.Base hiding (var, fun, empty, size, singleton, prefix, funs, lookupList)
 import qualified Twee.Term as Term
 import Twee.Array
 import qualified Data.List as List
@@ -122,7 +122,7 @@ approxMatchesList t idx =
 approxMatches :: Term f -> Index f a -> [a]
 approxMatches t idx = approxMatchesList (Term.singleton t) idx
 
-{-# INLINE matchesList #-}
+{-# INLINEABLE matchesList #-}
 matchesList :: Has a (Term f) => TermList f -> Index f a -> [(Subst f, a)]
 matchesList t idx =
   [ (sub, x)
@@ -132,6 +132,17 @@ matchesList t idx =
 {-# INLINE matches #-}
 matches :: Has a (Term f) => Term f -> Index f a -> [(Subst f, a)]
 matches t idx = matchesList (Term.singleton t) idx
+
+{-# INLINEABLE lookupList #-}
+lookupList :: (Has a b, Symbolic b, Has b (TermOf b)) => TermListOf b -> Index (ConstantOf b) a -> [b]
+lookupList t idx =
+  [ subst sub x
+  | x <- List.map the (approxMatchesList t idx),
+    sub <- maybeToList (matchList (Term.singleton (the x)) t)]
+
+{-# INLINE lookup #-}
+lookup :: (Has a b, Symbolic b, Has b (TermOf b)) => TermOf b -> Index (ConstantOf b) a -> [b]
+lookup t idx = lookupList (Term.singleton t) idx
 
 {-# NOINLINE run #-}
 run :: Stack f a -> [a]
