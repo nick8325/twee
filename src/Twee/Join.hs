@@ -5,9 +5,26 @@ module Twee.Join where
 import Twee.Base
 import Twee.Rule
 import Twee.CP
+import Twee.Constraints
 import qualified Twee.Index as Index
 import Twee.Index(Index)
 import Data.Maybe
+
+joinOverlap ::
+  (Function f, Has a (Rule f)) =>
+  Index f (Equation f) -> Index f a ->
+  Overlap f -> Either [Equation f] (Overlap f, Model f)
+joinOverlap eqns idx overlap =
+  case step1 eqns idx overlap >>= step2 eqns idx of
+    Just overlap ->
+      Right (overlap, modelFromOrder [])
+    Nothing ->
+      Left []
+
+step1, step2 ::
+  (Function f, Has a (Rule f)) => Index f (Equation f) -> Index f a -> Overlap f -> Maybe (Overlap f)
+step1 eqns idx = joinWith eqns idx (simplify idx)
+step2 eqns idx = joinWith eqns idx (result . normaliseWith (rewrite "cp join 2" reduces idx))
 
 joinWith ::
   Has a (Rule f) =>
@@ -24,7 +41,6 @@ subsumed eqns idx (t :=: u)
   | sub1 t u || sub1 u t = True
   where
     sub1 t u =
-      or [ rhs x == u | x <- Index.lookup t idx ] ||
       or [ u == subst sub u'
          | t' :=: u' <- Index.approxMatches t eqns,
            sub <- maybeToList (match t' t) ]
@@ -38,8 +54,3 @@ subsumed eqns idx (App f ts :=: App g us)
     in
       sub ts us
 subsumed _ _ _ = False
-
-step1, step2 ::
-  (Function f, Has a (Rule f)) => Index f (Equation f) -> Index f a -> Overlap f -> Maybe (Overlap f)
-step1 eqns idx = joinWith eqns idx (simplify idx)
-step2 eqns idx = joinWith eqns idx (result . normaliseWith (rewrite "cp join 2" reduces idx))

@@ -34,21 +34,20 @@ library
     Twee
     Twee.Array
     Twee.Base
-    Twee.Pretty
+    Twee.ChurchList
     Twee.Constraints
+    Twee.CP
     Twee.Index
     Twee.Index.Lookup
-    Twee.Index.Simple
-    Twee.Index.Split
-    Twee.Queue
+    Twee.Join
+    Twee.KBO
+    Twee.Label
+    Twee.Pretty
+    Twee.Profile
     Twee.Rule
     Twee.Term
     Twee.Term.Core
     Twee.Utils
-    Twee.KBO
-    Twee.LPO
-    Twee.Label
-    Twee.Profile
   build-depends:
     base >= 4 && < 5,
     containers,
@@ -58,9 +57,7 @@ library
     heaps,
     ghc-prim,
     primitive,
-    array,
-    symbol,
-    split
+    symbol
   hs-source-dirs:      src
   include-dirs:        src
   ghc-options:         -W -fno-warn-incomplete-patterns
@@ -72,9 +69,7 @@ executable twee
   build-depends:       base,
                        twee,
                        containers,
-                       transformers,
                        pretty,
-                       array,
                        split,
                        jukebox >= 0.2
   ghc-options:         -W -fno-warn-incomplete-patterns

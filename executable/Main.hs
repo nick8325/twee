@@ -6,19 +6,18 @@ import Control.Applicative
 #endif
 
 import Control.Monad
-import Control.Monad.Trans.State.Strict
 import Data.Char
 import Data.Either
-import Twee hiding (info)
+import Twee
 import Twee.Base hiding (char, lookup, (<>))
 import Twee.Rule
 import Twee.Utils
-import Twee.Queue
+import qualified Twee.CP as CP
 import Data.Ord
-import qualified Twee.Index.Split as Indexes
 import qualified Data.Map.Strict as Map
 import qualified Twee.KBO as KBO
-import qualified Data.Set as Set
+import qualified Twee.Index as Index
+import Twee.Profile
 import Data.List.Split
 import Data.List
 import Data.Maybe
@@ -27,65 +26,17 @@ import Jukebox.Toolbox
 import Jukebox.Name
 import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
-import Twee.Label hiding (Labelled)
-import qualified Twee.Label as Label
 import Jukebox.Monotonox.ToFOF
 
-parseInitialState :: OptionParser (Twee f)
-parseInitialState =
-  go <$> maxSize <*> general
-     <*> groundJoin <*> conn <*> set <*> setGoals <*> tracing <*> moreTracing <*> lweight <*> rweight <*> splits <*> cpSetSize <*> mixFIFO <*> mixPrio <*> skipComposite <*> cancel <*> cancelSize <*> cancelConsts <*> atomicCancellation <*> norm
+parseConfig :: OptionParser Config
+parseConfig =
+  Config <$> maxSize <*> (CP.Config <$> lweight <*> funweight) <*> cpSetSize <*> splits
   where
-    go maxSize general groundJoin conn set setGoals tracing moreTracing lweight rweight splits cpSetSize mixFIFO mixPrio skipComposite cancel cancelSize cancelConsts atomicCancellation norm =
-      (initialState mixFIFO mixPrio) {
-        maxSize = maxSize,
-        cpSplits = splits,
-        minimumCPSetSize = cpSetSize,
-        useGeneralSuperpositions = general,
-        useGroundJoining = groundJoin,
-        useConnectedness = conn,
-        useSetJoining = set,
-        useSetJoiningForGoals = setGoals,
-        useCancellation = cancel,
-        maxCancellationSize = cancelSize,
-        renormalise = norm,
-        atomicCancellation = atomicCancellation,
-        unifyConstantsInCancellation = cancelConsts,
-        skipCompositeSuperpositions = skipComposite,
-        tracing = tracing,
-        moreTracing = moreTracing,
-        lhsWeight = lweight,
-        rhsWeight = rweight }
-    maxSize = flag "max-size" ["Maximum critical pair size"] Nothing (Just <$> argNum)
-    general = not <$> bool "no-general-superpositions" ["Disable considering only general superpositions"]
-    groundJoin = not <$> bool "no-ground-join" ["Disable ground joinability testing"]
-    conn = not <$> bool "no-connectedness" ["Disable connectedness testing"]
-    set = bool "set-join" ["Join by computing set of normal forms"]
-    setGoals = not <$> bool "no-set-join-goals" ["Disable joining goals by computing set of normal forms"]
-    tracing = not <$> bool "no-tracing" ["Disable tracing output"]
-    moreTracing = bool "more-tracing" ["Produce even more tracing output"]
+    maxSize = flag "max-term-size" ["Maximum term size"] Nothing (Just <$> argNum)
     lweight = flag "lhs-weight" ["Weight given to LHS of critical pair (default 4)"] 4 argNum
-    rweight = flag "rhs-weight" ["Weight given to RHS of critical pair (default 1)"] 1 argNum
-    splits = flag "cp-split" ["Split CP sets into this many pieces on selection (default 20)"] 20 argNum
-    norm = not <$> bool "no-normalise-cps" ["Don't normalise critical pairs every so often"]
-    cpSetSize = flag "cp-set-minimum" ["Decay CP sets into single CPs when they get this small (default 20)"] 20 argNum
-    mixFIFO = flag "mix-fifo" ["Take this many CPs at a time from FIFO (default 0)"] 0 argNum
-    mixPrio = flag "mix-prio" ["Take this many CPs at a time from priority queue (default 10)"] 10 argNum
-    cancel = not <$> bool "no-cancellation" ["Disable cancellation"]
-    cancelSize = flag "max-cancellation-size" ["Maximum size of cancellation laws (default 2)"] (Just 2) (Just <$> argNum)
-    cancelConsts = bool "unify-consts-in-cancellation" ["Allow unification with a constant in cancellation"]
-    skipComposite = not <$> bool "composite-superpositions" ["Generate composite superpositions"]
-    atomicCancellation = not <$> bool "compound-cancellation" ["Allow cancellation laws to have non-atomic RHS"]
-
-data Order = KBO | LPO
-
-parseOrder :: OptionParser Order
-parseOrder =
-  f <$>
-  bool "lpo" ["Use lexicographic path ordering instead of KBO"]
-  where
-    f False = KBO
-    f True  = LPO
+    funweight = flag "fun-weight" ["Weight given to function symbols (default 3)"] 3 argNum
+    cpSetSize = flag "min-cp-set-size" ["Decay CP sets into single CPs when they get this small (default 20)"] 20 argNum
+    splits = flag "split-cp-set-into" ["Split CP sets into this many pieces on selection (default 10)"] 10 argNum
 
 parsePrecedence :: OptionParser [String]
 parsePrecedence =
@@ -131,29 +82,15 @@ instance PrettyTerm Constant where
         _ -> uncurried
   termStyle _ = uncurried
 
-instance Label.Labelled (Extended Constant) where
-  cache = constantCache
-
-{-# NOINLINE constantCache #-}
-constantCache :: Cache (Extended Constant)
-constantCache = mkCache
-
 instance Minimal (Extended Constant) where
-  minimal = auto Minimal
+  minimal = fun Minimal
 
 instance Skolem (Extended Constant) where
-  skolem x = auto (Skolem x)
+  skolem x = fun (Skolem x)
 
 instance Ordered (Extended Constant) where
   lessEq t u = stamp "KBO" (KBO.lessEq t u)
   lessIn model t u = stamp "KBO in model" (KBO.lessIn model t u)
-
-instance Label.Labelled Jukebox.Function where
-  cache = functionCache
-
-{-# NOINLINE functionCache #-}
-functionCache :: Cache Jukebox.Function
-functionCache = mkCache
 
 toTwee :: Problem Clause -> ([Equation Jukebox.Function], [Term Jukebox.Function])
 toTwee prob = (lefts eqs, goals)
@@ -175,7 +112,7 @@ toTwee prob = (lefts eqs, goals)
     tm (Jukebox.Var (Unique x _ _ ::: _)) =
       var (V (fromIntegral x))
     tm (f :@: ts) =
-      fun (auto f) (map tm ts)
+      app (fun f) (map tm ts)
 
 addNarrowing ::
   ([Equation (Extended Constant)], [Term (Extended Constant)]) ->
@@ -183,34 +120,34 @@ addNarrowing ::
 addNarrowing (axioms, goals)
   | length goals < 2 = (axioms, map build [con false, con true])
     where
-      false  = auto (Function (Builtin CFalse))
-      true   = auto (Function (Builtin CTrue))
+      false  = fun (Function (Builtin CFalse))
+      true   = fun (Function (Builtin CTrue))
 addNarrowing (axioms, goals)
   | length goals >= 2 && all isGround goals = (axioms, goals)
 addNarrowing (axioms, [t, u])
   | otherwise = (axioms ++ equalities, map build [con false, con true])
     where
-      false  = auto (Function (Builtin CFalse))
-      true   = auto (Function (Builtin CTrue))
-      equals = auto (Function (Builtin CEquals))
+      false  = fun (Function (Builtin CFalse))
+      true   = fun (Function (Builtin CTrue))
+      equals = fun (Function (Builtin CEquals))
 
       equalities =
-        [build (fun equals [var (V 0), var (V 0)]) :=: build (con true),
-         build (fun equals [t, u]) :=: build (con false)]
+        [build (app equals [var (V 0), var (V 0)]) :=: build (con true),
+         build (app equals [t, u]) :=: build (con false)]
 addNarrowing _ =
   ERROR("Don't know how to handle several non-ground goals")
 
-runTwee :: Twee (Extended Constant) -> Order -> [String] -> Problem Clause -> IO Answer
-runTwee state _order precedence obligs = stampM "twee" $ do
+runTwee :: Config -> [String] -> Problem Clause -> IO Answer
+runTwee config precedence obligs = stampM "twee" $ do
   let (axioms0, goals0) = toTwee obligs
       prec c = (isNothing (elemIndex (base c) precedence),
                 fmap negate (elemIndex (base c) precedence),
-                negate (occ (auto c) (axioms0, goals0)))
+                negate (occ (fun c) (axioms0, goals0)))
       fs0 = map fun_value (usort (funs (axioms0, goals0)))
       fs1 = sortBy (comparing prec) fs0
       fs2 = zipWith (\i (c ::: (FunType args _)) -> Constant i (length args) 1 (show c)) [1..] fs1
       m  = Map.fromList (zip fs1 (map Function fs2))
-  let replace = build . mapFun (auto . flip (Map.findWithDefault __) m . fun_value)
+  let replace = build . mapFun (fun . flip (Map.findWithDefault __) m . fun_value)
       axioms1 = [replace t :=: replace u | t :=: u <- axioms0]
       goals1  = map replace goals0
       (axioms2, goals2) = addNarrowing (axioms1, goals1)
@@ -222,33 +159,24 @@ runTwee state _order precedence obligs = stampM "twee" $ do
   putStrLn "\nGo!"
 
   let
-    identical xs = not (Set.null (foldr1 Set.intersection xs))
+    state =
+      complete config $
+      foldl' (newEquation config) initialState { st_goals = goals2 } axioms2
 
-    loop = do
-      res <- complete1
-      goals <- gets goals
-      when (res && (length goals <= 1 || not (identical goals))) loop
-
-  s <-
-    flip execStateT (addGoals (map Set.singleton goals2) state) $ do
-      mapM_ newEquation axioms2
-      loop
-
-  let rs = map (critical . modelled . peel) (Indexes.elems (labelledRules s))
+  let rs = map rule_rule (Index.elems (st_rules state))
 
   putStrLn "\nFinal rules:"
   mapM_ prettyPrint rs
   putStrLn ""
 
-  putStrLn (report s)
   putStrLn "Normalised goal terms:"
   forM_ goals2 $ \t ->
-    prettyPrint (Rule Oriented t (result (normalise s t)))
+    prettyPrint (Rule Oriented t (result (normaliseWith (rewrite "goal" reduces (st_rules state)) t)))
 
   return $
     case () of
-      _ | identical (goals s) -> Unsatisfiable
-        | isJust (maxSize s) -> NoAnswer GaveUp
+      _ | solved state -> Unsatisfiable
+        | isJust (cfg_max_term_size config) -> NoAnswer GaveUp
         | otherwise -> NoAnswer GaveUp -- don't trust completeness
 
 main = do
@@ -260,5 +188,5 @@ main = do
        (toFofIO <$> globalFlags <*> clausifyBox <*> pure (tags False)) =>>=
        clausifyBox =>>=
        allObligsBox <*>
-         (runTwee <$> parseInitialState <*> parseOrder <*> parsePrecedence))
+         (runTwee <$> parseConfig <*> parsePrecedence))
   profile

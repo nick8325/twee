@@ -31,7 +31,8 @@ data Rule f =
 type RuleOf a = Rule (ConstantOf a)
 
 data Orientation f =
-    Oriented [Term f]
+    Oriented
+  | WeaklyOriented [Term f]
   | Permutative [(Term f, Term f)]
   | Unoriented
   deriving (Show, Generic)
@@ -41,7 +42,12 @@ instance Ord (Orientation f) where compare _ _ = EQ
 
 oriented :: Orientation f -> Bool
 oriented Oriented{} = True
+oriented WeaklyOriented{} = True
 oriented _ = False
+
+weaklyOriented :: Orientation f -> Bool
+weaklyOriented WeaklyOriented{} = True
+weaklyOriented _ = False
 
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
@@ -53,9 +59,11 @@ instance Symbolic (Orientation f) where
   type ConstantOf (Orientation f) = f
 
 instance PrettyTerm f => Pretty (Rule f) where
-  pPrint (Rule (Oriented []) l r) = pPrintRule l r
-  pPrint (Rule (Oriented ts) l r) = hang (pPrintRule l r) 2 (text "(weak on" <+> pPrint ts <> text ")")
-  pPrint (Rule (Permutative ts) l r) = hang (pPrintRule l r) 2 (text "(permutative on" <+> pPrint ts <> text ")")
+  pPrint (Rule Oriented l r) = pPrintRule l r
+  pPrint (Rule (WeaklyOriented ts) l r) =
+    hang (pPrintRule l r) 2 (text "(weak on" <+> pPrint ts <> text ")")
+  pPrint (Rule (Permutative ts) l r) =
+    hang (pPrintRule l r) 2 (text "(permutative on" <+> pPrint ts <> text ")")
   pPrint (Rule Unoriented l r) = hang (pPrintRule l r) 2 (text "(unoriented)")
 
 pPrintRule :: PrettyTerm f => Term f -> Term f -> Doc
@@ -128,10 +136,10 @@ makeRule t u = Rule o t u
   where
     o | lessEq u t =
         case unify t u of
-          Nothing -> Oriented []
+          Nothing -> Oriented
           Just sub
             | allSubst (\_ (Cons t Empty) -> isMinimal t) sub ->
-              Oriented (map (build . var . fst) (listSubst sub))
+              WeaklyOriented (map (build . var . fst) (listSubst sub))
             | otherwise -> Unoriented
       | lessEq t u = ERROR("wrongly-oriented rule")
       | not (null (usort (vars u) \\ usort (vars t))) =
@@ -380,7 +388,8 @@ tryRule p rule t = do
 
 -- Check if a rule can be applied, given an ordering <= on terms.
 reducesWith :: Function f => (Term f -> Term f -> Bool) -> Rule f -> Subst f -> Bool
-reducesWith _ (Rule (Oriented ts) _ _) sub =
+reducedWith _ (Rule Oriented _ _) _ = True
+reducesWith _ (Rule (WeaklyOriented ts) _ _) sub =
   -- Be a bit careful here not to build new terms
   -- (reducesWith is used in simplify).
   -- This is the same as:

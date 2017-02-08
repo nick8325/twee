@@ -46,7 +46,7 @@ positionsChurch posns =
 -- A critical overlap of one rule with another.
 data Overlap f =
   Overlap {
-    overlap_top   :: {-# UNPACK #-} !(Term f),
+    overlap_top   :: Maybe (Term f),
     overlap_inner :: {-# UNPACK #-} !(Term f),
     overlap_eqn   :: {-# UNPACK #-} !(Equation f) }
 type OverlapOf a = Overlap (ConstantOf a)
@@ -88,7 +88,7 @@ asymmetricOverlaps idx posns (Rule _ !outer !outer') (Rule _ !inner !inner') = d
   sub <- ChurchList.fromMaybe (unifyTri inner t)
   ChurchList.fromMaybe $
     makeOverlap idx
-     (termSubst sub outer)
+     (Just $! termSubst sub outer)
      (termSubst sub inner)
      (termSubst sub outer' :=:
       buildReplacePositionSub sub n (singleton inner') (singleton outer))
@@ -102,7 +102,7 @@ termSubst sub t = build (Term.subst sub t)
 
 -- Create an overlap, after simplifying and checking for primeness.
 {-# INLINE makeOverlap #-}
-makeOverlap :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f -> Equation f -> Maybe (Overlap f)
+makeOverlap :: (Function f, Has a (Rule f)) => Index f a -> Maybe (Term f) -> Term f -> Equation f -> Maybe (Overlap f)
 makeOverlap idx top inner eqn
     -- Check for primeness before forcing anything else
   | canSimplifyList idx (children inner) = Nothing

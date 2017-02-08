@@ -16,7 +16,7 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.IntMap(IntMap)
 import Data.Maybe
 import Data.Ord
-import Control.Monad
+import Data.List
 
 ----------------------------------------------------------------------
 -- Configuration and prover state.
@@ -36,7 +36,17 @@ data State f =
     st_joinable :: !(Index f (Equation f)),
     st_goals    :: [Term f],
     st_queue    :: !(Heap (Passive f)),
-    st_label    :: {-# UNPACK #-} !Int }
+    st_label    :: {-# UNPACK #-} !Id }
+
+initialState :: State f
+initialState =
+  State {
+    st_rules = Index.Nil,
+    st_rule_ids = IntMap.empty,
+    st_joinable = Index.Nil,
+    st_goals = [],
+    st_queue = Heap.empty,
+    st_label = 0 }
 
 ----------------------------------------------------------------------
 -- The CP queue.
@@ -127,10 +137,11 @@ enqueue config state passive =
 -- Also takes care of:
 --   * removing any orphans from the head of the queue
 --   * splitting ManyCPs up as necessary
+--   * ignoring CPs that are too big
 {-# INLINEABLE dequeue #-}
 dequeue :: Function f => Config -> State f -> (Maybe (Overlap f), State f)
-dequeue config state =
-  case deq (st_queue state) of
+dequeue config@Config{..} state@State{..} =
+  case deq st_queue of
     -- Explicitly make the queue empty, in case it e.g. contained a
     -- lot of orphans
     Nothing -> (Nothing, state { st_queue = Heap.empty })
@@ -140,14 +151,20 @@ dequeue config state =
       (passive, queue) <- Heap.uncons queue
       case passive of
         _ | not (passiveAlive state passive) -> deq queue
-        SingleCP{..} -> return (passive_overlap, queue)
+        SingleCP{..} ->
+          case simplifyOverlap st_rules passive_overlap of
+            Just overlap@Overlap{overlap_eqn = t :=: u}
+              | size t >= fromMaybe maxBound cfg_max_term_size,
+                size u >= fromMaybe maxBound cfg_max_term_size ->
+                return (overlap, queue)
+            Nothing -> deq queue
         ManyCPs{..} ->
           let
             splits =
               (passive_rule2_best, passive_rule2_best):
               splitInterval k (passive_rule2_lo, passive_rule2_best-1) ++
               splitInterval k (passive_rule2_best+1, passive_rule2_hi)
-            k = fromIntegral (cfg_split_cp_set_into config)
+            k = fromIntegral cfg_split_cp_set_into
           in
             deq $ foldr Heap.insert queue $ concat
               [ makePassive config state (Just range) passive_rule1
@@ -171,3 +188,74 @@ data TweeRule f =
 instance Has (TweeRule f) (Rule f) where the = rule_rule
 instance Has (TweeRule f) (Positions f) where the = rule_positions
 instance Has (TweeRule f) Id where the = rule_id
+
+-- Add a new rule.
+addRule :: Function f => Config -> State f -> TweeRule f -> State f
+addRule config state rule =
+  let
+    state' =
+      state {
+        st_rules = Index.insert (lhs (rule_rule rule)) rule (st_rules state) }
+    passives =
+      makePassive config state' Nothing (rule_id rule)
+  in
+    foldl' (enqueue config) state' passives
+
+-- Record an equation as being joinable.
+addJoinable :: Equation f -> State f -> State f
+addJoinable (t :=: u) state =
+  state {
+    st_joinable =
+      Index.insert t (t :=: u) (st_joinable state) }
+
+-- Try to join a critical pair.
+{-# INLINEABLE consider #-}
+consider :: Function f => Config -> State f -> Overlap f -> State f
+consider config state@State{..} overlap =
+  case joinOverlap st_joinable st_rules overlap of
+    Left eqns ->
+      foldr addJoinable state eqns
+    Right (overlap, model) ->
+      let
+        rules =
+          [ TweeRule {
+              rule_id = n,
+              rule_rule = rule,
+              rule_positions = positions (lhs rule),
+              rule_overlap = overlap,
+              rule_model = model }
+          | (n, rule) <-
+            zip [st_label..] (orient (overlap_eqn overlap)) ]
+        state' =
+          state {
+            st_label = st_label + fromIntegral (length rules) }
+      in
+        foldl' (addRule config) state' rules
+
+-- Add a new equation.
+{-# INLINEABLE newEquation #-}
+newEquation :: Function f => Config -> State f -> Equation f -> State f
+newEquation config state eqn =
+  consider config state $
+    Overlap {
+      overlap_top = Nothing,
+      overlap_inner = minimalTerm,
+      overlap_eqn = eqn }
+
+----------------------------------------------------------------------
+-- The main loop.
+----------------------------------------------------------------------
+
+{-# INLINEABLE complete #-}
+complete :: Function f => Config -> State f -> State f
+complete config state
+  | solved state = state
+  | otherwise =
+    case dequeue config state of
+      (Nothing, state) -> state
+      (Just overlap, state) ->
+        complete config (consider config state overlap)
+
+{-# INLINEABLE solved #-}
+solved :: Function f => State f -> Bool
+solved State{..} = nub st_goals /= st_goals
