@@ -1,6 +1,6 @@
-{-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, DeriveGeneric, TypeOperators, MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, DeriveGeneric, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving #-}
 module Twee.Base(
-  Symbolic(..), subst, GSymbolic(..), Has(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
+  Id(..), Symbolic(..), subst, GSymbolic(..), Has(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding,
   Minimal(..), minimalTerm, isMinimal,
   Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..),
@@ -16,6 +16,10 @@ import Twee.Pretty
 import Twee.Constraints hiding (funs)
 import Data.DList(DList)
 import GHC.Generics hiding (Arity)
+
+-- Represents a unique identifier (e.g., for a rule).
+newtype Id = Id { unId :: Int }
+  deriving (Eq, Ord, Show, Enum, Bounded, Num, Real, Integral)
 
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where

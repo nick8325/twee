@@ -122,10 +122,6 @@ data Config =
     config_lhsweight :: !Int,
     config_funweight :: !Int }
 
--- A CP together with its score.
--- This datatype is used to get good unboxing in bestOverlap.
-data Scored a = Scored {-# UNPACK #-} !Int a
-
 -- We compute:
 --   config_lhsweight * size l + size r
 -- where l is the biggest term and r is the smallest,
@@ -142,26 +138,28 @@ score Config{..} Overlap{..} =
       len t * config_funweight -
       length (filter isVar (subterms t)) * (config_funweight - 1)
 
+data Best = Best {-# UNPACK #-} !Id {-# UNPACK #-} !Int
+
 {-# INLINEABLE bestOverlap #-}
 bestOverlap :: forall f a.
-  (Function f, Has a (Rule f), Has a (Positions f)) =>
-  Config -> Index f a -> [a] -> a -> Maybe (Scored (a, Overlap f))
+  (Function f, Has a (Rule f), Has a (Positions f), Has a Id) =>
+  Config -> Index f a -> [a] -> a -> Maybe Best
 bestOverlap config idx rules r =
   best config (overlapsChurch idx rules r)
 
 {-# INLINE best #-}
-best :: Config -> ChurchList (a, Overlap f) -> Maybe (Scored (a, Overlap f))
+best :: Has a Id => Config -> ChurchList (a, Overlap f) -> Maybe Best
 best !config overlaps
   | n == maxBound = Nothing
   | otherwise = Just x
   where
-    op x@(Scored m _) y@(Scored n _)
-      | m <= n = x
-      | otherwise = y
-
     -- Use maxBound to indicate no critical pair.
     -- Do this instead of using Maybe to get better unboxing.
-    x@(Scored n _) =
-      ChurchList.foldl' op (Scored maxBound undefined) $
-      fmap (\x@(_, o) -> Scored (score config o) x) $
+    x@(Best _ n) =
+      ChurchList.foldl' op (Best (Id 0) maxBound) $
+      fmap (\(x, o) -> Best (the x) (score config o)) $
       overlaps
+
+    op x@(Best _ m) y@(Best _ n)
+      | m <= n = x
+      | otherwise = y
