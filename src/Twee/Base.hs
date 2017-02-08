@@ -16,6 +16,7 @@ import Twee.Pretty
 import Twee.Constraints hiding (funs)
 import Data.DList(DList)
 import GHC.Generics hiding (Arity)
+import Data.Typeable
 
 -- Represents a unique identifier (e.g., for a rule).
 newtype Id = Id { unId :: Int }
@@ -187,3 +188,9 @@ instance Sized f => Sized (Extended f) where
 instance Arity f => Arity (Extended f) where
   arity (Function f) = arity f
   arity _ = 0
+
+instance (Typeable f, Ord f) => Minimal (Extended f) where
+  minimal = fun Minimal
+
+instance (Typeable f, Ord f) => Skolem (Extended f) where
+  skolem x = fun (Skolem x)

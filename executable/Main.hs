@@ -82,12 +82,6 @@ instance PrettyTerm Constant where
         _ -> uncurried
   termStyle _ = uncurried
 
-instance Minimal (Extended Constant) where
-  minimal = fun Minimal
-
-instance Skolem (Extended Constant) where
-  skolem x = fun (Skolem x)
-
 instance Ordered (Extended Constant) where
   lessEq t u = stamp "KBO" (KBO.lessEq t u)
   lessIn model t u = stamp "KBO in model" (KBO.lessIn model t u)
