@@ -29,7 +29,6 @@ import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
 import Twee.Label hiding (Labelled)
 import qualified Twee.Label as Label
-import Twee.Profile
 import Jukebox.Monotonox.ToFOF
 
 parseInitialState :: OptionParser (Twee f)

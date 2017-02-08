@@ -77,4 +77,4 @@ executable twee
                        array,
                        split,
                        jukebox >= 0.2
-  ghc-options:         -W -fno-warn-incomplete-patterns -fno-full-laziness
+  ghc-options:         -W -fno-warn-incomplete-patterns
