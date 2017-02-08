@@ -32,7 +32,7 @@ type RuleOf a = Rule (ConstantOf a)
 
 data Orientation f =
     Oriented
-  | WeaklyOriented [Term f]
+  | WeaklyOriented {-# UNPACK #-} !(Fun f) [Term f]
   | Permutative [(Term f, Term f)]
   | Unoriented
   deriving (Show, Generic)
@@ -58,9 +58,19 @@ instance Has (Rule f) (Term f) where
 instance Symbolic (Orientation f) where
   type ConstantOf (Orientation f) = f
 
+  termsDL Oriented = mzero
+  termsDL (WeaklyOriented _ ts) = termsDL ts
+  termsDL (Permutative ts) = termsDL ts
+  termsDL Unoriented = mzero
+
+  subst_ sub Oriented = Oriented
+  subst_ sub (WeaklyOriented min ts) = WeaklyOriented min (subst_ sub ts)
+  subst_ sub (Permutative ts) = Permutative (subst_ sub ts)
+  subst_ sub Unoriented = Unoriented
+
 instance PrettyTerm f => Pretty (Rule f) where
   pPrint (Rule Oriented l r) = pPrintRule l r
-  pPrint (Rule (WeaklyOriented ts) l r) =
+  pPrint (Rule (WeaklyOriented _ ts) l r) =
     hang (pPrintRule l r) 2 (text "(weak on" <+> pPrint ts <> text ")")
   pPrint (Rule (Permutative ts) l r) =
     hang (pPrintRule l r) 2 (text "(permutative on" <+> pPrint ts <> text ")")
@@ -139,7 +149,7 @@ makeRule t u = Rule o t u
           Nothing -> Oriented
           Just sub
             | allSubst (\_ (Cons t Empty) -> isMinimal t) sub ->
-              WeaklyOriented (map (build . var . fst) (listSubst sub))
+              WeaklyOriented minimal (map (build . var . fst) (listSubst sub))
             | otherwise -> Unoriented
       | lessEq t u = ERROR("wrongly-oriented rule")
       | not (null (usort (vars u) \\ usort (vars t))) =
@@ -389,7 +399,7 @@ tryRule p rule t = do
 -- Check if a rule can be applied, given an ordering <= on terms.
 reducesWith :: Function f => (Term f -> Term f -> Bool) -> Rule f -> Subst f -> Bool
 reducedWith _ (Rule Oriented _ _) _ = True
-reducesWith _ (Rule (WeaklyOriented ts) _ _) sub =
+reducesWith _ (Rule (WeaklyOriented min ts) _ _) sub =
   -- Be a bit careful here not to build new terms
   -- (reducesWith is used in simplify).
   -- This is the same as:
@@ -398,6 +408,9 @@ reducesWith _ (Rule (WeaklyOriented ts) _ _) sub =
   where
     expand t@(Var x) = fromMaybe t (Term.lookup x sub)
     expand t = t
+
+    isMinimal (App f Empty) = f == min
+    isMinimal _ = False
 reducesWith p (Rule (Permutative ts) _ _) sub =
   aux ts
   where
