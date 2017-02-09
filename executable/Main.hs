@@ -31,15 +31,13 @@ import Control.Exception
 
 parseConfig :: OptionParser Config
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*> (CP.Config <$> lweight <*> rweight <*> funweight) <*> cpSetSize <*> splits
+  Config <$> maxSize <*> maxCPs <*> (CP.Config <$> lweight <*> rweight <*> funweight)
   where
     maxSize = flag "max-term-size" ["Maximum term size"] maxBound argNum
     maxCPs = flag "max-cps" ["Give up after this many critical pairs"] maxBound argNum
     lweight = defaultFlag "lhs-weight" ["Weight given to LHS of critical pair"] (CP.cfg_lhsweight . cfg_critical_pairs) argNum
     rweight = defaultFlag "rhs-weight" ["Weight given to RHS of critical pair"] (CP.cfg_rhsweight . cfg_critical_pairs) argNum
     funweight = defaultFlag "fun-weight" ["Weight given to function symbols"] (CP.cfg_funweight . cfg_critical_pairs) argNum
-    cpSetSize = defaultFlag "split-cp-set-at" ["Split CP sets into single CPs when they get this small"] cfg_split_cp_set_at argNum
-    splits = defaultFlag "split-cp-set-into" ["Split CP sets into this many pieces on selection"] cfg_split_cp_set_into argNum
 
     defaultFlag name desc field parser =
       flag name (desc ++ ["Default value: " ++ show def]) def parser

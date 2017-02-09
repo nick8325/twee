@@ -29,9 +29,7 @@ data Config =
   Config {
     cfg_max_term_size      :: Int,
     cfg_max_critical_pairs :: Int,
-    cfg_critical_pairs     :: CP.Config,
-    cfg_split_cp_set_at    :: Int,
-    cfg_split_cp_set_into  :: Int }
+    cfg_critical_pairs     :: CP.Config }
 
 data State f =
   State {
@@ -53,9 +51,7 @@ defaultConfig =
       CP.Config {
         cfg_lhsweight = 2,
         cfg_rhsweight = 1,
-        cfg_funweight = 2 },
-    cfg_split_cp_set_at = 5,
-    cfg_split_cp_set_into = 5 }
+        cfg_funweight = 2 } }
 
 initialState :: State f
 initialState =
@@ -74,26 +70,12 @@ initialState =
 ----------------------------------------------------------------------
 
 data Passive f =
-  -- A single critical pair
-  SingleCP {
+  Passive {
+    passive_score   :: {-# UNPACK #-} !Int,
     passive_rule1   :: {-# UNPACK #-} !Id,
     passive_rule2   :: {-# UNPACK #-} !Id,
-    passive_score   :: {-# UNPACK #-} !Int,
-    passive_overlap :: {-# UNPACK #-} !(Overlap f) } |
-  -- All critical pairs between one rule and an interval of rules
-  ManyCPs {
-    passive_rule1      :: {-# UNPACK #-} !Id,
-    passive_rule2_lo   :: {-# UNPACK #-} !Id,
-    passive_rule2_hi   :: {-# UNPACK #-} !Id,
-    passive_count      :: {-# UNPACK #-} !Int,
-    passive_rule2      :: {-# UNPACK #-} !Id,
-    passive_score      :: {-# UNPACK #-} !Int }
-  deriving Show
-
-instance Eq (Passive f) where x == y = compare x y == EQ
-instance Ord (Passive f) where
-  compare = comparing $ \passive ->
-    (passive_score passive, passive_rule1 passive, passive_rule2 passive)
+    passive_pos     :: {-# UNPACK #-} !Int }
+  deriving (Eq, Ord, Show)
 
 -- Compute all critical pairs from a rule and condense into a Passive.
 -- Takes an optional range of rules to use.
@@ -102,44 +84,32 @@ makePassive :: Function f => Config -> State f -> Maybe (Id, Id) -> Id -> [Passi
 makePassive Config{..} State{..} mrange id =
   case IntMap.lookup (unId id) st_rule_ids of
     Nothing -> []
-    Just rule
-      | unId (hi-lo+1) <= cfg_split_cp_set_at ->
-        [ SingleCP (rule_id rule) (rule_id rule') (score cfg_critical_pairs o) o
-        | (rule', o) <- overlaps st_oriented_rules (rules lo hi) rule ]
-      | otherwise ->
-        [ ManyCPs (rule_id rule) lo' hi' best_count best_id best_score
-        | (lo', hi') <- splitInterval (fromIntegral cfg_split_cp_set_into) (lo, hi),
-          Just Best{..} <- [bestOverlap cfg_critical_pairs st_oriented_rules (rules lo' hi') rule] ]
+    Just rule ->
+      [ Passive (score cfg_critical_pairs o) (rule_id rule1) (rule_id rule2) (overlap_pos o)
+      | (rule1, rule2, o) <- overlaps st_oriented_rules rules rule ]
   where
     (lo, hi) = fromMaybe (0, id) mrange
-    rules lo hi =
+    rules =
       IntMap.elems $
       fst $ IntMap.split (unId (hi+1)) $
       snd $ IntMap.split (unId (lo-1)) st_rule_ids
 
+-- Turn a Passive back into an overlap.
+{-# INLINEABLE findPassive #-}
+findPassive :: Function f => Config -> State f -> Passive f -> Maybe (Overlap f)
+findPassive Config{..} state@State{..} passive@Passive{..} = do
+  rule1 <- the <$> IntMap.lookup (unId passive_rule1) st_rule_ids
+  rule2 <- the <$> IntMap.lookup (unId passive_rule2) st_rule_ids
+  overlapAt st_oriented_rules passive_pos
+    (renameAvoiding rule2 rule1) rule2
+
 -- Renormalise a queued Passive.
 -- Also takes care of deleting any orphans.
 {-# INLINEABLE simplifyPassive #-}
-simplifyPassive :: Function f => Config -> State f -> Passive f -> [Passive f]
-simplifyPassive Config{..} state@State{..} passive@SingleCP{..}
-  | passiveAlive state passive =
-    case simplifyOverlap st_oriented_rules passive_overlap of
-      Nothing -> []
-      Just overlap ->
-        [passive {
-           passive_score = score cfg_critical_pairs overlap,
-           passive_overlap = overlap }]
-  | otherwise = []
-simplifyPassive config@Config{..} state@State{..} ManyCPs{..} =
-  makePassive config state (Just (passive_rule2_lo, passive_rule2_hi)) passive_rule1
-
--- Check if a Passive is an orphan.
-passiveAlive :: State f -> Passive f -> Bool
-passiveAlive State{..} SingleCP{..} =
-  unId passive_rule1 `IntMap.member` st_rule_ids &&
-  unId passive_rule2 `IntMap.member` st_rule_ids
-passiveAlive State{..} ManyCPs{..} =
-  unId passive_rule1 `IntMap.member` st_rule_ids
+simplifyPassive :: Function f => Config -> State f -> Passive f -> Maybe (Passive f)
+simplifyPassive config@Config{..} state passive = do
+  overlap <- findPassive config state passive
+  return passive { passive_score = score cfg_critical_pairs overlap }
 
 -- Renormalise the entire queue.
 {-# INLINEABLE simplifyQueue #-}
@@ -149,7 +119,7 @@ simplifyQueue config state =
   where
     simp =
       Heap.fromList .
-      concatMap (simplifyPassive config state) .
+      mapMaybe (simplifyPassive config state) .
       Heap.toUnsortedList
 
 -- Enqueue a critical pair.
@@ -176,25 +146,12 @@ dequeue config@Config{..} state@State{..} =
   where
     deq !n queue = do
       (passive, queue) <- Heap.uncons queue
-      case passive of
-        _ | not (passiveAlive state passive) -> deq n queue
-        SingleCP{..} ->
-          case simplifyOverlap st_oriented_rules passive_overlap of
-            Just overlap@Overlap{overlap_eqn = t :=: u}
-              | size t <= cfg_max_term_size,
-                size u <= cfg_max_term_size ->
-                return (overlap, n+1, queue)
-            _ -> deq (n+1) queue
-        ManyCPs{..} ->
-          let
-            splits =
-              [(passive_rule2_lo, passive_rule2-1),
-               (passive_rule2, passive_rule2),
-               (passive_rule2+1, passive_rule2_hi)]
-          in
-            deq n $ foldr Heap.insert queue $ concat
-              [ makePassive config state (Just range) passive_rule1
-              | range <- splits ]
+      case findPassive config state passive of
+        Just overlap@Overlap{overlap_eqn = t :=: u}
+          | size t <= cfg_max_term_size,
+            size u <= cfg_max_term_size ->
+            return (overlap, n+1, queue)
+        _ -> deq (n+1) queue
 
 ----------------------------------------------------------------------
 -- Rules.
@@ -286,6 +243,7 @@ newEquation config state eqn =
     Overlap {
       overlap_top = empty,
       overlap_inner = empty,
+      overlap_pos = 0,
       overlap_eqn = eqn }
 
 ----------------------------------------------------------------------
@@ -319,15 +277,8 @@ report State{..} =
     (length [ () | Unoriented <- orients ])
     (length [ () | Permutative{} <- orients ])
     (length [ () | WeaklyOriented{} <- orients ]) ++
-  printf "%%   %d queued critical pairs compressed into %d entries (reduced by %d%%).\n"
-    queuedPairs
-    compressedPairs
-    (100 - (100 * compressedPairs `div` (queuedPairs `max` 1))) ++
-  printf "%%   %d critical pairs considered so far.\n"
-    st_considered
+  printf "%%   %d queued critical pairs.\n" queuedPairs ++
+  printf "%%   %d critical pairs considered so far.\n" st_considered
   where
     orients = map (orientation . the) (Index.elems st_rules)
-    queuedPairs = sum (map passiveCount (Heap.toUnsortedList st_queue))
-    passiveCount SingleCP{} = 1
-    passiveCount ManyCPs{..} = passive_count
-    compressedPairs = length (Heap.toUnsortedList st_queue)
+    queuedPairs = Heap.size st_queue

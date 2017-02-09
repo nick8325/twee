@@ -56,55 +56,51 @@ data Overlap f =
     -- that they are not present
     overlap_top   :: {-# UNPACK #-} !(TermList f),
     overlap_inner :: {-# UNPACK #-} !(TermList f),
+    overlap_pos   :: {-# UNPACK #-} !Int,
     overlap_eqn   :: {-# UNPACK #-} !(Equation f) }
   deriving (Eq, Ord, Show, Generic)
 type OverlapOf a = Overlap (ConstantOf a)
 
 instance Symbolic (Overlap f) where
   type ConstantOf (Overlap f) = f
+  termsDL Overlap{..} =
+    termsDL overlap_top `mplus`
+    termsDL overlap_inner `mplus`
+    termsDL overlap_eqn
+  subst_ sub Overlap{..} =
+    Overlap {
+      overlap_top = subst_ sub overlap_top,
+      overlap_inner = subst_ sub overlap_inner,
+      overlap_pos = overlap_pos,
+      overlap_eqn = subst_ sub overlap_eqn }
 
 -- Compute all overlaps of a rule with a set of rules.
 {-# INLINEABLE overlaps #-}
 overlaps ::
   (Function f, Has a (Rule f), Has a (Positions f)) =>
-  Index f a -> [a] -> a -> [(a, Overlap f)]
+  Index f a -> [a] -> a -> [(a, a, Overlap f)]
 overlaps idx rules r =
   ChurchList.toList (overlapsChurch idx rules r)
 
 {-# INLINE overlapsChurch #-}
 overlapsChurch :: forall f a.
   (Function f, Has a (Rule f), Has a (Positions f)) =>
-  Index f a -> [a] -> a -> ChurchList (a, Overlap f)
+  Index f a -> [a] -> a -> ChurchList (a, a, Overlap f)
 overlapsChurch idx rules r1 = do
   r2 <- ChurchList.fromList rules
-  o <- symmetricOverlaps idx (the r1) r1' (the r2) (the r2)
-  return (r2, o)
+  do { o <- asymmetricOverlaps idx (the r1) r1' (the r2); return (r1, r2, o) } `mplus`
+    do { o <- asymmetricOverlaps idx (the r2) (the r2) r1'; return (r2, r1, o) }
   where
     !r1' = renameAvoiding (map the rules :: [Rule f]) (the r1)
-
--- Compute all overlaps of two rules. They should have no
--- variables in common.
-{-# INLINE symmetricOverlaps #-}
-symmetricOverlaps ::
-  (Function f, Has a (Rule f)) =>
-  Index f a -> Positions f -> Rule f -> Positions f -> Rule f -> ChurchList (Overlap f)
-symmetricOverlaps idx p1 r1 p2 r2 =
-  asymmetricOverlaps idx p1 r1 r2 `mplus` asymmetricOverlaps idx p2 r2 r1
 
 {-# INLINE asymmetricOverlaps #-}
 asymmetricOverlaps ::
   (Function f, Has a (Rule f)) =>
   Index f a -> Positions f -> Rule f -> Rule f -> ChurchList (Overlap f)
-asymmetricOverlaps idx posns (Rule _ !outer !outer') (Rule _ !inner !inner') = do
+asymmetricOverlaps idx posns r1 r2 = do
   n <- positionsChurch posns
-  let t = at n (singleton outer)
-  sub <- ChurchList.fromMaybe (unifyTri inner t)
   ChurchList.fromMaybe $
-    makeOverlap idx
-     (Term.singleton (termSubst sub outer))
-     (Term.singleton (termSubst sub inner))
-     (termSubst sub outer' :=:
-      buildReplacePositionSub sub n (singleton inner') (singleton outer))
+    overlapAt idx n r1 r2
 
 -- Put these in separate functions to avoid code blowup
 buildReplacePositionSub :: TriangleSubst f -> Int -> TermList f -> TermList f -> Term f
@@ -114,16 +110,31 @@ buildReplacePositionSub !sub !n !inner' !outer =
 termSubst :: TriangleSubst f -> Term f -> Term f
 termSubst sub t = build (Term.subst sub t)
 
+-- Create an overlap at a particular position in a term.
+{-# INLINE overlapAt #-}
+overlapAt ::
+  (Function f, Has a (Rule f)) =>
+  Index f a -> Int -> Rule f -> Rule f -> Maybe (Overlap f)
+overlapAt !idx !n (Rule _ !outer !outer') (Rule _ !inner !inner') = do
+  let t = at n (singleton outer)
+  sub <- unifyTri inner t
+  makeOverlap idx
+   (Term.singleton (termSubst sub outer))
+   (Term.singleton (termSubst sub inner))
+   n
+   (termSubst sub outer' :=:
+    buildReplacePositionSub sub n (singleton inner') (singleton outer))
+
 -- Create an overlap, after simplifying and checking for primeness.
 {-# INLINE makeOverlap #-}
-makeOverlap :: (Function f, Has a (Rule f)) => Index f a -> TermList f -> TermList f -> Equation f -> Maybe (Overlap f)
-makeOverlap idx top inner eqn
+makeOverlap :: (Function f, Has a (Rule f)) => Index f a -> TermList f -> TermList f -> Int -> Equation f -> Maybe (Overlap f)
+makeOverlap idx top inner n eqn
     -- Check for primeness before forcing anything else
     -- (N.B. makeOverlap is marked INLINE so that callers do not need
     -- to construct the rest of the overlap in that case)
   | ConsSym _ ts <- inner, canSimplifyList idx ts = Nothing
   | trivial eqn' = Nothing
-  | otherwise = Just (Overlap top inner eqn')
+  | otherwise = Just (Overlap top inner n eqn')
   where
     eqn' = bothSides (simplify idx) eqn
 
@@ -131,7 +142,7 @@ makeOverlap idx top inner eqn
 {-# INLINEABLE simplifyOverlap #-}
 simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap f -> Maybe (Overlap f)
 simplifyOverlap idx Overlap{..} =
-  makeOverlap idx overlap_top overlap_inner overlap_eqn
+  makeOverlap idx overlap_top overlap_inner overlap_pos overlap_eqn
 
 -- The critical pair ordering heuristic.
 data Config =
@@ -156,34 +167,3 @@ score Config{..} Overlap{..} =
     size t =
       len t * cfg_funweight -
       length (filter isVar (subterms t)) * (cfg_funweight - 1)
-
-data Best =
-  Best {
-    best_id    :: {-# UNPACK #-} !Id,
-    best_score :: {-# UNPACK #-} !Int,
-    best_count :: {-# UNPACK #-} !Int }
-
-{-# INLINEABLE bestOverlap #-}
-bestOverlap ::
-  (Function f, Has a (Rule f), Has a (Positions f), Has a Id) =>
-  Config -> Index f a -> [a] -> a -> Maybe Best
-bestOverlap config idx rules r =
-  stamp "best overlaps" $
-  best config (overlapsChurch idx rules r)
-
-{-# INLINE best #-}
-best :: Has a Id => Config -> ChurchList (a, Overlap f) -> Maybe Best
-best !config overlaps
-  | best_score x == maxBound = Nothing
-  | otherwise = Just x
-  where
-    -- Use maxBound to indicate no critical pair.
-    -- Do this instead of using Maybe to get better unboxing.
-    x =
-      ChurchList.foldl' op (Best (Id 0) maxBound 0) $
-      fmap (\(x, o) -> Best (the x) (score config o) 1) $
-      overlaps
-
-    op (Best x m c1) (Best y n c2)
-      | m <= n = Best x m (c1+c2)
-      | otherwise = Best y n (c1+c2)
