@@ -49,6 +49,7 @@ data Overlap f =
     overlap_top   :: Maybe (Term f),
     overlap_inner :: {-# UNPACK #-} !(Term f),
     overlap_eqn   :: {-# UNPACK #-} !(Equation f) }
+  deriving Show
 type OverlapOf a = Overlap (ConstantOf a)
 
 -- Compute all overlaps of a rule with a set of rules.

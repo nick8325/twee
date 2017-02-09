@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, DeriveGeneric, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, DeriveGeneric, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ConstraintKinds #-}
 module Twee.Base(
   Id(..), Symbolic(..), subst, GSymbolic(..), Has(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding,
@@ -163,8 +163,7 @@ instance Sized f => Sized (TermList f) where
 instance Sized f => Sized (Term f) where
   size = size . singleton
 
-class    (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f) => Function f
-instance (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f) => Function f
+type Function f = (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f)
 
 data Extended f =
     Minimal

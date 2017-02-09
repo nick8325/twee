@@ -398,7 +398,7 @@ tryRule p rule t = do
 
 -- Check if a rule can be applied, given an ordering <= on terms.
 reducesWith :: Function f => (Term f -> Term f -> Bool) -> Rule f -> Subst f -> Bool
-reducedWith _ (Rule Oriented _ _) _ = True
+reducesWith _ (Rule Oriented _ _) _ = True
 reducesWith _ (Rule (WeaklyOriented min ts) _ _) sub =
   -- Be a bit careful here not to build new terms
   -- (reducesWith is used in simplify).

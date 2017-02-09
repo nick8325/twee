@@ -17,6 +17,7 @@ import Data.IntMap(IntMap)
 import Data.Maybe
 import Data.Ord
 import Data.List
+import Debug.Trace
 
 ----------------------------------------------------------------------
 -- Configuration and prover state.
@@ -66,6 +67,7 @@ data Passive f =
     passive_rule2_hi   :: {-# UNPACK #-} !Id,
     passive_rule2_best :: {-# UNPACK #-} !Id,
     passive_score      :: {-# UNPACK #-} !Int }
+  deriving Show
 
 instance Eq (Passive f) where x == y = compare x y == EQ
 instance Ord (Passive f) where compare = comparing passive_score
@@ -78,7 +80,7 @@ makePassive Config{..} State{..} mrange id =
   case IntMap.lookup (unId id) st_rule_ids of
     Nothing -> []
     Just rule
-      | unId (hi-lo+1) >= cfg_min_cp_set_size ->
+      | unId (hi-lo+1) < cfg_min_cp_set_size ->
         [ SingleCP (rule_id rule) (rule_id rule') (score cfg_critical_pairs o) o
         | (rule', o) <- overlaps st_rules rules rule ]
       | otherwise ->
@@ -154,10 +156,10 @@ dequeue config@Config{..} state@State{..} =
         SingleCP{..} ->
           case simplifyOverlap st_rules passive_overlap of
             Just overlap@Overlap{overlap_eqn = t :=: u}
-              | size t >= fromMaybe maxBound cfg_max_term_size,
-                size u >= fromMaybe maxBound cfg_max_term_size ->
+              | size t <= fromMaybe maxBound cfg_max_term_size,
+                size u <= fromMaybe maxBound cfg_max_term_size ->
                 return (overlap, queue)
-            Nothing -> deq queue
+            _ -> deq queue
         ManyCPs{..} ->
           let
             splits =
@@ -192,13 +194,17 @@ instance Has (TweeRule f) Id where the = rule_id
 -- Add a new rule.
 addRule :: Function f => Config -> State f -> TweeRule f -> State f
 addRule config state rule =
+  traceShow (pPrint (unId (rule_id rule)) <> text ". " <> pPrint (rule_rule rule)) $
   let
     state' =
       state {
-        st_rules = Index.insert (lhs (rule_rule rule)) rule (st_rules state) }
+        st_rules = Index.insert (lhs (rule_rule rule)) rule (st_rules state),
+        st_rule_ids = IntMap.insert (unId (rule_id rule)) rule (st_rule_ids state),
+        st_goals = map (result . normaliseWith (rewrite "goals" reduces (st_rules state))) (st_goals state) }
     passives =
       makePassive config state' Nothing (rule_id rule)
   in
+    traceShow passives $
     foldl' (enqueue config) state' passives
 
 -- Record an equation as being joinable.
