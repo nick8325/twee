@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs #-}
+{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns #-}
 module Twee where
 
 import Twee.Base
@@ -34,12 +34,13 @@ data Config =
 
 data State f =
   State {
-    st_rules    :: !(Index f (TweeRule f)),
-    st_rule_ids :: !(IntMap (TweeRule f)),
-    st_joinable :: !(Index f (Equation f)),
-    st_goals    :: [Term f],
-    st_queue    :: !(Heap (Passive f)),
-    st_label    :: {-# UNPACK #-} !Id }
+    st_rules      :: !(Index f (TweeRule f)),
+    st_rule_ids   :: !(IntMap (TweeRule f)),
+    st_joinable   :: !(Index f (Equation f)),
+    st_goals      :: [Term f],
+    st_queue      :: !(Heap (Passive f)),
+    st_label      :: {-# UNPACK #-} !Id,
+    st_considered :: {-# UNPACK #-} !Int }
 
 initialState :: State f
 initialState =
@@ -49,7 +50,8 @@ initialState =
     st_joinable = Index.Nil,
     st_goals = [],
     st_queue = Heap.empty,
-    st_label = 0 }
+    st_label = 0,
+    st_considered = 0 }
 
 ----------------------------------------------------------------------
 -- The CP queue.
@@ -148,23 +150,25 @@ enqueue config state passive =
 {-# INLINEABLE dequeue #-}
 dequeue :: Function f => Config -> State f -> (Maybe (Overlap f), State f)
 dequeue config@Config{..} state@State{..} =
-  case deq st_queue of
+  case deq 0 st_queue of
     -- Explicitly make the queue empty, in case it e.g. contained a
     -- lot of orphans
     Nothing -> (Nothing, state { st_queue = Heap.empty })
-    Just (overlap, queue) -> (Just overlap, state { st_queue = queue })
+    Just (overlap, n, queue) ->
+      (Just overlap,
+       state { st_queue = queue, st_considered = st_considered + n })
   where
-    deq queue = do
+    deq !n queue = do
       (passive, queue) <- Heap.uncons queue
       case passive of
-        _ | not (passiveAlive state passive) -> deq queue
+        _ | not (passiveAlive state passive) -> deq n queue
         SingleCP{..} ->
           case simplifyOverlap st_rules passive_overlap of
             Just overlap@Overlap{overlap_eqn = t :=: u}
               | size t <= fromMaybe maxBound cfg_max_term_size,
                 size u <= fromMaybe maxBound cfg_max_term_size ->
-                return (overlap, queue)
-            _ -> deq queue
+                return (overlap, n+1, queue)
+            _ -> deq (n+1) queue
         ManyCPs{..} ->
           let
             splits =
@@ -173,7 +177,7 @@ dequeue config@Config{..} state@State{..} =
               splitInterval k (passive_rule2+1, passive_rule2_hi)
             k = fromIntegral cfg_split_cp_set_into
           in
-            deq $ foldr Heap.insert queue $ concat
+            deq n $ foldr Heap.insert queue $ concat
               [ makePassive config state (Just range) passive_rule1
               | range <- splits ]
 
@@ -295,7 +299,9 @@ report State{..} =
   printf "%%   %d queued critical pairs compressed into %d entries (reduced by %d%%).\n"
     queuedPairs
     compressedPairs
-    (100 - (100 * compressedPairs `div` (queuedPairs `max` 1)))
+    (100 - (100 * compressedPairs `div` (queuedPairs `max` 1))) ++
+  printf "%%   %d critical pairs considered so far.\n"
+    st_considered
   where
     orients = map (orientation . the) (Index.elems st_rules)
     queuedPairs = sum (map passiveCount (Heap.toUnsortedList st_queue))
