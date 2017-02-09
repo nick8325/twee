@@ -84,7 +84,6 @@ lenList (TermList low high _ _) = high - low
 data Term f =
   Term {
     root     :: {-# UNPACK #-} !Int64,
-    rootFun  :: f,
     termlist :: {-# UNPACK #-} !(TermList f) }
 
 instance Eq (Term f) where
@@ -112,12 +111,11 @@ pattern UnsafeConsSym t ts <- (unsafePatHead -> Just (t, ts, _))
 {-# INLINE unsafePatHead #-}
 unsafePatHead :: TermList f -> Maybe (Term f, TermList f, TermList f)
 unsafePatHead TermList{..} =
-  Just (Term x f (TermList low (low+size) array funs),
+  Just (Term x (TermList low (low+size) array funs),
         TermList (low+1) high array funs,
         TermList (low+size) high array funs)
   where
     !x = indexByteArray array low
-    f  = indexSmallArray funs low
     Symbol{..} = toSymbol x
 
 {-# INLINE patHead #-}
@@ -130,7 +128,7 @@ patHead t@TermList{..}
 -- * Var :: Var -> Term f
 -- * App :: Fun f -> TermList f -> Term f
 
-data Fun f = F { fun_id :: {- UNPACK #-} !Int, fun_value :: f }
+data Fun f = F { fun_id :: {- UNPACK #-} !Int, fun_value :: !f }
 instance Eq (Fun f) where
   f == g = fun_id f == fun_id g
 instance Ord (Fun f) where
@@ -146,11 +144,12 @@ pattern App f ts <- (patTerm -> Right (f, ts))
 {-# INLINE patTerm #-}
 patTerm :: Term f -> Either Var (Fun f, TermList f)
 patTerm t@Term{..}
-  | isFun     = Right (F index rootFun, ts)
+  | isFun     = Right (F index f, ts)
   | otherwise = Left (V index)
   where
     Symbol{..} = toSymbol root
     !(UnsafeConsSym _ ts) = singleton t
+    f  = indexSmallArray (funs termlist) (low termlist)
 
 -- Convert a term to a termlist.
 {-# INLINE singleton #-}
