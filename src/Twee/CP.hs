@@ -26,6 +26,9 @@ import GHC.Generics
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
 type PositionsOf a = Positions (ConstantOf a)
 
+instance Show (Positions f) where
+  show = show . ChurchList.toList . positionsChurch
+
 positions :: Term f -> Positions f
 positions t = aux 0 Set.empty (singleton t)
   where
