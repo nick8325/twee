@@ -1,7 +1,7 @@
 -- | Assignment of unique IDs to values.
 -- Inspired by the 'intern' package.
 
-{-# LANGUAGE RecordWildCards, ScopedTypeVariables #-}
+{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns #-}
 module Twee.Label(Label, unsafeMkLabel, labelNum, label, find) where
 
 import Data.IORef
@@ -43,6 +43,7 @@ toAny = unsafeCoerce
 fromAny :: Any -> a
 fromAny = unsafeCoerce
 
+{-# NOINLINE label #-}
 label :: forall a. (Typeable a, Ord a) => a -> Label a
 label x =
   compare x x `seq`
@@ -65,6 +66,10 @@ label x =
            Label n)
 
 find :: Label a -> a
-find (Label n) = unsafeDupablePerformIO $ do
+-- N.B. must force n before calling readIORef, otherwise a call of
+-- the form
+--   find (label x)
+-- doesn't work.
+find (Label !n) = unsafeDupablePerformIO $ do
   Caches{..} <- readIORef caches
   return (fromAny (IntMap.findWithDefault undefined n caches_to))
