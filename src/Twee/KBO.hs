@@ -17,7 +17,7 @@ lessEq _ (Var _) = False
 lessEq (Var x) t = x `elem` vars t
 lessEq t@(App f ts) u@(App g us) =
   (st < su ||
-   (st == su && f < g) ||
+   (st == su && f << g) ||
    (st == su && f == g && lexLess ts us)) &&
   xs `isSubsequenceOf` ys
   where

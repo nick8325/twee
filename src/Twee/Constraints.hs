@@ -15,9 +15,7 @@ import Data.Map.Strict(Map)
 import Data.Ord
 import Twee.Term hiding (lookup)
 
-data Atom f = Constant (Fun f) | Variable Var deriving Show
-deriving instance Eq (Fun f) => Eq (Atom f)
-deriving instance Ord (Fun f) => Ord (Atom f)
+data Atom f = Constant (Fun f) | Variable Var deriving (Show, Eq, Ord)
 
 {-# INLINE atoms #-}
 atoms :: Term f -> [Atom f]
@@ -130,7 +128,7 @@ contradictory Branch{..} =
     cyclic (AcyclicSCC _) = False
     cyclic (CyclicSCC _) = True
 
-formAnd :: (Minimal f, Ord f) => Formula f -> [Branch f] -> [Branch f]
+formAnd :: (Minimal f, Ordered f) => Formula f -> [Branch f] -> [Branch f]
 formAnd f bs = usort (bs >>= add f)
   where
     add (Less t u) b = addLess t u b
@@ -139,7 +137,7 @@ formAnd f bs = usort (bs >>= add f)
     add (And (f:fs)) b = add f b >>= add (And fs)
     add (Or fs) b = usort (concat [ add f b | f <- fs ])
 
-branches :: (Minimal f, Ord f) => Formula f -> [Branch f]
+branches :: (Minimal f, Ordered f) => Formula f -> [Branch f]
 branches x = aux [x]
   where
     aux [] = [Branch [] [] []]
@@ -151,7 +149,7 @@ branches x = aux [x]
       concatMap (addLess t u) (aux xs) ++
       concatMap (addEquals u t) (aux xs)
 
-addLess :: (Minimal f, Ord f) => Atom f -> Atom f -> Branch f -> [Branch f]
+addLess :: (Minimal f, Ordered f) => Atom f -> Atom f -> Branch f -> [Branch f]
 addLess _ (Constant min) _ | min == minimal = []
 addLess (Constant min) _ b | min == minimal = [b]
 addLess t0 u0 b@Branch{..} =
@@ -161,7 +159,7 @@ addLess t0 u0 b@Branch{..} =
     t = norm b t0
     u = norm b u0
 
-addEquals :: (Minimal f, Ord f) => Atom f -> Atom f -> Branch f -> [Branch f]
+addEquals :: (Minimal f, Ordered f) => Atom f -> Atom f -> Branch f -> [Branch f]
 addEquals t0 u0 b@Branch{..}
   | t == u || (t, u) `elem` equals = [b]
   | otherwise =
@@ -177,13 +175,13 @@ addEquals t0 u0 b@Branch{..}
       | x == t = u
       | otherwise = x
 
-addTerm :: (Minimal f, Ord f) => Atom f -> Branch f -> Branch f
+addTerm :: (Minimal f, Ordered f) => Atom f -> Branch f -> Branch f
 addTerm (Constant f) b
   | f `notElem` funs b =
     b {
       funs = f:funs b,
-      less = [ (Constant f, Constant g) | g <- funs b, f < g ] ++
-             [ (Constant g, Constant f) | g <- funs b, g < f ] ++ less b }
+      less = [ (Constant f, Constant g) | g <- funs b, f << g ] ++
+             [ (Constant g, Constant f) | g <- funs b, g << f ] ++ less b }
 addTerm _ b = b
 
 newtype Model f = Model (Map (Atom f) (Int, Int))
@@ -219,7 +217,7 @@ modelFromOrder xs =
 
 weakenModel :: Ord (Fun f) => Model f -> [Model f]
 weakenModel (Model m) =
-  [ Model (Map.delete x m)  | x <- Map.keys m ] ++
+  [ Model (Map.delete x m) | x <- Map.keys m ] ++
   [ Model (Map.fromList xs)
   | xs <- glue (sortBy (comparing snd) (Map.toList m)),
     all ok (groupBy ((==) `on` (fst . snd)) xs) ]
@@ -254,7 +252,7 @@ class Minimal f where
   minimal :: Fun f
 
 {-# INLINE lessEqInModel #-}
-lessEqInModel :: (Minimal f, Ord f) => Model f -> Atom f -> Atom f -> Maybe Strictness
+lessEqInModel :: (Minimal f, Ordered f) => Model f -> Atom f -> Atom f -> Maybe Strictness
 lessEqInModel (Model m) x y
   | Just (a, _) <- Map.lookup x m,
     Just (b, _) <- Map.lookup y m,
@@ -263,11 +261,11 @@ lessEqInModel (Model m) x y
     Just b <- Map.lookup y m,
     a < b = Just Nonstrict
   | x == y = Just Nonstrict
-  | Constant a <- x, Constant b <- y, a < b = Just Strict
+  | Constant a <- x, Constant b <- y, a << b = Just Strict
   | Constant a <- x, a == minimal = Just Nonstrict
   | otherwise = Nothing
 
-solve :: (Minimal f, Ord f, PrettyTerm f) => [Atom f] -> Branch f -> Either (Model f) (Subst f)
+solve :: (Minimal f, Ordered f, PrettyTerm f) => [Atom f] -> Branch f -> Either (Model f) (Subst f)
 solve xs branch@Branch{..}
   | null equals && not (all true less) =
     ERROR("Model " ++ prettyShow model ++ " is not a model of " ++ prettyShow branch ++ " (edges = " ++ prettyShow edges ++ ", vs = " ++ prettyShow vs ++ ")")
@@ -279,12 +277,14 @@ solve xs branch@Branch{..}
         [(y, toTerm x) | (x@Constant{}, Variable y) <- equals]
       vs = Constant minimal:reverse (flattenSCCs (stronglyConnComp edges))
       edges = [(x, x, [y | (x', y) <- less', x == x']) | x <- as]
-      less' = less ++ [(Constant x, Constant y) | Constant x <- as, Constant y <- as, x < y]
+      less' = less ++ [(Constant x, Constant y) | Constant x <- as, Constant y <- as, x << y]
       as = usort $ xs ++ map fst less ++ map snd less
       model = modelFromOrder vs
       true (t, u) = lessEqInModel model t u == Just Strict
 
 class Ord f => Ordered f where
+  (<<) :: Fun f -> Fun f -> Bool
+
   orientTerms :: Term f -> Term f -> Maybe Ordering
   orientTerms t u
     | t == u = Just EQ

@@ -90,6 +90,7 @@ instance PrettyTerm Constant where
   termStyle _ = uncurried
 
 instance Ordered (Extended Constant) where
+  f << g = fun_value f < fun_value g
   lessEq t u = stamp "KBO" (KBO.lessEq t u)
   lessIn model t u = stamp "KBO in model" (KBO.lessIn model t u)
 

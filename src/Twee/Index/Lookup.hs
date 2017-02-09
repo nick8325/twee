@@ -65,9 +65,9 @@ emptySubst2 = Subst2 0 0 0 0
 {-# INLINE extend2 #-}
 extend2 :: Var -> TermList f -> Subst2 f -> Maybe (Subst2 f)
 extend2 (V 0) t (Subst2 _ 0 x y) = Just (Subst2 (low t) (high t) x y)
-extend2 (V 0) t (Subst2 x y _ _) | t /= TermList x y (array t) (funs t) = Nothing
+extend2 (V 0) t (Subst2 x y _ _) | t /= TermList x y (array t) = Nothing
 extend2 (V 1) u (Subst2 x y _ 0) = Just (Subst2 x y (low u) (high u))
-extend2 (V 1) u (Subst2 _ _ x y) | u /= TermList x y (array u) (funs u) = Nothing
+extend2 (V 1) u (Subst2 _ _ x y) | u /= TermList x y (array u) = Nothing
 extend2 _ _ sub = Just sub
 
 data Stack f a =

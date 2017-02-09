@@ -9,7 +9,7 @@ module Twee.Term(
   Term, TermList, at, lenList,
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
-  Fun(..), Var(..), pattern Var, pattern App, singleton, Builder) where
+  Fun(..), fun_value, Var(..), pattern Var, pattern App, singleton, Builder) where
 
 #include "errors.h"
 import Prelude hiding (lookup)
@@ -438,7 +438,7 @@ properSubterms :: Term f -> [Term f]
 properSubterms = subtermsList . children
 
 fun :: (Ord f, Typeable f) => f -> Fun f
-fun f = F (label f) f
+fun f = F (label f)
 
 isApp :: Term f -> Bool
 isApp App{} = True
