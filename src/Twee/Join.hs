@@ -8,7 +8,10 @@ import Twee.CP
 import Twee.Constraints
 import qualified Twee.Index as Index
 import Twee.Index(Index)
+import Twee.Utils
 import Data.Maybe
+import Data.Either
+import Data.List
 
 {-# INLINEABLE joinOverlap #-}
 joinOverlap ::
@@ -16,18 +19,43 @@ joinOverlap ::
   Index f (Equation f) -> Index f a ->
   Overlap f -> Either [Equation f] (Overlap f, Model f)
 joinOverlap eqns idx overlap =
-  case step1 eqns idx overlap >>= step2 eqns idx of
+  case allSteps eqns idx overlap of
     Just overlap ->
-      Right (overlap, modelFromOrder [])
+      case groundJoin eqns idx (branches (And [])) overlap of
+        Left model -> Right (overlap, model)
+        Right overlaps ->
+          case all (isLeft . joinOverlap eqns idx) overlaps of
+            True -> Left [overlap_eqn overlap]
+            False -> Right (overlap, modelFromOrder [])
     Nothing ->
       Left []
 
 {-# INLINEABLE step1 #-}
 {-# INLINEABLE step2 #-}
-step1, step2 ::
+{-# INLINEABLE step3 #-}
+{-# INLINEABLE allSteps #-}
+step1, step2, step3, allSteps ::
   (Function f, Has a (Rule f)) => Index f (Equation f) -> Index f a -> Overlap f -> Maybe (Overlap f)
+allSteps eqns idx overlap = step1 eqns idx overlap >>= step2 eqns idx >>= step3 eqns idx
 step1 eqns idx = joinWith eqns idx id
 step2 eqns idx = joinWith eqns idx (result . normaliseWith (rewrite reduces idx))
+step3 eqns idx overlap =
+  case overlap_top overlap of
+    Cons top Empty ->
+      case (join top, join (flipCP top)) of
+        (Just _, Just _) -> Just overlap
+        _ -> Nothing
+    _ -> Just overlap
+  where
+    join top =
+      joinWith eqns idx (result . normaliseWith (rewrite (reducesSub top) idx)) overlap
+
+    flipCP :: Symbolic a => a -> a
+    flipCP t = subst sub t
+      where
+        n = maximum (0:map fromEnum (vars t))
+        sub (V x) = var (V (n - x))
+
 
 {-# INLINEABLE joinWith #-}
 joinWith ::
@@ -60,3 +88,42 @@ subsumed eqns idx (App f ts :=: App g us)
     in
       sub ts us
 subsumed _ _ _ = False
+
+groundJoin ::
+  (Function f, Has a (Rule f)) =>
+  Index f (Equation f) -> Index f a -> [Branch f] -> Overlap f -> Either (Model f) [Overlap f]
+groundJoin eqns idx ctx r@Overlap{overlap_top = top, overlap_eqn = t :=: u} =
+  case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
+    ([], instances) ->
+      let rs = [ subst sub r | sub <- instances ] in
+      Right (usort (map canonicalise rs))
+    (model:_, _)
+      | isJust (allSteps eqns idx r { overlap_eqn = t' :=: u' }) -> Left model
+      | otherwise ->
+          let model1 = optimise model weakenModel (\m -> valid m nt && valid m nu)
+              model2 = optimise model1 weakenModel (\m -> isNothing (step2 eqns idx r { overlap_eqn = result (normaliseIn m t) :=: result (normaliseIn m u) }))
+
+              diag [] = Or []
+              diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
+              weaken (LessEq t u) = Less t u
+              weaken x = x
+              ctx' = formAnd (diag (modelToLiterals model2)) ctx in
+
+          groundJoin eqns idx ctx' r
+      where
+        normaliseIn m = normaliseWith (rewrite (reducesInModel model) idx)
+        nt = normaliseIn model t
+        nu = normaliseIn model u
+        t' = result nt
+        u' = result nu
+
+valid :: Function f => Model f -> Reduction f -> Bool
+valid model red = all valid1 (steps red)
+  where
+    valid1 (rule, sub) = reducesInModel model rule sub
+
+optimise :: a -> (a -> [a]) -> (a -> Bool) -> a
+optimise x f p =
+  case filter p (f x) of
+    y:_ -> optimise y f p
+    _   -> x

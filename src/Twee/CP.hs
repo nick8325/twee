@@ -1,5 +1,5 @@
 -- Critical pairs.
-{-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards, OverloadedStrings #-}
+{-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards, OverloadedStrings, DeriveGeneric, TypeFamilies #-}
 module Twee.CP where
 
 import qualified Twee.Term as Term
@@ -20,6 +20,7 @@ import GHC.Magic(oneShot, inline)
 import Data.Monoid
 import Twee.Utils
 import Twee.Profile
+import GHC.Generics
 
 -- The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
@@ -53,8 +54,11 @@ data Overlap f =
     overlap_top   :: {-# UNPACK #-} !(TermList f),
     overlap_inner :: {-# UNPACK #-} !(TermList f),
     overlap_eqn   :: {-# UNPACK #-} !(Equation f) }
-  deriving Show
+  deriving (Eq, Ord, Show, Generic)
 type OverlapOf a = Overlap (ConstantOf a)
+
+instance Symbolic (Overlap f) where
+  type ConstantOf (Overlap f) = f
 
 -- Compute all overlaps of a rule with a set of rules.
 {-# INLINEABLE overlaps #-}
