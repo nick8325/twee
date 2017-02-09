@@ -15,7 +15,7 @@ joinOverlap ::
   Index f (Equation f) -> Index f a ->
   Overlap f -> Either [Equation f] (Overlap f, Model f)
 joinOverlap eqns idx overlap =
-  case step1 eqns idx overlap >>= step2 eqns idx of
+  case step2 eqns idx overlap of
     Just overlap ->
       Right (overlap, modelFromOrder [])
     Nothing ->
