@@ -283,7 +283,7 @@ complete config state
       (Just overlap, state) ->
         let state' = consider config state overlap in
         (if unId (st_label state) `div` 100 /= unId (st_label state') `div` 100 then trace (report state') else id) $
-        complete config (consider config state overlap)
+        complete config state'
 
 {-# INLINEABLE solved #-}
 solved :: Function f => State f -> Bool
