@@ -218,7 +218,7 @@ addRule config state rule0 =
 normaliseGoals :: Function f => State f -> State f
 normaliseGoals state@State{..} =
   state {
-    st_goals = map (result . normaliseWith (rewrite "goals" reduces st_rules)) st_goals }
+    st_goals = map (result . normaliseWith (rewrite reduces st_rules)) st_goals }
 
 -- Record an equation as being joinable.
 addJoinable :: Equation f -> State f -> State f

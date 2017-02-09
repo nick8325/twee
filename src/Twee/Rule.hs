@@ -382,8 +382,8 @@ anywhere1 strat t = aux [] 0 t
 
 -- A strategy which rewrites using an index.
 {-# INLINE rewrite #-}
-rewrite :: (Function f, Has a (Rule f)) => String -> (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
-rewrite _phase p rules t = do
+rewrite :: (Function f, Has a (Rule f)) => (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
+rewrite p rules t = do
   rule <- Index.approxMatches t rules
   tryRule p (the rule) t
 
