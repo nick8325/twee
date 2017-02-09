@@ -34,13 +34,14 @@ data Config =
 
 data State f =
   State {
-    st_rules      :: !(Index f (TweeRule f)),
-    st_rule_ids   :: !(IntMap (TweeRule f)),
-    st_joinable   :: !(Index f (Equation f)),
-    st_goals      :: [Term f],
-    st_queue      :: !(Heap (Passive f)),
-    st_label      :: {-# UNPACK #-} !Id,
-    st_considered :: {-# UNPACK #-} !Int }
+    st_oriented_rules :: !(Index f (TweeRule f)),
+    st_rules          :: !(Index f (TweeRule f)),
+    st_rule_ids       :: !(IntMap (TweeRule f)),
+    st_joinable       :: !(Index f (Equation f)),
+    st_goals          :: [Term f],
+    st_queue          :: !(Heap (Passive f)),
+    st_label          :: {-# UNPACK #-} !Id,
+    st_considered     :: {-# UNPACK #-} !Int }
 
 defaultConfig :: Config
 defaultConfig =
@@ -57,6 +58,7 @@ defaultConfig =
 initialState :: State f
 initialState =
   State {
+    st_oriented_rules = Index.Nil,
     st_rules = Index.Nil,
     st_rule_ids = IntMap.empty,
     st_joinable = Index.Nil,
@@ -101,9 +103,9 @@ makePassive Config{..} State{..} mrange id =
     Just rule
       | unId (hi-lo+1) <= cfg_split_cp_set_at ->
         [ SingleCP (rule_id rule) (rule_id rule') (score cfg_critical_pairs o) o
-        | (rule', o) <- overlaps st_rules rules rule ]
+        | (rule', o) <- overlaps st_oriented_rules rules rule ]
       | otherwise ->
-        case bestOverlap cfg_critical_pairs st_rules rules rule of
+        case bestOverlap cfg_critical_pairs st_oriented_rules rules rule of
           Nothing -> []
           Just Best{..} -> [ManyCPs (rule_id rule) lo hi best_count best_id best_score]
   where
@@ -119,7 +121,7 @@ makePassive Config{..} State{..} mrange id =
 simplifyPassive :: Function f => Config -> State f -> Passive f -> [Passive f]
 simplifyPassive Config{..} state@State{..} passive@SingleCP{..}
   | passiveAlive state passive =
-    case simplifyOverlap st_rules passive_overlap of
+    case simplifyOverlap st_oriented_rules passive_overlap of
       Nothing -> []
       Just overlap ->
         [passive {
@@ -175,7 +177,7 @@ dequeue config@Config{..} state@State{..} =
       case passive of
         _ | not (passiveAlive state passive) -> deq n queue
         SingleCP{..} ->
-          case simplifyOverlap st_rules passive_overlap of
+          case simplifyOverlap st_oriented_rules passive_overlap of
             Just overlap@Overlap{overlap_eqn = t :=: u}
               | size t <= fromMaybe maxBound cfg_max_term_size,
                 size u <= fromMaybe maxBound cfg_max_term_size ->
@@ -222,6 +224,10 @@ addRule config state rule0 =
     rule = rule0 { rule_rule = canonicalise (rule_rule rule0) }
     state' =
       state {
+        st_oriented_rules =
+          if oriented (orientation (rule_rule rule))
+          then Index.insert (lhs (rule_rule rule)) rule (st_oriented_rules state)
+          else st_oriented_rules state,
         st_rules = Index.insert (lhs (rule_rule rule)) rule (st_rules state),
         st_rule_ids = IntMap.insert (unId (rule_id rule)) rule (st_rule_ids state) }
     passives =
