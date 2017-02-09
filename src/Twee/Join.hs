@@ -16,7 +16,7 @@ joinOverlap ::
   Index f (Equation f) -> Index f a ->
   Overlap f -> Either [Equation f] (Overlap f, Model f)
 joinOverlap eqns idx overlap =
-  case step2 eqns idx overlap of
+  case step1 eqns idx overlap >>= step2 eqns idx of
     Just overlap ->
       Right (overlap, modelFromOrder [])
     Nothing ->
@@ -26,7 +26,7 @@ joinOverlap eqns idx overlap =
 {-# INLINEABLE step2 #-}
 step1, step2 ::
   (Function f, Has a (Rule f)) => Index f (Equation f) -> Index f a -> Overlap f -> Maybe (Overlap f)
-step1 eqns idx = joinWith eqns idx (simplify idx)
+step1 eqns idx = joinWith eqns idx id
 step2 eqns idx = joinWith eqns idx (result . normaliseWith (rewrite reduces idx))
 
 {-# INLINEABLE joinWith #-}
