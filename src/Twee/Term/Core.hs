@@ -69,8 +69,7 @@ data TermList f =
 
 at :: Int -> TermList f -> Term f
 at n (TermList lo hi arr funs)
-  -- Check that n+1 is in range so we know the term isn't Nil
-  | n < 0 || lo+n+1 >= hi = ERROR("term index out of bounds")
+  | n < 0 || lo+n >= hi = ERROR("term index out of bounds")
   | otherwise =
     case TermList (lo+n) hi arr funs of
       UnsafeCons t _ -> t
