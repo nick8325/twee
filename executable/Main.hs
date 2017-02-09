@@ -159,10 +159,6 @@ runTwee config precedence obligs = stampM "twee" $ do
 
   let rs = map rule_rule (Index.elems (st_rules state))
 
-  putStrLn "\nFinal rules:"
-  mapM_ prettyPrint rs
-  putStrLn ""
-
   putStrLn "Normalised goal terms:"
   forM_ goals2 $ \t ->
     prettyPrint (Rule Oriented t (result (normaliseWith (rewrite "goal" reduces (st_rules state)) t)))
