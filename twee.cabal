@@ -60,7 +60,7 @@ library
     symbol
   hs-source-dirs:      src
   include-dirs:        src
-  ghc-options:         -W -fno-warn-incomplete-patterns
+  ghc-options:         -W -fno-warn-incomplete-patterns -O2
   default-language:    Haskell2010
 
 executable twee
@@ -72,4 +72,4 @@ executable twee
                        pretty,
                        split,
                        jukebox >= 0.2
-  ghc-options:         -W -fno-warn-incomplete-patterns
+  ghc-options:         -W -fno-warn-incomplete-patterns -O2
