@@ -125,15 +125,17 @@ simplifyOverlap idx Overlap{..} =
 data Config =
   Config {
     config_lhsweight :: !Int,
+    config_rhsweight :: !Int,
     config_funweight :: !Int }
 
 -- We compute:
---   config_lhsweight * size l + size r
+--   config_lhsweight * size l + config_rhsweight * size r
 -- where l is the biggest term and r is the smallest,
 -- and variables have weight 1 and functions have weight config_funweight.
 score :: Config -> Overlap f -> Int
 score Config{..} Overlap{..} =
-  m + n + intMax m n * (config_lhsweight - 1)
+  (m + n) * config_rhsweight +
+  intMax m n * (config_lhsweight - config_rhsweight)
   where
     l :=: r = overlap_eqn
     m = size l
