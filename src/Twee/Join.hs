@@ -101,7 +101,7 @@ groundJoin eqns idx ctx r@Overlap{overlap_top = top, overlap_eqn = t :=: u} =
       | isJust (allSteps eqns idx r { overlap_eqn = t' :=: u' }) -> Left model
       | otherwise ->
           let model1 = optimise model weakenModel (\m -> valid m nt && valid m nu)
-              model2 = optimise model1 weakenModel (\m -> isNothing (step2 eqns idx r { overlap_eqn = result (normaliseIn m t) :=: result (normaliseIn m u) }))
+              model2 = optimise model1 weakenModel (\m -> isNothing (allSteps eqns idx r { overlap_eqn = result (normaliseIn m t) :=: result (normaliseIn m u) }))
 
               diag [] = Or []
               diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
@@ -111,7 +111,7 @@ groundJoin eqns idx ctx r@Overlap{overlap_top = top, overlap_eqn = t :=: u} =
 
           groundJoin eqns idx ctx' r
       where
-        normaliseIn m = normaliseWith (rewrite (reducesInModel model) idx)
+        normaliseIn m = normaliseWith (rewrite (reducesInModel m) idx)
         nt = normaliseIn model t
         nu = normaliseIn model u
         t' = result nt
