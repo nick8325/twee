@@ -276,7 +276,10 @@ steps r = aux r []
 
 -- Compute the normal form of a term wrt only oriented rules.
 simplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
-simplify idx t
+simplify !idx !t = stamp "simplify term" (simplify1 idx t)
+
+simplify1 :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
+simplify1 idx t
   | t == u = t
   | otherwise = simplify idx u
   where
