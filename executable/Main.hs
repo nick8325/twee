@@ -36,7 +36,7 @@ parseConfig =
     maxSize = flag "max-term-size" ["Maximum term size"] Nothing (Just <$> argNum)
     lweight = flag "lhs-weight" ["Weight given to LHS of critical pair (default 2)"] 2 argNum
     rweight = flag "rhs-weight" ["Weight given to RHS of critical pair (default 1)"] 1 argNum
-    funweight = flag "fun-weight" ["Weight given to function symbols (default 3)"] 3 argNum
+    funweight = flag "fun-weight" ["Weight given to function symbols (default 2)"] 2 argNum
     cpSetSize = flag "min-cp-set-size" ["Decay CP sets into single CPs when they get this small (default 20)"] 20 argNum
     splits = flag "split-cp-set-into" ["Split CP sets into this many pieces on selection (default 10)"] 10 argNum
 
