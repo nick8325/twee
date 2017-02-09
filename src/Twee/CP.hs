@@ -129,26 +129,26 @@ simplifyOverlap idx Overlap{..} =
 -- The critical pair ordering heuristic.
 data Config =
   Config {
-    config_lhsweight :: !Int,
-    config_rhsweight :: !Int,
-    config_funweight :: !Int }
+    cfg_lhsweight :: !Int,
+    cfg_rhsweight :: !Int,
+    cfg_funweight :: !Int }
 
 -- We compute:
---   config_lhsweight * size l + config_rhsweight * size r
+--   cfg_lhsweight * size l + cfg_rhsweight * size r
 -- where l is the biggest term and r is the smallest,
--- and variables have weight 1 and functions have weight config_funweight.
+-- and variables have weight 1 and functions have weight cfg_funweight.
 score :: Config -> Overlap f -> Int
 score Config{..} Overlap{..} =
-  (m + n) * config_rhsweight +
-  intMax m n * (config_lhsweight - config_rhsweight)
+  (m + n) * cfg_rhsweight +
+  intMax m n * (cfg_lhsweight - cfg_rhsweight)
   where
     l :=: r = overlap_eqn
     m = size l
     n = size r
 
     size t =
-      len t * config_funweight -
-      length (filter isVar (subterms t)) * (config_funweight - 1)
+      len t * cfg_funweight -
+      length (filter isVar (subterms t)) * (cfg_funweight - 1)
 
 data Best =
   Best {

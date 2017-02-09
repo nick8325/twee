@@ -42,6 +42,18 @@ data State f =
     st_label      :: {-# UNPACK #-} !Id,
     st_considered :: {-# UNPACK #-} !Int }
 
+defaultConfig :: Config
+defaultConfig =
+  Config {
+    cfg_max_term_size = Nothing,
+    cfg_critical_pairs =
+      CP.Config {
+        cfg_lhsweight = 2,
+        cfg_rhsweight = 1,
+        cfg_funweight = 2 },
+    cfg_split_cp_set_at = 5,
+    cfg_split_cp_set_into = 2 }
+
 initialState :: State f
 initialState =
   State {

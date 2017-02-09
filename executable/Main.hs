@@ -34,11 +34,16 @@ parseConfig =
   Config <$> maxSize <*> (CP.Config <$> lweight <*> rweight <*> funweight) <*> cpSetSize <*> splits
   where
     maxSize = flag "max-term-size" ["Maximum term size"] Nothing (Just <$> argNum)
-    lweight = flag "lhs-weight" ["Weight given to LHS of critical pair (default 2)"] 2 argNum
-    rweight = flag "rhs-weight" ["Weight given to RHS of critical pair (default 1)"] 1 argNum
-    funweight = flag "fun-weight" ["Weight given to function symbols (default 2)"] 2 argNum
-    cpSetSize = flag "min-cp-set-size" ["Decay CP sets into single CPs when they get this small (default 20)"] 20 argNum
-    splits = flag "split-cp-set-into" ["Split CP sets into this many pieces on selection (default 10)"] 10 argNum
+    lweight = defaultFlag "lhs-weight" ["Weight given to LHS of critical pair"] (CP.cfg_lhsweight . cfg_critical_pairs) argNum
+    rweight = defaultFlag "rhs-weight" ["Weight given to RHS of critical pair"] (CP.cfg_rhsweight . cfg_critical_pairs) argNum
+    funweight = defaultFlag "fun-weight" ["Weight given to function symbols"] (CP.cfg_funweight . cfg_critical_pairs) argNum
+    cpSetSize = defaultFlag "split-cp-set-at" ["Split CP sets into single CPs when they get this small"] cfg_split_cp_set_at argNum
+    splits = defaultFlag "split-cp-set-into" ["Split CP sets into this many pieces on selection"] cfg_split_cp_set_into argNum
+
+    defaultFlag name desc field parser =
+      flag name (desc ++ ["Default value: " ++ show def]) def parser
+      where
+        def = field defaultConfig
 
 parsePrecedence :: OptionParser [String]
 parsePrecedence =
