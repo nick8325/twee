@@ -3,7 +3,7 @@
 {-# LANGUAGE Rank2Types #-}
 module Twee.Pretty(module Twee.Pretty, module Text.PrettyPrint.HughesPJClass, Pretty(..)) where
 
-import Text.PrettyPrint.HughesPJClass
+import Text.PrettyPrint.HughesPJClass hiding (empty)
 import qualified Data.Map as Map
 import Data.Map(Map)
 import qualified Data.Set as Set

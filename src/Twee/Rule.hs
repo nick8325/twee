@@ -52,7 +52,7 @@ weaklyOriented _ = False
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
 
-instance Has (Rule f) (Term f) where
+instance f ~ g => Has (Rule f) (Term g) where
   the = lhs
 
 instance Symbolic (Orientation f) where
@@ -69,15 +69,13 @@ instance Symbolic (Orientation f) where
   subst_ sub Unoriented = Unoriented
 
 instance PrettyTerm f => Pretty (Rule f) where
-  pPrint (Rule Oriented l r) = pPrintRule l r
-  pPrint (Rule (WeaklyOriented _ ts) l r) =
-    hang (pPrintRule l r) 2 (text "(weak on" <+> pPrint ts <> text ")")
-  pPrint (Rule (Permutative ts) l r) =
-    hang (pPrintRule l r) 2 (text "(permutative on" <+> pPrint ts <> text ")")
-  pPrint (Rule Unoriented l r) = hang (pPrintRule l r) 2 (text "(unoriented)")
-
-pPrintRule :: PrettyTerm f => Term f -> Term f -> Doc
-pPrintRule l r = hang (pPrint l <+> text "->") 2 (pPrint r)
+  pPrint (Rule or l r) =
+    pPrint l <+> text (showOrientation or) <+> pPrint r
+    where
+      showOrientation Oriented = "->"
+      showOrientation WeaklyOriented{} = "~>"
+      showOrientation Permutative{} = "<->"
+      showOrientation Unoriented = "="
 
 --------------------------------------------------------------------------------
 -- Equations.

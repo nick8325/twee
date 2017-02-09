@@ -2,7 +2,7 @@
 -- This module implements the usual term manipulation stuff
 -- (matching, unification, etc.) on top of the primitives
 -- in Twee.Term.Core.
-{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings #-}
+{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables #-}
 module Twee.Term(
   module Twee.Term,
   -- Stuff from Twee.Term.Core.
@@ -334,6 +334,9 @@ unifyListTri !t !u = fmap Triangle (stamp "unify" (loop emptySubst t u))
 --------------------------------------------------------------------------------
 -- Miscellaneous stuff.
 --------------------------------------------------------------------------------
+
+empty :: forall f. TermList f
+empty = buildList (mempty :: Builder f)
 
 children :: Term f -> TermList f
 children t =

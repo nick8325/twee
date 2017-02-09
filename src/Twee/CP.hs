@@ -1,5 +1,5 @@
 -- Critical pairs.
-{-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards #-}
+{-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards, OverloadedStrings #-}
 module Twee.CP where
 
 import qualified Twee.Term as Term
@@ -19,6 +19,7 @@ import Control.Arrow((***))
 import GHC.Magic(oneShot, inline)
 import Data.Monoid
 import Twee.Utils
+import Twee.Profile
 
 -- The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
@@ -46,14 +47,17 @@ positionsChurch posns =
 -- A critical overlap of one rule with another.
 data Overlap f =
   Overlap {
-    overlap_top   :: Maybe (Term f),
-    overlap_inner :: {-# UNPACK #-} !(Term f),
+    -- overlap_top and overlap_inner can be Empty to indicate
+    -- that they are not present
+    overlap_top   :: {-# UNPACK #-} !(TermList f),
+    overlap_inner :: {-# UNPACK #-} !(TermList f),
     overlap_eqn   :: {-# UNPACK #-} !(Equation f) }
   deriving Show
 type OverlapOf a = Overlap (ConstantOf a)
 
 -- Compute all overlaps of a rule with a set of rules.
-overlaps :: forall f a.
+{-# INLINEABLE overlaps #-}
+overlaps ::
   (Function f, Has a (Rule f), Has a (Positions f)) =>
   Index f a -> [a] -> a -> [(a, Overlap f)]
 overlaps idx rules r =
@@ -89,8 +93,8 @@ asymmetricOverlaps idx posns (Rule _ !outer !outer') (Rule _ !inner !inner') = d
   sub <- ChurchList.fromMaybe (unifyTri inner t)
   ChurchList.fromMaybe $
     makeOverlap idx
-     (Just $! termSubst sub outer)
-     (termSubst sub inner)
+     (Term.singleton (termSubst sub outer))
+     (Term.singleton (termSubst sub inner))
      (termSubst sub outer' :=:
       buildReplacePositionSub sub n (singleton inner') (singleton outer))
 
@@ -103,10 +107,10 @@ termSubst sub t = build (Term.subst sub t)
 
 -- Create an overlap, after simplifying and checking for primeness.
 {-# INLINE makeOverlap #-}
-makeOverlap :: (Function f, Has a (Rule f)) => Index f a -> Maybe (Term f) -> Term f -> Equation f -> Maybe (Overlap f)
+makeOverlap :: (Function f, Has a (Rule f)) => Index f a -> TermList f -> TermList f -> Equation f -> Maybe (Overlap f)
 makeOverlap idx top inner eqn
     -- Check for primeness before forcing anything else
-  | canSimplifyList idx (children inner) = Nothing
+  | ConsSym _ ts <- inner, canSimplifyList idx ts = Nothing
   | trivial eqn' = Nothing
   | otherwise = Just (Overlap top inner eqn')
   where
@@ -139,28 +143,33 @@ score Config{..} Overlap{..} =
       len t * config_funweight -
       length (filter isVar (subterms t)) * (config_funweight - 1)
 
-data Best = Best {-# UNPACK #-} !Id {-# UNPACK #-} !Int
+data Best =
+  Best {
+    best_id    :: {-# UNPACK #-} !Id,
+    best_score :: {-# UNPACK #-} !Int,
+    best_count :: {-# UNPACK #-} !Int }
 
 {-# INLINEABLE bestOverlap #-}
-bestOverlap :: forall f a.
+bestOverlap ::
   (Function f, Has a (Rule f), Has a (Positions f), Has a Id) =>
   Config -> Index f a -> [a] -> a -> Maybe Best
 bestOverlap config idx rules r =
+  stamp "best overlaps" $
   best config (overlapsChurch idx rules r)
 
 {-# INLINE best #-}
 best :: Has a Id => Config -> ChurchList (a, Overlap f) -> Maybe Best
 best !config overlaps
-  | n == maxBound = Nothing
+  | best_score x == maxBound = Nothing
   | otherwise = Just x
   where
     -- Use maxBound to indicate no critical pair.
     -- Do this instead of using Maybe to get better unboxing.
-    x@(Best _ n) =
-      ChurchList.foldl' op (Best (Id 0) maxBound) $
-      fmap (\(x, o) -> Best (the x) (score config o)) $
+    x =
+      ChurchList.foldl' op (Best (Id 0) maxBound 0) $
+      fmap (\(x, o) -> Best (the x) (score config o) 1) $
       overlaps
 
-    op x@(Best _ m) y@(Best _ n)
-      | m <= n = x
-      | otherwise = y
+    op (Best x m c1) (Best y n c2)
+      | m <= n = Best x m (c1+c2)
+      | otherwise = Best y n (c1+c2)

@@ -11,6 +11,7 @@ import System.IO
 import GHC.Prim
 import GHC.Types
 import Data.Bits
+--import Test.QuickCheck hiding ((.&.))
 
 repeatM :: Monad m => m a -> m [a]
 repeatM = sequence . repeat
@@ -109,23 +110,29 @@ intMax x y =
   where
     I# x .<. I# y = I# (x <# y)
 
--- Split an interval (inclusive bounds) into blocks of a particular size
+-- Split an interval (inclusive bounds) into a particular number of blocks
 splitInterval :: Integral a => a -> (a, a) -> [(a, a)]
 splitInterval k (lo, hi) =
-  [ (lo+i*k, (lo+(i+1)*k-1) `min` hi)
-  | i <- [0..blocks-1] ]
+  [ (lo+i*blockSize, (lo+(i+1)*blockSize-1) `min` hi)
+  | i <- [0..k-1] ]
   where
     size = (hi-lo+1)
-    blocks = (size + k - 1) `div` k -- division rounding up
-
+    blockSize = (size + k - 1) `div` k -- division rounding up
 {-
 prop_split_1 (Positive k) (lo, hi) =
+  -- Check that all elements occur exactly once
   concat [[x..y] | (x, y) <- splitInterval k (lo, hi)] === [lo..hi]
 
+-- Check that we have the correct number and distribution of blocks
 prop_split_2 (Positive k) (lo, hi) =
-  and [length [x..y] <= k | (x, y) <- splits] &&
-  and [length [x..y] > 0 | (x, y) <- splits] &&
-  and [length [x..y] == k | not (null splits), (x, y) <- init splits]
+  counterexample (show splits) $ conjoin
+    [counterexample "Reason: too many splits" $
+       length splits <= k,
+     counterexample "Reason: too few splits" $
+       length [lo..hi] >= k ==> length splits == k,
+     counterexample "Reason: uneven distribution" $
+      not (null splits) ==>
+       minimum (map length splits) + 1 >= maximum (map length splits)]
   where
     splits = splitInterval k (lo, hi)
 -}

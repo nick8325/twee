@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, MultiParamTypeClasses #-}
+{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs #-}
 module Twee where
 
 import Twee.Base
@@ -17,6 +17,8 @@ import Data.IntMap(IntMap)
 import Data.Maybe
 import Data.Ord
 import Data.List
+import Data.Function
+import Text.Printf
 import Debug.Trace
 
 ----------------------------------------------------------------------
@@ -27,7 +29,7 @@ data Config =
   Config {
     cfg_max_term_size     :: Maybe Int,
     cfg_critical_pairs    :: CP.Config,
-    cfg_min_cp_set_size   :: Int,
+    cfg_split_cp_set_at   :: Int,
     cfg_split_cp_set_into :: Int }
 
 data State f =
@@ -65,12 +67,15 @@ data Passive f =
     passive_rule1      :: {-# UNPACK #-} !Id,
     passive_rule2_lo   :: {-# UNPACK #-} !Id,
     passive_rule2_hi   :: {-# UNPACK #-} !Id,
-    passive_rule2_best :: {-# UNPACK #-} !Id,
+    passive_count      :: {-# UNPACK #-} !Int,
+    passive_rule2      :: {-# UNPACK #-} !Id,
     passive_score      :: {-# UNPACK #-} !Int }
   deriving Show
 
 instance Eq (Passive f) where x == y = compare x y == EQ
-instance Ord (Passive f) where compare = comparing passive_score
+instance Ord (Passive f) where
+  compare = comparing $ \passive ->
+    (passive_score passive, passive_rule1 passive, passive_rule2 passive)
 
 -- Compute all critical pairs from a rule and condense into a Passive.
 -- Takes an optional range of rules to use.
@@ -80,13 +85,13 @@ makePassive Config{..} State{..} mrange id =
   case IntMap.lookup (unId id) st_rule_ids of
     Nothing -> []
     Just rule
-      | unId (hi-lo+1) < cfg_min_cp_set_size ->
+      | unId (hi-lo+1) <= cfg_split_cp_set_at ->
         [ SingleCP (rule_id rule) (rule_id rule') (score cfg_critical_pairs o) o
         | (rule', o) <- overlaps st_rules rules rule ]
       | otherwise ->
         case bestOverlap cfg_critical_pairs st_rules rules rule of
           Nothing -> []
-          Just (Best x n) -> [ManyCPs (rule_id rule) lo hi x n]
+          Just Best{..} -> [ManyCPs (rule_id rule) lo hi best_count best_id best_score]
   where
     (lo, hi) = fromMaybe (0, id) mrange
     rules =
@@ -163,9 +168,9 @@ dequeue config@Config{..} state@State{..} =
         ManyCPs{..} ->
           let
             splits =
-              (passive_rule2_best, passive_rule2_best):
-              splitInterval k (passive_rule2_lo, passive_rule2_best-1) ++
-              splitInterval k (passive_rule2_best+1, passive_rule2_hi)
+              (passive_rule2, passive_rule2):
+              splitInterval k (passive_rule2_lo, passive_rule2-1) ++
+              splitInterval k (passive_rule2+1, passive_rule2_hi)
             k = fromIntegral cfg_split_cp_set_into
           in
             deq $ foldr Heap.insert queue $ concat
@@ -187,8 +192,8 @@ data TweeRule f =
     -- A model in which the rule is false (used when reorienting)
     rule_model     :: !(Model f) }
 
-instance Has (TweeRule f) (Rule f) where the = rule_rule
-instance Has (TweeRule f) (Positions f) where the = rule_positions
+instance f ~ g => Has (TweeRule f) (Rule g) where the = rule_rule
+instance f ~ g => Has (TweeRule f) (Positions g) where the = rule_positions
 instance Has (TweeRule f) Id where the = rule_id
 
 -- Add a new rule.
@@ -246,7 +251,7 @@ consider config state@State{..} overlap =
       in
         -- XXX usort not quite right - should give a "second chance"
         -- to each rule. Unidirectional join?
-        foldl' (addRule config) state' (usortBy (comparing (canonicalise . rule_rule)) rules)
+        foldl' (addRule config) state' (nubBy ((==) `on` (canonicalise . rule_rule)) rules)
 
 -- Add a new equation.
 {-# INLINEABLE newEquation #-}
@@ -254,8 +259,8 @@ newEquation :: Function f => Config -> State f -> Equation f -> State f
 newEquation config state eqn =
   consider config state $
     Overlap {
-      overlap_top = Nothing,
-      overlap_inner = minimalTerm,
+      overlap_top = empty,
+      overlap_inner = empty,
       overlap_eqn = eqn }
 
 ----------------------------------------------------------------------
@@ -270,8 +275,30 @@ complete config state
     case dequeue config state of
       (Nothing, state) -> state
       (Just overlap, state) ->
+        let state' = consider config state overlap in
+        (if unId (st_label state) `div` 100 /= unId (st_label state') `div` 100 then trace (report state') else id) $
         complete config (consider config state overlap)
 
 {-# INLINEABLE solved #-}
 solved :: Function f => State f -> Bool
 solved State{..} = nub st_goals /= st_goals
+
+report :: Function f => State f -> String
+report State{..} =
+  printf "\n%% Statistics:\n" ++
+  printf "%%   %d rules, of which %d oriented, %d unoriented, %d permutative, %d weakly oriented.\n"
+    (length orients)
+    (length [ () | Oriented <- orients ])
+    (length [ () | Unoriented <- orients ])
+    (length [ () | Permutative{} <- orients ])
+    (length [ () | WeaklyOriented{} <- orients ]) ++
+  printf "%%   %d queued critical pairs compressed into %d entries (reduced by %d%%).\n"
+    queuedPairs
+    compressedPairs
+    (100 - (100 * compressedPairs `div` (queuedPairs `max` 1)))
+  where
+    orients = map (orientation . the) (Index.elems st_rules)
+    queuedPairs = sum (map passiveCount (Heap.toUnsortedList st_queue))
+    passiveCount SingleCP{} = 1
+    passiveCount ManyCPs{..} = passive_count
+    compressedPairs = length (Heap.toUnsortedList st_queue)
