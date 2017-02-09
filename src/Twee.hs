@@ -201,6 +201,7 @@ instance f ~ g => Has (TweeRule f) (Positions g) where the = rule_positions
 instance Has (TweeRule f) Id where the = rule_id
 
 -- Add a new rule.
+{-# INLINEABLE addRule #-}
 addRule :: Function f => Config -> State f -> TweeRule f -> State f
 addRule config state rule0 =
   let
@@ -219,6 +220,7 @@ addRule config state rule0 =
     foldl' (enqueue config) state' passives
 
 -- Normalise all goals.
+{-# INLINEABLE normaliseGoals #-}
 normaliseGoals :: Function f => State f -> State f
 normaliseGoals state@State{..} =
   state {
@@ -287,6 +289,7 @@ complete config state
 solved :: Function f => State f -> Bool
 solved State{..} = nub st_goals /= st_goals
 
+{-# INLINEABLE report #-}
 report :: Function f => State f -> String
 report State{..} =
   printf "\n%% Statistics:\n" ++
