@@ -129,7 +129,7 @@ renameAvoiding :: (Symbolic a, Symbolic b) => a -> b -> b
 renameAvoiding x y =
   subst (\(V x) -> var (V (x+n))) y
   where
-    V n = maximum (V 0:map boundList (terms y))
+    V n = maximum (V 0:map boundList (terms x))
 
 isMinimal :: Minimal f => Term f -> Bool
 isMinimal (App f Empty) | f == minimal = True
