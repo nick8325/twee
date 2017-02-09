@@ -51,7 +51,8 @@ defaultConfig =
       CP.Config {
         cfg_lhsweight = 2,
         cfg_rhsweight = 1,
-        cfg_funweight = 2 } }
+        cfg_funweight = 4,
+        cfg_varweight = 3 } }
 
 initialState :: State f
 initialState =
