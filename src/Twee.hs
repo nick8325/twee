@@ -105,14 +105,14 @@ makePassive Config{..} State{..} mrange id =
     Just rule
       | unId (hi-lo+1) <= cfg_split_cp_set_at ->
         [ SingleCP (rule_id rule) (rule_id rule') (score cfg_critical_pairs o) o
-        | (rule', o) <- overlaps st_oriented_rules rules rule ]
+        | (rule', o) <- overlaps st_oriented_rules (rules lo hi) rule ]
       | otherwise ->
-        case bestOverlap cfg_critical_pairs st_oriented_rules rules rule of
-          Nothing -> []
-          Just Best{..} -> [ManyCPs (rule_id rule) lo hi best_count best_id best_score]
+        [ ManyCPs (rule_id rule) lo' hi' best_count best_id best_score
+        | (lo', hi') <- splitInterval (fromIntegral cfg_split_cp_set_into) (lo, hi),
+          Just Best{..} <- [bestOverlap cfg_critical_pairs st_oriented_rules (rules lo' hi') rule] ]
   where
     (lo, hi) = fromMaybe (0, id) mrange
-    rules =
+    rules lo hi =
       IntMap.elems $
       fst $ IntMap.split (unId (hi+1)) $
       snd $ IntMap.split (unId (lo-1)) st_rule_ids
@@ -188,10 +188,9 @@ dequeue config@Config{..} state@State{..} =
         ManyCPs{..} ->
           let
             splits =
-              (passive_rule2, passive_rule2):
-              splitInterval k (passive_rule2_lo, passive_rule2-1) ++
-              splitInterval k (passive_rule2+1, passive_rule2_hi)
-            k = fromIntegral cfg_split_cp_set_into
+              [(passive_rule2_lo, passive_rule2-1),
+               (passive_rule2, passive_rule2),
+               (passive_rule2+1, passive_rule2_hi)]
           in
             deq n $ foldr Heap.insert queue $ concat
               [ makePassive config state (Just range) passive_rule1
