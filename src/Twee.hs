@@ -52,7 +52,7 @@ defaultConfig =
         cfg_rhsweight = 1,
         cfg_funweight = 2 },
     cfg_split_cp_set_at = 5,
-    cfg_split_cp_set_into = 2 }
+    cfg_split_cp_set_into = 5 }
 
 initialState :: State f
 initialState =
