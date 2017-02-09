@@ -35,6 +35,7 @@ positions t = aux 0 Set.empty (singleton t)
       | t `Set.member` m = aux (n+1) m u
       | otherwise = ConsP n (aux (n+1) (Set.insert t m) u)
 
+{-# INLINE positionsChurch #-}
 positionsChurch :: Positions f -> ChurchList Int
 positionsChurch posns =
   ChurchList $ \c n ->
@@ -102,6 +103,7 @@ asymmetricOverlaps idx posns (Rule _ !outer !outer') (Rule _ !inner !inner') = d
 buildReplacePositionSub :: TriangleSubst f -> Int -> TermList f -> TermList f -> Term f
 buildReplacePositionSub !sub !n !inner' !outer =
   build (replacePositionSub (evalSubst sub) n inner' outer)
+
 termSubst :: TriangleSubst f -> Term f -> Term f
 termSubst sub t = build (Term.subst sub t)
 
@@ -110,6 +112,8 @@ termSubst sub t = build (Term.subst sub t)
 makeOverlap :: (Function f, Has a (Rule f)) => Index f a -> TermList f -> TermList f -> Equation f -> Maybe (Overlap f)
 makeOverlap idx top inner eqn
     -- Check for primeness before forcing anything else
+    -- (N.B. makeOverlap is marked INLINE so that callers do not need
+    -- to construct the rest of the overlap in that case)
   | ConsSym _ ts <- inner, canSimplifyList idx ts = Nothing
   | trivial eqn' = Nothing
   | otherwise = Just (Overlap top inner eqn')
@@ -117,6 +121,7 @@ makeOverlap idx top inner eqn
     eqn' = bothSides (simplify idx) eqn
 
 -- Simplify an existing overlap.
+{-# INLINEABLE simplifyOverlap #-}
 simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap f -> Maybe (Overlap f)
 simplifyOverlap idx Overlap{..} =
   makeOverlap idx overlap_top overlap_inner overlap_eqn

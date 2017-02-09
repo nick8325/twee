@@ -10,6 +10,7 @@ import qualified Twee.Index as Index
 import Twee.Index(Index)
 import Data.Maybe
 
+{-# INLINEABLE joinOverlap #-}
 joinOverlap ::
   (Function f, Has a (Rule f)) =>
   Index f (Equation f) -> Index f a ->
@@ -21,11 +22,14 @@ joinOverlap eqns idx overlap =
     Nothing ->
       Left []
 
+{-# INLINEABLE step1 #-}
+{-# INLINEABLE step2 #-}
 step1, step2 ::
   (Function f, Has a (Rule f)) => Index f (Equation f) -> Index f a -> Overlap f -> Maybe (Overlap f)
 step1 eqns idx = joinWith eqns idx (simplify idx)
 step2 eqns idx = joinWith eqns idx (result . normaliseWith (rewrite reduces idx))
 
+{-# INLINEABLE joinWith #-}
 joinWith ::
   Has a (Rule f) =>
   Index f (Equation f) -> Index f a -> (Term f -> Term f) -> Overlap f -> Maybe (Overlap f)
@@ -35,6 +39,7 @@ joinWith eqns idx reduce overlap
   where
     eqn = bothSides reduce (overlap_eqn overlap)
 
+{-# INLINEABLE subsumed #-}
 subsumed :: Has a (Rule f) => Index f (Equation f) -> Index f a -> Equation f -> Bool
 subsumed eqns idx (t :=: u)
   | t == u = True

@@ -275,9 +275,11 @@ steps r = aux r []
 --------------------------------------------------------------------------------
 
 -- Compute the normal form of a term wrt only oriented rules.
+{-# INLINEABLE simplify #-}
 simplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
 simplify !idx !t = stamp "simplify term" (simplify1 idx t)
 
+{-# INLINEABLE simplify1 #-}
 simplify1 :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
 simplify1 idx t
   | t == u = t
@@ -294,14 +296,17 @@ simplify1 idx t
       app f (simp ts) `mappend` simp us
 
 -- Check if a term can be simplified.
+{-# INLINEABLE canSimplify #-}
 canSimplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Bool
 canSimplify idx t = canSimplifyList idx (singleton t)
 
+{-# INLINEABLE canSimplifyList #-}
 canSimplifyList :: (Function f, Has a (Rule f)) => Index f a -> TermList f -> Bool
 canSimplifyList idx t =
   any (isJust . simpleRewrite idx) (filter isApp (subtermsList t))
 
 -- Find a simplification step that applies to a term.
+{-# INLINEABLE simpleRewrite #-}
 simpleRewrite :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Maybe (Rule f, Subst f)
 simpleRewrite idx t =
   -- Use instead of maybeToList to make fusion work
@@ -335,6 +340,7 @@ normaliseWith strat t = stamp (describe res) res
       where t = result p
 
 -- Compute all normal forms of a term wrt a particular strategy.
+{-# INLINEABLE normalForms #-}
 normalForms :: Function f => Strategy f -> [Term f] -> Set (Term f)
 normalForms strat ts = stamp "computing all normal forms" $ go Set.empty Set.empty ts
   where
@@ -391,6 +397,7 @@ rewrite p rules t = do
   tryRule p (the rule) t
 
 -- A strategy which applies one rule only.
+{-# INLINEABLE tryRule #-}
 tryRule :: Function f => (Rule f -> Subst f -> Bool) -> Rule f -> Strategy f
 tryRule p rule t = do
   sub <- maybeToList (match (lhs rule) t)
@@ -398,6 +405,7 @@ tryRule p rule t = do
   return (Step rule sub)
 
 -- Check if a rule can be applied, given an ordering <= on terms.
+{-# INLINEABLE reducesWith #-}
 reducesWith :: Function f => (Term f -> Term f -> Bool) -> Rule f -> Subst f -> Bool
 reducesWith _ (Rule Oriented _ _) _ = True
 reducesWith _ (Rule (WeaklyOriented min ts) _ _) sub =
@@ -429,25 +437,30 @@ reducesWith p (Rule Unoriented t u) sub =
     u' = subst sub u
 
 -- Check if a rule can be applied normally.
+{-# INLINEABLE reduces #-}
 reduces :: Function f => Rule f -> Subst f -> Bool
 reduces rule sub = reducesWith lessEq rule sub
 
 -- Check if a rule can be applied and is oriented.
+{-# INLINEABLE reducesOriented #-}
 reducesOriented :: Function f => Rule f -> Subst f -> Bool
 reducesOriented rule sub =
   oriented (orientation rule) && reducesWith undefined rule sub
 
 -- Check if a rule can be applied in various circumstances.
+{-# INLINEABLE reducesInModel #-}
 reducesInModel :: Function f => Model f -> Rule f -> Subst f -> Bool
 reducesInModel cond rule sub =
   reducesWith (\t u -> isJust (lessIn cond t u)) rule sub
 
+{-# INLINEABLE reducesSkolem #-}
 reducesSkolem :: Function f => Rule f -> Subst f -> Bool
 reducesSkolem rule sub =
   reducesWith (\t u -> lessEq (subst skolemise t) (subst skolemise u)) rule sub
   where
     skolemise = con . skolem
 
+{-# INLINEABLE reducesSub #-}
 reducesSub :: Function f => Term f -> Rule f -> Subst f -> Bool
 reducesSub top rule sub =
   reducesSkolem rule sub && lessEq u top && isNothing (unify u top)
