@@ -27,6 +27,7 @@ import Jukebox.Name
 import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
 import Jukebox.Monotonox.ToFOF
+import Control.Exception
 
 parseConfig :: OptionParser Config
 parseConfig =
@@ -169,7 +170,7 @@ runTwee config precedence obligs = stampM "twee" $ do
         | isJust (cfg_max_term_size config) -> NoAnswer GaveUp
         | otherwise -> NoAnswer GaveUp -- don't trust completeness
 
-main = do
+main = flip finally profile $ do
   let twee = Tool "twee" "twee - the Wonderful Equation Engine" "1" "Proves equations."
   join . parseCommandLine twee . tool twee $
     greetingBox twee =>>
@@ -179,4 +180,3 @@ main = do
        clausifyBox =>>=
        allObligsBox <*>
          (runTwee <$> parseConfig <*> parsePrecedence))
-  profile
