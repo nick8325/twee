@@ -27,10 +27,11 @@ import Debug.Trace
 
 data Config =
   Config {
-    cfg_max_term_size     :: Maybe Int,
-    cfg_critical_pairs    :: CP.Config,
-    cfg_split_cp_set_at   :: Int,
-    cfg_split_cp_set_into :: Int }
+    cfg_max_term_size      :: Int,
+    cfg_max_critical_pairs :: Int,
+    cfg_critical_pairs     :: CP.Config,
+    cfg_split_cp_set_at    :: Int,
+    cfg_split_cp_set_into  :: Int }
 
 data State f =
   State {
@@ -46,7 +47,8 @@ data State f =
 defaultConfig :: Config
 defaultConfig =
   Config {
-    cfg_max_term_size = Nothing,
+    cfg_max_term_size = maxBound,
+    cfg_max_critical_pairs = maxBound,
     cfg_critical_pairs =
       CP.Config {
         cfg_lhsweight = 2,
@@ -179,8 +181,8 @@ dequeue config@Config{..} state@State{..} =
         SingleCP{..} ->
           case simplifyOverlap st_oriented_rules passive_overlap of
             Just overlap@Overlap{overlap_eqn = t :=: u}
-              | size t <= fromMaybe maxBound cfg_max_term_size,
-                size u <= fromMaybe maxBound cfg_max_term_size ->
+              | size t <= cfg_max_term_size,
+                size u <= cfg_max_term_size ->
                 return (overlap, n+1, queue)
             _ -> deq (n+1) queue
         ManyCPs{..} ->
@@ -294,6 +296,7 @@ newEquation config state eqn =
 {-# INLINEABLE complete #-}
 complete :: Function f => Config -> State f -> State f
 complete config state
+  | st_considered state >= cfg_max_critical_pairs config = state
   | solved state = state
   | otherwise =
     case dequeue config state of

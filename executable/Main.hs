@@ -31,9 +31,10 @@ import Control.Exception
 
 parseConfig :: OptionParser Config
 parseConfig =
-  Config <$> maxSize <*> (CP.Config <$> lweight <*> rweight <*> funweight) <*> cpSetSize <*> splits
+  Config <$> maxSize <*> maxCPs <*> (CP.Config <$> lweight <*> rweight <*> funweight) <*> cpSetSize <*> splits
   where
-    maxSize = flag "max-term-size" ["Maximum term size"] Nothing (Just <$> argNum)
+    maxSize = flag "max-term-size" ["Maximum term size"] maxBound argNum
+    maxCPs = flag "max-cps" ["Give up after this many critical pairs"] maxBound argNum
     lweight = defaultFlag "lhs-weight" ["Weight given to LHS of critical pair"] (CP.cfg_lhsweight . cfg_critical_pairs) argNum
     rweight = defaultFlag "rhs-weight" ["Weight given to RHS of critical pair"] (CP.cfg_rhsweight . cfg_critical_pairs) argNum
     funweight = defaultFlag "fun-weight" ["Weight given to function symbols"] (CP.cfg_funweight . cfg_critical_pairs) argNum
@@ -172,10 +173,7 @@ runTwee config precedence obligs = stampM "twee" $ do
     prettyPrint (Rule Oriented t (result (normaliseWith (rewrite reduces (st_rules state)) t)))
 
   return $
-    case () of
-      _ | solved state -> Unsatisfiable
-        | isJust (cfg_max_term_size config) -> NoAnswer GaveUp
-        | otherwise -> NoAnswer GaveUp -- don't trust completeness
+    if solved state then Unsatisfiable else NoAnswer GaveUp
 
 main = flip finally profile $ do
   let twee = Tool "twee" "twee - the Wonderful Equation Engine" "1" "Proves equations."
