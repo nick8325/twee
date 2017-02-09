@@ -41,6 +41,7 @@ subsumed eqns idx (t :=: u)
   | sub1 t u || sub1 u t = True
   where
     sub1 t u =
+      or [ rhs rule == u | rule <- Index.lookup t idx ] ||
       or [ u == subst sub u'
          | t' :=: u' <- Index.approxMatches t eqns,
            sub <- maybeToList (match t' t) ]

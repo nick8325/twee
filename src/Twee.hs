@@ -193,19 +193,27 @@ instance Has (TweeRule f) Id where the = rule_id
 
 -- Add a new rule.
 addRule :: Function f => Config -> State f -> TweeRule f -> State f
-addRule config state rule =
-  traceShow (pPrint (unId (rule_id rule)) <> text ". " <> pPrint (rule_rule rule)) $
+addRule config state rule0 =
   let
+    -- Important to canonicalise the rule so that we don't get
+    -- bigger and bigger variable indices over time
+    rule = rule0 { rule_rule = canonicalise (rule_rule rule0) }
     state' =
       state {
         st_rules = Index.insert (lhs (rule_rule rule)) rule (st_rules state),
-        st_rule_ids = IntMap.insert (unId (rule_id rule)) rule (st_rule_ids state),
-        st_goals = map (result . normaliseWith (rewrite "goals" reduces (st_rules state))) (st_goals state) }
+        st_rule_ids = IntMap.insert (unId (rule_id rule)) rule (st_rule_ids state) }
     passives =
       makePassive config state' Nothing (rule_id rule)
   in
-    traceShow passives $
+    traceShow (pPrint (unId (rule_id rule)) <> text ". " <> pPrint (rule_rule rule)) $
+    normaliseGoals $
     foldl' (enqueue config) state' passives
+
+-- Normalise all goals.
+normaliseGoals :: Function f => State f -> State f
+normaliseGoals state@State{..} =
+  state {
+    st_goals = map (result . normaliseWith (rewrite "goals" reduces st_rules)) st_goals }
 
 -- Record an equation as being joinable.
 addJoinable :: Equation f -> State f -> State f
@@ -236,7 +244,9 @@ consider config state@State{..} overlap =
           state {
             st_label = st_label + fromIntegral (length rules) }
       in
-        foldl' (addRule config) state' rules
+        -- XXX usort not quite right - should give a "second chance"
+        -- to each rule. Unidirectional join?
+        foldl' (addRule config) state' (usortBy (comparing (canonicalise . rule_rule)) rules)
 
 -- Add a new equation.
 {-# INLINEABLE newEquation #-}
