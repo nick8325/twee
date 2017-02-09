@@ -9,18 +9,17 @@ module Twee.Term(
   Term, TermList, at, lenList,
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
-  Fun(..), fun_value, Var(..), pattern Var, pattern App, singleton, Builder) where
+  Fun, fun, fun_id, fun_value, Var(..), pattern Var, pattern App, singleton, Builder) where
 
 #include "errors.h"
 import Prelude hiding (lookup)
 import Twee.Term.Core
 import Twee.Label
-import Data.List hiding (lookup)
+import Data.List hiding (lookup, find)
 import Data.Maybe
 import Data.Monoid
 import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
-import Data.Typeable
 import Twee.Profile
 
 --------------------------------------------------------------------------------
@@ -436,9 +435,6 @@ subterms = subtermsList . singleton
 {-# INLINE properSubterms #-}
 properSubterms :: Term f -> [Term f]
 properSubterms = subtermsList . children
-
-fun :: (Ord f, Typeable f) => f -> Fun f
-fun f = F (label f)
 
 isApp :: Term f -> Bool
 isApp App{} = True

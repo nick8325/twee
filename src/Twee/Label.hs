@@ -2,7 +2,7 @@
 -- Inspired by the 'intern' package.
 
 {-# LANGUAGE RecordWildCards, ScopedTypeVariables #-}
-module Twee.Label(label, find) where
+module Twee.Label(Label, unsafeMkLabel, labelNum, label, find) where
 
 import Data.IORef
 import System.IO.Unsafe
@@ -13,6 +13,11 @@ import Data.IntMap.Strict(IntMap)
 import Data.Typeable
 import GHC.Exts
 import Unsafe.Coerce
+
+newtype Label a = Label { labelNum :: Int }
+  deriving (Eq, Ord, Show)
+unsafeMkLabel :: Int -> Label a
+unsafeMkLabel = Label
 
 type Cache a = Map a Int
 
@@ -38,7 +43,7 @@ toAny = unsafeCoerce
 fromAny :: Any -> a
 fromAny = unsafeCoerce
 
-label :: forall a. (Typeable a, Ord a) => a -> Int
+label :: forall a. (Typeable a, Ord a) => a -> Label a
 label x =
   compare x x `seq`
   unsafeDupablePerformIO $
@@ -50,16 +55,16 @@ label x =
         Map.findWithDefault Map.empty ty caches_from
     in
       case Map.lookup x cache of
-        Just n -> (caches, n)
+        Just n -> (caches, Label n)
         Nothing ->
           let n = caches_nextId in
           (Caches {
              caches_nextId = n+1,
              caches_to = IntMap.insert n (toAny x) caches_to,
              caches_from = Map.insert ty (toAnyCache (Map.insert x n cache)) caches_from },
-           n)
+           Label n)
 
-find :: Int -> a
-find n = unsafeDupablePerformIO $ do
+find :: Label a -> a
+find (Label n) = unsafeDupablePerformIO $ do
   Caches{..} <- readIORef caches
   return (fromAny (IntMap.findWithDefault undefined n caches_to))
