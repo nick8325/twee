@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, CPP, GeneralizedNewtypeDeriving, TypeFamilies, RecordWildCards, FlexibleContexts, UndecidableInstances, NondecreasingIndentation, OverloadedStrings #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, CPP, GeneralizedNewtypeDeriving, TypeFamilies, RecordWildCards, FlexibleContexts, UndecidableInstances, NondecreasingIndentation, OverloadedStrings, BangPatterns #-}
 #include "errors.h"
 
 #if __GLASGOW_HASKELL__ < 710
@@ -155,22 +155,20 @@ runTwee config precedence obligs = stampM "twee" $ do
       goals1  = map replace goals0
       (axioms2, goals2) = addNarrowing (axioms1, goals1)
 
-  putStrLn "Axioms:"
-  mapM_ prettyPrint axioms2
-  putStrLn "\nGoals:"
-  mapM_ prettyPrint goals2
-  putStrLn "\nGo!"
-
   let
-    state =
+    !state =
       complete config $
       foldl' (newEquation config) initialState { st_goals = goals2 } axioms2
 
   let rs = map rule_rule (Index.elems (st_rules state))
 
-  putStrLn "Normalised goal terms:"
-  forM_ goals2 $ \t ->
-    prettyPrint (Rule Oriented t (result (normaliseWith (rewrite reduces (st_rules state)) t)))
+  putStrLn (report state)
+
+  putStrLn "% Normalised goal terms:"
+  forM_ goals2 $ \t -> do
+    putStr "%   "
+    prettyPrint (Rule Unoriented t (result (normaliseWith (rewrite reduces (st_rules state)) t)))
+  putStrLn ""
 
   return $
     if solved state then Unsatisfiable else NoAnswer GaveUp
