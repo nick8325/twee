@@ -31,7 +31,7 @@ import Control.Exception
 
 parseConfig :: OptionParser Config
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*> (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight)
+  Config <$> maxSize <*> maxCPs <*> (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> repeats)
   where
     maxSize = flag "max-term-size" ["Maximum term size"] maxBound argNum
     maxCPs = flag "max-cps" ["Give up after this many critical pairs"] maxBound argNum
@@ -39,7 +39,7 @@ parseConfig =
     rweight = defaultFlag "rhs-weight" ["Weight given to RHS of critical pair"] (CP.cfg_rhsweight . cfg_critical_pairs) argNum
     funweight = defaultFlag "fun-weight" ["Weight given to function symbols"] (CP.cfg_funweight . cfg_critical_pairs) argNum
     varweight = defaultFlag "var-weight" ["Weight given to variable symbols"] (CP.cfg_varweight . cfg_critical_pairs) argNum
-
+    repeats = not <$> bool "dont-penalise-repeated-variables" ["Don't penalise repeated variables in critical pairs"]
     defaultFlag name desc field parser =
       flag name (desc ++ ["Default value: " ++ show def]) def parser
       where

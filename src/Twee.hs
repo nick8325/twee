@@ -53,7 +53,8 @@ defaultConfig =
         cfg_lhsweight = 2,
         cfg_rhsweight = 1,
         cfg_funweight = 4,
-        cfg_varweight = 3 } }
+        cfg_varweight = 3,
+        cfg_repeats   = True } }
 
 initialState :: State f
 initialState =
