@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns #-}
+{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings #-}
 module Twee where
 
 import Twee.Base
@@ -10,6 +10,7 @@ import qualified Twee.Index as Index
 import Twee.Index(Index)
 import Twee.Constraints
 import Twee.Utils
+import Twee.Profile
 import qualified Data.Heap as Heap
 import Data.Heap(Heap)
 import qualified Data.IntMap.Strict as IntMap
@@ -83,6 +84,7 @@ data Passive f =
 {-# INLINEABLE makePassive #-}
 makePassive :: Function f => Config -> State f -> Maybe (Id, Id) -> Id -> [Passive f]
 makePassive Config{..} State{..} mrange id =
+  stampWith "makePassive" length $
   case IntMap.lookup (unId id) st_rule_ids of
     Nothing -> []
     Just rule ->
@@ -98,7 +100,7 @@ makePassive Config{..} State{..} mrange id =
 -- Turn a Passive back into an overlap.
 {-# INLINEABLE findPassive #-}
 findPassive :: Function f => Config -> State f -> Passive f -> Maybe (Overlap f)
-findPassive Config{..} state@State{..} passive@Passive{..} = do
+findPassive Config{..} state@State{..} passive@Passive{..} = stamp "findPassive" $ do
   rule1 <- the <$> IntMap.lookup (unId passive_rule1) st_rule_ids
   rule2 <- the <$> IntMap.lookup (unId passive_rule2) st_rule_ids
   overlapAt st_oriented_rules passive_pos
@@ -108,7 +110,7 @@ findPassive Config{..} state@State{..} passive@Passive{..} = do
 -- Also takes care of deleting any orphans.
 {-# INLINEABLE simplifyPassive #-}
 simplifyPassive :: Function f => Config -> State f -> Passive f -> Maybe (Passive f)
-simplifyPassive config@Config{..} state passive = do
+simplifyPassive config@Config{..} state passive = stamp "simplifyPassive" $ do
   overlap <- findPassive config state passive
   return passive { passive_score = score cfg_critical_pairs overlap }
 
@@ -116,6 +118,7 @@ simplifyPassive config@Config{..} state passive = do
 {-# INLINEABLE simplifyQueue #-}
 simplifyQueue :: Function f => Config -> State f -> State f
 simplifyQueue config state =
+  stamp "simplifyQueue" $
   state { st_queue = simp (st_queue state) }
   where
     simp =
@@ -127,6 +130,7 @@ simplifyQueue config state =
 {-# INLINEABLE enqueue #-}
 enqueue :: Function f => Config -> State f -> Passive f -> State f
 enqueue config state passive =
+  stamp "enqueue" $
   state { st_queue = Heap.insert passive (st_queue state) }
 
 -- Dequeue a critical pair.
@@ -137,6 +141,7 @@ enqueue config state passive =
 {-# INLINEABLE dequeue #-}
 dequeue :: Function f => Config -> State f -> (Maybe (Overlap f), State f)
 dequeue config@Config{..} state@State{..} =
+  stamp "dequeue" $
   case deq 0 st_queue of
     -- Explicitly make the queue empty, in case it e.g. contained a
     -- lot of orphans
@@ -177,6 +182,7 @@ instance Has (TweeRule f) Id where the = rule_id
 {-# INLINEABLE addRule #-}
 addRule :: Function f => Config -> State f -> TweeRule f -> State f
 addRule config state rule0 =
+  stamp "addRule" $
   let
     -- Important to canonicalise the rule so that we don't get
     -- bigger and bigger variable indices over time
@@ -214,6 +220,7 @@ addJoinable (t :=: u) state =
 {-# INLINEABLE consider #-}
 consider :: Function f => Config -> State f -> Overlap f -> State f
 consider config state@State{..} overlap =
+  stamp "consider" $
   case joinOverlap st_joinable st_rules overlap of
     Left eqns ->
       foldr addJoinable state eqns

@@ -1,6 +1,6 @@
 -- Basic support for profiling.
 {-# LANGUAGE BangPatterns, RecordWildCards, CPP, OverloadedStrings #-}
-module Twee.Profile(stamp, stampM, profile) where
+module Twee.Profile(stamp, stampWith, stampM, profile) where
 
 #ifdef PROFILE
 #include "errors.h"
@@ -88,6 +88,9 @@ stamp str x =
     x `pseq` exit m str
     return x
 
+stampWith :: Symbol -> (a -> b) -> a -> a
+stampWith str f x = stamp str (f x) `pseq` x
+
 stampM :: MonadIO m => Symbol -> m a -> m a
 stampM str mx = do
   m <- liftIO enter
@@ -128,6 +131,9 @@ import Control.Monad.IO.Class
 
 stamp :: Symbol -> a -> a
 stamp _ = id
+
+stampWith :: Symbol -> (a -> b) -> a -> a
+stampWith _ _ = id
 
 stampM :: MonadIO m => Symbol -> m a -> m a
 stampM _ = id
