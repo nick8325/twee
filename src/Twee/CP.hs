@@ -157,7 +157,17 @@ data Config =
 --   cfg_lhsweight * size l + cfg_rhsweight * size r
 -- where l is the biggest term and r is the smallest,
 -- and variables have weight 1 and functions have weight cfg_funweight.
-score :: Config -> Overlap f -> Int
+score :: Function f => Config -> Overlap f -> Int
+score config overlap@Overlap{overlap_eqn = t :=: u}
+  | isInequality t u || isInequality u t =
+    score config overlap{overlap_eqn = true :=: false } + 1
+    where
+      isInequality (App eq (Cons t (Cons u Empty))) (App false Empty) =
+        eq == equalsCon && false == falseCon && isJust (unify t u)
+      isInequality _ _ = False
+
+      true  = build (con trueCon)
+      false = build (con falseCon)
 score Config{..} Overlap{..} =
   (m + n) * cfg_rhsweight +
   intMax m n * (cfg_lhsweight - cfg_rhsweight)

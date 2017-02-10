@@ -3,7 +3,7 @@ module Twee.Base(
   Id(..), Symbolic(..), subst, GSymbolic(..), Has(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding,
   Minimal(..), minimalTerm, isMinimal,
-  Skolem(..), Arity(..), Sized(..), Ordered(..), Strictness(..), Function, Extended(..),
+  Skolem(..), Arity(..), Sized(..), Ordered(..), Equals(..), Strictness(..), Function, Extended(..),
   module Twee.Term, module Twee.Pretty) where
 
 #include "errors.h"
@@ -163,7 +163,10 @@ instance Sized f => Sized (TermList f) where
 instance Sized f => Sized (Term f) where
   size = size . singleton
 
-type Function f = (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f)
+type Function f = (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f, Equals f)
+
+class Equals f where
+  equalsCon, trueCon, falseCon :: Fun f
 
 data Extended f =
     Minimal

@@ -74,6 +74,10 @@ instance Arity Constant where
   arity Constant{conSize = n} = n
   arity (Builtin CEquals) = 2
   arity (Builtin _) = 0
+instance Equals (Extended Constant) where
+  equalsCon = fun (Function (Builtin CEquals))
+  trueCon = fun (Function (Builtin CTrue))
+  falseCon = fun (Function (Builtin CFalse))
 
 instance Pretty Constant where
   pPrint Constant{conName = name} = text name
