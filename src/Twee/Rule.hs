@@ -323,21 +323,25 @@ simpleRewrite idx t =
 
 -- Normalise a term wrt a particular strategy.
 {-# INLINE normaliseWith #-}
-normaliseWith :: PrettyTerm f => Strategy f -> Term f -> Reduction f
-normaliseWith strat t = stamp (describe res) res
+normaliseWith :: PrettyTerm f => (Term f -> Bool) -> Strategy f -> Term f -> Reduction f
+normaliseWith ok strat t = stamp (describe res) res
   where
     describe (Parallel [] _) = "normalising terms (already in normal form)"
     describe _ = "normalising terms (not in normal form)"
 
-    res = aux 0 (Parallel [] t)
-    aux 1000 p =
+    res = aux 0 (Parallel [] t) t
+    aux 1000 p _ =
       ERROR("Possibly nonterminating rewrite:\n" ++
             prettyShow p)
-    aux n p =
+    aux n p t =
       case anywhere1 strat (singleton t) of
         [] -> p
-        rs -> aux (n+1) (p `Trans` Parallel rs t)
-      where t = result p
+        rs ->
+          let
+            q = p `Trans` Parallel rs t
+            u = result q
+          in
+            if ok u then aux (n+1) q u else p
 
 -- Compute all normal forms of a term wrt a particular strategy.
 {-# INLINEABLE normalForms #-}
@@ -459,10 +463,3 @@ reducesSkolem rule sub =
   reducesWith (\t u -> lessEq (subst skolemise t) (subst skolemise u)) rule sub
   where
     skolemise = con . skolem
-
-{-# INLINEABLE reducesSub #-}
-reducesSub :: Function f => Term f -> Rule f -> Subst f -> Bool
-reducesSub top rule sub =
-  reducesSkolem rule sub && lessEq u top && isNothing (unify u top)
-  where
-    u = subst sub (rhs rule)

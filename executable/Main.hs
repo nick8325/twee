@@ -166,7 +166,7 @@ runTwee config precedence obligs = stampM "twee" $ do
   putStrLn "% Normalised goal terms:"
   forM_ goals2 $ \t -> do
     putStr "%   "
-    prettyPrint (Rule Unoriented t (result (normaliseWith (rewrite reduces (st_rules state)) t)))
+    prettyPrint (Rule Unoriented t (result (normaliseWith (const True) (rewrite reduces (st_rules state)) t)))
   putStrLn ""
 
   return $

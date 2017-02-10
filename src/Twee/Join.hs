@@ -38,7 +38,7 @@ step1, step2, step3, allSteps ::
   (Function f, Has a (Rule f)) => Index f (Equation f) -> Index f a -> Overlap f -> Maybe (Overlap f)
 allSteps eqns idx overlap = step1 eqns idx overlap >>= step2 eqns idx >>= step3 eqns idx
 step1 eqns idx = joinWith eqns idx id
-step2 eqns idx = joinWith eqns idx (result . normaliseWith (rewrite reduces idx))
+step2 eqns idx = joinWith eqns idx (result . normaliseWith (const True) (rewrite reduces idx))
 step3 eqns idx overlap =
   case overlap_top overlap of
     Cons top Empty ->
@@ -48,7 +48,9 @@ step3 eqns idx overlap =
     _ -> Just overlap
   where
     join (overlap, top) =
-      joinWith eqns idx (result . normaliseWith (rewrite (reducesSub top) idx)) overlap
+      joinWith eqns idx (result . normaliseWith (check top) (rewrite reducesSkolem idx)) overlap
+
+    check top u = lessEq u top && isNothing (unify u top)
 
     flipCP :: Symbolic a => a -> a
     flipCP t = subst sub t
@@ -111,7 +113,7 @@ groundJoin eqns idx ctx r@Overlap{overlap_top = top, overlap_eqn = t :=: u} =
 
           groundJoin eqns idx ctx' r
       where
-        normaliseIn m = normaliseWith (rewrite (reducesInModel m) idx)
+        normaliseIn m = normaliseWith (const True) (rewrite (reducesInModel m) idx)
         nt = normaliseIn model t
         nu = normaliseIn model u
         t' = result nt
