@@ -42,12 +42,12 @@ step2 eqns idx = joinWith eqns idx (result . normaliseWith (rewrite reduces idx)
 step3 eqns idx overlap =
   case overlap_top overlap of
     Cons top Empty ->
-      case (join top, join (flipCP top)) of
+      case (join (overlap, top), join (flipCP (overlap, top))) of
         (Just _, Just _) -> Just overlap
         _ -> Nothing
     _ -> Just overlap
   where
-    join top =
+    join (overlap, top) =
       joinWith eqns idx (result . normaliseWith (rewrite (reducesSub top) idx)) overlap
 
     flipCP :: Symbolic a => a -> a
