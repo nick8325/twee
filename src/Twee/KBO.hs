@@ -95,11 +95,10 @@ lexLessIn cond t u
       [ lessEqInModel cond a b
       | v <- properSubterms u, Just b <- [fromTerm v]] =
         Just Strict
-lexLessIn cond (App f ts) (App g us) =
-  case compare f g of
-    LT -> Just Strict
-    GT -> Nothing
-    EQ -> loop ts us
+lexLessIn cond (App f ts) (App g us)
+  | f == g = loop ts us
+  | f << g = Just Strict
+  | otherwise = Nothing
   where
     loop Empty Empty = Just Nonstrict
     loop (Cons t ts) (Cons u us)
