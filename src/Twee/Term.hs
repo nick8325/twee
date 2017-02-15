@@ -99,6 +99,14 @@ class Substitution s where
   type SubstFun s
   evalSubst :: s -> Var -> Builder (SubstFun s)
 
+  {-# INLINE substList #-}
+  substList :: s -> TermList (SubstFun s) -> Builder (SubstFun s)
+  substList sub ts = aux ts
+    where
+      aux Empty = mempty
+      aux (Cons (Var x) ts) = evalSubst sub x <> aux ts
+      aux (Cons (App f ts) us) = app f (aux ts) <> aux us
+
 instance (Build a, v ~ Var) => Substitution (v -> a) where
   type SubstFun (v -> a) = BuildFun a
 
@@ -117,14 +125,6 @@ instance Substitution (Subst f) where
 {-# INLINE subst #-}
 subst :: Substitution s => s -> Term (SubstFun s) -> Builder (SubstFun s)
 subst sub t = substList sub (singleton t)
-
-{-# INLINE substList #-}
-substList :: Substitution s => s -> TermList (SubstFun s) -> Builder (SubstFun s)
-substList sub ts = aux ts
-  where
-    aux Empty = mempty
-    aux (Cons (Var x) ts) = evalSubst sub x <> aux ts
-    aux (Cons (App f ts) us) = app f (aux ts) <> aux us
 
 newtype Subst f =
   Subst {
@@ -265,16 +265,25 @@ newtype TriangleSubst f = Triangle { unTriangle :: Subst f }
 
 instance Substitution (TriangleSubst f) where
   type SubstFun (TriangleSubst f) = f
-  evalSubst (Triangle sub) x = substTri sub x
 
-{-# INLINE substTri #-}
-substTri :: Subst f -> Var -> Builder f
-substTri sub x = aux x
-  where
-    aux x =
-      case lookupList x sub of
-        Nothing -> var x
-        Just ts -> substList aux ts
+  {-# INLINE evalSubst #-}
+  evalSubst (Triangle sub) x =
+    case lookupList x sub of
+      Nothing  -> var x
+      Just ts  -> substList (Triangle sub) ts
+
+  -- Redefine substList to get better inlining behaviour
+  {-# INLINE substList #-}
+  substList (Triangle sub) ts = aux ts
+    where
+      aux Empty = mempty
+      aux (Cons (Var x) ts) = auxVar x <> aux ts
+      aux (Cons (App f ts) us) = app f (aux ts) <> aux us
+
+      auxVar x =
+        case lookupList x sub of
+          Nothing -> var x
+          Just ts -> aux ts
 
 unify :: Term f -> Term f -> Maybe (Subst f)
 unify t u = unifyList (singleton t) (singleton u)
@@ -459,7 +468,7 @@ mapFunList f ts = aux ts
     aux (Cons (Var x) ts) = var x `mappend` aux ts
     aux (Cons (App ff ts) us) = app (f ff) (aux ts) `mappend` aux us
 
-{-# INLINEABLE replacePosition #-}
+{-# INLINE replacePosition #-}
 replacePosition :: (Build a, BuildFun a ~ f) => Int -> a -> TermList f -> Builder f
 replacePosition n !x = aux n
   where
@@ -473,16 +482,18 @@ replacePosition n !x = aux n
       | otherwise =
         builder t `mappend` aux (n-len t) u
 
-{-# INLINEABLE replacePositionSub #-}
-replacePositionSub :: (Var -> Builder f) -> Int -> TermList f -> TermList f -> Builder f
+{-# INLINE replacePositionSub #-}
+replacePositionSub :: (Substitution sub, SubstFun sub ~ f) => sub -> Int -> TermList f -> TermList f -> Builder f
 replacePositionSub sub n !x = aux n
   where
     aux !_ !_ | False = __
     aux _ Empty = mempty
-    aux 0 (Cons _ t) = substList sub x `mappend` substList sub t
-    aux n (Cons (Var x) t) = sub x `mappend` aux (n-1) t
-    aux n (Cons t@(App f ts) u)
-      | n < len t =
-        app f (aux (n-1) ts) `mappend` substList sub u
-      | otherwise =
-        subst sub t `mappend` aux (n-len t) u
+    aux n (Cons t u)
+      | n < len t = inside n t `mappend` outside u
+      | otherwise = outside (singleton t) `mappend` aux (n-len t) u
+
+    inside 0 _ = outside x
+    inside n (App f ts) = app f (aux (n-1) ts)
+    inside _ _ = __
+
+    outside t = substList sub t

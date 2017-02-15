@@ -101,14 +101,6 @@ asymmetricOverlaps idx posns r1 r2 = do
   ChurchList.fromMaybe $
     overlapAt idx n r1 r2
 
--- Put these in separate functions to avoid code blowup
-buildReplacePositionSub :: TriangleSubst f -> Int -> TermList f -> TermList f -> Term f
-buildReplacePositionSub !sub !n !inner' !outer =
-  build (replacePositionSub (evalSubst sub) n inner' outer)
-
-termSubst :: TriangleSubst f -> Term f -> Term f
-termSubst sub t = build (Term.subst sub t)
-
 -- Create an overlap at a particular position in a term.
 {-# INLINE overlapAt #-}
 overlapAt ::
@@ -129,14 +121,20 @@ overlapAt !idx !n (Rule _ !outer !outer') (Rule _ !inner !inner') = do
 {-# INLINE makeOverlap #-}
 makeOverlap :: (Function f, Has a (Rule f)) => Index f a -> TermList f -> TermList f -> Int -> Equation f -> Maybe (Overlap f)
 makeOverlap idx top inner n eqn
-    -- Check for primeness before forcing anything else
-    -- (N.B. makeOverlap is marked INLINE so that callers do not need
-    -- to construct the rest of the overlap in that case)
-  | ConsSym _ ts <- inner, canSimplifyList idx ts = Nothing
+  | trivial eqn  = Nothing
   | trivial eqn' = Nothing
+  | ConsSym _ ts <- inner, canSimplifyList idx ts = Nothing
   | otherwise = Just (Overlap top inner n eqn')
   where
     eqn' = bothSides (simplify idx) eqn
+
+-- Put these in separate functions to avoid code blowup
+buildReplacePositionSub :: TriangleSubst f -> Int -> TermList f -> TermList f -> Term f
+buildReplacePositionSub !sub !n !inner' !outer =
+  build (replacePositionSub sub n inner' outer)
+
+termSubst :: TriangleSubst f -> Term f -> Term f
+termSubst sub t = build (Term.subst sub t)
 
 -- Simplify an existing overlap.
 {-# INLINEABLE simplifyOverlap #-}

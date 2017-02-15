@@ -59,6 +59,7 @@ label x =
         Just n -> (caches, Label n)
         Nothing ->
           let n = caches_nextId in
+          if n < 0 then error "negative label number" else
           (Caches {
              caches_nextId = n+1,
              caches_to = IntMap.insert n (toAny x) caches_to,
