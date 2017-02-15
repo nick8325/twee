@@ -13,17 +13,18 @@ import Data.IntMap.Strict(IntMap)
 import Data.Typeable
 import GHC.Exts
 import Unsafe.Coerce
+import Data.Int
 
-newtype Label a = Label { labelNum :: Int }
+newtype Label a = Label { labelNum :: Int32 }
   deriving (Eq, Ord, Show)
-unsafeMkLabel :: Int -> Label a
+unsafeMkLabel :: Int32 -> Label a
 unsafeMkLabel = Label
 
-type Cache a = Map a Int
+type Cache a = Map a Int32
 
 data Caches =
   Caches {
-    caches_nextId :: {-# UNPACK #-} !Int,
+    caches_nextId :: {-# UNPACK #-} !Int32,
     caches_from   :: !(Map TypeRep (Cache Any)),
     caches_to     :: !(IntMap Any) }
 
@@ -62,7 +63,7 @@ label x =
           if n < 0 then error "negative label number" else
           (Caches {
              caches_nextId = n+1,
-             caches_to = IntMap.insert n (toAny x) caches_to,
+             caches_to = IntMap.insert (fromIntegral n) (toAny x) caches_to,
              caches_from = Map.insert ty (toAnyCache (Map.insert x n cache)) caches_from },
            Label n)
 
@@ -73,4 +74,4 @@ find :: Label a -> a
 -- doesn't work.
 find (Label !n) = unsafeDupablePerformIO $ do
   Caches{..} <- readIORef caches
-  return (fromAny (IntMap.findWithDefault undefined n caches_to))
+  return (fromAny (IntMap.findWithDefault undefined (fromIntegral n) caches_to))

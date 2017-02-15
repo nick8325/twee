@@ -21,6 +21,8 @@ import Data.Function
 import qualified Data.Set as Set
 import Data.Set(Set)
 import Text.Printf
+import Control.Monad
+import Data.Int
 import Debug.Trace
 
 ----------------------------------------------------------------------
@@ -75,10 +77,10 @@ initialState =
 
 data Passive f =
   Passive {
-    passive_score   :: {-# UNPACK #-} !Int,
+    passive_score   :: {-# UNPACK #-} !Int32,
     passive_rule1   :: {-# UNPACK #-} !Id,
     passive_rule2   :: {-# UNPACK #-} !Id,
-    passive_pos     :: {-# UNPACK #-} !Int }
+    passive_pos     :: {-# UNPACK #-} !Int32 }
   deriving (Eq, Ord, Show)
 
 -- Compute all critical pairs from a rule and condense into a Passive.
@@ -87,25 +89,25 @@ data Passive f =
 makePassive :: Function f => Config -> State f -> Maybe (Id, Id) -> Id -> [Passive f]
 makePassive Config{..} State{..} mrange id =
   {-# SCC makePassive #-}
-  case IntMap.lookup (unId id) st_rule_ids of
+  case IntMap.lookup (fromIntegral id) st_rule_ids of
     Nothing -> []
     Just rule ->
-      [ Passive (score cfg_critical_pairs o) (rule_id rule1) (rule_id rule2) (overlap_pos o)
+      [ Passive (fromIntegral (score cfg_critical_pairs o)) (rule_id rule1) (rule_id rule2) (fromIntegral (overlap_pos o))
       | (rule1, rule2, o) <- overlaps st_oriented_rules rules rule ]
   where
     (lo, hi) = fromMaybe (0, id) mrange
     rules =
       IntMap.elems $
-      fst $ IntMap.split (unId (hi+1)) $
-      snd $ IntMap.split (unId (lo-1)) st_rule_ids
+      fst $ IntMap.split (fromIntegral (hi+1)) $
+      snd $ IntMap.split (fromIntegral (lo-1)) st_rule_ids
 
 -- Turn a Passive back into an overlap.
 {-# INLINEABLE findPassive #-}
 findPassive :: Function f => Config -> State f -> Passive f -> Maybe (Overlap f)
 findPassive Config{..} state@State{..} passive@Passive{..} = {-# SCC findPassive #-} do
-  rule1 <- the <$> IntMap.lookup (unId passive_rule1) st_rule_ids
-  rule2 <- the <$> IntMap.lookup (unId passive_rule2) st_rule_ids
-  overlapAt st_oriented_rules passive_pos
+  rule1 <- the <$> IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
+  rule2 <- the <$> IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
+  overlapAt st_oriented_rules (fromIntegral passive_pos)
     (renameAvoiding rule2 rule1) rule2
 
 -- Renormalise a queued Passive.
@@ -114,7 +116,7 @@ findPassive Config{..} state@State{..} passive@Passive{..} = {-# SCC findPassive
 simplifyPassive :: Function f => Config -> State f -> Passive f -> Maybe (Passive f)
 simplifyPassive config@Config{..} state passive = {-# SCC simplifyPassive #-} do
   overlap <- findPassive config state passive
-  return passive { passive_score = score cfg_critical_pairs overlap }
+  return passive { passive_score = fromIntegral (score cfg_critical_pairs overlap) }
 
 -- Renormalise the entire queue.
 {-# INLINEABLE simplifyQueue #-}
@@ -197,14 +199,14 @@ addRule config state@State{..} rule0 =
           then Index.insert (lhs (rule_rule rule)) rule st_oriented_rules
           else st_oriented_rules,
         st_rules = Index.insert (lhs (rule_rule rule)) rule st_rules,
-        st_rule_ids = IntMap.insert (unId (rule_id rule)) rule st_rule_ids,
+        st_rule_ids = IntMap.insert (fromIntegral (rule_id rule)) rule st_rule_ids,
         st_label = st_label+1 }
     passives =
       makePassive config state' Nothing (rule_id rule)
   in if subsumed st_joinable st_rules (unorient (rule_rule rule)) then
     state
   else
-    traceShow (pPrint (unId (rule_id rule)) <> text ". " <> pPrint (rule_rule rule)) $
+    traceShow (text (show (unId (rule_id rule))) <> text ". " <> pPrint (rule_rule rule)) $
     normaliseGoals $
     foldl' (enqueue config) state' passives
 

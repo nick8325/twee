@@ -17,9 +17,10 @@ import Twee.Constraints hiding (funs)
 import Data.DList(DList)
 import GHC.Generics hiding (Arity)
 import Data.Typeable
+import Data.Int
 
 -- Represents a unique identifier (e.g., for a rule).
-newtype Id = Id { unId :: Int }
+newtype Id = Id { unId :: Int32 }
   deriving (Eq, Ord, Show, Enum, Bounded, Num, Real, Integral)
 
 -- Generalisation of term functionality to things that contain terms.

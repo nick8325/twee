@@ -17,6 +17,7 @@ import GHC.ST hiding (liftST)
 import Data.Ord
 import Twee.Label
 import Data.Typeable
+import Data.Int
 
 --------------------------------------------------------------------------------
 -- Symbols. A symbol is a single function or variable in a flatterm.
@@ -134,10 +135,10 @@ instance Ord (Fun f) where
   compare = comparing fun_id
 
 fun :: (Ord f, Typeable f) => f -> Fun f
-fun f = F (labelNum (label f))
+fun f = F (fromIntegral (labelNum (label f)))
 
 fun_value :: Fun f -> f
-fun_value f = find (unsafeMkLabel (fun_id f))
+fun_value f = find (unsafeMkLabel (fromIntegral (fun_id f)))
 
 newtype Var = V { var_id :: Int } deriving (Eq, Ord, Enum)
 instance Show (Fun f) where show f = "f" ++ show (fun_id f)
