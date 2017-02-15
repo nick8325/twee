@@ -264,6 +264,68 @@ newEquation config state eqn =
       overlap_eqn = eqn }
 
 ----------------------------------------------------------------------
+-- Interreduction.
+----------------------------------------------------------------------
+
+data Simplification f = Simplify [Model f] | Reorient
+
+reduce :: Function f => Config -> State f -> Rule f -> TweeRule f -> Maybe (Simplification f)
+reduce config state@State{..} new oldRule@TweeRule{rule_rule = old, rule_models = models} =
+  guarded lhs reorient `mplus` guarded rhs simplify
+  where
+    reorient = undefined
+      -- guard . not . null . concat $
+      --   [ anywhere (tryRule (reducesInModel model) new) (f old)
+      --   | model <- models ]
+
+    simplify =
+      case anywhere (tryRule reduces new) (rhs old) of
+        [] -> Nothing
+        _  -> Just (Simplify models)
+
+    guarded f x = do
+      guard (any isJust [ match (lhs new) t | t <- subterms (f old) ])
+      x
+
+    rules = Index.delete (lhs old) oldRule st_rules
+    oriented_rules = Index.delete (lhs old) oldRule st_oriented_rules
+
+-- reduceWith :: Function f => Twee f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
+-- reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
+--   | not (isWeak new) &&
+--     not (lhs new `isInstanceOf` l) &&
+--     not (null (anywhere (tryRule reduces new) l)) =
+--       Just (Reorient old0)
+--   | not (isWeak new) &&
+--     not (lhs new `isInstanceOf` l) &&
+--     not (oriented (orientation new)) &&
+--     not (all isNothing [ match (lhs new) l' | l' <- subterms l ]) &&
+--     modelJoinable =
+--     tryGroundJoin
+--   | not (null (anywhere (tryRule reduces new) (rhs old))) =
+--       Just (Simplify model old0)
+--   | not (oriented (orientation old)) &&
+--     not (oriented (orientation new)) &&
+--     not (lhs new `isInstanceOf` r) &&
+--     not (all isNothing [ match (lhs new) r' | r' <- subterms r ]) &&
+--     modelJoinable =
+--     tryGroundJoin
+--   | otherwise = Nothing
+--   where
+--     s' = s { labelledRules = Indexes.delete (Labelled lab old0) (labelledRules s) }
+--     modelJoinable = isLeft (normaliseCP s' (Critical info (lm :=: rm)))
+--     lm = result (normaliseIn s' model l)
+--     rm = result (normaliseIn s' model r)
+--     tryGroundJoin =
+--       case groundJoin s' (branches (And [])) (Critical info (l :=: r)) of
+--         Left model' ->
+--           Just (Simplify model' old0)
+--         Right _ ->
+--           Just (Reorient old0)
+--     isWeak (Rule (WeaklyOriented _) _ _) = True
+--     isWeak _ = False
+
+----------------------------------------------------------------------
 -- The main loop.
 ----------------------------------------------------------------------
 
