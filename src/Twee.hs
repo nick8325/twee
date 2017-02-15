@@ -67,7 +67,7 @@ initialState =
     st_joinable = Index.Nil,
     st_goals = [],
     st_queue = Heap.empty,
-    st_label = 0,
+    st_label = 1,
     st_considered = 0 }
 
 ----------------------------------------------------------------------
