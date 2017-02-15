@@ -216,8 +216,9 @@ normaliseGoals state@State{..} =
     st_goals = map (normalForms (rewrite reduces st_rules) . Set.toList) st_goals }
 
 -- Record an equation as being joinable.
-addJoinable :: Equation f -> State f -> State f
-addJoinable (t :=: u) state =
+addJoinable :: Function f => State f -> Equation f -> State f
+addJoinable state eqn@(t :=: u) =
+  traceShow (text (replicate (length (show (unId (st_label state)))) 'x' ++ ".") <+> pPrint eqn) $
   state {
     st_joinable =
       Index.insert t (t :=: u) (st_joinable state) }
