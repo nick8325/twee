@@ -70,20 +70,25 @@ joinWith eqns idx reduce overlap
     eqn = bothSides reduce (overlap_eqn overlap)
 
 -- N.B.:
--- The subsumption check works *asymmetrically*: rather than check if
--- t = u can be joined, it checks if t can be rewritten to u
--- (ignoring ordering constraints). This is usually the same, because
--- we generate unorientable rules in pairs. But it's important in
--- Twee.consider, where after orienting an equation into a set of rules,
--- we check each rule for subsumption in turn before adding it.
+-- When we check a critical pair for subsumption, we only apply
+-- rules left-to-right, i.e. we see if we can rewrite t to u,
+-- but we don't try rewriting u to t. This usually makes no
+-- difference, because we generate unorientable rules in pairs. But
+-- it's important in Twee.consider, where after orienting an equation
+-- into a set of rules, we check each rule for subsumption in turn
+-- before adding it. Otherwise we would try adding the pair of rules
+-- t->u, u->t, but the second would be subsumed by the first.
 {-# INLINEABLE subsumed #-}
 subsumed :: Has a (Rule f) => Index f (Equation f) -> Index f a -> Equation f -> Bool
 subsumed eqns idx (t :=: u)
   | t == u = True
   | or [ rhs rule == u | rule <- Index.lookup t idx ] = True
-  | or [ u == subst sub u'
-       | t' :=: u' <- Index.approxMatches t eqns,
-         sub <- maybeToList (match t' t) ] = True
+  | subEqn t u || subEqn u t = True
+  where
+    subEqn t u =
+      or [ u == subst sub u'
+         | t' :=: u' <- Index.approxMatches t eqns,
+           sub <- maybeToList (match t' t) ]
 subsumed eqns idx (App f ts :=: App g us)
   | f == g =
     let
