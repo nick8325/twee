@@ -17,16 +17,16 @@ import Data.List
 joinOverlap ::
   (Function f, Has a (Rule f)) =>
   Index f (Equation f) -> Index f a ->
-  Overlap f -> Either [Equation f] (Overlap f, Model f)
+  Overlap f -> Either [Equation f] (Overlap f, [Model f])
 joinOverlap eqns idx overlap =
   case allSteps eqns idx overlap of
     Just overlap ->
       case groundJoin eqns idx (branches (And [])) overlap of
-        Left model -> Right (overlap, model)
+        Left model -> Right (overlap, [model])
         Right overlaps ->
           case all (isLeft . joinOverlap eqns idx) overlaps of
             True -> Left [overlap_eqn overlap]
-            False -> Right (overlap, modelFromOrder [])
+            False -> Right (overlap, [])
     Nothing ->
       Left []
 

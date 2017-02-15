@@ -173,8 +173,11 @@ data TweeRule f =
     rule_positions :: !(Positions f),
     -- The CP which created the rule
     rule_overlap   :: {-# UNPACK #-} !(Overlap f),
-    -- A model in which the rule is false (used when reorienting)
-    rule_model     :: !(Model f) }
+    -- Models in which the rule is false (used when reorienting)
+    rule_models    :: [Model f] }
+
+instance Eq (TweeRule f) where
+  (==) = (==) `on` rule_id
 
 instance f ~ g => Has (TweeRule f) (Rule g) where the = rule_rule
 instance f ~ g => Has (TweeRule f) (Positions g) where the = rule_positions
@@ -232,7 +235,7 @@ consider config state@State{..} overlap0 =
     case joinOverlap st_joinable st_rules overlap of
       Left eqns ->
         foldl' addJoinable state eqns
-      Right (overlap, model) ->
+      Right (overlap, models) ->
         let
           rules =
             [ \n ->
@@ -241,7 +244,7 @@ consider config state@State{..} overlap0 =
                 rule_rule = rule,
                 rule_positions = positions (lhs rule),
                 rule_overlap = overlap,
-                rule_model = model }
+                rule_models = models }
             | rule <- orient (overlap_eqn overlap) ]
         in
           foldl' (addRule config) state rules
