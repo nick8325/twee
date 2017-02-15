@@ -271,7 +271,7 @@ complete config state
       (Nothing, state) -> state
       (Just overlap, state) ->
         let state' = consider config state overlap in
-        (if unId (st_label state) `div` 100 /= unId (st_label state') `div` 100 then trace (report state') else id) $
+        (if unId (st_label state-1) `div` 100 /= unId (st_label state'-1) `div` 100 then trace (report state') else id) $
         complete config state'
 
 {-# INLINEABLE solved #-}
