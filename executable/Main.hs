@@ -28,6 +28,7 @@ import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
 import Jukebox.Monotonox.ToFOF
 import Control.Exception
+import qualified Data.Set as Set
 
 parseConfig :: OptionParser Config
 parseConfig =
@@ -161,7 +162,7 @@ runTwee config precedence obligs = stampM "twee" $ do
   let
     !state =
       complete config $
-      foldl' (newEquation config) initialState { st_goals = goals2 } axioms2
+      foldl' (newEquation config) initialState { st_goals = map Set.singleton goals2 } axioms2
 
   let rs = map rule_rule (Index.elems (st_rules state))
 

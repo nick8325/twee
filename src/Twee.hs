@@ -19,6 +19,8 @@ import Data.Maybe
 import Data.Ord
 import Data.List
 import Data.Function
+import qualified Data.Set as Set
+import Data.Set(Set)
 import Text.Printf
 import Debug.Trace
 
@@ -38,7 +40,7 @@ data State f =
     st_rules          :: !(Index f (TweeRule f)),
     st_rule_ids       :: !(IntMap (TweeRule f)),
     st_joinable       :: !(Index f (Equation f)),
-    st_goals          :: [Term f],
+    st_goals          :: [Set (Term f)],
     st_queue          :: !(Heap (Passive f)),
     st_label          :: {-# UNPACK #-} !Id,
     st_considered     :: {-# UNPACK #-} !Int }
@@ -208,7 +210,7 @@ addRule config state rule0 =
 normaliseGoals :: Function f => State f -> State f
 normaliseGoals state@State{..} =
   state {
-    st_goals = map (result . normaliseWith (const True) (rewrite reduces st_rules)) st_goals }
+    st_goals = map (normalForms (rewrite reduces st_rules) . Set.toList) st_goals }
 
 -- Record an equation as being joinable.
 addJoinable :: Equation f -> State f -> State f
@@ -274,7 +276,9 @@ complete config state
 
 {-# INLINEABLE solved #-}
 solved :: Function f => State f -> Bool
-solved State{..} = nub st_goals /= st_goals
+solved State{st_goals = goal:goals} =
+  not (null (foldl' Set.intersection goal goals))
+solved _ = False
 
 {-# INLINEABLE report #-}
 report :: Function f => State f -> String
