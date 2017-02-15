@@ -121,8 +121,11 @@ overlapAt !idx !n (Rule _ !outer !outer') (Rule _ !inner !inner') = do
 {-# INLINE makeOverlap #-}
 makeOverlap :: (Function f, Has a (Rule f)) => Index f a -> TermList f -> TermList f -> Int -> Equation f -> Maybe (Overlap f)
 makeOverlap idx top inner n eqn
-  | trivial eqn  = Nothing
+  | trivial eqn = Nothing
   | trivial eqn' = Nothing
+    -- You might think that checking for primeness first is better, to
+    -- avoid having to build the equation at all if it's non-prime.
+    -- But it seems to go slower!
   | ConsSym _ ts <- inner, canSimplifyList idx ts = Nothing
   | otherwise = Just (Overlap top inner n eqn')
   where
