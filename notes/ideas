@@ -1,7 +1,3 @@
-Make LPO go faster
-Fix nontermination in case split
-Critical pair improvement
-
 penalise critical pairs that have repeated occurrences of the same
 variable (too constrained). more generally: measure how widely
 applicable the critical pair would be (how many terms match?
@@ -17,10 +13,6 @@ Take age into account with critical pairs. Other ideas:
 
 When generating a critical pair s <- t -> u,
 add constraints s < t and t > u.
-
-Try to combine as many axioms as possible, by recording which axioms
-created each critical pair (including transitively) and minimising the
-maximum number of occurrences of a single axiom
 
 Do we really need to eagerly generate critical pairs from recently
 generated laws? Maybe gradually notch up maximum age of considered
@@ -46,12 +38,6 @@ Look at size of overlap when weighting CPs (big overlap - better?)
 Look at repeated variables (more repeated variables - better because
 harder to form a small critical pair?)
 
-Do we really need to rule out the case old `isInstanceOf` new in
-subsumption checking? Doesn't it amount to doing case split on
-direction of old rule. Possibly, but then we need to be more careful
-when doing interreduction - at the moment we can interreduce two rules
-using each other if we're not careful.
-
 For QuickSpec-style "only generate laws up to this size": when a
 critical pair is this size, join it under the constraint X <= c for
 all variables X where c is a maximal constant of size 1. This effectively
@@ -61,6 +47,3 @@ When we discover the crucial lemma, it causes bajillions of existing
 rules to be discarded. Can we somehow use this as a similar/boringness
 metric on these existing rules? (The fact that there is a single rule
 which will generalise them all.)
-
-Why does test/abelian --no-set-join terminate, and with such a weird
-set of rules?
