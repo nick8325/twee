@@ -90,7 +90,7 @@ instance Symbolic (Equation f) where
   type ConstantOf (Equation f) = f
 
 instance PrettyTerm f => Pretty (Equation f) where
-  pPrint (x :=: y) = hang (pPrint x <+> text "=") 2 (pPrint y)
+  pPrint (x :=: y) = pPrint x <+> text "=" <+> pPrint y
 
 instance Sized f => Sized (Equation f) where
   size (x :=: y) = size x + size y
