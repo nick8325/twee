@@ -19,7 +19,6 @@ import Control.Arrow((***))
 import GHC.Magic(oneShot, inline)
 import Data.Monoid
 import Twee.Utils
-import Twee.Profile
 import GHC.Generics
 
 -- The set of positions at which a term can have critical overlaps.
@@ -119,10 +118,11 @@ overlapAt !idx !n (Rule _ !outer !outer') (Rule _ !inner !inner') = do
   let t = at n (singleton outer)
   sub <- unifyTri inner t
   makeOverlap idx
-   (Term.singleton (termSubst sub outer))
-   (Term.singleton (termSubst sub inner))
+   ({-# SCC overlap_top #-} Term.singleton (termSubst sub outer))
+   ({-# SCC overlap_inner #-} Term.singleton (termSubst sub inner))
    n
-   (termSubst sub outer' :=:
+   (({-# SCC overlap_eqn_1 #-} termSubst sub outer') :=:
+    {-# SCC overlap_eqn_2 #-}
     buildReplacePositionSub sub n (singleton inner') (singleton outer))
 
 -- Create an overlap, after simplifying and checking for primeness.

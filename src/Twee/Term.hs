@@ -20,7 +20,6 @@ import Data.Maybe
 import Data.Monoid
 import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
-import Twee.Profile
 
 --------------------------------------------------------------------------------
 -- A type class for builders.
@@ -55,7 +54,7 @@ build x =
 
 {-# INLINE buildList #-}
 buildList :: Build a => a -> TermList (BuildFun a)
-buildList x = stamp "buildList" (buildTermList (builder x))
+buildList x = {-# SCC buildList #-} buildTermList (builder x)
 
 {-# INLINE con #-}
 con :: Fun f -> Builder f
@@ -255,7 +254,7 @@ matchList !pat !t
           sub <- extend x t sub
           loop sub pat u
         loop _ _ _ = Nothing
-    in stamp "match" (loop emptySubst pat t)
+    in {-# SCC match #-} loop emptySubst pat t
 
 --------------------------------------------------------------------------------
 -- Unification.
@@ -289,7 +288,7 @@ unifyTri :: Term f -> Term f -> Maybe (TriangleSubst f)
 unifyTri t u = unifyListTri (singleton t) (singleton u)
 
 unifyListTri :: TermList f -> TermList f -> Maybe (TriangleSubst f)
-unifyListTri !t !u = fmap Triangle (stamp "unify" (loop emptySubst t u))
+unifyListTri !t !u = fmap Triangle ({-# SCC unify #-} loop emptySubst t u)
   where
     loop !_ !_ !_ | False = __
     loop sub Empty _ = Just sub

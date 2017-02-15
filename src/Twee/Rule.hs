@@ -15,7 +15,6 @@ import Twee.Utils
 import qualified Data.Set as Set
 import Data.Set(Set)
 import qualified Twee.Term as Term
-import Twee.Profile
 import GHC.Generics
 
 --------------------------------------------------------------------------------
@@ -241,7 +240,7 @@ initial (Parallel _ t) = t
 result :: Reduction f -> Term f
 result (Parallel [] t) = t
 result (Trans _ p) = result p
-result t = stamp "executing rewrite" (build (emitReduction t))
+result t = {-# SCC result_emitReduction #-} build (emitReduction t)
   where
     emitReduction (Step r sub) = Term.subst sub (rhs r)
     emitReduction (Trans _ p) = emitReduction p
@@ -277,7 +276,7 @@ steps r = aux r []
 -- Compute the normal form of a term wrt only oriented rules.
 {-# INLINEABLE simplify #-}
 simplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
-simplify !idx !t = stamp "simplify term" (simplify1 idx t)
+simplify !idx !t = {-# SCC simplify #-} simplify1 idx t
 
 {-# INLINEABLE simplify1 #-}
 simplify1 :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
@@ -303,6 +302,7 @@ canSimplify idx t = canSimplifyList idx (singleton t)
 {-# INLINEABLE canSimplifyList #-}
 canSimplifyList :: (Function f, Has a (Rule f)) => Index f a -> TermList f -> Bool
 canSimplifyList idx t =
+  {-# SCC canSimplifyList #-}
   any (isJust . simpleRewrite idx) (filter isApp (subtermsList t))
 
 -- Find a simplification step that applies to a term.
@@ -324,11 +324,8 @@ simpleRewrite idx t =
 -- Normalise a term wrt a particular strategy.
 {-# INLINE normaliseWith #-}
 normaliseWith :: PrettyTerm f => (Term f -> Bool) -> Strategy f -> Term f -> Reduction f
-normaliseWith ok strat t = stamp (describe res) res
+normaliseWith ok strat t = {-# SCC normaliseWith #-} res
   where
-    describe (Parallel [] _) = "normalising terms (already in normal form)"
-    describe _ = "normalising terms (not in normal form)"
-
     res = aux 0 (Parallel [] t) t
     aux 1000 p _ =
       ERROR("Possibly nonterminating rewrite:\n" ++
@@ -346,7 +343,7 @@ normaliseWith ok strat t = stamp (describe res) res
 -- Compute all normal forms of a term wrt a particular strategy.
 {-# INLINEABLE normalForms #-}
 normalForms :: Function f => Strategy f -> [Term f] -> Set (Term f)
-normalForms strat ts = stamp "computing all normal forms" $ go Set.empty Set.empty ts
+normalForms strat ts = {-# SCC normalForms #-} go Set.empty Set.empty ts
   where
     go _ norm [] = norm
     go dead norm (t:ts)

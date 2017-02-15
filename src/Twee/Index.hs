@@ -11,7 +11,6 @@ import Twee.Base hiding (var, fun, empty, size, singleton, prefix, funs, lookupL
 import qualified Twee.Term as Term
 import Twee.Array
 import qualified Data.List as List
-import Twee.Profile
 import Twee.Utils
 import Twee.Index.Lookup
 
@@ -36,7 +35,7 @@ withPrefix t idx@Index{..} =
   idx{prefix = buildList (builder t `mappend` builder prefix)}
 
 insert :: Term f -> a -> Index f a -> Index f a
-insert !t x !idx = stamp "index insert" (aux (key t) idx)
+insert !t x !idx = {-# SCC insert #-} aux (key t) idx
   where
     aux t Nil = singletonEntry t x
     aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
@@ -85,7 +84,7 @@ key t = buildList . aux . Term.singleton $ t
 
 {-# INLINEABLE delete #-}
 delete :: Eq a => Term f -> a -> Index f a -> Index f a
-delete !t x !idx = stamp "index delete" (aux (key t) idx)
+delete !t x !idx = {-# SCC delete #-} aux (key t) idx
   where
     aux _ Nil = Nil
     aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
@@ -116,7 +115,8 @@ elem !t x !idx = aux (key t) idx
 
 approxMatchesList :: TermList f -> Index f a -> [a]
 approxMatchesList t idx =
-  stamp "index lookup" (run (Frame emptySubst2 t idx Stop))
+  {-# SCC approxMatchesList #-}
+  run (Frame emptySubst2 t idx Stop)
 
 {-# INLINE approxMatches #-}
 approxMatches :: Term f -> Index f a -> [a]
@@ -147,8 +147,8 @@ lookup t idx = lookupList (Term.singleton t) idx
 {-# NOINLINE run #-}
 run :: Stack f a -> [a]
 run Stop = []
-run Frame{..} = run (stamp "index lookup (inner)" $ step frame_subst frame_term frame_index frame_rest)
-run Yield{..} = stamp "index lookup (found)" $ yield_found ++ run yield_rest
+run Frame{..} = run ({-# SCC run_inner #-} step frame_subst frame_term frame_index frame_rest)
+run Yield{..} = {-# SCC run_found #-} yield_found ++ run yield_rest
 
 elems :: Index f a -> [a]
 elems Nil = []

@@ -17,7 +17,6 @@ import Data.Ord
 import qualified Data.Map.Strict as Map
 import qualified Twee.KBO as KBO
 import qualified Twee.Index as Index
-import Twee.Profile
 import Data.List.Split
 import Data.List
 import Data.Maybe
@@ -27,7 +26,6 @@ import Jukebox.Name
 import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
 import Jukebox.Monotonox.ToFOF
-import Control.Exception
 import qualified Data.Set as Set
 
 parseConfig :: OptionParser Config
@@ -96,8 +94,8 @@ instance PrettyTerm Constant where
 
 instance Ordered (Extended Constant) where
   f << g = fun_value f < fun_value g
-  lessEq t u = stamp "KBO" (KBO.lessEq t u)
-  lessIn model t u = stamp "KBO in model" (KBO.lessIn model t u)
+  lessEq t u = {-# SCC lessEq #-} KBO.lessEq t u
+  lessIn model t u = {-# SCC lessIn #-} KBO.lessIn model t u
 
 toTwee :: Problem Clause -> ([Equation Jukebox.Function], [Term Jukebox.Function])
 toTwee prob = (lefts eqs, goals)
@@ -145,7 +143,7 @@ addNarrowing _ =
   ERROR("Don't know how to handle several non-ground goals")
 
 runTwee :: Config -> [String] -> Problem Clause -> IO Answer
-runTwee config precedence obligs = stampM "twee" $ do
+runTwee config precedence obligs = {-# SCC runTwee #-} do
   let (axioms0, goals0) = toTwee obligs
       prec c = (isNothing (elemIndex (base c) precedence),
                 fmap negate (elemIndex (base c) precedence),
@@ -177,7 +175,7 @@ runTwee config precedence obligs = stampM "twee" $ do
   return $
     if solved state then Unsatisfiable else NoAnswer GaveUp
 
-main = flip finally profile $ do
+main = do
   let twee = Tool "twee" "twee - the Wonderful Equation Engine" "1" "Proves equations."
   join . parseCommandLine twee . tool twee $
     greetingBox twee =>>
