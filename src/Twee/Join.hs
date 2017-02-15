@@ -69,17 +69,21 @@ joinWith eqns idx reduce overlap
   where
     eqn = bothSides reduce (overlap_eqn overlap)
 
+-- N.B.:
+-- The subsumption check works *asymmetrically*: rather than check if
+-- t = u can be joined, it checks if t can be rewritten to u
+-- (ignoring ordering constraints). This is usually the same, because
+-- we generate unorientable rules in pairs. But it's important in
+-- Twee.consider, where after orienting an equation into a set of rules,
+-- we check each rule for subsumption in turn before adding it.
 {-# INLINEABLE subsumed #-}
 subsumed :: Has a (Rule f) => Index f (Equation f) -> Index f a -> Equation f -> Bool
 subsumed eqns idx (t :=: u)
   | t == u = True
-  | sub1 t u || sub1 u t = True
-  where
-    sub1 t u =
-      or [ rhs rule == u | rule <- Index.lookup t idx ] ||
-      or [ u == subst sub u'
-         | t' :=: u' <- Index.approxMatches t eqns,
-           sub <- maybeToList (match t' t) ]
+  | or [ rhs rule == u | rule <- Index.lookup t idx ] = True
+  | or [ u == subst sub u'
+       | t' :=: u' <- Index.approxMatches t eqns,
+         sub <- maybeToList (match t' t) ] = True
 subsumed eqns idx (App f ts :=: App g us)
   | f == g =
     let

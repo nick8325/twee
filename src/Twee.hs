@@ -183,24 +183,25 @@ instance Has (TweeRule f) Id where the = rule_id
 
 -- Add a new rule.
 {-# INLINEABLE addRule #-}
-addRule :: Function f => Config -> State f -> TweeRule f -> State f
-addRule config state rule0 =
+addRule :: Function f => Config -> State f -> (Id -> TweeRule f) -> State f
+addRule config state@State{..} rule0 =
   stamp "addRule" $
   let
-    -- Important to canonicalise the rule so that we don't get
-    -- bigger and bigger variable indices over time
-    rule = rule0 { rule_rule = canonicalise (rule_rule rule0) }
+    rule = rule0 st_label
     state' =
       state {
         st_oriented_rules =
           if oriented (orientation (rule_rule rule))
-          then Index.insert (lhs (rule_rule rule)) rule (st_oriented_rules state)
-          else st_oriented_rules state,
-        st_rules = Index.insert (lhs (rule_rule rule)) rule (st_rules state),
-        st_rule_ids = IntMap.insert (unId (rule_id rule)) rule (st_rule_ids state) }
+          then Index.insert (lhs (rule_rule rule)) rule st_oriented_rules
+          else st_oriented_rules,
+        st_rules = Index.insert (lhs (rule_rule rule)) rule st_rules,
+        st_rule_ids = IntMap.insert (unId (rule_id rule)) rule st_rule_ids,
+        st_label = st_label+1 }
     passives =
       makePassive config state' Nothing (rule_id rule)
-  in
+  in if subsumed st_joinable st_rules (unorient (rule_rule rule)) then
+    state
+  else
     traceShow (pPrint (unId (rule_id rule)) <> text ". " <> pPrint (rule_rule rule)) $
     normaliseGoals $
     foldl' (enqueue config) state' passives
@@ -222,29 +223,29 @@ addJoinable (t :=: u) state =
 -- Try to join a critical pair.
 {-# INLINEABLE consider #-}
 consider :: Function f => Config -> State f -> Overlap f -> State f
-consider config state@State{..} overlap =
+consider config state@State{..} overlap0 =
   stamp "consider" $
-  case joinOverlap st_joinable st_rules overlap of
-    Left eqns ->
-      foldr addJoinable state eqns
-    Right (overlap, model) ->
-      let
-        rules =
-          [ TweeRule {
-              rule_id = n,
-              rule_rule = rule,
-              rule_positions = positions (lhs rule),
-              rule_overlap = overlap,
-              rule_model = model }
-          | (n, rule) <-
-            zip [st_label..] (orient (overlap_eqn overlap)) ]
-        state' =
-          state {
-            st_label = st_label + fromIntegral (length rules) }
-      in
-        -- XXX usort not quite right - should give a "second chance"
-        -- to each rule. Unidirectional join?
-        foldl' (addRule config) state' (nubBy ((==) `on` (canonicalise . rule_rule)) rules)
+  let
+    -- Important to canonicalise the rule so that we don't get
+    -- bigger and bigger variable indices over time
+    overlap = canonicalise overlap0
+  in
+    case joinOverlap st_joinable st_rules overlap of
+      Left eqns ->
+        foldl' addJoinable state eqns
+      Right (overlap, model) ->
+        let
+          rules =
+            [ \n ->
+              TweeRule {
+                rule_id = n,
+                rule_rule = rule,
+                rule_positions = positions (lhs rule),
+                rule_overlap = overlap,
+                rule_model = model }
+            | rule <- orient (overlap_eqn overlap) ]
+        in
+          foldl' (addRule config) state rules
 
 -- Add a new equation.
 {-# INLINEABLE newEquation #-}
