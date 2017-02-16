@@ -4,7 +4,7 @@
 -- with inlining switched up to max, and compiling the rest of the module
 -- like that is too slow.
 {-# LANGUAGE BangPatterns, RecordWildCards, CPP #-}
-{-# OPTIONS_GHC -funfolding-creation-threshold=1000 -funfolding-use-threshold=1000 #-}
+{-# OPTIONS_GHC -funfolding-creation-threshold=10000 -funfolding-use-threshold=10000 #-}
 module Twee.Index.Lookup where
 
 #include "errors.h"
