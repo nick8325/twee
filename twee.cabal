@@ -43,7 +43,6 @@ library
     Twee.KBO
     Twee.Label
     Twee.Pretty
-    Twee.Profile
     Twee.Rule
     Twee.Term
     Twee.Term.Core
