@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, FlexibleContexts, UndecidableInstances, StandaloneDeriving, RecordWildCards #-}
+{-# LANGUAGE CPP, FlexibleContexts, UndecidableInstances, RecordWildCards #-}
 module Twee.Constraints where
 
 #include "errors.h"
@@ -43,9 +43,7 @@ data Formula f =
   | LessEq (Atom f) (Atom f)
   | And [Formula f]
   | Or  [Formula f]
-  deriving Show
-deriving instance Eq (Fun f) => Eq (Formula f)
-deriving instance Ord (Fun f) => Ord (Formula f)
+  deriving (Eq, Ord, Show)
 
 instance PrettyTerm f => Pretty (Formula f) where
   pPrintPrec _ _ (Less t u) = hang (pPrint t <+> text "<") 2 (pPrint u)
@@ -103,8 +101,7 @@ data Branch f =
     funs        :: [Fun f],
     less        :: [(Atom f, Atom f)],
     equals      :: [(Atom f, Atom f)] } -- greatest atom first
-deriving instance Eq (Fun f) => Eq (Branch f)
-deriving instance Ord (Fun f) => Ord (Branch f)
+  deriving (Eq, Ord)
 
 instance PrettyTerm f => Pretty (Branch f) where
   pPrint Branch{..} =
@@ -215,7 +212,7 @@ modelFromOrder :: (Minimal f, Ord f) => [Atom f] -> Model f
 modelFromOrder xs =
   Model (Map.fromList [(x, (i, i)) | (x, i) <- zip xs [0..]])
 
-weakenModel :: Ord (Fun f) => Model f -> [Model f]
+weakenModel :: Model f -> [Model f]
 weakenModel (Model m) =
   [ Model (Map.delete x m) | x <- Map.keys m ] ++
   [ Model (Map.fromList xs)
