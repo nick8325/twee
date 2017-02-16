@@ -29,22 +29,34 @@ import qualified Data.Set as Set
 
 parseConfig :: OptionParser Config
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*> (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> repeats)
+  Config <$> maxSize <*> maxCPs <*> (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight)
   where
-    maxSize = flag "max-term-size" ["Maximum term size"] maxBound argNum
-    maxCPs = flag "max-cps" ["Give up after this many critical pairs"] maxBound argNum
-    lweight = defaultFlag "lhs-weight" ["Weight given to LHS of critical pair"] (CP.cfg_lhsweight . cfg_critical_pairs) argNum
-    rweight = defaultFlag "rhs-weight" ["Weight given to RHS of critical pair"] (CP.cfg_rhsweight . cfg_critical_pairs) argNum
-    funweight = defaultFlag "fun-weight" ["Weight given to function symbols"] (CP.cfg_funweight . cfg_critical_pairs) argNum
-    varweight = defaultFlag "var-weight" ["Weight given to variable symbols"] (CP.cfg_varweight . cfg_critical_pairs) argNum
-    repeats = not <$> bool "dont-penalise-repeated-variables" ["Don't penalise repeated variables in critical pairs"]
+    maxSize =
+      inGroup "Resource limits" $
+      flag "max-term-size" ["Only generate rewrite rules up to this size (unlimited by default)."] maxBound argNum
+    maxCPs =
+      inGroup "Resource limits" $
+      flag "max-cps" ["Give up after considering this many critical pairs (unlimited by default)."] maxBound argNum
+    lweight =
+      inGroup "Critical pair weighting heuristics" $
+      defaultFlag "lhs-weight" "Weight given to LHS of critical pair" (CP.cfg_lhsweight . cfg_critical_pairs) argNum
+    rweight =
+      inGroup "Critical pair weighting heuristics" $
+      defaultFlag "rhs-weight" "Weight given to RHS of critical pair" (CP.cfg_rhsweight . cfg_critical_pairs) argNum
+    funweight =
+      inGroup "Critical pair weighting heuristics" $
+      defaultFlag "fun-weight" "Weight given to function symbols" (CP.cfg_funweight . cfg_critical_pairs) argNum
+    varweight =
+      inGroup "Critical pair weighting heuristics" $
+      defaultFlag "var-weight" "Weight given to variable symbols" (CP.cfg_varweight . cfg_critical_pairs) argNum
     defaultFlag name desc field parser =
-      flag name (desc ++ ["Default value: " ++ show def]) def parser
+      flag name [desc ++ " (defaults to " ++ show def ++ ")."] def parser
       where
         def = field defaultConfig
 
 parsePrecedence :: OptionParser [String]
 parsePrecedence =
+  inGroup "Term order options" $
   fmap (splitOn ",")
   (flag "precedence" ["List of functions in descending order of precedence"] [] (arg "<function>" "expected a function name" Just))
 
@@ -141,8 +153,9 @@ addNarrowing (axioms, [t, u])
 addNarrowing _ =
   ERROR("Don't know how to handle several non-ground goals")
 
-runTwee :: Config -> [String] -> Problem Clause -> IO Answer
-runTwee config precedence obligs = {-# SCC runTwee #-} do
+runTwee :: GlobalFlags -> Config -> [String] -> Problem Clause -> IO Answer
+runTwee globals config precedence obligs = {-# SCC runTwee #-} do
+  unless (quiet globals) (putStrLn "")
   let (axioms0, goals0) = toTwee obligs
       prec c = (isNothing (elemIndex (base c) precedence),
                 fmap negate (elemIndex (base c) precedence),
@@ -161,12 +174,13 @@ runTwee config precedence obligs = {-# SCC runTwee #-} do
       complete config $
       foldl' (newEquation config) initialState { st_goals = map Set.singleton goals2 } axioms2
 
-  putStrLn (report state)
+  putStr (comment globals (report state))
 
-  putStrLn "% Normalised goal terms:"
+  putStr (comment globals "Normalised goal terms:")
   forM_ goals2 $ \t -> do
-    putStr "%   "
-    prettyPrint (Rule Unoriented t (result (normaliseWith (const True) (rewrite reduces (st_rules state)) t)))
+    putStr $ comment globals $
+      "  " ++
+      prettyShow (Rule Unoriented t (result (normaliseWith (const True) (rewrite reduces (st_rules state)) t)))
   putStrLn ""
 
   return $
@@ -181,4 +195,4 @@ main = do
        (toFofIO <$> globalFlags <*> clausifyBox <*> pure (tags False)) =>>=
        clausifyBox =>>=
        allObligsBox <*>
-         (runTwee <$> parseConfig <*> parsePrecedence))
+         (runTwee <$> globalFlags <*> parseConfig <*> parsePrecedence))

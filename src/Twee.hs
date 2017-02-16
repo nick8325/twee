@@ -53,8 +53,7 @@ defaultConfig =
         cfg_lhsweight = 2,
         cfg_rhsweight = 1,
         cfg_funweight = 4,
-        cfg_varweight = 3,
-        cfg_repeats   = True } }
+        cfg_varweight = 3 } }
 
 initialState :: State f
 initialState =
@@ -348,15 +347,15 @@ solved _ = False
 {-# INLINEABLE report #-}
 report :: Function f => State f -> String
 report State{..} =
-  printf "\n%% Statistics:\n" ++
-  printf "%%   %d rules, of which %d oriented, %d unoriented, %d permutative, %d weakly oriented.\n"
+  printf "\nStatistics:\n" ++
+  printf "  %d rules, of which %d oriented, %d unoriented, %d permutative, %d weakly oriented.\n"
     (length orients)
     (length [ () | Oriented <- orients ])
     (length [ () | Unoriented <- orients ])
     (length [ () | Permutative{} <- orients ])
     (length [ () | WeaklyOriented{} <- orients ]) ++
-  printf "%%   %d queued critical pairs.\n" queuedPairs ++
-  printf "%%   %d critical pairs considered so far.\n" st_considered
+  printf "  %d queued critical pairs.\n" queuedPairs ++
+  printf "  %d critical pairs considered so far.\n" st_considered
   where
     orients = map (orientation . the) (Index.elems st_rules)
     queuedPairs = Heap.size st_queue

@@ -145,8 +145,7 @@ data Config =
     cfg_lhsweight :: !Int,
     cfg_rhsweight :: !Int,
     cfg_funweight :: !Int,
-    cfg_varweight :: !Int,
-    cfg_repeats   :: !Bool }
+    cfg_varweight :: !Int }
 
 -- We compute:
 --   cfg_lhsweight * size l + cfg_rhsweight * size r
@@ -173,6 +172,5 @@ score Config{..} Overlap{..} =
 
     size t =
       len t * cfg_funweight -
-      (length (filter isVar (subterms t)) +
-       if cfg_repeats then length (nub (vars t)) else 0) *
+      (length (filter isVar (subterms t)) + length (nub (vars t))) *
       (cfg_funweight - cfg_varweight)
