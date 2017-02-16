@@ -28,6 +28,14 @@ source-repository head
   location: git://github.com/nick8325/twee.git
   branch:   master
 
+flag static
+  description: Build a static binary.
+  default: False
+
+flag llvm
+  description: Build using LLVM backend for faster code.
+  default: False
+
 library
   exposed-modules:
     Data.Primitive.SmallArray
@@ -62,6 +70,9 @@ library
   ghc-options:         -W -fno-warn-incomplete-patterns -O2
   default-language:    Haskell2010
 
+  if flag(llvm)
+    ghc-options: -fllvm
+
 executable twee
   main-is:             executable/Main.hs
   default-language:    Haskell2010
@@ -72,3 +83,9 @@ executable twee
                        split,
                        jukebox >= 0.2
   ghc-options:         -W -fno-warn-incomplete-patterns -O2
+
+  if flag(llvm)
+    ghc-options: -fllvm
+
+  if flag(static)
+    ghc-options: -optl -static
