@@ -9,19 +9,16 @@ import Twee.Join
 import qualified Twee.Index as Index
 import Twee.Index(Index)
 import Twee.Constraints
-import Twee.Utils
 import qualified Data.Heap as Heap
 import Data.Heap(Heap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.IntMap(IntMap)
 import Data.Maybe
-import Data.Ord
 import Data.List
 import Data.Function
 import qualified Data.Set as Set
 import Data.Set(Set)
 import Text.Printf
-import Control.Monad
 import Data.Int
 import Debug.Trace
 
@@ -104,7 +101,7 @@ makePassive Config{..} State{..} mrange id =
 -- Turn a Passive back into an overlap.
 {-# INLINEABLE findPassive #-}
 findPassive :: Function f => Config -> State f -> Passive f -> Maybe (Overlap f)
-findPassive Config{..} state@State{..} passive@Passive{..} = {-# SCC findPassive #-} do
+findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
   rule1 <- the <$> IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
   rule2 <- the <$> IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
   overlapAt st_oriented_rules (fromIntegral passive_pos)
@@ -132,8 +129,8 @@ simplifyQueue config state =
 
 -- Enqueue a critical pair.
 {-# INLINEABLE enqueue #-}
-enqueue :: Function f => Config -> State f -> Passive f -> State f
-enqueue config state passive =
+enqueue :: Function f => State f -> Passive f -> State f
+enqueue state passive =
   {-# SCC enqueue #-}
   state { st_queue = Heap.insert passive (st_queue state) }
 
@@ -208,7 +205,7 @@ addRule config state@State{..} rule0 =
   else
     traceShow (text (show (unId (rule_id rule))) <> text ". " <> pPrint (rule_rule rule)) $
     normaliseGoals $
-    foldl' (enqueue config) state' passives
+    foldl' enqueue state' passives
 
 -- Normalise all goals.
 {-# INLINEABLE normaliseGoals #-}
@@ -267,28 +264,28 @@ newEquation config state eqn =
 -- Interreduction.
 ----------------------------------------------------------------------
 
-data Simplification f = Simplify [Model f] | Reorient
-
-reduce :: Function f => Config -> State f -> Rule f -> TweeRule f -> Maybe (Simplification f)
-reduce config state@State{..} new oldRule@TweeRule{rule_rule = old, rule_models = models} =
-  guarded lhs reorient `mplus` guarded rhs simplify
-  where
-    reorient = undefined
-      -- guard . not . null . concat $
-      --   [ anywhere (tryRule (reducesInModel model) new) (f old)
-      --   | model <- models ]
-
-    simplify =
-      case anywhere (tryRule reduces new) (rhs old) of
-        [] -> Nothing
-        _  -> Just (Simplify models)
-
-    guarded f x = do
-      guard (any isJust [ match (lhs new) t | t <- subterms (f old) ])
-      x
-
-    rules = Index.delete (lhs old) oldRule st_rules
-    oriented_rules = Index.delete (lhs old) oldRule st_oriented_rules
+-- data Simplification f = Simplify [Model f] | Reorient
+--
+-- reduce :: Function f => Config -> State f -> Rule f -> TweeRule f -> Maybe (Simplification f)
+-- reduce config state@State{..} new oldRule@TweeRule{rule_rule = old, rule_models = models} =
+--   guarded lhs reorient `mplus` guarded rhs simplify
+--   where
+--     reorient = undefined
+--       -- guard . not . null . concat $
+--       --   [ anywhere (tryRule (reducesInModel model) new) (f old)
+--       --   | model <- models ]
+--
+--     simplify =
+--       case anywhere (tryRule reduces new) (rhs old) of
+--         [] -> Nothing
+--         _  -> Just (Simplify models)
+--
+--     guarded f x = do
+--       guard (any isJust [ match (lhs new) t | t <- subterms (f old) ])
+--       x
+--
+--     rules = Index.delete (lhs old) oldRule st_rules
+--     oriented_rules = Index.delete (lhs old) oldRule st_oriented_rules
 
 -- reduceWith :: Function f => Twee f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
 -- reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))

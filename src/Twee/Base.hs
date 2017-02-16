@@ -1,4 +1,6 @@
 {-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, DeriveGeneric, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ConstraintKinds #-}
+-- To suppress a warning about hiding Arity
+{-# OPTIONS_GHC -Wno-dodgy-imports #-}
 module Twee.Base(
   Id(..), Symbolic(..), subst, GSymbolic(..), Has(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding,

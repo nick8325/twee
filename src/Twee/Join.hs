@@ -11,7 +11,6 @@ import Twee.Index(Index)
 import Twee.Utils
 import Data.Maybe
 import Data.Either
-import Data.List
 
 {-# INLINEABLE joinOverlap #-}
 joinOverlap ::
@@ -103,7 +102,7 @@ subsumed _ _ _ = False
 groundJoin ::
   (Function f, Has a (Rule f)) =>
   Index f (Equation f) -> Index f a -> [Branch f] -> Overlap f -> Either (Model f) [Overlap f]
-groundJoin eqns idx ctx r@Overlap{overlap_top = top, overlap_eqn = t :=: u} =
+groundJoin eqns idx ctx r@Overlap{overlap_eqn = t :=: u} =
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
     ([], instances) ->
       let rs = [ subst sub r | sub <- instances ] in

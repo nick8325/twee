@@ -9,15 +9,9 @@ import Twee.Index(Index)
 import qualified Data.Set as Set
 import Control.Monad
 import Data.Maybe
-import qualified Data.DList as DList
-import qualified Data.IntMap.Strict as IntMap
-import Data.IntMap(IntMap)
 import Data.List
 import qualified Twee.ChurchList as ChurchList
 import Twee.ChurchList (ChurchList(..))
-import Control.Arrow((***))
-import GHC.Magic(oneShot, inline)
-import Data.Monoid
 import Twee.Utils
 import GHC.Generics
 

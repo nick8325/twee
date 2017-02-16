@@ -14,7 +14,6 @@ module Twee.Term(
 #include "errors.h"
 import Prelude hiding (lookup)
 import Twee.Term.Core
-import Twee.Label
 import Data.List hiding (lookup, find)
 import Data.Maybe
 import Data.Monoid

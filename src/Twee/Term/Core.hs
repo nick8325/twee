@@ -17,7 +17,6 @@ import GHC.ST hiding (liftST)
 import Data.Ord
 import Twee.Label
 import Data.Typeable
-import Data.Int
 
 --------------------------------------------------------------------------------
 -- Symbols. A symbol is a single function or variable in a flatterm.

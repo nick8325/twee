@@ -16,7 +16,6 @@ import qualified Twee.CP as CP
 import Data.Ord
 import qualified Data.Map.Strict as Map
 import qualified Twee.KBO as KBO
-import qualified Twee.Index as Index
 import Data.List.Split
 import Data.List
 import Data.Maybe
@@ -161,8 +160,6 @@ runTwee config precedence obligs = {-# SCC runTwee #-} do
     !state =
       complete config $
       foldl' (newEquation config) initialState { st_goals = map Set.singleton goals2 } axioms2
-
-  let rs = map rule_rule (Index.elems (st_rules state))
 
   putStrLn (report state)
 

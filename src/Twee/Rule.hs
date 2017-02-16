@@ -62,10 +62,10 @@ instance Symbolic (Orientation f) where
   termsDL (Permutative ts) = termsDL ts
   termsDL Unoriented = mzero
 
-  subst_ sub Oriented = Oriented
+  subst_ _   Oriented = Oriented
   subst_ sub (WeaklyOriented min ts) = WeaklyOriented min (subst_ sub ts)
   subst_ sub (Permutative ts) = Permutative (subst_ sub ts)
-  subst_ sub Unoriented = Unoriented
+  subst_ _   Unoriented = Unoriented
 
 instance PrettyTerm f => Pretty (Rule f) where
   pPrint (Rule or l r) =
