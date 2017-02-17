@@ -178,10 +178,6 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
         (foldl' (addGoal config) initialState goals2)
       (zip (repeat "axioms") axioms2)
 
-  line
-  say (report state)
-  line
-
   return $
     if solved state then Unsatisfiable else NoAnswer GaveUp
 
