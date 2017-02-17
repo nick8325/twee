@@ -79,7 +79,7 @@ data Message f =
 
 instance PrettyTerm f => Pretty (Message f) where
   pPrint (NewRule rule) =
-    pPrint (rule_id rule) <> text "." <+> pPrint (rule_rule rule)
+    pPrint (rule_versionedid rule) <> text "." <+> pPrint (rule_rule rule)
   pPrint (NewEquation n eqn) =
     text (replicate digits 'x') <> text "." <+> pPrint eqn
     where
@@ -217,8 +217,10 @@ instance Eq (TweeRule f) where
 instance f ~ g => Has (TweeRule f) (Rule g) where the = rule_rule
 instance f ~ g => Has (TweeRule f) (Positions g) where the = rule_positions
 instance Has (TweeRule f) Id where the = rule_id
-instance Has (TweeRule f) VersionedId where
-  the TweeRule{..} = VersionedId rule_id rule_version
+instance Has (TweeRule f) VersionedId where the = rule_versionedid
+
+rule_versionedid :: TweeRule f -> VersionedId
+rule_versionedid TweeRule{..} = VersionedId rule_id rule_version
 
 -- Add a new rule.
 {-# INLINEABLE addRule #-}
