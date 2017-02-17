@@ -229,7 +229,7 @@ addRule config state@State{..} rule0 =
         st_label = st_label+1 }
     passives =
       makePassive config state' Nothing (rule_id rule)
-  in if subsumed st_joinable st_rules (unorient (rule_rule rule)) then
+  in if subsumed Asymmetric st_joinable st_rules (unorient (rule_rule rule)) then
     state
   else
     normaliseGoals $

@@ -63,41 +63,36 @@ joinWith ::
   Has a (Rule f) =>
   Index f (Equation f) -> Index f a -> (Term f -> Term f) -> Overlap f -> Maybe (Overlap f)
 joinWith eqns idx reduce overlap
-  | subsumed eqns idx eqn = Nothing
+  | subsumed Symmetric eqns idx eqn = Nothing
   | otherwise = Just overlap { overlap_eqn = eqn }
   where
     eqn = bothSides reduce (overlap_eqn overlap)
 
--- N.B.:
--- When we check a critical pair for subsumption, we only apply
--- rules left-to-right, i.e. we see if we can rewrite t to u,
--- but we don't try rewriting u to t. This usually makes no
--- difference, because we generate unorientable rules in pairs. But
--- it's important in Twee.consider, where after orienting an equation
--- into a set of rules, we check each rule for subsumption in turn
--- before adding it. Otherwise we would try adding the pair of rules
--- t->u, u->t, but the second would be subsumed by the first.
+data SubsumptionMode = Symmetric | Asymmetric deriving Eq
+
 {-# INLINEABLE subsumed #-}
-subsumed :: Has a (Rule f) => Index f (Equation f) -> Index f a -> Equation f -> Bool
-subsumed eqns idx (t :=: u)
+subsumed :: Has a (Rule f) => SubsumptionMode -> Index f (Equation f) -> Index f a -> Equation f -> Bool
+subsumed mode eqns idx (t :=: u)
   | t == u = True
   | or [ rhs rule == u | rule <- Index.lookup t idx ] = True
+  | mode == Symmetric &&
+    or [ rhs rule == t | rule <- Index.lookup u idx ] = True
   | subEqn t u || subEqn u t = True
   where
     subEqn t u =
       or [ u == subst sub u'
          | t' :=: u' <- Index.approxMatches t eqns,
            sub <- maybeToList (match t' t) ]
-subsumed eqns idx (App f ts :=: App g us)
+subsumed mode eqns idx (App f ts :=: App g us)
   | f == g =
     let
       sub Empty Empty = False
       sub (Cons t ts) (Cons u us) =
-        subsumed eqns idx (t :=: u) && sub ts us
+        subsumed mode eqns idx (t :=: u) && sub ts us
       sub _ _ = error "Function used with multiple arities"
     in
       sub ts us
-subsumed _ _ _ = False
+subsumed _ _ _ _ = False
 
 groundJoin ::
   (Function f, Has a (Rule f)) =>
