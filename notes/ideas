@@ -1,3 +1,7 @@
+Make $false as an axiom work (appears if conjecture trivial)
+Allow multiple goals (and do simultaneously)
+Allow goal to be a disjunction (Geoff-style)
+
 penalise critical pairs that have repeated occurrences of the same
 variable (too constrained). more generally: measure how widely
 applicable the critical pair would be (how many terms match?
