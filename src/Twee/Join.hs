@@ -36,7 +36,7 @@ joinOverlap eqns idx overlap =
 step1, step2, step3, allSteps ::
   (Function f, Has a (Rule f)) => Index f (Equation f) -> Index f a -> Overlap f -> Maybe (Overlap f)
 allSteps eqns idx overlap = step1 eqns idx overlap >>= step2 eqns idx >>= step3 eqns idx
-step1 eqns idx = joinWith eqns idx id
+step1 eqns idx = joinWith eqns idx (result . normaliseWith (const True) (rewrite reducesOriented idx))
 step2 eqns idx = joinWith eqns idx (result . normaliseWith (const True) (rewrite reduces idx))
 step3 eqns idx overlap =
   case overlap_top overlap of

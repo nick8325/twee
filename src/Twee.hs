@@ -127,6 +127,7 @@ makePassive Config{..} State{..} mrange id =
       snd $ IntMap.split (fromIntegral (lo-1)) st_rule_ids
 
 -- Turn a Passive back into an overlap.
+-- Doesn't try to simplify it.
 {-# INLINEABLE findPassive #-}
 findPassive :: Function f => Config -> State f -> Passive f -> Maybe (Overlap f)
 findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
@@ -139,8 +140,10 @@ findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
 -- Also takes care of deleting any orphans.
 {-# INLINEABLE simplifyPassive #-}
 simplifyPassive :: Function f => Config -> State f -> Passive f -> Maybe (Passive f)
-simplifyPassive config@Config{..} state passive = {-# SCC simplifyPassive #-} do
-  overlap <- findPassive config state passive
+simplifyPassive config@Config{..} state@State{..} passive = {-# SCC simplifyPassive #-} do
+  overlap <-
+    findPassive config state passive >>=
+    simplifyOverlap st_oriented_rules
   return passive { passive_score = fromIntegral (score cfg_critical_pairs overlap) }
 
 -- Renormalise the entire queue.
@@ -182,10 +185,13 @@ dequeue config@Config{..} state@State{..} =
     deq !n queue = do
       (passive, queue) <- Heap.uncons queue
       case findPassive config state passive of
-        Just overlap@Overlap{overlap_eqn = t :=: u}
-          | size t <= cfg_max_term_size,
-            size u <= cfg_max_term_size ->
-            return (overlap, n+1, queue)
+        Just overlap ->
+          case simplifyOverlap st_oriented_rules overlap of
+            Just Overlap{overlap_eqn = t :=: u}
+              | size t <= cfg_max_term_size,
+                size u <= cfg_max_term_size ->
+                return (overlap, n+1, queue)
+            _ -> deq (n+1) queue
         _ -> deq (n+1) queue
 
 ----------------------------------------------------------------------

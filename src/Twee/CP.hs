@@ -93,9 +93,11 @@ asymmetricOverlaps ::
 asymmetricOverlaps idx posns r1 r2 = do
   n <- positionsChurch posns
   ChurchList.fromMaybe $
-    overlapAt idx n r1 r2
+    overlapAt idx n r1 r2 >>=
+    simplifyOverlap idx
 
 -- Create an overlap at a particular position in a term.
+-- Doesn't simplify or check for primeness.
 {-# INLINE overlapAt #-}
 overlapAt ::
   (Function f, Has a (Rule f)) =>
@@ -103,27 +105,30 @@ overlapAt ::
 overlapAt !idx !n (Rule _ !outer !outer') (Rule _ !inner !inner') = do
   let t = at n (singleton outer)
   sub <- unifyTri inner t
-  makeOverlap idx
-   ({-# SCC overlap_top #-} Term.singleton (termSubst sub outer))
-   ({-# SCC overlap_inner #-} Term.singleton (termSubst sub inner))
-   n
-   (({-# SCC overlap_eqn_1 #-} termSubst sub outer') :=:
-    {-# SCC overlap_eqn_2 #-}
-    buildReplacePositionSub sub n (singleton inner') (singleton outer))
+  let
+    top = {-# SCC overlap_top #-} Term.singleton (termSubst sub outer)
+    innerTerm = {-# SCC overlap_inner #-} Term.singleton (termSubst sub inner)
+    lhs = {-# SCC overlap_eqn_1 #-} termSubst sub outer'
+    rhs = {-# SCC overlap_eqn_2 #-}
+      buildReplacePositionSub sub n (singleton inner') (singleton outer)
 
--- Create an overlap, after simplifying and checking for primeness.
-{-# INLINE makeOverlap #-}
-makeOverlap :: (Function f, Has a (Rule f)) => Index f a -> TermList f -> TermList f -> Int -> Equation f -> Maybe (Overlap f)
-makeOverlap idx top inner n eqn
-  | trivial eqn = Nothing
-  | trivial eqn' = Nothing
-    -- You might think that checking for primeness first is better, to
-    -- avoid having to build the equation at all if it's non-prime.
-    -- But it seems to go slower!
-  | ConsSym _ ts <- inner, canSimplifyList idx ts = Nothing
-  | otherwise = Just (Overlap top inner n eqn')
+  guard (lhs /= rhs)
+  return Overlap {
+    overlap_top = top,
+    overlap_inner = innerTerm,
+    overlap_pos = n,
+    overlap_eqn = lhs :=: rhs }
+
+-- Simplify an overlap and remove it if it's not prime.
+{-# INLINE simplifyOverlap #-}
+simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap f -> Maybe (Overlap f)
+simplifyOverlap idx overlap@Overlap{overlap_eqn = lhs :=: rhs, ..}
+  | lhs' == rhs' = Nothing
+  | ConsSym _ ts <- overlap_inner, canSimplifyList idx ts = Nothing
+  | otherwise = Just overlap{overlap_eqn = lhs' :=: rhs'}
   where
-    eqn' = bothSides (simplify idx) eqn
+    lhs' = simplify idx lhs
+    rhs' = simplify idx rhs
 
 -- Put these in separate functions to avoid code blowup
 buildReplacePositionSub :: TriangleSubst f -> Int -> TermList f -> TermList f -> Term f
@@ -132,12 +137,6 @@ buildReplacePositionSub !sub !n !inner' !outer =
 
 termSubst :: TriangleSubst f -> Term f -> Term f
 termSubst sub t = build (Term.subst sub t)
-
--- Simplify an existing overlap.
-{-# INLINEABLE simplifyOverlap #-}
-simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap f -> Maybe (Overlap f)
-simplifyOverlap idx Overlap{..} =
-  makeOverlap idx overlap_top overlap_inner overlap_pos overlap_eqn
 
 -- The critical pair ordering heuristic.
 data Config =
