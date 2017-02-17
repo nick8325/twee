@@ -38,11 +38,14 @@ data State f =
     st_rules          :: !(Index f (TweeRule f)),
     st_rule_ids       :: !(IntMap (TweeRule f)),
     st_joinable       :: !(Index f (Equation f)),
-    st_goals          :: [Set (Reduction f)],
+    st_goals          :: ![Goal f],
     st_queue          :: !(Heap (Passive f)),
     st_label          :: {-# UNPACK #-} !Id,
     st_considered     :: {-# UNPACK #-} !Int,
     st_messages_rev   :: ![Message f] }
+
+-- For goal terms we store the set of all their normal forms
+type Goal f = (Set (Reduction f), Set (Reduction f))
 
 defaultConfig :: Config
 defaultConfig =
@@ -252,7 +255,10 @@ addRule config state@State{..} rule0 =
 normaliseGoals :: Function f => State f -> State f
 normaliseGoals state@State{..} =
   state {
-    st_goals = map (normalForms (rewrite reduces st_rules) . Set.toList) st_goals }
+    st_goals =
+      map (bothMap (normalForms (rewrite reduces st_rules) . Set.toList)) st_goals }
+  where
+    bothMap f (x, y) = (f x, f y)
 
 -- Record an equation as being joinable.
 addJoinable :: Function f => State f -> Equation f -> State f
@@ -295,14 +301,22 @@ consider config state@State{..} cp =
           foldl' (addRule config) state rules
 
 -- Add a new equation.
-{-# INLINEABLE newEquation #-}
-newEquation :: Function f => Config -> State f -> String -> Equation f -> State f
-newEquation config state name eqn =
+{-# INLINEABLE addAxiom #-}
+addAxiom :: Function f => Config -> State f -> String -> Equation f -> State f
+addAxiom config state name eqn =
   consider config state $
     CriticalPair {
       cp_eqn = eqn,
       cp_top = Nothing,
       cp_proof = axiomProof name eqn }
+
+-- Add a new goal.
+{-# INLINEABLE addGoal #-}
+addGoal :: Function f => Config -> State f -> Equation f -> State f
+addGoal config state@State{..} (t :=: u) =
+  normaliseGoals $
+  state {
+    st_goals = (Set.singleton (Refl t), Set.singleton (Refl u)):st_goals }
 
 ----------------------------------------------------------------------
 -- Interreduction.
@@ -400,9 +414,18 @@ complete1 config state
 
 {-# INLINEABLE solved #-}
 solved :: Function f => State f -> Bool
-solved State{st_goals = goal:goals} =
-  not (null (foldl' Set.intersection goal goals))
-solved _ = False
+solved = not . null . solutions
+
+-- Return whatever goals we have proved and their proofs.
+{-# INLINEABLE solutions #-}
+solutions :: Function f => State f -> [Proof f]
+solutions State{..} = do
+  (ts, us) <- st_goals
+  guard (not (null (Set.intersection ts us)))
+  return $
+    let t:_ = filter (`Set.member` us) (Set.toList ts)
+        u:_ = filter (== t) (Set.toList us)
+    in backwards (reductionProof t) `mappend` reductionProof u
 
 {-# INLINEABLE report #-}
 report :: Function f => State f -> String

@@ -114,8 +114,8 @@ instance Ordered (Extended Constant) where
   lessEq t u = {-# SCC lessEq #-} KBO.lessEq t u
   lessIn model t u = {-# SCC lessIn #-} KBO.lessIn model t u
 
-toTwee :: Problem Clause -> ([Equation Jukebox.Function], [Term Jukebox.Function])
-toTwee prob = (lefts eqs, goals)
+toTwee :: Problem Clause -> ([Equation Jukebox.Function], [Equation Jukebox.Function])
+toTwee prob = partitionEithers (map eq prob)
   where
     eq Input{what = Clause (Bind _ [Pos (t Jukebox.:=: u)])} =
       Left (build (tm t) :=: build (tm u))
@@ -123,41 +123,25 @@ toTwee prob = (lefts eqs, goals)
       Right (build (tm t) :=: build (tm u))
     eq _ = ERROR("Problem is not unit equality")
 
-    eqs = map eq prob
-
-    goals =
-      case rights eqs of
-        [] -> []
-        [t :=: u] -> [t, u]
-        _ -> ERROR("Problem is not unit equality")
-
     tm (Jukebox.Var (Unique x _ _ ::: _)) =
       var (V (fromIntegral x))
     tm (f :@: ts) =
       app (fun f) (map tm ts)
 
 addNarrowing ::
-  ([Equation (Extended Constant)], [Term (Extended Constant)]) ->
-  ([Equation (Extended Constant)], [Term (Extended Constant)])
-addNarrowing (axioms, goals)
-  | length goals < 2 = (axioms, map build [con false, con true])
-    where
-      false  = fun (Function (Builtin CFalse))
-      true   = fun (Function (Builtin CTrue))
-addNarrowing (axioms, goals)
-  | length goals >= 2 && all isGround goals = (axioms, goals)
-addNarrowing (axioms, [t, u])
-  | otherwise = (axioms ++ equalities, map build [con false, con true])
-    where
-      false  = fun (Function (Builtin CFalse))
-      true   = fun (Function (Builtin CTrue))
-      equals = fun (Function (Builtin CEquals))
+  ([Equation (Extended Constant)], [Equation (Extended Constant)]) ->
+  ([Equation (Extended Constant)], [Equation (Extended Constant)])
+addNarrowing (axioms, goals) =
+    (axioms ++ concatMap encode nonground,
+     ground ++ if null nonground && not (null goals) then [] else eqAxiom)
+  where
+    (ground, nonground) = partition isGround goals
 
-      equalities =
-        [build (app equals [var (V 0), var (V 0)]) :=: build (con true),
-         build (app equals [t, u]) :=: build (con false)]
-addNarrowing _ =
-  ERROR("Don't know how to handle several non-ground goals")
+    eqAxiom = [build (con falseCon) :=: build (con trueCon)]
+
+    encode (t :=: u) =
+      [build (app equalsCon [var (V 0), var (V 0)]) :=: build (con trueCon),
+       build (app equalsCon [t, u]) :=: build (con falseCon)]
 
 runTwee :: GlobalFlags -> Bool -> Config -> [String] -> Problem Clause -> IO Answer
 runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
@@ -172,8 +156,8 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
       fs2 = zipWith (\i (c ::: (FunType args _)) -> Constant i (length args) 1 (show c)) [1..] fs1
       m  = Map.fromList (zip fs1 (map Function fs2))
   let replace = build . mapFun (fun . flip (Map.findWithDefault __) m . fun_value)
-      axioms1 = [replace t :=: replace u | t :=: u <- axioms0]
-      goals1  = map replace goals0
+      axioms1 = map (bothSides replace) axioms0
+      goals1  = map (bothSides replace) goals0
       (axioms2, goals2) = addNarrowing (axioms1, goals1)
 
   let
@@ -190,17 +174,12 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
   line
   state <-
     complete output config $
-      foldl' (uncurry . newEquation config) initialState { st_goals = map (Set.singleton . Refl) goals2 } (zip (repeat "axioms") axioms2)
+      foldl' (uncurry . addAxiom config)
+        (foldl' (addGoal config) initialState goals2)
+      (zip (repeat "axioms") axioms2)
 
   line
   say (report state)
-  line
-
-  say "Normalised goal terms:"
-  forM_ goals2 $ \t -> do
-    say $
-      "  " ++
-      prettyShow (Rule Unoriented t (result (normaliseWith (const True) (rewrite reduces (st_rules state)) t)))
   line
 
   return $
