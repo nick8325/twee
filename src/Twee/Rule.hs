@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, CPP, BangPatterns, OverloadedStrings, DeriveGeneric, MultiParamTypeClasses, ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, CPP, BangPatterns, OverloadedStrings, DeriveGeneric, MultiParamTypeClasses, ScopedTypeVariables, GeneralizedNewtypeDeriving #-}
 module Twee.Rule where
 
 #include "errors.h"
@@ -130,10 +130,10 @@ orient (l :=: r) =
      \pf -> backwards (erase ls pf))
   | ord /= Just GT && ord /= Just EQ ] ++
   [ (makeRule l l',
-     \pf -> pf ++ backwards (erase ls pf))
+     \pf -> pf `mappend` backwards (erase ls pf))
   | not (null ls), ord /= Just GT ] ++
   [ (makeRule r r',
-     \pf -> backwards pf ++ erase rs pf)
+     \pf -> backwards pf `mappend` erase rs pf)
   | not (null rs), ord /= Just LT ]
   where
     ord = orientTerms l' r'
@@ -297,6 +297,8 @@ pPrintReduction p = text "<reduction>"
 trans :: Reduction f -> Reduction f -> Reduction f
 trans Refl{} p = p
 trans p Refl{} = p
+-- Make right-associative to improve performance of 'result'
+trans p (Trans q r) = Trans (Trans p q) r
 trans p q = Trans p q
 
 cong :: Fun f -> [Reduction f] -> Reduction f
@@ -319,7 +321,7 @@ congPath (n:ns) (App f t) p | n <= length ts =
     ts = unpack t
 congPath _ _ _ = error "bad path"
 
--- Find the initial term of a rewrite proof
+-- Find the initial term of a rewrite proof.
 initial :: Reduction f -> Term f
 initial (Trans p _) = initial p
 initial (Refl t) = t
@@ -330,7 +332,7 @@ initial p = {-# SCC result_emitInitial #-} build (emitInitial p)
     emitInitial (Trans p q) = emitInitial p
     emitInitial (Cong f ps) = app f (map emitInitial ps)
 
--- Find the final term of a rewrite proof
+-- Find the final term of a rewrite proof.
 result :: Reduction f -> Term f
 result (Trans _ q) = result q
 result (Refl t) = t
@@ -340,6 +342,24 @@ result p = {-# SCC result_emitResult #-} build (emitResult p)
     emitResult (Refl t) = builder t
     emitResult (Trans _ q) = emitResult q
     emitResult (Cong f ps) = app f (map emitResult ps)
+
+-- Check a rewrite proof for validity, given the initial and final terms.
+verifyReduction :: Term f -> Term f -> Reduction f -> Bool
+verifyReduction t u (Step _ r sub) =
+  subst sub (lhs r) == t && subst sub (rhs r) == u
+verifyReduction t u (Refl v) = t == u && u == v
+verifyReduction t v (Trans p q) =
+  verifyReduction t u p && verifyReduction u v q
+  where
+    u = result p
+verifyReduction (App f1 t) (App f2 u) (Cong f3 ps) =
+  f1 == f2 && f2 == f3 &&
+  length ts == length us && length us == length ps &&
+  and (zipWith3 verifyReduction ts us ps)
+  where
+    ts = unpack t
+    us = unpack u
+verifyReduction _ _ _ = False
 
 -- The list of all rewrite rules used in a proof
 steps :: Reduction f -> [(Rule f, Subst f)]
@@ -495,32 +515,79 @@ reducesSkolem rule sub =
 -- Equational proofs.
 ----------------------------------------------------------------------
 
-type Proof f = [ProofStep f]
+newtype Proof f = Proof [ProofStep f] deriving (Show, Monoid, Generic, Pretty)
+
 data ProofStep f =
-    Forwards (Reduction f)
-  | Backwards (Reduction f)
-  | Axiom String
+    Forwards (DirectedProofStep f)
+  | Backwards (DirectedProofStep f)
+  deriving (Show, Generic)
+data DirectedProofStep f =
+    Reduction (Reduction f)
+  | Axiom String (Equation f) (Subst f)
   deriving Show
+
+instance Symbolic (Proof f) where
+  type ConstantOf (Proof f) = f
 
 instance Symbolic (ProofStep f) where
   type ConstantOf (ProofStep f) = f
-  termsDL (Forwards p) = termsDL p
-  termsDL (Backwards p) = termsDL p
-  termsDL Axiom{} = mempty
 
-  subst_ sub (Forwards p) = Forwards (subst_ sub p)
-  subst_ sub (Backwards p) = Backwards (subst_ sub p)
-  subst_ sub pf@Axiom{} = pf
+instance Symbolic (DirectedProofStep f) where
+  type ConstantOf (DirectedProofStep f) = f
+  termsDL (Reduction p) = termsDL p
+  termsDL (Axiom _ eq sub) = termsDL eq `mplus` termsDL sub
 
--- Turn a proof of t=u into a proof of u=t.
-backwards :: Proof f -> Proof f
-backwards = reverse . map back
-  where
-    back (Forwards pf) = Backwards pf
-    back (Backwards pf) = Forwards pf
-    back (Axiom name) = Axiom name
+  subst_ sub (Reduction p) = Reduction (subst_ sub p)
+  subst_ sub (Axiom name eq s) = Axiom name eq (subst_ sub s)
 
 instance PrettyTerm f => Pretty (ProofStep f) where
   pPrint (Forwards pf) = text "forwards" <+> pPrint pf
   pPrint (Backwards pf) = text "backwards" <+> pPrint pf
-  pPrint (Axiom name) = text "axiom" <+> pPrint name
+
+instance PrettyTerm f => Pretty (DirectedProofStep f) where
+  pPrint (Reduction p) = pPrint p
+  pPrint (Axiom name eqn sub) = text "axiom" <+> pPrint name <+> pPrint eqn <+> pPrint sub
+
+-- Construct a proof from an axiom.
+axiomProof :: String -> Equation f -> Proof f
+axiomProof name eqn =
+  Proof
+    [Forwards $
+      Axiom name eqn $
+        fromJust $
+        flattenSubst [(x, build (var x)) | x <- vars eqn]]
+
+-- Turn a reduction into a proof.
+reductionProof :: Reduction f -> Proof f
+reductionProof Refl{} = Proof []
+reductionProof p = Proof [Forwards (Reduction p)]
+
+-- Turn a proof of t=u into a proof of u=t.
+backwards :: Proof f -> Proof f
+backwards (Proof ps) = Proof (reverse (map back ps))
+  where
+    back (Forwards p) = Backwards p
+    back (Backwards p) = Forwards p
+
+-- Check a proof for validity, given the initial and final terms.
+verifyProof :: PrettyTerm f => Term f -> Term f -> Proof f -> Bool
+verifyProof t u (Proof ps) = verify t u ps
+  where
+    verify t u [] = t == u
+    verify t v (p:ps) =
+      verifyStep t u p && verify u v ps
+      where
+        u = stepResult p
+
+    stepResult (Forwards p) = directedStepResult p
+    stepResult (Backwards p) = directedStepInitial p
+    directedStepInitial (Reduction p) = initial p
+    directedStepInitial (Axiom _ (t :=: _) sub) = subst sub t
+    directedStepResult (Reduction p) = result p
+    directedStepResult (Axiom _ (_ :=: u) sub) = subst sub u
+
+    verifyStep t u (Forwards p) = verifyDirectedStep t u p
+    verifyStep t u (Backwards p) = verifyDirectedStep u t p
+    verifyDirectedStep t u (Reduction p) = verifyReduction t u p
+    verifyDirectedStep t u (Axiom _ (t' :=: u') sub) =
+      subst sub t' == t && subst sub u' == u

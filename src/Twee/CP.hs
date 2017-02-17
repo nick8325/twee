@@ -131,10 +131,10 @@ overlapProof ::
   (Has a (Rule f), Has a VersionedId) =>
   a -> a -> Overlap f -> Proof f
 overlapProof left right Overlap{..} =
-  [Backwards (Step (the left) (the left) sub),
-   Forwards $
-     congPath path overlap_top
-       (Step (the right) (the right) sub)]
+  backwards (reductionProof (Step (the left) (the left) sub)) `mappend`
+  reductionProof
+    (congPath path overlap_top
+      (Step (the right) (the right) sub))
   where
     sub = close overlap_sub
     path =

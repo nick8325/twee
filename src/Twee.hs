@@ -278,14 +278,17 @@ consider config state@State{..} cp =
         let
           rules =
             [ \n ->
-              TweeRule {
-                rule_id = n,
-                rule_version = 0,
-                rule_rule = rule,
-                rule_positions = positions (lhs rule),
-                rule_models = models,
-                rule_proof = proof (cp_proof cp) }
-            | (rule, proof) <- orient (cp_eqn cp) ]
+              let proof = prf (cp_proof cp) in
+              if verifyProof (lhs rule) (rhs rule) proof then
+                TweeRule {
+                  rule_id = n,
+                  rule_version = 0,
+                  rule_rule = rule,
+                  rule_positions = positions (lhs rule),
+                  rule_models = models,
+                  rule_proof = proof }
+              else error $ "Generated rule with invalid proof!\n" ++ prettyShow rule ++ "\n" ++ prettyShow proof
+            | (rule, prf) <- orient (cp_eqn cp) ]
         in
           foldl' (addRule config) state rules
 
@@ -297,7 +300,7 @@ newEquation config state name eqn =
     CriticalPair {
       cp_eqn = eqn,
       cp_top = Nothing,
-      cp_proof = [Axiom name] }
+      cp_proof = axiomProof name eqn }
 
 ----------------------------------------------------------------------
 -- Interreduction.

@@ -93,7 +93,10 @@ joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
     Just cp {
       cp_eqn = eqn,
       cp_proof =
-        [Backwards lred] ++ cp_proof ++ [Forwards rred] }
+        mconcat [
+          backwards (reductionProof lred),
+          cp_proof,
+          reductionProof rred ] }
   where
     lred = reduce lhs
     rred = reduce rhs
