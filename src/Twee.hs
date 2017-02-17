@@ -392,13 +392,13 @@ data Output m f =
 {-# INLINE complete #-}
 complete :: (Function f, Monad m) => Output m f -> Config -> State f -> m (State f)
 complete output@Output{..} config state =
-  case complete1 config state of
-    (False, state) -> return state
-    (True, state') -> do
-      when (st_label state `div` 100 /= st_label state' `div` 100) $
-        output_report state'
-      mapM_ output_message (messages state')
+  let (progress, state') = complete1 config state in do
+    when (st_label state `div` 100 /= st_label state' `div` 100) $
+      output_report state'
+    mapM_ output_message (messages state')
+    if progress then
       complete output config (clearMessages state')
+    else return state'
 
 {-# INLINEABLE complete1 #-}
 complete1 :: Function f => Config -> State f -> (Bool, State f)
