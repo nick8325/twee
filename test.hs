@@ -80,7 +80,7 @@ prop_1 model (Pair t u) sub =
   counterexample ("Model: " ++ prettyShow model) $
   counterexample ("Subst: " ++ prettyShow sub) $
   conjoin $ do
-    r@(Rule _ t' u') <- orient (t :=: u)
+    (r@(Rule _ t' u'), _) <- orient (t :=: u)
     return $
       counterexample ("LHS:   " ++ prettyShow t') $
       counterexample ("RHS:   " ++ prettyShow u') $
@@ -109,8 +109,8 @@ prop_5 t =
 prop_paths :: Term Func -> Property
 prop_paths t =
   forAllShrink (choose (0, len t-1)) shrink $ \n ->
-    counterexample (show (toPath t n)) $
-    fromPath t (toPath t n) === n
+    counterexample (show (positionToPath t n)) $
+    pathToPosition t (positionToPath t n) === n
 
 return []
 main = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000000 })
@@ -130,3 +130,6 @@ deriving instance Ord f => Ord (Subst f)
 
 
 --main = quickCheckWith stdArgs { maxSuccess = 1000000 } prop_index
+
+t :: Term Func
+t = build (app (fun (F 0)) [app (fun (F 1)) [var (V 0), var (V 1)], var (V 2)])
