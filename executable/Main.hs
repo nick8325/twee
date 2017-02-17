@@ -25,6 +25,7 @@ import Jukebox.Name
 import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
 import Jukebox.Monotonox.ToFOF
+import Jukebox.TPTP.Print
 import qualified Data.Set as Set
 
 parseConfig :: OptionParser Config
@@ -121,7 +122,12 @@ toTwee prob = partitionEithers (map eq prob)
       Left (build (tm t) :=: build (tm u))
     eq Input{what = Clause (Bind _ [Neg (t Jukebox.:=: u)])} =
       Right (build (tm t) :=: build (tm u))
-    eq _ = ERROR("Problem is not unit equality")
+    eq Input{what = Clause (Bind _ [])} =
+      -- $false as an axiom
+      Left (build (var (V 0)) :=: build (var (V 1)))
+    eq clause =
+      error $
+        "Problem is not unit equality:\n" ++ show (pPrintClauses [clause])
 
     tm (Jukebox.Var (Unique x _ _ ::: _)) =
       var (V (fromIntegral x))
