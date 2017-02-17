@@ -518,9 +518,13 @@ instance PrettyTerm f => Pretty (Proof f) where
   pPrint = pPrintProof
 
 data ProofStep f =
-    Forwards (DirectedProofStep f)
-  | Backwards (DirectedProofStep f)
-  deriving (Show, Generic)
+  ProofStep {
+    ps_dir :: Direction,
+    ps_step :: DirectedProofStep f }
+  deriving Show
+
+data Direction = Forwards | Backwards
+  deriving Show
 
 data DirectedProofStep f =
     Reduction (Reduction f)
@@ -532,6 +536,8 @@ instance Symbolic (Proof f) where
 
 instance Symbolic (ProofStep f) where
   type ConstantOf (ProofStep f) = f
+  termsDL (ProofStep _ p) = termsDL p
+  subst_ sub (ProofStep dir p) = ProofStep dir (subst_ sub p)
 
 instance Symbolic (DirectedProofStep f) where
   type ConstantOf (DirectedProofStep f) = f
@@ -541,27 +547,23 @@ instance Symbolic (DirectedProofStep f) where
   subst_ sub (Reduction p) = Reduction (subst_ sub p)
   subst_ sub (Axiom name eq s) = Axiom name eq (subst_ sub s)
 
-stepInitial :: ProofStep f -> Term f
-stepInitial (Forwards p) = directedStepInitial p
-stepInitial (Backwards p) = directedStepResult p
+stepTerms :: ProofStep f -> (Term f, Term f)
+stepTerms (ProofStep Forwards p) = directedStepTerms p
+stepTerms (ProofStep Backwards p) = (u, t)
+  where
+    (t, u) = directedStepTerms p
 
-stepResult :: ProofStep f -> Term f
-stepResult (Forwards p) = directedStepResult p
-stepResult (Backwards p) = directedStepInitial p
-
-directedStepInitial :: DirectedProofStep f -> Term f
-directedStepInitial (Reduction p) = initial p
-directedStepInitial (Axiom _ (t :=: _) sub) = subst sub t
-
-directedStepResult :: DirectedProofStep f -> Term f
-directedStepResult (Reduction p) = result p
-directedStepResult (Axiom _ (_ :=: u) sub) = subst sub u
+directedStepTerms :: DirectedProofStep f -> (Term f, Term f)
+directedStepTerms (Reduction p) =
+  (initial p, result p)
+directedStepTerms (Axiom _ (t :=: u) sub) =
+  (subst sub t, subst sub u)
 
 -- Construct a proof from an axiom.
 axiomProof :: String -> Equation f -> Proof f
 axiomProof name eqn =
   Proof
-    [Forwards $
+    [ProofStep Forwards $
       Axiom name eqn $
         fromJust $
         flattenSubst [(x, build (var x)) | x <- vars eqn]]
@@ -569,14 +571,17 @@ axiomProof name eqn =
 -- Turn a reduction into a proof.
 reductionProof :: Reduction f -> Proof f
 reductionProof Refl{} = Proof []
-reductionProof p = Proof [Forwards (Reduction p)]
+reductionProof p = Proof [ProofStep Forwards (Reduction p)]
 
 -- Turn a proof of t=u into a proof of u=t.
 backwards :: Proof f -> Proof f
 backwards (Proof ps) = Proof (reverse (map back ps))
   where
-    back (Forwards p) = Backwards p
-    back (Backwards p) = Forwards p
+    back (ProofStep dir p) = ProofStep (opposite dir) p
+
+opposite :: Direction -> Direction
+opposite Forwards = Backwards
+opposite Backwards = Forwards
 
 -- Check a proof for validity, given the initial and final terms.
 verifyProof :: PrettyTerm f => Term f -> Term f -> Proof f -> Bool
@@ -586,10 +591,10 @@ verifyProof t u (Proof ps) = verify t u ps
     verify t v (p:ps) =
       verifyStep t u p && verify u v ps
       where
-        u = stepResult p
+        (_, u) = stepTerms p
 
-    verifyStep t u (Forwards p) = verifyDirectedStep t u p
-    verifyStep t u (Backwards p) = verifyDirectedStep u t p
+    verifyStep t u (ProofStep Forwards p) = verifyDirectedStep t u p
+    verifyStep t u (ProofStep Backwards p) = verifyDirectedStep u t p
     verifyDirectedStep t u (Reduction p) = verifyReduction t u p
     verifyDirectedStep t u (Axiom _ (t' :=: u') sub) =
       subst sub t' == t && subst sub u' == u
@@ -600,8 +605,7 @@ pPrintProof (Proof ps) =
   pp (concatMap simplify ps)
   where
     simplify :: ProofStep f -> [ProofStep f]
-    simplify (Forwards p) = Forwards <$> simplifyDir p
-    simplify (Backwards p) = Backwards <$> simplifyDir p
+    simplify (ProofStep dir p) = ProofStep dir <$> simplifyDir p
     simplifyDir (Reduction p) = Reduction <$> flatten p
     simplifyDir p@Axiom{} = [p]
 
@@ -625,15 +629,15 @@ pPrintProof (Proof ps) =
     pp [] = text "reflexivity"
     pp ps@(p0:_) =
       vcat $
-        ppTerm (stepInitial p0):
+        ppTerm (fst (stepTerms p0)):
         [ text "= { by" <+> ppStep p <+> text "}" $$
-          ppTerm (stepResult p)
+          ppTerm (snd (stepTerms p))
         | p <- ps ]
 
     ppTerm t = text "  " <> pPrint t
 
-    ppStep (Forwards p) = ppDir p
-    ppStep (Backwards p) = ppDir p <> text ", backwards"
+    ppStep (ProofStep Forwards p) = ppDir p
+    ppStep (ProofStep Backwards p) = ppDir p <> text ", backwards"
 
     ppDir (Axiom name _ _) = text ("axiom " ++ name)
     ppDir (Reduction p) =
