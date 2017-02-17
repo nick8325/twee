@@ -426,8 +426,6 @@ termListToList (Cons t ts) = t:termListToList ts
 emptyTermList :: TermList f
 emptyTermList = buildList (mempty :: Builder f)
 
--- Functions for building terms.
-
 {-# INLINE subtermsList #-}
 subtermsList :: TermList f -> [Term f]
 subtermsList t = unfoldr op t
@@ -496,3 +494,21 @@ replacePositionSub sub n !x = aux n
     inside _ _ = __
 
     outside t = substList sub t
+
+-- Convert a position in a term into a path.
+positionToPath :: Term f -> Int -> [Int]
+positionToPath t n = path 0 (singleton t) n
+  where
+    path k _ 0 = [k]
+    path k (Cons t u) n
+      | n < len t = k:path 0 (children t) n
+      | otherwise = path (k+1) u (n-len t)
+
+-- Convert a path in a term into a position.
+pathToPosition :: Term f -> [Int] -> Int
+pathToPosition t ns = pos 0 (singleton t) ns
+  where
+    pos k _ [0] = k
+    pos k (Cons t u) (n:ns)
+      | n == 0 = pos k (children t) ns
+      | otherwise = pos (k+len t) u ((n-1):ns)

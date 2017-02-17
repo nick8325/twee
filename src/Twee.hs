@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables #-}
 module Twee where
 
 import Twee.Base
@@ -38,7 +38,7 @@ data State f =
     st_rules          :: !(Index f (TweeRule f)),
     st_rule_ids       :: !(IntMap (TweeRule f)),
     st_joinable       :: !(Index f (Equation f)),
-    st_goals          :: [Set (Term f)],
+    st_goals          :: [Set (Reduction f)],
     st_queue          :: !(Heap (Passive f)),
     st_label          :: {-# UNPACK #-} !Id,
     st_considered     :: {-# UNPACK #-} !Int,
@@ -129,21 +129,22 @@ makePassive Config{..} State{..} mrange id =
 -- Turn a Passive back into an overlap.
 -- Doesn't try to simplify it.
 {-# INLINEABLE findPassive #-}
-findPassive :: Function f => Config -> State f -> Passive f -> Maybe (Overlap f)
+findPassive :: forall f. Function f => Config -> State f -> Passive f -> Maybe (TweeRule f, TweeRule f, Overlap f)
 findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
-  rule1 <- the <$> IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
-  rule2 <- the <$> IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
-  overlapAt st_oriented_rules (fromIntegral passive_pos)
-    (renameAvoiding rule2 rule1) rule2
+  rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
+  rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
+  overlap <-
+    overlapAt st_oriented_rules (fromIntegral passive_pos)
+      (renameAvoiding (the rule2 :: Rule f) (the rule1)) (the rule2)
+  return (rule1, rule2, overlap)
 
 -- Renormalise a queued Passive.
 -- Also takes care of deleting any orphans.
 {-# INLINEABLE simplifyPassive #-}
 simplifyPassive :: Function f => Config -> State f -> Passive f -> Maybe (Passive f)
 simplifyPassive config@Config{..} state@State{..} passive = {-# SCC simplifyPassive #-} do
-  overlap <-
-    findPassive config state passive >>=
-    simplifyOverlap st_oriented_rules
+  (_, _, overlap) <- findPassive config state passive
+  overlap <- simplifyOverlap st_oriented_rules overlap
   return passive { passive_score = fromIntegral (score cfg_critical_pairs overlap) }
 
 -- Renormalise the entire queue.
@@ -171,7 +172,7 @@ enqueue state passive =
 --   * splitting ManyCPs up as necessary
 --   * ignoring CPs that are too big
 {-# INLINEABLE dequeue #-}
-dequeue :: Function f => Config -> State f -> (Maybe (Overlap f), State f)
+dequeue :: Function f => Config -> State f -> (Maybe (CriticalPair f), State f)
 dequeue config@Config{..} state@State{..} =
   {-# SCC dequeue #-}
   case deq 0 st_queue of
@@ -185,12 +186,12 @@ dequeue config@Config{..} state@State{..} =
     deq !n queue = do
       (passive, queue) <- Heap.uncons queue
       case findPassive config state passive of
-        Just overlap ->
+        Just (rule1, rule2, overlap) ->
           case simplifyOverlap st_oriented_rules overlap of
             Just Overlap{overlap_eqn = t :=: u}
               | size t <= cfg_max_term_size,
                 size u <= cfg_max_term_size ->
-                return (overlap, n+1, queue)
+                return (makeCriticalPair rule1 rule2 overlap, n+1, queue)
             _ -> deq (n+1) queue
         _ -> deq (n+1) queue
 
@@ -201,13 +202,14 @@ dequeue config@Config{..} state@State{..} =
 data TweeRule f =
   TweeRule {
     rule_id        :: {-# UNPACK #-} !Id,
+    rule_version   :: {-# UNPACK #-} !Int,
     rule_rule      :: {-# UNPACK #-} !(Rule f),
     -- Positions at which the rule can form CPs
     rule_positions :: !(Positions f),
-    -- The CP which created the rule
-    rule_overlap   :: {-# UNPACK #-} !(Overlap f),
     -- Models in which the rule is false (used when reorienting)
-    rule_models    :: [Model f] }
+    rule_models    :: [Model f],
+    -- Proof of the rule
+    rule_proof     :: !(Proof f) }
 
 instance Eq (TweeRule f) where
   (==) = (==) `on` rule_id
@@ -215,6 +217,8 @@ instance Eq (TweeRule f) where
 instance f ~ g => Has (TweeRule f) (Rule g) where the = rule_rule
 instance f ~ g => Has (TweeRule f) (Positions g) where the = rule_positions
 instance Has (TweeRule f) Id where the = rule_id
+instance Has (TweeRule f) VersionedId where
+  the TweeRule{..} = VersionedId rule_id rule_version
 
 -- Add a new rule.
 {-# INLINEABLE addRule #-}
@@ -258,41 +262,42 @@ addJoinable state eqn@(t :=: u) =
 
 -- Try to join a critical pair.
 {-# INLINEABLE consider #-}
-consider :: Function f => Config -> State f -> Overlap f -> State f
-consider config state@State{..} overlap0 =
+consider :: Function f => Config -> State f -> CriticalPair f -> State f
+consider config state@State{..} cp =
   {-# SCC consider #-}
   let
     -- Important to canonicalise the rule so that we don't get
     -- bigger and bigger variable indices over time
-    overlap = canonicalise overlap0
+    (eqns, mcp) =
+      joinCriticalPair st_joinable st_rules (canonicalise cp)
   in
-    case joinOverlap st_joinable st_rules overlap of
-      Left eqns ->
-        foldl' addJoinable state eqns
-      Right (overlap, models) ->
+    flip (foldl' addJoinable) eqns $
+    case mcp of
+      Nothing -> state
+      Just (cp, models) ->
         let
           rules =
             [ \n ->
               TweeRule {
                 rule_id = n,
+                rule_version = 0,
                 rule_rule = rule,
                 rule_positions = positions (lhs rule),
-                rule_overlap = overlap,
-                rule_models = models }
-            | rule <- orient (overlap_eqn overlap) ]
+                rule_models = models,
+                rule_proof = proof (cp_proof cp) }
+            | (rule, proof) <- orient (cp_eqn cp) ]
         in
           foldl' (addRule config) state rules
 
 -- Add a new equation.
 {-# INLINEABLE newEquation #-}
-newEquation :: Function f => Config -> State f -> Equation f -> State f
-newEquation config state eqn =
+newEquation :: Function f => Config -> State f -> String -> Equation f -> State f
+newEquation config state name eqn =
   consider config state $
-    Overlap {
-      overlap_top = empty,
-      overlap_inner = empty,
-      overlap_pos = 0,
-      overlap_eqn = eqn }
+    CriticalPair {
+      cp_eqn = eqn,
+      cp_top = Nothing,
+      cp_proof = [Axiom name] }
 
 ----------------------------------------------------------------------
 -- Interreduction.

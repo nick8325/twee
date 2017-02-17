@@ -1,8 +1,8 @@
-{-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, DeriveGeneric, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ConstraintKinds #-}
+{-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, DeriveGeneric, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ConstraintKinds, RecordWildCards #-}
 -- To suppress a warning about hiding Arity
 {-# OPTIONS_GHC -Wno-dodgy-imports #-}
 module Twee.Base(
-  Id(..), Symbolic(..), subst, GSymbolic(..), Has(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
+  Id(..), VersionedId(..), Symbolic(..), subst, GSymbolic(..), Has(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding,
   Minimal(..), minimalTerm, isMinimal,
   Skolem(..), Arity(..), Sized(..), Ordered(..), Equals(..), Strictness(..), Function, Extended(..),
@@ -20,6 +20,7 @@ import Data.DList(DList)
 import GHC.Generics hiding (Arity)
 import Data.Typeable
 import Data.Int
+import qualified Data.IntMap.Strict as IntMap
 
 -- Represents a unique identifier (e.g., for a rule).
 newtype Id = Id { unId :: Int32 }
@@ -27,6 +28,20 @@ newtype Id = Id { unId :: Int32 }
 
 instance Pretty Id where
   pPrint = text . show . unId
+
+-- Identifies e.g. a rule as it was at a particular point in time.
+data VersionedId =
+  VersionedId {
+    versioned_id :: {-# UNPACK #-} !Id,
+    versioned_version :: {-# UNPACK #-} !Int }
+  deriving (Eq, Ord, Show)
+
+instance Pretty VersionedId where
+  pPrint VersionedId{..} =
+    pPrint versioned_id <>
+    case versioned_version of
+      0 -> text ""
+      _ -> text "_" <> pPrint versioned_version
 
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where
@@ -84,8 +99,13 @@ instance Symbolic (Term f) where
 
 instance Symbolic (TermList f) where
   type ConstantOf (TermList f) = f
-  termsDL   = return
+  termsDL = return
   subst_ sub = buildList . Term.substList sub
+
+instance Symbolic (Subst f) where
+  type ConstantOf (Subst f) = f
+  termsDL (Subst sub) = termsDL (IntMap.elems sub)
+  subst_ sub (Subst s) = Subst (fmap (subst_ sub) s)
 
 instance (ConstantOf a ~ ConstantOf b, Symbolic a, Symbolic b) => Symbolic (a, b) where
   type ConstantOf (a, b) = ConstantOf a
@@ -97,6 +117,9 @@ instance (ConstantOf a ~ ConstantOf b,
 
 instance Symbolic a => Symbolic [a] where
   type ConstantOf [a] = ConstantOf a
+
+instance Symbolic a => Symbolic (Maybe a) where
+  type ConstantOf (Maybe a) = ConstantOf a
 
 class Has a b where
   the :: a -> b

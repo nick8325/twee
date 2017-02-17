@@ -1,5 +1,5 @@
 -- Tactics for joining critical pairs.
-{-# LANGUAGE FlexibleContexts, BangPatterns #-}
+{-# LANGUAGE FlexibleContexts, BangPatterns, RecordWildCards, TypeFamilies, DeriveGeneric #-}
 module Twee.Join where
 
 import Twee.Base
@@ -11,43 +11,68 @@ import Twee.Index(Index)
 import Twee.Utils
 import Data.Maybe
 import Data.Either
+import Data.Ord
+import GHC.Generics
 
-{-# INLINEABLE joinOverlap #-}
-joinOverlap ::
-  (Function f, Has a (Rule f)) =>
+-- A critical pair together with information about how it was derived
+data CriticalPair f =
+  CriticalPair {
+    cp_eqn   :: {-# UNPACK #-} !(Equation f),
+    cp_top   :: !(Maybe (Term f)),
+    cp_proof :: !(Proof f) }
+  deriving Generic
+
+instance Symbolic (CriticalPair f) where
+  type ConstantOf (CriticalPair f) = f
+
+{-# INLINEABLE makeCriticalPair #-}
+makeCriticalPair ::
+  (Has a (Rule f), Has a VersionedId) => a -> a -> Overlap f -> CriticalPair f
+makeCriticalPair r1 r2 overlap@Overlap{..} =
+  CriticalPair overlap_eqn
+    (Just overlap_top)
+    (overlapProof r1 r2 overlap)
+
+{-# INLINEABLE joinCriticalPair #-}
+joinCriticalPair ::
+  (Function f, Has a (Rule f), Has a VersionedId) =>
   Index f (Equation f) -> Index f a ->
-  Overlap f -> Either [Equation f] (Overlap f, [Model f])
-joinOverlap eqns idx overlap =
-  case allSteps eqns idx overlap of
-    Just overlap ->
-      case groundJoin eqns idx (branches (And [])) overlap of
-        Left model -> Right (overlap, [model])
-        Right overlaps ->
-          case all (isLeft . joinOverlap eqns idx) overlaps of
-            True -> Left [overlap_eqn overlap]
-            False -> Right (overlap, [])
+  CriticalPair f -> ([Equation f], Maybe (CriticalPair f, [Model f]))
+joinCriticalPair eqns idx cp =
+  case allSteps eqns idx cp of
+    Just cp ->
+      case groundJoin eqns idx (branches (And [])) cp of
+        Left model -> ([], Just (cp, [model]))
+        Right cps ->
+          let
+            (eqnss, mcps) = unzip (map (joinCriticalPair eqns idx) cps)
+          in
+            case all isNothing mcps of
+              True -> (cp_eqn cp:concat eqnss, Nothing)
+              False -> (concat eqnss, Just (cp, []))
     Nothing ->
-      Left []
+      ([], Nothing)
 
 {-# INLINEABLE step1 #-}
 {-# INLINEABLE step2 #-}
 {-# INLINEABLE step3 #-}
 {-# INLINEABLE allSteps #-}
 step1, step2, step3, allSteps ::
-  (Function f, Has a (Rule f)) => Index f (Equation f) -> Index f a -> Overlap f -> Maybe (Overlap f)
-allSteps eqns idx overlap = step1 eqns idx overlap >>= step2 eqns idx >>= step3 eqns idx
-step1 eqns idx = joinWith eqns idx (result . normaliseWith (const True) (rewrite reducesOriented idx))
-step2 eqns idx = joinWith eqns idx (result . normaliseWith (const True) (rewrite reduces idx))
-step3 eqns idx overlap =
-  case overlap_top overlap of
-    Cons top Empty ->
-      case (join (overlap, top), join (flipCP (overlap, top))) of
-        (Just _, Just _) -> Just overlap
+  (Function f, Has a (Rule f), Has a VersionedId) =>
+  Index f (Equation f) -> Index f a -> CriticalPair f -> Maybe (CriticalPair f)
+allSteps eqns idx cp = step1 eqns idx cp >>= step2 eqns idx >>= step3 eqns idx
+step1 eqns idx = joinWith eqns idx (normaliseWith (const True) (rewrite reducesOriented idx))
+step2 eqns idx = joinWith eqns idx (normaliseWith (const True) (rewrite reduces idx))
+step3 eqns idx cp =
+  case cp_top cp of
+    Just top ->
+      case (join (cp, top), join (flipCP (cp, top))) of
+        (Just _, Just _) -> Just cp
         _ -> Nothing
-    _ -> Just overlap
+    _ -> Just cp
   where
-    join (overlap, top) =
-      joinWith eqns idx (result . normaliseWith (check top) (rewrite reducesSkolem idx)) overlap
+    join (cp, top) =
+      joinWith eqns idx (normaliseWith (check top) (rewrite reducesSkolem idx)) cp
 
     check top u = lessEq u top && isNothing (unify u top)
 
@@ -60,18 +85,26 @@ step3 eqns idx overlap =
 
 {-# INLINEABLE joinWith #-}
 joinWith ::
-  Has a (Rule f) =>
-  Index f (Equation f) -> Index f a -> (Term f -> Term f) -> Overlap f -> Maybe (Overlap f)
-joinWith eqns idx reduce overlap
+  (Has a (Rule f), Has a VersionedId) =>
+  Index f (Equation f) -> Index f a -> (Term f -> Reduction f) -> CriticalPair f -> Maybe (CriticalPair f)
+joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
   | subsumed Symmetric eqns idx eqn = Nothing
-  | otherwise = Just overlap { overlap_eqn = eqn }
+  | otherwise =
+    Just cp {
+      cp_eqn = eqn,
+      cp_proof =
+        [Backwards lred] ++ cp_proof ++ [Forwards rred] }
   where
-    eqn = bothSides reduce (overlap_eqn overlap)
+    lred = reduce lhs
+    rred = reduce rhs
+    eqn = result lred :=: result rred
 
 data SubsumptionMode = Symmetric | Asymmetric deriving Eq
 
 {-# INLINEABLE subsumed #-}
-subsumed :: Has a (Rule f) => SubsumptionMode -> Index f (Equation f) -> Index f a -> Equation f -> Bool
+subsumed ::
+  (Has a (Rule f), Has a VersionedId) =>
+  SubsumptionMode -> Index f (Equation f) -> Index f a -> Equation f -> Bool
 subsumed mode eqns idx (t :=: u)
   | t == u = True
   | or [ rhs rule == u | rule <- Index.lookup t idx ] = True
@@ -94,19 +127,20 @@ subsumed mode eqns idx (App f ts :=: App g us)
       sub ts us
 subsumed _ _ _ _ = False
 
+{-# INLINEABLE groundJoin #-}
 groundJoin ::
-  (Function f, Has a (Rule f)) =>
-  Index f (Equation f) -> Index f a -> [Branch f] -> Overlap f -> Either (Model f) [Overlap f]
-groundJoin eqns idx ctx r@Overlap{overlap_eqn = t :=: u} =
+  (Function f, Has a (Rule f), Has a VersionedId) =>
+  Index f (Equation f) -> Index f a -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
+groundJoin eqns idx ctx r@CriticalPair{cp_eqn = t :=: u} =
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
     ([], instances) ->
       let rs = [ subst sub r | sub <- instances ] in
-      Right (usort (map canonicalise rs))
+      Right (usortBy (comparing (canonicalise . order . cp_eqn)) rs)
     (model:_, _)
-      | isJust (allSteps eqns idx r { overlap_eqn = t' :=: u' }) -> Left model
+      | isJust (allSteps eqns idx r { cp_eqn = t' :=: u' }) -> Left model
       | otherwise ->
           let model1 = optimise model weakenModel (\m -> valid m nt && valid m nu)
-              model2 = optimise model1 weakenModel (\m -> isNothing (allSteps eqns idx r { overlap_eqn = result (normaliseIn m t) :=: result (normaliseIn m u) }))
+              model2 = optimise model1 weakenModel (\m -> isNothing (allSteps eqns idx r { cp_eqn = result (normaliseIn m t) :=: result (normaliseIn m u) }))
 
               diag [] = Or []
               diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)

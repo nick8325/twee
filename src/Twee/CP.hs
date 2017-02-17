@@ -1,5 +1,5 @@
 -- Critical pairs.
-{-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards, OverloadedStrings, DeriveGeneric, TypeFamilies #-}
+{-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards, OverloadedStrings, TypeFamilies #-}
 module Twee.CP where
 
 import qualified Twee.Term as Term
@@ -13,7 +13,6 @@ import Data.List
 import qualified Twee.ChurchList as ChurchList
 import Twee.ChurchList (ChurchList(..))
 import Twee.Utils
-import GHC.Generics
 
 -- The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
@@ -45,27 +44,13 @@ positionsChurch posns =
 -- A critical overlap of one rule with another.
 data Overlap f =
   Overlap {
-    -- overlap_top and overlap_inner can be Empty to indicate
-    -- that they are not present
-    overlap_top   :: {-# UNPACK #-} !(TermList f),
-    overlap_inner :: {-# UNPACK #-} !(TermList f),
+    overlap_top   :: {-# UNPACK #-} !(Term f),
+    overlap_inner :: {-# UNPACK #-} !(Term f),
     overlap_pos   :: {-# UNPACK #-} !Int,
-    overlap_eqn   :: {-# UNPACK #-} !(Equation f) }
-  deriving (Eq, Ord, Show, Generic)
+    overlap_eqn   :: {-# UNPACK #-} !(Equation f),
+    overlap_sub   :: !(TriangleSubst f) }
+  deriving Show
 type OverlapOf a = Overlap (ConstantOf a)
-
-instance Symbolic (Overlap f) where
-  type ConstantOf (Overlap f) = f
-  termsDL Overlap{..} =
-    termsDL overlap_top `mplus`
-    termsDL overlap_inner `mplus`
-    termsDL overlap_eqn
-  subst_ sub Overlap{..} =
-    Overlap {
-      overlap_top = subst_ sub overlap_top,
-      overlap_inner = subst_ sub overlap_inner,
-      overlap_pos = overlap_pos,
-      overlap_eqn = subst_ sub overlap_eqn }
 
 -- Compute all overlaps of a rule with a set of rules.
 {-# INLINEABLE overlaps #-}
@@ -106,8 +91,9 @@ overlapAt !idx !n (Rule _ !outer !outer') (Rule _ !inner !inner') = do
   let t = at n (singleton outer)
   sub <- unifyTri inner t
   let
-    top = {-# SCC overlap_top #-} Term.singleton (termSubst sub outer)
-    innerTerm = {-# SCC overlap_inner #-} Term.singleton (termSubst sub inner)
+    top = {-# SCC overlap_top #-} termSubst sub outer
+    innerTerm = {-# SCC overlap_inner #-} termSubst sub inner
+    -- Make sure to keep in sync with overlapProof
     lhs = {-# SCC overlap_eqn_1 #-} termSubst sub outer'
     rhs = {-# SCC overlap_eqn_2 #-}
       buildReplacePositionSub sub n (singleton inner') (singleton outer)
@@ -117,14 +103,15 @@ overlapAt !idx !n (Rule _ !outer !outer') (Rule _ !inner !inner') = do
     overlap_top = top,
     overlap_inner = innerTerm,
     overlap_pos = n,
-    overlap_eqn = lhs :=: rhs }
+    overlap_eqn = lhs :=: rhs,
+    overlap_sub = sub }
 
 -- Simplify an overlap and remove it if it's not prime.
 {-# INLINE simplifyOverlap #-}
 simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap f -> Maybe (Overlap f)
 simplifyOverlap idx overlap@Overlap{overlap_eqn = lhs :=: rhs, ..}
   | lhs' == rhs' = Nothing
-  | ConsSym _ ts <- overlap_inner, canSimplifyList idx ts = Nothing
+  | App _ ts <- overlap_inner, canSimplifyList idx ts = Nothing
   | otherwise = Just overlap{overlap_eqn = lhs' :=: rhs'}
   where
     lhs' = simplify idx lhs
@@ -137,6 +124,27 @@ buildReplacePositionSub !sub !n !inner' !outer =
 
 termSubst :: TriangleSubst f -> Term f -> Term f
 termSubst sub t = build (Term.subst sub t)
+
+-- Return a proof for a critical pair.
+overlapProof ::
+  forall a f.
+  (Has a (Rule f), Has a VersionedId) =>
+  a -> a -> Overlap f -> Proof f
+overlapProof left right Overlap{..} =
+  [Backwards (Step (the left) (the left) sub),
+   Forwards $
+     Parallel
+       [(pos, Step (the right) (the right) sub)]
+       overlap_top]
+  where
+    sub = close overlap_sub
+    -- overlap_pos is given in terms of lhs (the left),
+    -- but pos must be a position in overlap_top, which
+    -- is lhs (the left) with the subsitution applied.
+    pos =
+      pathToPosition overlap_top $
+      positionToPath (lhs (the left) :: Term f) $
+      overlap_pos
 
 -- The critical pair ordering heuristic.
 data Config =

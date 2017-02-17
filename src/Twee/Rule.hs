@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, CPP, BangPatterns, OverloadedStrings, DeriveGeneric, MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, CPP, BangPatterns, OverloadedStrings, DeriveGeneric, MultiParamTypeClasses, ScopedTypeVariables #-}
 module Twee.Rule where
 
 #include "errors.h"
@@ -16,6 +16,7 @@ import qualified Data.Set as Set
 import Data.Set(Set)
 import qualified Twee.Term as Term
 import GHC.Generics
+import Data.Ord
 
 --------------------------------------------------------------------------------
 -- Rewrite rules.
@@ -23,7 +24,7 @@ import GHC.Generics
 
 data Rule f =
   Rule {
-    orientation :: Orientation f,
+    orientation :: !(Orientation f),
     lhs :: {-# UNPACK #-} !(Term f),
     rhs :: {-# UNPACK #-} !(Term f) }
   deriving (Eq, Ord, Show, Generic)
@@ -34,7 +35,7 @@ data Orientation f =
   | WeaklyOriented {-# UNPACK #-} !(Fun f) [Term f]
   | Permutative [(Term f, Term f)]
   | Unoriented
-  deriving (Show, Generic)
+  deriving Show
 
 instance Eq (Orientation f) where _ == _ = True
 instance Ord (Orientation f) where compare _ _ = EQ
@@ -110,7 +111,9 @@ unorient :: Rule f -> Equation f
 unorient (Rule _ l r) = l :=: r
 
 -- Turn an equation into a set of rules.
-orient :: Function f => Equation f -> [Rule f]
+-- Along with each rule, returns a function which transforms a proof
+-- of the equation into a proof of the rule.
+orient :: forall f. Function f => Equation f -> [(Rule f, Proof f -> Proof f)]
 orient (l :=: r) | l == r = []
 orient (l :=: r) =
   -- If we have an equation where some variables appear only on one side, e.g.:
@@ -120,10 +123,18 @@ orient (l :=: r) =
   --   g x z = g x k
   --   f x k = g x k
   -- where k is an arbitrary constant
-  [ makeRule l r' | ord /= Just LT && ord /= Just EQ ] ++
-  [ makeRule r l' | ord /= Just GT && ord /= Just EQ ] ++
-  [ makeRule l l' | not (null ls), ord /= Just GT ] ++
-  [ makeRule r r' | not (null rs), ord /= Just LT ]
+  [ (makeRule l r',
+     \pf -> erase rs pf)
+  | ord /= Just LT && ord /= Just EQ ] ++
+  [ (makeRule r l',
+     \pf -> backwards (erase ls pf))
+  | ord /= Just GT && ord /= Just EQ ] ++
+  [ (makeRule l l',
+     \pf -> pf ++ backwards (erase ls pf))
+  | not (null ls), ord /= Just GT ] ++
+  [ (makeRule r r',
+     \pf -> backwards pf ++ erase rs pf)
+  | not (null rs), ord /= Just LT ]
   where
     ord = orientTerms l' r'
     l' = erase ls l
@@ -131,6 +142,7 @@ orient (l :=: r) =
     ls = usort (vars l) \\ usort (vars r)
     rs = usort (vars r) \\ usort (vars l)
 
+    erase :: (Symbolic a, ConstantOf a ~ f) => [Var] -> a -> a
     erase [] t = t
     erase xs t = subst sub t
       where
@@ -192,84 +204,6 @@ trivial :: Eq f => Equation f -> Bool
 trivial (t :=: u) = t == u
 
 --------------------------------------------------------------------------------
--- Rewriting, with proof output.
---------------------------------------------------------------------------------
-
-type Strategy f = Term f -> [Reduction f]
-
--- A multi-step rewrite proof t ->* u
-data Reduction f =
-    -- Apply a single rewrite rule to the root of a term
-    Step (Rule f) (Subst f)
-    -- Reflexivity
-  | Trans (Reduction f) (Reduction f)
-    -- Parallel rewriting given a list of (position, rewrite) pairs
-    -- and the initial term
-  | Parallel [(Int, Reduction f)] (Term f)
-  deriving Show
-
-instance PrettyTerm f => Pretty (Reduction f) where
-  pPrint = pPrintReduction
-
-pPrintReduction :: PrettyTerm f => Reduction f -> Doc
-pPrintReduction p =
-  case flatten p of
-    [p] -> pp p
-    ps -> pPrint (map pp ps)
-  where
-    flatten (Trans p q) = flatten p ++ flatten q
-    flatten p = [p]
-
-    pp p = sep [pp0 p, nest 2 (text "giving" <+> pPrint (result p))]
-    pp0 (Step rule sub) =
-      sep [pPrint rule,
-           nest 2 (text "at" <+> pPrint sub)]
-    pp0 (Parallel [] _) = text "refl"
-    pp0 (Parallel [(0, p)] _) = pp0 p
-    pp0 (Parallel ps _) =
-      sep (punctuate (text " and")
-        [hang (pPrint n <+> text "->") 2 (pPrint p) | (n, p) <- ps])
-
--- Find the initial term of a rewrite proof
-initial :: Reduction f -> Term f
-initial (Step r sub) = subst sub (lhs r)
-initial (Trans p _) = initial p
-initial (Parallel _ t) = t
-
--- Find the final term of a rewrite proof
-result :: Reduction f -> Term f
-result (Parallel [] t) = t
-result (Trans _ p) = result p
-result t = {-# SCC result_emitReduction #-} build (emitReduction t)
-  where
-    emitReduction (Step r sub) = Term.subst sub (rhs r)
-    emitReduction (Trans _ p) = emitReduction p
-    emitReduction (Parallel ps t) = emitParallel 0 ps (singleton t)
-
-    emitParallel !_ _ _ | False = __
-    emitParallel _ _ Empty = mempty
-    emitParallel _ [] t = builder t
-    emitParallel n ((m, _):_) t  | m >= n + lenList t = builder t
-    emitParallel n ps@((m, _):_) (Cons t u) | m >= n + len t =
-      builder t `mappend` emitParallel (n + len t) ps u
-    emitParallel n ((m, _):ps) t | m < n = emitParallel n ps t
-    emitParallel n ((m, p):ps) (Cons t u) | m == n =
-      emitReduction p `mappend` emitParallel (n + len t) ps u
-    emitParallel n ps (Cons (Var x) u) =
-      var x `mappend` emitParallel (n + 1) ps u
-    emitParallel n ps (Cons (App f t) u) =
-      app f (emitParallel (n+1) ps t) `mappend`
-      emitParallel (n + 1 + lenList t) ps u
-
--- The list of all rewrite rules used in a proof
-steps :: Reduction f -> [(Rule f, Subst f)]
-steps r = aux r []
-  where
-    aux (Step r sub) = ((r, sub):)
-    aux (Trans p q) = aux p . aux q
-    aux (Parallel ps _) = foldr (.) id (map (aux . snd) ps)
-
---------------------------------------------------------------------------------
 -- Extra-fast rewriting, without proof output or unorientable rules.
 --------------------------------------------------------------------------------
 
@@ -318,6 +252,107 @@ simpleRewrite idx t =
     return (rule, sub)
 
 --------------------------------------------------------------------------------
+-- Rewriting, with proof output.
+--------------------------------------------------------------------------------
+
+type Strategy f = Term f -> [Reduction f]
+
+-- A multi-step rewrite proof t ->* u
+data Reduction f =
+    -- Apply a single rewrite rule to the root of a term
+    Step {-# UNPACK #-} !VersionedId !(Rule f) !(Subst f)
+    -- Transivitity
+  | Trans !(Reduction f) !(Reduction f)
+    -- Parallel rewriting given a list of (position, rewrite) pairs
+    -- and the initial term
+  | Parallel ![(Int, Reduction f)] {-# UNPACK #-} !(Term f)
+  deriving Show
+
+-- Two reductions are equal if they rewrite to the same thing.
+-- This is useful for normalForms.
+instance Eq (Reduction f) where x == y = compare x y == EQ
+instance Ord (Reduction f) where
+  compare = comparing (\p -> result p)
+
+instance Symbolic (Reduction f) where
+  type ConstantOf (Reduction f) = f
+  termsDL (Step _ rule sub) = termsDL rule `mplus` termsDL sub
+  termsDL (Trans p q) = termsDL p `mplus` termsDL q
+  termsDL (Parallel rs t) = termsDL (map snd rs) `mplus` termsDL t
+
+  subst_ sub (Step n rule s) = Step n rule (subst_ sub s)
+  subst_ sub (Trans p q) = Trans (subst_ sub p) (subst_ sub q)
+  subst_ sub (Parallel rs t) =
+    Parallel
+      [ (pathToPosition u (positionToPath t n),
+         subst_ sub r)
+      | (n, r) <- rs ]
+      u
+    where
+      u = subst sub t
+
+instance PrettyTerm f => Pretty (Reduction f) where
+  pPrint = pPrintReduction
+
+pPrintReduction :: PrettyTerm f => Reduction f -> Doc
+pPrintReduction p =
+  case flatten p of
+    [p] -> pp p
+    ps -> pPrint (map pp ps)
+  where
+    flatten (Trans p q) = flatten p ++ flatten q
+    flatten p = [p]
+
+    pp p = sep [pp0 p, nest 2 (text "giving" <+> pPrint (result p))]
+    pp0 (Step _ rule sub) =
+      sep [pPrint rule,
+           nest 2 (text "at" <+> pPrint sub)]
+    pp0 (Parallel [] _) = text "refl"
+    pp0 (Parallel [(0, p)] _) = pp0 p
+    pp0 (Parallel ps _) =
+      sep (punctuate (text " and")
+        [hang (pPrint n <+> text "->") 2 (pPrint p) | (n, p) <- ps])
+
+-- Find the initial term of a rewrite proof
+initial :: Reduction f -> Term f
+initial (Step _ r sub) = subst sub (lhs r)
+initial (Trans p _) = initial p
+initial (Parallel _ t) = t
+
+-- Find the final term of a rewrite proof
+result :: Reduction f -> Term f
+result (Parallel [] t) = t
+result (Trans _ p) = result p
+result t = {-# SCC result_emitReduction #-} build (emitReduction t)
+  where
+    emitReduction (Step _ r sub) = Term.subst sub (rhs r)
+    emitReduction (Trans _ p) = emitReduction p
+    emitReduction (Parallel ps t) = emitParallel 0 ps (singleton t)
+
+    emitParallel !_ _ _ | False = __
+    emitParallel _ _ Empty = mempty
+    emitParallel _ [] t = builder t
+    emitParallel n ((m, _):_) t  | m >= n + lenList t = builder t
+    emitParallel n ps@((m, _):_) (Cons t u) | m >= n + len t =
+      builder t `mappend` emitParallel (n + len t) ps u
+    emitParallel n ((m, _):ps) t | m < n = emitParallel n ps t
+    emitParallel n ((m, p):ps) (Cons t u) | m == n =
+      emitReduction p `mappend` emitParallel (n + len t) ps u
+    emitParallel n ps (Cons (Var x) u) =
+      var x `mappend` emitParallel (n + 1) ps u
+    emitParallel n ps (Cons (App f t) u) =
+      app f (emitParallel (n+1) ps t) `mappend`
+      emitParallel (n + 1 + lenList t) ps u
+
+-- The list of all rewrite rules used in a proof
+steps :: Reduction f -> [(Rule f, Subst f)]
+steps r = aux r []
+  where
+    aux (Step _ r sub) = ((r, sub):)
+    aux (Trans p q) = aux p . aux q
+    aux (Parallel ps _) = foldr (.) id (map (aux . snd) ps)
+
+--------------------------------------------------------------------------------
 -- Strategy combinators.
 --------------------------------------------------------------------------------
 
@@ -342,18 +377,18 @@ normaliseWith ok strat t = {-# SCC normaliseWith #-} res
 
 -- Compute all normal forms of a term wrt a particular strategy.
 {-# INLINEABLE normalForms #-}
-normalForms :: Function f => Strategy f -> [Term f] -> Set (Term f)
-normalForms strat ts = {-# SCC normalForms #-} go Set.empty Set.empty ts
+normalForms :: Function f => Strategy f -> [Reduction f] -> Set (Reduction f)
+normalForms strat ps = {-# SCC normalForms #-} go Set.empty Set.empty ps
   where
     go _ norm [] = norm
-    go dead norm (t:ts)
-      | t `Set.member` dead = go dead norm ts
-      | t `Set.member` norm = go dead norm ts
-      | null us = go dead (Set.insert t norm) ts
+    go dead norm (p:ps)
+      | p `Set.member` dead = go dead norm ps
+      | p `Set.member` norm = go dead norm ps
+      | null qs = go dead (Set.insert p norm) ps
       | otherwise =
-        go (Set.insert t dead) norm (us ++ ts)
+        go (Set.insert p dead) norm (qs ++ ps)
       where
-        us = map result (anywhere strat t)
+        qs = [ p `Trans` q | q <- anywhere strat (result p) ]
 
 -- Apply a strategy anywhere in a term.
 anywhere :: Strategy f -> Strategy f
@@ -362,16 +397,16 @@ anywhere strat t = aux 0 (singleton t)
     aux !_ Empty = []
     aux n (Cons Var{} u) = aux (n+1) u
     aux n (ConsSym u v) =
-      [Parallel [(n,p)] t | p <- strat u] ++ aux (n+1) v
+      [Parallel [(n,p)] t | !p <- strat u] ++ aux (n+1) v
 
 -- Apply a strategy to all children of the root function.
 nested :: Strategy f -> Strategy f
-nested strat t = [Parallel [(1,p)] t | p <- aux 0 (children t)]
+nested strat t = [Parallel [(1,p)] t | !p <- aux 0 (children t)]
   where
     aux !_ Empty = []
     aux n (Cons Var{} u) = aux (n+1) u
     aux n (Cons u v) =
-      [Parallel [(n,p)] t | p <- strat u] ++ aux (n+len t) v
+      [Parallel [(n,p)] t | !p <- strat u] ++ aux (n+len t) v
 
 -- A version of 'anywhere' which does parallel reduction.
 {-# INLINE anywhere1 #-}
@@ -381,7 +416,7 @@ anywhere1 strat t = aux [] 0 t
     aux _ !_ !_ | False = __
     aux ps _ Empty = reverse ps
     aux ps n (Cons (Var _) t) = aux ps (n+1) t
-    aux ps n (Cons t u) | q:_ <- strat t =
+    aux ps n (Cons t u) | (!q):_ <- strat t =
       aux ((n, q):ps) (n+len t) u
     aux ps n (ConsSym _ t) =
       aux ps (n+1) t
@@ -392,18 +427,18 @@ anywhere1 strat t = aux [] 0 t
 
 -- A strategy which rewrites using an index.
 {-# INLINE rewrite #-}
-rewrite :: (Function f, Has a (Rule f)) => (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
+rewrite :: (Function f, Has a (Rule f), Has a VersionedId) => (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
 rewrite p rules t = do
   rule <- Index.approxMatches t rules
-  tryRule p (the rule) t
+  tryRule p rule t
 
 -- A strategy which applies one rule only.
 {-# INLINEABLE tryRule #-}
-tryRule :: Function f => (Rule f -> Subst f -> Bool) -> Rule f -> Strategy f
+tryRule :: (Function f, Has a (Rule f), Has a VersionedId) => (Rule f -> Subst f -> Bool) -> a -> Strategy f
 tryRule p rule t = do
-  sub <- maybeToList (match (lhs rule) t)
-  guard (p rule sub)
-  return (Step rule sub)
+  sub <- maybeToList (match (lhs (the rule)) t)
+  guard (p (the rule) sub)
+  return (Step (the rule) (the rule) sub)
 
 -- Check if a rule can be applied, given an ordering <= on terms.
 {-# INLINEABLE reducesWith #-}
@@ -460,3 +495,37 @@ reducesSkolem rule sub =
   reducesWith (\t u -> lessEq (subst skolemise t) (subst skolemise u)) rule sub
   where
     skolemise = con . skolem
+
+----------------------------------------------------------------------
+-- Equational proofs.
+----------------------------------------------------------------------
+
+type Proof f = [ProofStep f]
+data ProofStep f =
+    Forwards (Reduction f)
+  | Backwards (Reduction f)
+  | Axiom String
+  deriving Show
+
+instance Symbolic (ProofStep f) where
+  type ConstantOf (ProofStep f) = f
+  termsDL (Forwards p) = termsDL p
+  termsDL (Backwards p) = termsDL p
+  termsDL Axiom{} = mempty
+
+  subst_ sub (Forwards p) = Forwards (subst_ sub p)
+  subst_ sub (Backwards p) = Backwards (subst_ sub p)
+  subst_ sub pf@Axiom{} = pf
+
+-- Turn a proof of t=u into a proof of u=t.
+backwards :: Proof f -> Proof f
+backwards = reverse . map back
+  where
+    back (Forwards pf) = Backwards pf
+    back (Backwards pf) = Forwards pf
+    back (Axiom name) = Axiom name
+
+instance PrettyTerm f => Pretty (ProofStep f) where
+  pPrint (Forwards pf) = text "forwards" <+> pPrint pf
+  pPrint (Backwards pf) = text "backwards" <+> pPrint pf
+  pPrint (Axiom name) = text "axiom" <+> pPrint name

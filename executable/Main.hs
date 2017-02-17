@@ -187,7 +187,7 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
   line
   state <-
     complete output config $
-      foldl' (newEquation config) initialState { st_goals = map Set.singleton goals2 } axioms2
+      foldl' (uncurry . newEquation config) initialState { st_goals = map (Set.singleton . Parallel []) goals2 } (zip (repeat "axioms") axioms2)
 
   line
   message globals (report state)
