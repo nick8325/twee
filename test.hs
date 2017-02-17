@@ -1,10 +1,11 @@
-{-# LANGUAGE TemplateHaskell, FlexibleInstances, FlexibleContexts, UndecidableInstances, StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell, FlexibleInstances, FlexibleContexts, UndecidableInstances, StandaloneDeriving, ScopedTypeVariables #-}
 import Twee.Constraints
 import Twee.Term hiding (subst, canonicalise)
 import Test.QuickCheck
 import Test.QuickCheck.All
 import Twee.Pretty
-import qualified Twee.LPO as Ord
+import Twee.CP
+import qualified Twee.KBO as Ord
 import Text.PrettyPrint
 import Twee.Base
 import Twee.Rule
@@ -13,13 +14,10 @@ import qualified Data.Map as Map
 import Data.Maybe
 import Data.Ord
 import Data.List
+import Data.Typeable
 import qualified Twee.Index as Index
 
 newtype Func = F Int deriving (Eq, Ord, Show)
-
-instance Numbered Func where
-  fromInt n = F n
-  toInt (F n) = n
 
 instance Pretty Func where pPrint (F f) = text "f" <> int f
 instance PrettyTerm Func
@@ -28,26 +26,28 @@ instance Arbitrary (Subst Func) where
 instance Arbitrary Func where
   arbitrary = F <$> choose (1, 1)
 instance Minimal Func where
-  minimal = F 0
+  minimal = fun (F 0)
 instance Sized Func where size _ = 1
 instance Arity Func where
   arity (F 0) = 0
   arity (F 1) = 2
 instance Skolem Func
+instance Equals Func
 
-instance Arbitrary Var where arbitrary = fmap MkVar (choose (0, 3))
-instance (Numbered f, Arbitrary f) => Arbitrary (Fun f) where
-  arbitrary = fmap toFun arbitrary
+instance Arbitrary Var where arbitrary = fmap V (choose (0, 3))
+instance (Ord f, Typeable f, Arbitrary f) => Arbitrary (Fun f) where
+  arbitrary = fmap fun arbitrary
 
-instance (Arbitrary f, Numbered f, Sized f, Arity f) => Arbitrary (Term f) where
+instance (Ord f, Typeable f, Arbitrary f, Sized f, Arity f) => Arbitrary (Term f) where
   arbitrary =
     sized $ \n ->
       oneof $
         [ build <$> var <$> arbitrary ] ++
-        [ do { f <- arbitrary; app f <$> vectorOf (arity f) (resize ((n-1) `div` arity f) arbitrary) } | n > 0 ]
-  shrink (App f ts) =
-    ts ++ (app f <$> shrinkOne ts)
+        [ do { f <- arbitrary; build <$> app f <$> vectorOf (arity f) (resize ((n-1) `div` arity f) arbitrary :: Gen (Term f)) } | n > 0 ]
+  shrink (App f ts0) =
+    ts ++ (build <$> app f <$> shrinkOne ts)
     where
+      ts = unpack ts0
       shrinkOne [] = []
       shrinkOne (x:xs) =
         [ y:xs | y <- shrink x ] ++
@@ -56,7 +56,7 @@ instance (Arbitrary f, Numbered f, Sized f, Arity f) => Arbitrary (Term f) where
 
 data Pair f = Pair (Term f) (Term f) deriving Show
 
-instance (Arbitrary f, Numbered f, Arity f, Sized f) => Arbitrary (Pair f) where
+instance (Ord f, Typeable f, Arbitrary f, Arity f, Sized f) => Arbitrary (Pair f) where
   arbitrary = liftM2 Pair arbitrary arbitrary
   shrink (Pair x y) =
     [ Pair x' y  | x' <- shrink x ] ++
@@ -64,6 +64,7 @@ instance (Arbitrary f, Numbered f, Arity f, Sized f) => Arbitrary (Pair f) where
     [ Pair x' y' | x' <- shrink x, y' <- shrink y ]
 
 instance Ordered Func where
+  f << g = fun_value f < fun_value g
   lessIn = Ord.lessIn
   lessEq = Ord.lessEq
 
@@ -105,24 +106,27 @@ prop_5 :: Term Func -> Property
 prop_5 t =
   lessThan Nonstrict t t .&&. not (lessThan Strict t t)
 
--- return []
--- main = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000000 })
+prop_paths :: Term Func -> Property
+prop_paths t =
+  forAllShrink (choose (0, len t-1)) shrink $ \n ->
+    counterexample (show (toPath t n)) $
+    fromPath t (toPath t n) === n
 
-deriving instance (Eq f, Numbered f) => Eq (Subst f)
-deriving instance (Ord f, Numbered f) => Ord (Subst f)
-deriving instance (Eq a, Eq (ConstantOf a), Numbered (ConstantOf a)) => Eq (Index.Match a)
-deriving instance (Ord a, Ord (ConstantOf a), Numbered (ConstantOf a)) => Ord (Index.Match a)
-deriving instance (Show a, Show (ConstantOf a), Numbered (ConstantOf a)) => Show (Index.Match a)
+return []
+main = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000000 })
 
-prop_index :: [Term Func] -> Term Func -> Property
-prop_index ts0 u =
-  counterexample (show ts) $
-  counterexample (show idx) $
-  sort (catMaybes [fmap (Index.Match t) (match t u) | t <- ts]) ===
-  sort (Index.matches u (Index.freeze idx))
-  where
-    ts = map Index.indexCanonicalise ts0
-    idx = foldr Index.insert Index.Nil ts
+deriving instance Eq f => Eq (Subst f)
+deriving instance Ord f => Ord (Subst f)
+
+--prop_index :: [Term Func] -> Term Func -> Property
+--prop_index ts0 u =
+--  counterexample (show ts) $
+--  counterexample (show idx) $
+--  sort (catMaybes [fmap (Index.Match t) (match t u) | t <- ts]) ===
+--  sort (Index.matches u (Index.freeze idx))
+--  where
+--    ts = map Index.indexCanonicalise ts0
+--    idx = foldr Index.insert Index.Nil ts
 
 
-main = quickCheckWith stdArgs { maxSuccess = 1000000 } prop_index
+--main = quickCheckWith stdArgs { maxSuccess = 1000000 } prop_index
