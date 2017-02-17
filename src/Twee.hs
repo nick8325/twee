@@ -287,7 +287,7 @@ consider config state@State{..} cp =
                   rule_positions = positions (lhs rule),
                   rule_models = models,
                   rule_proof = proof }
-              else error $ "Generated rule with invalid proof!\n" ++ prettyShow rule ++ "\n" ++ prettyShow proof
+              else error $ "Generated rule with invalid proof!"
             | (rule, prf) <- orient (cp_eqn cp) ]
         in
           foldl' (addRule config) state rules

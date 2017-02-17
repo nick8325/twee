@@ -162,7 +162,7 @@ groundJoin eqns idx ctx r@CriticalPair{cp_eqn = t :=: u} =
 valid :: Function f => Model f -> Reduction f -> Bool
 valid model red = all valid1 (steps red)
   where
-    valid1 (rule, sub) = reducesInModel model rule sub
+    valid1 (_, rule, sub) = reducesInModel model rule sub
 
 optimise :: a -> (a -> [a]) -> (a -> Bool) -> a
 optimise x f p =

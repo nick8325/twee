@@ -288,10 +288,7 @@ instance Symbolic (Reduction f) where
   subst_ sub (Cong f ps) = Cong f (subst_ sub ps)
 
 instance PrettyTerm f => Pretty (Reduction f) where
-  pPrint = pPrintReduction
-
-pPrintReduction :: PrettyTerm f => Reduction f -> Doc
-pPrintReduction p = text "<reduction>"
+  pPrint = pPrint . reductionProof
 
 -- Smart constructors for Trans and Cong which simplify Refl.
 trans :: Reduction f -> Reduction f -> Reduction f
@@ -362,10 +359,10 @@ verifyReduction (App f1 t) (App f2 u) (Cong f3 ps) =
 verifyReduction _ _ _ = False
 
 -- The list of all rewrite rules used in a proof
-steps :: Reduction f -> [(Rule f, Subst f)]
+steps :: Reduction f -> [(VersionedId, Rule f, Subst f)]
 steps r = aux r []
   where
-    aux (Step _ r sub) = ((r, sub):)
+    aux (Step n r sub) = ((n, r, sub):)
     aux (Refl _) = id
     aux (Trans p q) = aux p . aux q
     aux (Cong _ ps) = foldr (.) id (map aux ps)
@@ -515,12 +512,16 @@ reducesSkolem rule sub =
 -- Equational proofs.
 ----------------------------------------------------------------------
 
-newtype Proof f = Proof [ProofStep f] deriving (Show, Monoid, Generic, Pretty)
+newtype Proof f = Proof [ProofStep f] deriving (Show, Monoid, Generic)
+
+instance PrettyTerm f => Pretty (Proof f) where
+  pPrint = pPrintProof
 
 data ProofStep f =
     Forwards (DirectedProofStep f)
   | Backwards (DirectedProofStep f)
   deriving (Show, Generic)
+
 data DirectedProofStep f =
     Reduction (Reduction f)
   | Axiom String (Equation f) (Subst f)
@@ -540,13 +541,21 @@ instance Symbolic (DirectedProofStep f) where
   subst_ sub (Reduction p) = Reduction (subst_ sub p)
   subst_ sub (Axiom name eq s) = Axiom name eq (subst_ sub s)
 
-instance PrettyTerm f => Pretty (ProofStep f) where
-  pPrint (Forwards pf) = text "forwards" <+> pPrint pf
-  pPrint (Backwards pf) = text "backwards" <+> pPrint pf
+stepInitial :: ProofStep f -> Term f
+stepInitial (Forwards p) = directedStepInitial p
+stepInitial (Backwards p) = directedStepResult p
 
-instance PrettyTerm f => Pretty (DirectedProofStep f) where
-  pPrint (Reduction p) = pPrint p
-  pPrint (Axiom name eqn sub) = text "axiom" <+> pPrint name <+> pPrint eqn <+> pPrint sub
+stepResult :: ProofStep f -> Term f
+stepResult (Forwards p) = directedStepResult p
+stepResult (Backwards p) = directedStepInitial p
+
+directedStepInitial :: DirectedProofStep f -> Term f
+directedStepInitial (Reduction p) = initial p
+directedStepInitial (Axiom _ (t :=: _) sub) = subst sub t
+
+directedStepResult :: DirectedProofStep f -> Term f
+directedStepResult (Reduction p) = result p
+directedStepResult (Axiom _ (_ :=: u) sub) = subst sub u
 
 -- Construct a proof from an axiom.
 axiomProof :: String -> Equation f -> Proof f
@@ -579,15 +588,60 @@ verifyProof t u (Proof ps) = verify t u ps
       where
         u = stepResult p
 
-    stepResult (Forwards p) = directedStepResult p
-    stepResult (Backwards p) = directedStepInitial p
-    directedStepInitial (Reduction p) = initial p
-    directedStepInitial (Axiom _ (t :=: _) sub) = subst sub t
-    directedStepResult (Reduction p) = result p
-    directedStepResult (Axiom _ (_ :=: u) sub) = subst sub u
-
     verifyStep t u (Forwards p) = verifyDirectedStep t u p
     verifyStep t u (Backwards p) = verifyDirectedStep u t p
     verifyDirectedStep t u (Reduction p) = verifyReduction t u p
     verifyDirectedStep t u (Axiom _ (t' :=: u') sub) =
       subst sub t' == t && subst sub u' == u
+
+-- Pretty-print a proof.
+pPrintProof :: PrettyTerm f => Proof f -> Doc
+pPrintProof (Proof ps) =
+  pp (concatMap simplify ps)
+  where
+    simplify :: ProofStep f -> [ProofStep f]
+    simplify (Forwards p) = Forwards <$> simplifyDir p
+    simplify (Backwards p) = Backwards <$> simplifyDir p
+    simplifyDir (Reduction p) = Reduction <$> flatten p
+    simplifyDir p@Axiom{} = [p]
+
+    -- Transform each reduction so it only uses Step, Cong and Refl,
+    -- and no top-level Refls.
+    flatten Refl{} = []
+    flatten (Trans p q) = flatten p ++ flatten q
+    flatten (Cong f ps) = map (cong f) (transpose (flattenPad ps))
+    flatten p@Step{} = [p]
+
+    -- Given a list of (unrelated) reductions, flatten each of them,
+    -- making each flattened reduction have the same length
+    -- (by padding with Refl)..
+    flattenPad ps =
+      map (take (maximum (0:map length pss))) $
+      zipWith pad ps pss
+      where
+        pad p ps = ps ++ repeat (Refl (result p))
+        pss = map flatten ps
+
+    pp [] = text "reflexivity"
+    pp ps@(p0:_) =
+      vcat $
+        ppTerm (stepInitial p0):
+        [ text "= { by" <+> ppStep p <+> text "}" $$
+          ppTerm (stepResult p)
+        | p <- ps ]
+
+    ppTerm t = text "  " <> pPrint t
+
+    ppStep (Forwards p) = ppDir p
+    ppStep (Backwards p) = ppDir p <> text ", backwards"
+
+    ppDir (Axiom name _ _) = text ("axiom " ++ name)
+    ppDir (Reduction p) =
+      case usort [ n | (n, _, _) <- steps p ] of
+        [] -> error "empty reduction in ppDir"
+        [rule] ->
+          text "rule" <+> pPrint rule
+        rules ->
+          text "rules" <+>
+          hcat (punctuate (text ", ") (map pPrint (init rules))) <+>
+          text "and" <+> pPrint (last rules)

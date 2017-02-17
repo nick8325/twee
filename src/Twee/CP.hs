@@ -47,8 +47,7 @@ data Overlap f =
     overlap_top   :: {-# UNPACK #-} !(Term f),
     overlap_inner :: {-# UNPACK #-} !(Term f),
     overlap_pos   :: {-# UNPACK #-} !Int,
-    overlap_eqn   :: {-# UNPACK #-} !(Equation f),
-    overlap_sub   :: !(TriangleSubst f) }
+    overlap_eqn   :: {-# UNPACK #-} !(Equation f) }
   deriving Show
 type OverlapOf a = Overlap (ConstantOf a)
 
@@ -103,8 +102,7 @@ overlapAt !idx !n (Rule _ !outer !outer') (Rule _ !inner !inner') = do
     overlap_top = top,
     overlap_inner = innerTerm,
     overlap_pos = n,
-    overlap_eqn = lhs :=: rhs,
-    overlap_sub = sub }
+    overlap_eqn = lhs :=: rhs }
 
 -- Simplify an overlap and remove it if it's not prime.
 {-# INLINE simplifyOverlap #-}
@@ -131,12 +129,13 @@ overlapProof ::
   (Has a (Rule f), Has a VersionedId) =>
   a -> a -> Overlap f -> Proof f
 overlapProof left right Overlap{..} =
-  backwards (reductionProof (Step (the left) (the left) sub)) `mappend`
+  backwards (reductionProof (Step (the left) (the left) leftSub)) `mappend`
   reductionProof
     (congPath path overlap_top
-      (Step (the right) (the right) sub))
+      (Step (the right) (the right) rightSub))
   where
-    sub = close overlap_sub
+    Just leftSub = match (lhs (the left)) overlap_top
+    Just rightSub = match (lhs (the right)) overlap_inner
     path =
       positionToPath (lhs (the left) :: Term f) $
       overlap_pos
