@@ -177,12 +177,15 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
       (axioms2, goals2) = addNarrowing (axioms1, goals1)
 
   let
+    say msg =
+      unless (quiet globals) $
+        if tstp then message globals msg else putStr (unlines (lines msg))
     output = Output {
       output_report = \state -> do
         line
-        message globals (report state)
+        say (report state)
         line,
-      output_message = putStr . comment globals . prettyShow }
+      output_message = say . prettyShow }
 
   line
   state <-
@@ -190,15 +193,15 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
       foldl' (uncurry . newEquation config) initialState { st_goals = map (Set.singleton . Refl) goals2 } (zip (repeat "axioms") axioms2)
 
   line
-  message globals (report state)
+  say (report state)
   line
 
-  putStr (comment globals "Normalised goal terms:")
+  say "Normalised goal terms:"
   forM_ goals2 $ \t -> do
-    putStr $ comment globals $
+    say $
       "  " ++
       prettyShow (Rule Unoriented t (result (normaliseWith (const True) (rewrite reduces (st_rules state)) t)))
-  putStrLn ""
+  line
 
   return $
     if solved state then Unsatisfiable else NoAnswer GaveUp
