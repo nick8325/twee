@@ -133,16 +133,11 @@ overlapProof ::
 overlapProof left right Overlap{..} =
   [Backwards (Step (the left) (the left) sub),
    Forwards $
-     Parallel
-       [(pos, Step (the right) (the right) sub)]
-       overlap_top]
+     congPath path overlap_top
+       (Step (the right) (the right) sub)]
   where
     sub = close overlap_sub
-    -- overlap_pos is given in terms of lhs (the left),
-    -- but pos must be a position in overlap_top, which
-    -- is lhs (the left) with the subsitution applied.
-    pos =
-      pathToPosition overlap_top $
+    path =
       positionToPath (lhs (the left) :: Term f) $
       overlap_pos
 

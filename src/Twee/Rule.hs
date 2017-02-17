@@ -261,11 +261,12 @@ type Strategy f = Term f -> [Reduction f]
 data Reduction f =
     -- Apply a single rewrite rule to the root of a term
     Step {-# UNPACK #-} !VersionedId !(Rule f) !(Subst f)
+    -- Reflexivity
+  | Refl {-# UNPACK #-} !(Term f)
     -- Transivitity
   | Trans !(Reduction f) !(Reduction f)
-    -- Parallel rewriting given a list of (position, rewrite) pairs
-    -- and the initial term
-  | Parallel ![(Int, Reduction f)] {-# UNPACK #-} !(Term f)
+    -- Congruence
+  | Cong {-# UNPACK #-} !(Fun f) ![Reduction f]
   deriving Show
 
 -- Two reductions are equal if they rewrite to the same thing.
@@ -277,80 +278,77 @@ instance Ord (Reduction f) where
 instance Symbolic (Reduction f) where
   type ConstantOf (Reduction f) = f
   termsDL (Step _ rule sub) = termsDL rule `mplus` termsDL sub
+  termsDL (Refl t) = termsDL t
   termsDL (Trans p q) = termsDL p `mplus` termsDL q
-  termsDL (Parallel rs t) = termsDL (map snd rs) `mplus` termsDL t
+  termsDL (Cong _ ps) = termsDL ps
 
   subst_ sub (Step n rule s) = Step n rule (subst_ sub s)
   subst_ sub (Trans p q) = Trans (subst_ sub p) (subst_ sub q)
-  subst_ sub (Parallel rs t) =
-    Parallel
-      [ (pathToPosition u (positionToPath t n),
-         subst_ sub r)
-      | (n, r) <- rs ]
-      u
-    where
-      u = subst sub t
+  subst_ sub (Refl t) = Refl (subst_ sub t)
+  subst_ sub (Cong f ps) = Cong f (subst_ sub ps)
 
 instance PrettyTerm f => Pretty (Reduction f) where
   pPrint = pPrintReduction
 
 pPrintReduction :: PrettyTerm f => Reduction f -> Doc
-pPrintReduction p =
-  case flatten p of
-    [p] -> pp p
-    ps -> pPrint (map pp ps)
-  where
-    flatten (Trans p q) = flatten p ++ flatten q
-    flatten p = [p]
+pPrintReduction p = text "<reduction>"
 
-    pp p = sep [pp0 p, nest 2 (text "giving" <+> pPrint (result p))]
-    pp0 (Step _ rule sub) =
-      sep [pPrint rule,
-           nest 2 (text "at" <+> pPrint sub)]
-    pp0 (Parallel [] _) = text "refl"
-    pp0 (Parallel [(0, p)] _) = pp0 p
-    pp0 (Parallel ps _) =
-      sep (punctuate (text " and")
-        [hang (pPrint n <+> text "->") 2 (pPrint p) | (n, p) <- ps])
+-- Smart constructors for Trans and Cong which simplify Refl.
+trans :: Reduction f -> Reduction f -> Reduction f
+trans Refl{} p = p
+trans p Refl{} = p
+trans p q = Trans p q
+
+cong :: Fun f -> [Reduction f] -> Reduction f
+cong f ps
+  | all isRefl ps = Refl (result (Cong f ps))
+  | otherwise = Cong f ps
+  where
+    isRefl Refl{} = True
+    isRefl _ = False
+
+-- Applies a reduction at a particular path in a term.
+congPath :: [Int] -> Term f -> Reduction f -> Reduction f
+congPath [] _ p = p
+congPath (n:ns) (App f t) p | n <= length ts =
+  cong f $
+    map Refl (take n ts) ++
+    [congPath ns (ts !! n) p] ++
+    map Refl (drop (n+1) ts)
+  where
+    ts = unpack t
+congPath _ _ _ = error "bad path"
 
 -- Find the initial term of a rewrite proof
 initial :: Reduction f -> Term f
-initial (Step _ r sub) = subst sub (lhs r)
 initial (Trans p _) = initial p
-initial (Parallel _ t) = t
+initial (Refl t) = t
+initial p = {-# SCC result_emitInitial #-} build (emitInitial p)
+  where
+    emitInitial (Step _ r sub) = Term.subst sub (lhs r)
+    emitInitial (Refl t) = builder t
+    emitInitial (Trans p q) = emitInitial p
+    emitInitial (Cong f ps) = app f (map emitInitial ps)
 
 -- Find the final term of a rewrite proof
 result :: Reduction f -> Term f
-result (Parallel [] t) = t
-result (Trans _ p) = result p
-result t = {-# SCC result_emitReduction #-} build (emitReduction t)
+result (Trans _ q) = result q
+result (Refl t) = t
+result p = {-# SCC result_emitResult #-} build (emitResult p)
   where
-    emitReduction (Step _ r sub) = Term.subst sub (rhs r)
-    emitReduction (Trans _ p) = emitReduction p
-    emitReduction (Parallel ps t) = emitParallel 0 ps (singleton t)
-
-    emitParallel !_ _ _ | False = __
-    emitParallel _ _ Empty = mempty
-    emitParallel _ [] t = builder t
-    emitParallel n ((m, _):_) t  | m >= n + lenList t = builder t
-    emitParallel n ps@((m, _):_) (Cons t u) | m >= n + len t =
-      builder t `mappend` emitParallel (n + len t) ps u
-    emitParallel n ((m, _):ps) t | m < n = emitParallel n ps t
-    emitParallel n ((m, p):ps) (Cons t u) | m == n =
-      emitReduction p `mappend` emitParallel (n + len t) ps u
-    emitParallel n ps (Cons (Var x) u) =
-      var x `mappend` emitParallel (n + 1) ps u
-    emitParallel n ps (Cons (App f t) u) =
-      app f (emitParallel (n+1) ps t) `mappend`
-      emitParallel (n + 1 + lenList t) ps u
+    emitResult (Step _ r sub) = Term.subst sub (rhs r)
+    emitResult (Refl t) = builder t
+    emitResult (Trans _ q) = emitResult q
+    emitResult (Cong f ps) = app f (map emitResult ps)
 
 -- The list of all rewrite rules used in a proof
 steps :: Reduction f -> [(Rule f, Subst f)]
 steps r = aux r []
   where
     aux (Step _ r sub) = ((r, sub):)
+    aux (Refl _) = id
     aux (Trans p q) = aux p . aux q
-    aux (Parallel ps _) = foldr (.) id (map (aux . snd) ps)
+    aux (Cong _ ps) = foldr (.) id (map aux ps)
 
 --------------------------------------------------------------------------------
 -- Strategy combinators.
@@ -361,19 +359,15 @@ steps r = aux r []
 normaliseWith :: PrettyTerm f => (Term f -> Bool) -> Strategy f -> Term f -> Reduction f
 normaliseWith ok strat t = {-# SCC normaliseWith #-} res
   where
-    res = aux 0 (Parallel [] t) t
+    res = aux 0 (Refl t) t
     aux 1000 p _ =
       ERROR("Possibly nonterminating rewrite:\n" ++
             prettyShow p)
     aux n p t =
-      case anywhere1 strat (singleton t) of
-        [] -> p
-        rs ->
-          let
-            q = p `Trans` Parallel rs t
-            u = result q
-          in
-            if ok u then aux (n+1) q u else p
+      case parallel strat t of
+        (q:_) | u <- result q, ok u ->
+          aux (n+1) (p `trans` q) u
+        _ -> p
 
 -- Compute all normal forms of a term wrt a particular strategy.
 {-# INLINEABLE normalForms #-}
@@ -392,34 +386,35 @@ normalForms strat ps = {-# SCC normalForms #-} go Set.empty Set.empty ps
 
 -- Apply a strategy anywhere in a term.
 anywhere :: Strategy f -> Strategy f
-anywhere strat t = aux 0 (singleton t)
-  where
-    aux !_ Empty = []
-    aux n (Cons Var{} u) = aux (n+1) u
-    aux n (ConsSym u v) =
-      [Parallel [(n,p)] t | !p <- strat u] ++ aux (n+1) v
+anywhere strat t = strat t ++ nested (anywhere strat) t
 
--- Apply a strategy to all children of the root function.
+-- Apply a strategy to some child of the root function.
 nested :: Strategy f -> Strategy f
-nested strat t = [Parallel [(1,p)] t | !p <- aux 0 (children t)]
+nested strat Var{} = []
+nested strat (App f ts) =
+  cong f <$> inner [] ts
   where
-    aux !_ Empty = []
-    aux n (Cons Var{} u) = aux (n+1) u
-    aux n (Cons u v) =
-      [Parallel [(n,p)] t | !p <- strat u] ++ aux (n+len t) v
+    inner _ Empty = []
+    inner before (Cons t u) =
+      [ reverse before ++ [p] ++ map Refl (unpack u)
+      | p <- strat t ] ++
+      inner (Refl t:before) u
 
--- A version of 'anywhere' which does parallel reduction.
-{-# INLINE anywhere1 #-}
-anywhere1 :: PrettyTerm f => Strategy f -> TermList f -> [(Int, Reduction f)]
-anywhere1 strat t = aux [] 0 t
+-- Apply a strategy in parallel in as many places as possible.
+-- Takes only the first rewrite of each strategy.
+{-# INLINE parallel #-}
+parallel :: PrettyTerm f => Strategy f -> Strategy f
+parallel strat t =
+  case par t of
+    Refl{} -> []
+    p -> [p]
   where
-    aux _ !_ !_ | False = __
-    aux ps _ Empty = reverse ps
-    aux ps n (Cons (Var _) t) = aux ps (n+1) t
-    aux ps n (Cons t u) | (!q):_ <- strat t =
-      aux ((n, q):ps) (n+len t) u
-    aux ps n (ConsSym _ t) =
-      aux ps (n+1) t
+    par t | p:_ <- strat t = p
+    par (App f ts) = cong f (inner [] ts)
+    par t = Refl t
+
+    inner before Empty = reverse before
+    inner before (Cons t u) = inner (par t:before) u
 
 --------------------------------------------------------------------------------
 -- Basic strategies. These only apply at the root of the term.

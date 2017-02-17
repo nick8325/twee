@@ -497,18 +497,24 @@ replacePositionSub sub n !x = aux n
 
 -- Convert a position in a term into a path.
 positionToPath :: Term f -> Int -> [Int]
-positionToPath t n = path 0 (singleton t) n
+positionToPath t n = term t n
   where
-    path k _ 0 = [k]
-    path k (Cons t u) n
-      | n < len t = k:path 0 (children t) n
-      | otherwise = path (k+1) u (n-len t)
+    term _ 0 = []
+    term t n = list 0 (children t) (n-1)
+
+    list _ Empty _ = error "bad position"
+    list k (Cons t u) n
+      | n < len t = k:term t n
+      | otherwise = list (k+1) u (n-len t)
 
 -- Convert a path in a term into a position.
 pathToPosition :: Term f -> [Int] -> Int
-pathToPosition t ns = pos 0 (singleton t) ns
+pathToPosition t ns = term 0 t ns
   where
-    pos k _ [0] = k
-    pos k (Cons t u) (n:ns)
-      | n == 0 = pos k (children t) ns
-      | otherwise = pos (k+len t) u ((n-1):ns)
+    term k _ [] = k
+    term k t (n:ns) = list (k+1) (children t) n ns
+
+    list k Empty _ _ = error "bad path"
+    list k (Cons t u) 0 ns = term k t ns
+    list k (Cons t u) n ns =
+      list (k+len t) u (n-1) ns
