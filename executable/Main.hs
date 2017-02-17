@@ -8,7 +8,7 @@ import Control.Applicative
 import Control.Monad
 import Data.Char
 import Data.Either
-import Twee
+import Twee hiding (message)
 import Twee.Base hiding (char, lookup, (<>))
 import Twee.Rule
 import Twee.Utils
@@ -59,6 +59,12 @@ parsePrecedence =
   inGroup "Term order options" $
   fmap (splitOn ",")
   (flag "precedence" ["List of functions in descending order of precedence"] [] (arg "<function>" "expected a function name" Just))
+
+parseTSTP :: OptionParser Bool
+parseTSTP =
+  inGroup "Output options" $
+  bool "tstp"
+    ["Print proof in TSTP format."]
 
 data Constant =
   Constant {
@@ -153,9 +159,10 @@ addNarrowing (axioms, [t, u])
 addNarrowing _ =
   ERROR("Don't know how to handle several non-ground goals")
 
-runTwee :: GlobalFlags -> Config -> [String] -> Problem Clause -> IO Answer
-runTwee globals config precedence obligs = {-# SCC runTwee #-} do
-  unless (quiet globals) (putStrLn "")
+runTwee :: GlobalFlags -> Bool -> Config -> [String] -> Problem Clause -> IO Answer
+runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
+  let line = unless (quiet globals) (putStrLn "")
+
   let (axioms0, goals0) = toTwee obligs
       prec c = (isNothing (elemIndex (base c) precedence),
                 fmap negate (elemIndex (base c) precedence),
@@ -170,11 +177,21 @@ runTwee globals config precedence obligs = {-# SCC runTwee #-} do
       (axioms2, goals2) = addNarrowing (axioms1, goals1)
 
   let
-    !state =
-      complete config $
+    output = Output {
+      output_report = \state -> do
+        line
+        message globals (report state)
+        line,
+      output_message = putStr . comment globals . prettyShow }
+
+  line
+  state <-
+    complete output config $
       foldl' (newEquation config) initialState { st_goals = map Set.singleton goals2 } axioms2
 
-  putStr (comment globals (report state))
+  line
+  message globals (report state)
+  line
 
   putStr (comment globals "Normalised goal terms:")
   forM_ goals2 $ \t -> do
@@ -195,4 +212,4 @@ main = do
        (toFofIO <$> globalFlags <*> clausifyBox <*> pure (tags False)) =>>=
        clausifyBox =>>=
        allObligsBox <*>
-         (runTwee <$> globalFlags <*> parseConfig <*> parsePrecedence))
+         (runTwee <$> globalFlags <*> parseTSTP <*> parseConfig <*> parsePrecedence))

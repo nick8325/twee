@@ -20,7 +20,7 @@ import qualified Data.Set as Set
 import Data.Set(Set)
 import Text.Printf
 import Data.Int
-import Debug.Trace
+import Control.Monad
 
 ----------------------------------------------------------------------
 -- Configuration and prover state.
@@ -41,7 +41,8 @@ data State f =
     st_goals          :: [Set (Term f)],
     st_queue          :: !(Heap (Passive f)),
     st_label          :: {-# UNPACK #-} !Id,
-    st_considered     :: {-# UNPACK #-} !Int }
+    st_considered     :: {-# UNPACK #-} !Int,
+    st_messages_rev   :: ![Message f] }
 
 defaultConfig :: Config
 defaultConfig =
@@ -65,7 +66,35 @@ initialState =
     st_goals = [],
     st_queue = Heap.empty,
     st_label = 1,
-    st_considered = 0 }
+    st_considered = 0,
+    st_messages_rev = [] }
+
+----------------------------------------------------------------------
+-- Messages.
+----------------------------------------------------------------------
+
+data Message f =
+    NewRule !(TweeRule f)
+  | NewEquation !Id !(Equation f)
+
+instance PrettyTerm f => Pretty (Message f) where
+  pPrint (NewRule rule) =
+    pPrint (rule_id rule) <> text "." <+> pPrint (rule_rule rule)
+  pPrint (NewEquation n eqn) =
+    text (replicate digits 'x') <> text "." <+> pPrint eqn
+    where
+      digits = length (show (unId n))
+
+message :: Message f -> State f -> State f
+message !msg state@State{..} =
+  state { st_messages_rev = msg:st_messages_rev }
+
+clearMessages :: State f -> State f
+clearMessages state@State{..} =
+  state { st_messages_rev = [] }
+
+messages :: State f -> [Message f]
+messages state = reverse (st_messages_rev state)
 
 ----------------------------------------------------------------------
 -- The CP queue.
@@ -189,6 +218,7 @@ addRule config state@State{..} rule0 =
   let
     rule = rule0 st_label
     state' =
+      message (NewRule rule) $
       state {
         st_oriented_rules =
           if oriented (orientation (rule_rule rule))
@@ -202,7 +232,6 @@ addRule config state@State{..} rule0 =
   in if subsumed st_joinable st_rules (unorient (rule_rule rule)) then
     state
   else
-    traceShow (text (show (unId (rule_id rule))) <> text ". " <> pPrint (rule_rule rule)) $
     normaliseGoals $
     foldl' enqueue state' passives
 
@@ -216,7 +245,7 @@ normaliseGoals state@State{..} =
 -- Record an equation as being joinable.
 addJoinable :: Function f => State f -> Equation f -> State f
 addJoinable state eqn@(t :=: u) =
-  traceShow (text (replicate (length (show (unId (st_label state)))) 'x' ++ ".") <+> pPrint eqn) $
+  message (NewEquation (st_label state) eqn) $
   state {
     st_joinable =
       Index.insert t (t :=: u) (st_joinable state) }
@@ -325,18 +354,33 @@ newEquation config state eqn =
 -- The main loop.
 ----------------------------------------------------------------------
 
-{-# INLINEABLE complete #-}
-complete :: Function f => Config -> State f -> State f
-complete config state
-  | st_considered state >= cfg_max_critical_pairs config = state
-  | solved state = state
+data Output m f =
+  Output {
+    output_report  :: State f -> m (),
+    output_message :: Message f -> m () }
+
+{-# INLINE complete #-}
+complete :: (Function f, Monad m) => Output m f -> Config -> State f -> m (State f)
+complete output@Output{..} config state =
+  case complete1 config state of
+    (False, state) -> return state
+    (True, state') -> do
+      when (st_label state `div` 100 /= st_label state' `div` 100) $
+        output_report state'
+      mapM_ output_message (messages state')
+      complete output config (clearMessages state')
+
+{-# INLINEABLE complete1 #-}
+complete1 :: Function f => Config -> State f -> (Bool, State f)
+complete1 config state
+  | st_considered state >= cfg_max_critical_pairs config =
+    (False, state)
+  | solved state = (False, state)
   | otherwise =
     case dequeue config state of
-      (Nothing, state) -> state
+      (Nothing, state) -> (False, state)
       (Just overlap, state) ->
-        let state' = consider config state overlap in
-        (if unId (st_label state-1) `div` 100 /= unId (st_label state'-1) `div` 100 then trace (report state') else id) $
-        complete config state'
+        (True, consider config state overlap)
 
 {-# INLINEABLE solved #-}
 solved :: Function f => State f -> Bool
@@ -347,7 +391,7 @@ solved _ = False
 {-# INLINEABLE report #-}
 report :: Function f => State f -> String
 report State{..} =
-  printf "\nStatistics:\n" ++
+  printf "Statistics:\n" ++
   printf "  %d rules, of which %d oriented, %d unoriented, %d permutative, %d weakly oriented.\n"
     (length orients)
     (length [ () | Oriented <- orients ])

@@ -25,6 +25,9 @@ import Data.Int
 newtype Id = Id { unId :: Int32 }
   deriving (Eq, Ord, Show, Enum, Bounded, Num, Real, Integral)
 
+instance Pretty Id where
+  pPrint = text . show . unId
+
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where
   type ConstantOf a
