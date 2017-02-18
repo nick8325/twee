@@ -45,7 +45,11 @@ data State f =
     st_messages_rev   :: ![Message f] }
 
 -- For goal terms we store the set of all their normal forms
-type Goal f = (Set (Reduction f), Set (Reduction f))
+data Goal f =
+  Goal {
+    goal_name :: String,
+    goal_lhs  :: Set (Reduction f),
+    goal_rhs  :: Set (Reduction f) }
 
 defaultConfig :: Config
 defaultConfig =
@@ -256,9 +260,10 @@ normaliseGoals :: Function f => State f -> State f
 normaliseGoals state@State{..} =
   state {
     st_goals =
-      map (bothMap (normalForms (rewrite reduces st_rules) . Set.toList)) st_goals }
+      map (goalMap (normalForms (rewrite reduces st_rules) . Set.toList)) st_goals }
   where
-    bothMap f (x, y) = (f x, f y)
+    goalMap f goal@Goal{..} =
+      goal { goal_lhs = f goal_lhs, goal_rhs = f goal_rhs }
 
 -- Record an equation as being joinable.
 addJoinable :: Function f => State f -> Equation f -> State f
@@ -312,11 +317,12 @@ addAxiom config state name eqn =
 
 -- Add a new goal.
 {-# INLINEABLE addGoal #-}
-addGoal :: Function f => Config -> State f -> Equation f -> State f
-addGoal config state@State{..} (t :=: u) =
+addGoal :: Function f => Config -> State f -> String -> Equation f -> State f
+addGoal config state@State{..} name (t :=: u) =
   normaliseGoals $
   state {
-    st_goals = (Set.singleton (Refl t), Set.singleton (Refl u)):st_goals }
+    st_goals =
+      Goal name (Set.singleton (Refl t)) (Set.singleton (Refl u)):st_goals }
 
 ----------------------------------------------------------------------
 -- Interreduction.
@@ -418,14 +424,15 @@ solved = not . null . solutions
 
 -- Return whatever goals we have proved and their proofs.
 {-# INLINEABLE solutions #-}
-solutions :: Function f => State f -> [Proof f]
+solutions :: Function f => State f -> [(String, Proof f)]
 solutions State{..} = do
-  (ts, us) <- st_goals
+  Goal name ts us <- st_goals
   guard (not (null (Set.intersection ts us)))
   return $
     let t:_ = filter (`Set.member` us) (Set.toList ts)
         u:_ = filter (== t) (Set.toList us)
-    in backwards (reductionProof t) `mappend` reductionProof u
+    in (name,
+        backwards (reductionProof t) `mappend` reductionProof u)
 
 {-# INLINEABLE report #-}
 report :: Function f => State f -> String

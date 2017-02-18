@@ -10,7 +10,7 @@ import Data.Char
 import Data.Either
 import Twee hiding (message)
 import Twee.Base hiding (char, lookup, (<>))
-import Twee.Rule
+import Twee.Rule hiding (Axiom)
 import Twee.Utils
 import qualified Twee.CP as CP
 import Data.Ord
@@ -115,16 +115,16 @@ instance Ordered (Extended Constant) where
   lessEq t u = {-# SCC lessEq #-} KBO.lessEq t u
   lessIn model t u = {-# SCC lessIn #-} KBO.lessIn model t u
 
-toTwee :: Problem Clause -> ([Equation Jukebox.Function], [Equation Jukebox.Function])
+toTwee :: Problem Clause -> ([Input (Equation Jukebox.Function)], [Input (Equation Jukebox.Function)])
 toTwee prob = partitionEithers (map eq prob)
   where
-    eq Input{what = Clause (Bind _ [Pos (t Jukebox.:=: u)])} =
-      Left (build (tm t) :=: build (tm u))
-    eq Input{what = Clause (Bind _ [Neg (t Jukebox.:=: u)])} =
-      Right (build (tm t) :=: build (tm u))
-    eq Input{what = Clause (Bind _ [])} =
+    eq inp@Input{what = Clause (Bind _ [Pos (t Jukebox.:=: u)])} =
+      Left (input inp (build (tm t) :=: build (tm u)))
+    eq inp@Input{what = Clause (Bind _ [Neg (t Jukebox.:=: u)])} =
+      Right (input inp (build (tm t) :=: build (tm u)))
+    eq inp@Input{what = Clause (Bind _ [])} =
       -- $false as an axiom
-      Left (build (var (V 0)) :=: build (var (V 1)))
+      Left (input inp (build (var (V 0)) :=: build (var (V 1))))
     eq clause =
       error $
         "Problem is not unit equality:\n" ++ show (pPrintClauses [clause])
@@ -135,38 +135,56 @@ toTwee prob = partitionEithers (map eq prob)
       app (fun f) (map tm ts)
 
 addNarrowing ::
-  ([Equation (Extended Constant)], [Equation (Extended Constant)]) ->
-  ([Equation (Extended Constant)], [Equation (Extended Constant)])
+  ([Input (Equation (Extended Constant))], [Input (Equation (Extended Constant))]) ->
+  ([Input (Equation (Extended Constant))], [Input (Equation (Extended Constant))])
 addNarrowing (axioms, goals) =
-    (axioms ++ concatMap encode nonground,
-     ground ++ if null nonground && not (null goals) then [] else eqAxiom)
+    (axioms ++ map encode nonground ++ if null nonground then [] else eqAxiom,
+     ground ++ if null nonground && not (null goals) then [] else eqGoal)
   where
-    (ground, nonground) = partition isGround goals
+    (ground, nonground) = partition (isGround . what) goals
 
-    eqAxiom = [build (con falseCon) :=: build (con trueCon)]
+    eqGoal =
+      [Input "$contradiction" Conjecture (build (con falseCon) :=: build (con trueCon))]
+    eqAxiom =
+      [Input "$equality" Axiom
+        (build (app equalsCon [var (V 0), var (V 0)]) :=: build (con trueCon))]
 
-    encode (t :=: u) =
-      [build (app equalsCon [var (V 0), var (V 0)]) :=: build (con trueCon),
-       build (app equalsCon [t, u]) :=: build (con falseCon)]
+    encode inp@Input{what = t :=: u} =
+      input inp
+        (build (app equalsCon [t, u]) :=: build (con falseCon))
+
+instance Symbolic a => Symbolic (Input a) where
+  type ConstantOf (Input a) = ConstantOf a
+  termsDL = termsDL . what
+  subst_ sub = fmap (subst_ sub)
+
+input :: Input a -> b -> Input b
+input Input{..} what' = Input{tag = tag, kind = kind, what = what'}
 
 runTwee :: GlobalFlags -> Bool -> Config -> [String] -> Problem Clause -> IO Answer
 runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
-  let line = unless (quiet globals) (putStrLn "")
+  let
+    (axioms0, goals0) = toTwee obligs
+    prec c = (isNothing (elemIndex (base c) precedence),
+              fmap negate (elemIndex (base c) precedence),
+              negate (occ (fun c) (axioms0, goals0)))
+    fs0 = map fun_value (usort (funs (axioms0, goals0)))
+    fs1 = sortBy (comparing prec) fs0
+    fs2 = zipWith (\i (c ::: (FunType args _)) -> Constant i (length args) 1 (show c)) [1..] fs1
+    m  = Map.fromList (zip fs1 (map Function fs2))
+    replace = build . mapFun (fun . flip (Map.findWithDefault __) m . fun_value)
+    axioms1 = map (fmap (bothSides replace)) axioms0
+    goals1  = map (fmap (bothSides replace)) goals0
+    (axioms2, goals2) = addNarrowing (axioms1, goals1)
 
-  let (axioms0, goals0) = toTwee obligs
-      prec c = (isNothing (elemIndex (base c) precedence),
-                fmap negate (elemIndex (base c) precedence),
-                negate (occ (fun c) (axioms0, goals0)))
-      fs0 = map fun_value (usort (funs (axioms0, goals0)))
-      fs1 = sortBy (comparing prec) fs0
-      fs2 = zipWith (\i (c ::: (FunType args _)) -> Constant i (length args) 1 (show c)) [1..] fs1
-      m  = Map.fromList (zip fs1 (map Function fs2))
-  let replace = build . mapFun (fun . flip (Map.findWithDefault __) m . fun_value)
-      axioms1 = map (bothSides replace) axioms0
-      goals1  = map (bothSides replace) goals0
-      (axioms2, goals2) = addNarrowing (axioms1, goals1)
+    unInput input = (tag input, what input)
+    withGoals =
+      foldl' (uncurry . addGoal config) initialState (map unInput goals2)
+    withAxioms =
+      foldl' (uncurry . addAxiom config) withGoals (map unInput axioms2)
 
   let
+    line = unless (quiet globals) (putStrLn "")
     say msg =
       unless (quiet globals) $
         if tstp then message globals msg else putStr (unlines (lines msg))
@@ -178,11 +196,7 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
       output_message = say . prettyShow }
 
   line
-  state <-
-    complete output config $
-      foldl' (uncurry . addAxiom config)
-        (foldl' (addGoal config) initialState goals2)
-      (zip (repeat "axioms") axioms2)
+  state <- complete output config withAxioms
 
   return $
     if solved state then Unsatisfiable else NoAnswer GaveUp
