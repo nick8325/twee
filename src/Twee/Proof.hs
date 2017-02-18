@@ -43,23 +43,6 @@ data Lemma f =
   | Axiom !String !(Equation f)
   deriving Show
 
-instance Symbolic (Derivation f) where
-  type ConstantOf (Derivation f) = f
-  termsDL (Step _ sub) = termsDL sub
-  termsDL (Refl t) = termsDL t
-  termsDL (Symm p) = termsDL p
-  termsDL (Trans p q) = termsDL p `mplus` termsDL q
-  termsDL (Cong _ ps) = termsDL ps
-
-  subst_ sub (Step lemma s) = Step lemma (subst_ sub s)
-  subst_ sub (Refl t) = Refl (subst_ sub t)
-  subst_ sub (Symm p) = symm (subst_ sub p)
-  subst_ sub (Trans p q) = trans (subst_ sub p) (subst_ sub q)
-  subst_ sub (Cong f ps) = cong f (subst_ sub ps)
-
-instance Pretty (Proof f) where pPrint _ = text "<proof>"
-instance Pretty (Derivation f) where pPrint = pPrint . certify
-
 -- What equation does a lemma prove?
 lemmaEquation :: Lemma f -> Equation f
 lemmaEquation (Rule _ p) = equation p
@@ -95,6 +78,24 @@ certify p =
 -- Everything below this point need not be trusted, since all proof
 -- construction goes through the "proof" function.
 ----------------------------------------------------------------------
+
+-- Typeclass instances.
+instance Symbolic (Derivation f) where
+  type ConstantOf (Derivation f) = f
+  termsDL (Step _ sub) = termsDL sub
+  termsDL (Refl t) = termsDL t
+  termsDL (Symm p) = termsDL p
+  termsDL (Trans p q) = termsDL p `mplus` termsDL q
+  termsDL (Cong _ ps) = termsDL ps
+
+  subst_ sub (Step lemma s) = Step lemma (subst_ sub s)
+  subst_ sub (Refl t) = Refl (subst_ sub t)
+  subst_ sub (Symm p) = symm (subst_ sub p)
+  subst_ sub (Trans p q) = trans (subst_ sub p) (subst_ sub q)
+  subst_ sub (Cong f ps) = cong f (subst_ sub ps)
+
+instance Pretty (Proof f) where pPrint _ = text "<proof>"
+instance Pretty (Derivation f) where pPrint = pPrint . certify
 
 -- Simplify a derivation.
 simplify p@Step{} = p
