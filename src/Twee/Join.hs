@@ -4,6 +4,9 @@ module Twee.Join where
 
 import Twee.Base
 import Twee.Rule
+import Twee.Equation
+import Twee.Proof(Proof, Derivation)
+import qualified Twee.Proof as Proof
 import Twee.CP
 import Twee.Constraints
 import qualified Twee.Index as Index
@@ -19,7 +22,7 @@ data CriticalPair f =
   CriticalPair {
     cp_eqn   :: {-# UNPACK #-} !(Equation f),
     cp_top   :: !(Maybe (Term f)),
-    cp_proof :: !(Proof f) }
+    cp_proof :: !(Derivation f) }
   deriving Generic
 
 instance Symbolic (CriticalPair f) where
@@ -27,7 +30,8 @@ instance Symbolic (CriticalPair f) where
 
 {-# INLINEABLE makeCriticalPair #-}
 makeCriticalPair ::
-  (Has a (Rule f), Has a VersionedId) => a -> a -> Overlap f -> CriticalPair f
+  (Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
+  a -> a -> Overlap f -> CriticalPair f
 makeCriticalPair r1 r2 overlap@Overlap{..} =
   CriticalPair overlap_eqn
     (Just overlap_top)
@@ -35,7 +39,7 @@ makeCriticalPair r1 r2 overlap@Overlap{..} =
 
 {-# INLINEABLE joinCriticalPair #-}
 joinCriticalPair ::
-  (Function f, Has a (Rule f), Has a VersionedId) =>
+  (Function f, Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
   Index f (Equation f) -> Index f a ->
   CriticalPair f -> ([Equation f], Maybe (CriticalPair f, [Model f]))
 joinCriticalPair eqns idx cp =
@@ -58,7 +62,7 @@ joinCriticalPair eqns idx cp =
 {-# INLINEABLE step3 #-}
 {-# INLINEABLE allSteps #-}
 step1, step2, step3, allSteps ::
-  (Function f, Has a (Rule f), Has a VersionedId) =>
+  (Function f, Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
   Index f (Equation f) -> Index f a -> CriticalPair f -> Maybe (CriticalPair f)
 allSteps eqns idx cp = step1 eqns idx cp >>= step2 eqns idx >>= step3 eqns idx
 step1 eqns idx = joinWith eqns idx (normaliseWith (const True) (rewrite reducesOriented idx))
@@ -85,7 +89,7 @@ step3 eqns idx cp =
 
 {-# INLINEABLE joinWith #-}
 joinWith ::
-  (Has a (Rule f), Has a VersionedId) =>
+  (Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
   Index f (Equation f) -> Index f a -> (Term f -> Reduction f) -> CriticalPair f -> Maybe (CriticalPair f)
 joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
   | subsumed Symmetric eqns idx eqn = Nothing
@@ -93,10 +97,9 @@ joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
     Just cp {
       cp_eqn = eqn,
       cp_proof =
-        mconcat [
-          backwards (reductionProof lred),
-          cp_proof,
-          reductionProof rred ] }
+        Proof.symm (reductionProof lred) `Proof.trans`
+        cp_proof `Proof.trans`
+        reductionProof rred }
   where
     lred = reduce lhs
     rred = reduce rhs
@@ -132,7 +135,7 @@ subsumed _ _ _ _ = False
 
 {-# INLINEABLE groundJoin #-}
 groundJoin ::
-  (Function f, Has a (Rule f), Has a VersionedId) =>
+  (Function f, Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
   Index f (Equation f) -> Index f a -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
 groundJoin eqns idx ctx r@CriticalPair{cp_eqn = t :=: u} =
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
@@ -160,9 +163,9 @@ groundJoin eqns idx ctx r@CriticalPair{cp_eqn = t :=: u} =
         u' = result nu
 
 valid :: Function f => Model f -> Reduction f -> Bool
-valid model red = all valid1 (steps red)
-  where
-    valid1 (_, rule, sub) = reducesInModel model rule sub
+valid model red =
+  and [ reducesInModel model rule sub
+      | Step _ _ rule sub <- steps red ]
 
 optimise :: a -> (a -> [a]) -> (a -> Bool) -> a
 optimise x f p =

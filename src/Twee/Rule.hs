@@ -20,6 +20,9 @@ import Data.Map(Map)
 import qualified Twee.Term as Term
 import GHC.Generics
 import Data.Ord
+import Twee.Equation
+import qualified Twee.Proof as Proof
+import Twee.Proof(Proof, Derivation)
 
 --------------------------------------------------------------------------------
 -- Rewrite rules.
@@ -80,35 +83,6 @@ instance PrettyTerm f => Pretty (Rule f) where
       showOrientation Permutative{} = "<->"
       showOrientation Unoriented = "="
 
---------------------------------------------------------------------------------
--- Equations.
---------------------------------------------------------------------------------
-
-data Equation f =
-  {-# UNPACK #-} !(Term f) :=: {-# UNPACK #-} !(Term f)
-  deriving (Eq, Ord, Show, Generic)
-type EquationOf a = Equation (ConstantOf a)
-
-instance Symbolic (Equation f) where
-  type ConstantOf (Equation f) = f
-
-instance PrettyTerm f => Pretty (Equation f) where
-  pPrint (x :=: y) = pPrint x <+> text "=" <+> pPrint y
-
-instance Sized f => Sized (Equation f) where
-  size (x :=: y) = size x + size y
-
--- Order an equation roughly left-to-right.
--- However, there is no guarantee that the result is oriented.
-order :: Function f => Equation f -> Equation f
-order (l :=: r)
-  | l == r = l :=: r
-  | otherwise =
-    case compare (size l) (size r) of
-      LT -> r :=: l
-      GT -> l :=: r
-      EQ -> if lessEq l r then r :=: l else l :=: r
-
 -- Turn a rule into an equation.
 unorient :: Rule f -> Equation f
 unorient (Rule _ l r) = l :=: r
@@ -116,7 +90,7 @@ unorient (Rule _ l r) = l :=: r
 -- Turn an equation into a set of rules.
 -- Along with each rule, returns a function which transforms a proof
 -- of the equation into a proof of the rule.
-orient :: forall f. Function f => Equation f -> [(Rule f, Proof f -> Proof f)]
+orient :: forall f. Function f => Equation f -> [(Rule f, Derivation f -> Derivation f)]
 orient (l :=: r) | l == r = []
 orient (l :=: r) =
   -- If we have an equation where some variables appear only on one side, e.g.:
@@ -130,13 +104,13 @@ orient (l :=: r) =
      \pf -> erase rs pf)
   | ord /= Just LT && ord /= Just EQ ] ++
   [ (makeRule r l',
-     \pf -> backwards (erase ls pf))
+     \pf -> Proof.symm (erase ls pf))
   | ord /= Just GT && ord /= Just EQ ] ++
   [ (makeRule l l',
-     \pf -> pf `mappend` backwards (erase ls pf))
+     \pf -> pf `Proof.trans` Proof.symm (erase ls pf))
   | not (null ls), ord /= Just GT ] ++
   [ (makeRule r r',
-     \pf -> backwards pf `mappend` erase rs pf)
+     \pf -> Proof.symm pf `Proof.trans` erase rs pf)
   | not (null rs), ord /= Just LT ]
   where
     ord = orientTerms l' r'
@@ -198,14 +172,6 @@ makeRule t u = Rule o t u
 
           aux _ _ = mzero
 
--- Apply a function to both sides of an equation.
-bothSides :: (Term f -> Term f') -> Equation f -> Equation f'
-bothSides f (t :=: u) = f t :=: f u
-
--- Is an equation of the form t = t?
-trivial :: Eq f => Equation f -> Bool
-trivial (t :=: u) = t == u
-
 --------------------------------------------------------------------------------
 -- Extra-fast rewriting, without proof output or unorientable rules.
 --------------------------------------------------------------------------------
@@ -263,7 +229,7 @@ type Strategy f = Term f -> [Reduction f]
 -- A multi-step rewrite proof t ->* u
 data Reduction f =
     -- Apply a single rewrite rule to the root of a term
-    Step {-# UNPACK #-} !VersionedId !(Rule f) !(Subst f)
+    Step {-# UNPACK #-} !VersionedId !(Proof f) !(Rule f) !(Subst f)
     -- Reflexivity
   | Refl {-# UNPACK #-} !(Term f)
     -- Transivitity
@@ -280,14 +246,14 @@ instance Ord (Reduction f) where
 
 instance Symbolic (Reduction f) where
   type ConstantOf (Reduction f) = f
-  termsDL (Step _ rule sub) = termsDL rule `mplus` termsDL sub
+  termsDL (Step _ _ rule sub) = termsDL rule `mplus` termsDL sub
   termsDL (Refl t) = termsDL t
   termsDL (Trans p q) = termsDL p `mplus` termsDL q
   termsDL (Cong _ ps) = termsDL ps
 
-  subst_ sub (Step n rule s) = Step n rule (subst_ sub s)
-  subst_ sub (Trans p q) = Trans (subst_ sub p) (subst_ sub q)
+  subst_ sub (Step n p rule s) = Step n p rule (subst_ sub s)
   subst_ sub (Refl t) = Refl (subst_ sub t)
+  subst_ sub (Trans p q) = Trans (subst_ sub p) (subst_ sub q)
   subst_ sub (Cong f ps) = Cong f (subst_ sub ps)
 
 instance PrettyTerm f => Pretty (Reduction f) where
@@ -327,7 +293,7 @@ initial (Trans p _) = initial p
 initial (Refl t) = t
 initial p = {-# SCC result_emitInitial #-} build (emitInitial p)
   where
-    emitInitial (Step _ r sub) = Term.subst sub (lhs r)
+    emitInitial (Step _ _ r sub) = Term.subst sub (lhs r)
     emitInitial (Refl t) = builder t
     emitInitial (Trans p q) = emitInitial p
     emitInitial (Cong f ps) = app f (map emitInitial ps)
@@ -338,37 +304,28 @@ result (Trans _ q) = result q
 result (Refl t) = t
 result p = {-# SCC result_emitResult #-} build (emitResult p)
   where
-    emitResult (Step _ r sub) = Term.subst sub (rhs r)
+    emitResult (Step _ _ r sub) = Term.subst sub (rhs r)
     emitResult (Refl t) = builder t
     emitResult (Trans _ q) = emitResult q
     emitResult (Cong f ps) = app f (map emitResult ps)
 
--- Check a rewrite proof for validity, given the initial and final terms.
-verifyReduction :: Term f -> Term f -> Reduction f -> Bool
-verifyReduction t u (Step _ r sub) =
-  subst sub (lhs r) == t && subst sub (rhs r) == u
-verifyReduction t u (Refl v) = t == u && u == v
-verifyReduction t v (Trans p q) =
-  verifyReduction t u p && verifyReduction u v q
-  where
-    u = result p
-verifyReduction (App f1 t) (App f2 u) (Cong f3 ps) =
-  f1 == f2 && f2 == f3 &&
-  length ts == length us && length us == length ps &&
-  and (zipWith3 verifyReduction ts us ps)
-  where
-    ts = unpack t
-    us = unpack u
-verifyReduction _ _ _ = False
-
--- The list of all rewrite rules used in a proof
-steps :: Reduction f -> [(VersionedId, Rule f, Subst f)]
+-- The list of all rewrite rules used in a rewrite proof
+steps :: Reduction f -> [Reduction f]
 steps r = aux r []
   where
-    aux (Step n r sub) = ((n, r, sub):)
+    aux step@Step{} = (step:)
     aux (Refl _) = id
     aux (Trans p q) = aux p . aux q
     aux (Cong _ ps) = foldr (.) id (map aux ps)
+
+-- Turn a reduction into a proof.
+reductionProof :: Reduction f -> Derivation f
+reductionProof (Step n p rule sub) =
+  subst sub (Proof.step (Proof.Rule n p))
+reductionProof (Refl t) = Proof.Refl t
+reductionProof (Trans p q) =
+  Proof.trans (reductionProof p) (reductionProof q)
+reductionProof (Cong f ps) = Proof.cong f (map reductionProof ps)
 
 --------------------------------------------------------------------------------
 -- Strategy combinators.
@@ -442,18 +399,18 @@ parallel strat t =
 
 -- A strategy which rewrites using an index.
 {-# INLINE rewrite #-}
-rewrite :: (Function f, Has a (Rule f), Has a VersionedId) => (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
+rewrite :: (Function f, Has a (Rule f), Has a (Proof f), Has a VersionedId) => (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
 rewrite p rules t = do
   rule <- Index.approxMatches t rules
   tryRule p rule t
 
 -- A strategy which applies one rule only.
 {-# INLINEABLE tryRule #-}
-tryRule :: (Function f, Has a (Rule f), Has a VersionedId) => (Rule f -> Subst f -> Bool) -> a -> Strategy f
+tryRule :: (Function f, Has a (Rule f), Has a (Proof f), Has a VersionedId) => (Rule f -> Subst f -> Bool) -> a -> Strategy f
 tryRule p rule t = do
   sub <- maybeToList (match (lhs (the rule)) t)
   guard (p (the rule) sub)
-  return (Step (the rule) (the rule) sub)
+  return (Step (the rule) (the rule) (the rule) sub)
 
 -- Check if a rule can be applied, given an ordering <= on terms.
 {-# INLINEABLE reducesWith #-}
@@ -510,235 +467,3 @@ reducesSkolem rule sub =
   reducesWith (\t u -> lessEq (subst skolemise t) (subst skolemise u)) rule sub
   where
     skolemise = con . skolem
-
-----------------------------------------------------------------------
--- Equational proofs.
-----------------------------------------------------------------------
-
-newtype Proof f = Proof [ProofStep f] deriving (Show, Monoid, Generic)
-
-instance PrettyTerm f => Pretty (Proof f) where
-  pPrint = pPrintProof (\n -> (Right n, Forwards))
-
-data ProofStep f =
-  ProofStep {
-    ps_dir :: Direction,
-    ps_step :: DirectedProofStep f }
-  deriving Show
-
-data Direction = Forwards | Backwards
-  deriving (Eq, Ord, Show)
-
-data DirectedProofStep f =
-    Reduction (Reduction f)
-  | Axiom String (Equation f) (Subst f)
-  deriving Show
-
-instance Symbolic (Proof f) where
-  type ConstantOf (Proof f) = f
-
-instance Symbolic (ProofStep f) where
-  type ConstantOf (ProofStep f) = f
-  termsDL (ProofStep _ p) = termsDL p
-  subst_ sub (ProofStep dir p) = ProofStep dir (subst_ sub p)
-
-instance Symbolic (DirectedProofStep f) where
-  type ConstantOf (DirectedProofStep f) = f
-  termsDL (Reduction p) = termsDL p
-  termsDL (Axiom _ eq sub) = termsDL eq `mplus` termsDL sub
-
-  subst_ sub (Reduction p) = Reduction (subst_ sub p)
-  subst_ sub (Axiom name eq s) = Axiom name eq (subst_ sub s)
-
-stepInitial, stepResult :: ProofStep f -> Term f
-stepInitial p = t where t :=: _ = stepEquation p
-stepResult p = u where _ :=: u = stepEquation p
-
-stepEquation :: ProofStep f -> Equation f
-stepEquation (ProofStep Forwards p) = directedStepEquation p
-stepEquation (ProofStep Backwards p) = u :=: t
-  where
-    t :=: u = directedStepEquation p
-
-directedStepEquation :: DirectedProofStep f -> Equation f
-directedStepEquation (Reduction p) = initial p :=: result p
-directedStepEquation (Axiom _ (t :=: u) sub) = subst sub t :=: subst sub u
-
--- Construct a proof from an axiom.
-axiomProof :: String -> Equation f -> Proof f
-axiomProof name eqn =
-  Proof
-    [ProofStep Forwards $
-      Axiom name eqn $
-        fromJust $
-        flattenSubst [(x, build (var x)) | x <- vars eqn]]
-
--- Turn a reduction into a proof.
-reductionProof :: Reduction f -> Proof f
-reductionProof Refl{} = Proof []
-reductionProof p = Proof [ProofStep Forwards (Reduction p)]
-
--- Turn a proof of t=u into a proof of u=t.
-backwards :: Proof f -> Proof f
-backwards (Proof ps) = Proof (reverse (map back ps))
-  where
-    back (ProofStep dir p) = ProofStep (opposite dir) p
-
-opposite :: Direction -> Direction
-opposite Forwards = Backwards
-opposite Backwards = Forwards
-
-instance Monoid Direction where
-  mempty = Forwards
-  Backwards `mappend` x = opposite x
-  Forwards `mappend` x = x
-
--- Check a proof for validity, given the initial and final terms.
-verifyProof :: PrettyTerm f => Term f -> Term f -> Proof f -> Bool
-verifyProof t u (Proof ps) = verify t u ps
-  where
-    verify t u [] = t == u
-    verify t v (p:ps) =
-      verifyStep t u p && verify u v ps
-      where
-        u = stepResult p
-
-    verifyStep t u (ProofStep Forwards p) = verifyDirectedStep t u p
-    verifyStep t u (ProofStep Backwards p) = verifyDirectedStep u t p
-    verifyDirectedStep t u (Reduction p) = verifyReduction t u p
-    verifyDirectedStep t u (Axiom _ (t' :=: u') sub) =
-      subst sub t' == t && subst sub u' == u
-
--- Pretty-print the proof of a single lemma.
-pPrintProof :: PrettyTerm f =>
-  -- For opportunistically replacing rules.
-  (VersionedId -> (Either String VersionedId, Direction)) ->
-  Proof f -> Doc
-pPrintProof replace (Proof ps) =
-  pp (concatMap simplify ps)
-  where
-    simplify :: ProofStep f -> [ProofStep f]
-    simplify (ProofStep dir p) = ProofStep dir <$> simplifyDir p
-    simplifyDir (Reduction p) = Reduction <$> flatten p
-    simplifyDir p@Axiom{} = [p]
-
-    -- Transform each reduction so it only uses Step, Cong and Refl,
-    -- and no top-level Refls.
-    flatten Refl{} = []
-    flatten (Trans p q) = flatten p ++ flatten q
-    flatten (Cong f ps) = map (cong f) (transpose (flattenPad ps))
-    flatten p@Step{} = [p]
-
-    -- Given a list of (unrelated) reductions, flatten each of them,
-    -- making each flattened reduction have the same length
-    -- (by padding with Refl)..
-    flattenPad ps =
-      map (take (maximum (0:map length pss))) $
-      zipWith pad ps pss
-      where
-        pad p ps = ps ++ repeat (Refl (result p))
-        pss = map flatten ps
-
-    pp [] = text "reflexivity"
-    pp ps@(p0:_) =
-      vcat $
-        ppTerm (stepInitial p0):
-        [ text "= { by" <+> ppStep p <+> text "}" $$
-          ppTerm (stepResult p)
-        | p <- ps ]
-
-    ppTerm t = text "  " <> pPrint t
-
-    ppStep (ProofStep dir p) =
-      hcat (punctuate "; " (map ppGroup groups))
-      where
-        used = [ (x, dir `mappend` dir') | (x, dir') <- usort (findSteps p) ]
-        groups = partitionBy (\(x, dir) -> (isRight x, dir)) used
-
-    ppGroup group@((rule, dir):_) =
-      text (if isLeft rule then "axiom" else "rule") <>
-      text (if length group > 1 then "s" else "") <+>
-      hcat (punctuate (text ", ") (map ppLaw (init group))) <+>
-      ppLaw (last group) <>
-      case dir of
-        Forwards -> text ""
-        Backwards -> text " backwards"
-      where
-        ppLaw (Left name, _) = text name
-        ppLaw (Right n, _) = pPrint n
-
-    findSteps (Axiom name _ _) = [(Left name, Forwards)]
-    findSteps (Reduction p) = [replace n | (n, _, _) <- steps p]
-
--- Pretty-print a complete proof.
-pPrintTheorem ::
-  forall f a. (PrettyTerm f, Has a (Proof f), Has a (Rule f)) =>
-  Map VersionedId a ->
-  [(String, Equation f, Proof f)] ->
-  String
-pPrintTheorem rules goals =
-  unlines $ intercalate [""] $
-    [ pp ("Lemma " ++ prettyShow n) (unorient (the rule)) (the rule)
-    | n <- Set.toList usedRules,
-      let rule = fromJust (Map.lookup n rules)] ++
-    [ pp ("Goal " ++ name) eqn proof
-    | (name, eqn, proof) <- goals ]
-  where
-    pp title eqn p =
-      let
-        repl n = replace (unorient (the (fromJust (Map.lookup n rules)))) in
-      [ title ++ ": " ++ prettyShow eqn ++ ".",
-        "Proof:" ] ++
-      lines (show (pPrintProof repl p))
-
-    -- Compute which rules are used in the proof.
-    usedRules :: Set VersionedId
-    usedRules =
-      usedRulesFrom Set.empty
-        (concat [proofRules proof | (_, _, proof) <- goals])
-
-    usedRulesFrom used [] = used
-    usedRulesFrom used ((n, eqn):xs) =
-      case replace eqn of
-        (Right n, _) ->
-          usedRulesFrom (Set.insert n used)
-          (proofRules (the (fromJust (Map.lookup n rules))) ++ xs)
-        (Left _, _) ->
-          usedRulesFrom used xs
-
-    proofRules :: Proof f -> [(VersionedId, Equation f)]
-    proofRules (Proof ps) =
-      usort $
-      [ (n, unorient rule)
-      | ProofStep _ (Reduction p) <- ps,
-        (n, rule, _) <- steps p ]
-
-    -- Replace a rule with an equivalent rule or an axiom.
-    replace :: Equation f -> (Either String VersionedId, Direction)
-    replace eqn =
-      let
-        (n, dir) =
-          fromJust (Map.lookup eqn equations)
-      in
-        case Map.lookup n axioms of
-          Nothing -> (Right n, dir)
-          Just (ax, dir') -> (Left ax, dir `mappend` dir')
-
-    -- Rules whose proofs are just a single axiom.
-    axioms :: Map VersionedId (String, Direction)
-    axioms =
-      Map.mapMaybe
-        (\rule ->
-           case the rule :: Proof f of
-             Proof [ProofStep dir (Axiom name _ _)] -> Just (name, dir)
-             _ -> Nothing)
-        rules
-
-    -- For each equation, the earliest rule which proves that equation.
-    equations :: Map (Equation f) (VersionedId, Direction)
-    equations =
-      Map.fromListWith min $ concat
-        [ [(t :=: u, (n, Forwards)), (u :=: t, (n, Backwards))]
-        | (n, rule) <- Map.toList rules,
-          let t = lhs (the rule)
-              u = rhs (the rule) ]

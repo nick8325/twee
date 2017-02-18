@@ -3,6 +3,9 @@ module Twee where
 
 import Twee.Base
 import Twee.Rule
+import Twee.Equation
+import Twee.Proof(Proof, Derivation, Lemma(..))
+import qualified Twee.Proof as Proof
 import Twee.CP hiding (Config)
 import qualified Twee.CP as CP
 import Twee.Join
@@ -298,16 +301,13 @@ consider config state@State{..} cp =
         let
           rules =
             [ \n ->
-              let proof = prf (cp_proof cp) in
-              if verifyProof (lhs rule) (rhs rule) proof then
-                TweeRule {
-                  rule_id = n,
-                  rule_version = 0,
-                  rule_rule = rule,
-                  rule_positions = positions (lhs rule),
-                  rule_models = models,
-                  rule_proof = proof }
-              else error $ "Made an invalid proof step!"
+              TweeRule {
+                rule_id = n,
+                rule_version = 0,
+                rule_rule = rule,
+                rule_positions = positions (lhs rule),
+                rule_models = models,
+                rule_proof = Proof.certify (prf (cp_proof cp)) }
             | (rule, prf) <- orient (cp_eqn cp) ]
         in
           foldl' (addRule config) state rules
@@ -320,7 +320,7 @@ addAxiom config state name eqn =
     CriticalPair {
       cp_eqn = eqn,
       cp_top = Nothing,
-      cp_proof = axiomProof name eqn }
+      cp_proof = Proof.step (Axiom name eqn) }
 
 -- Add a new goal.
 {-# INLINEABLE addGoal #-}
@@ -439,7 +439,8 @@ solutions State{..} = do
     let t:_ = filter (`Set.member` us) (Set.toList ts)
         u:_ = filter (== t) (Set.toList us)
     in (goal,
-        reductionProof t `mappend` backwards (reductionProof u))
+        Proof.certify $
+        reductionProof t `Proof.trans` Proof.symm (reductionProof u))
 
 {-# INLINEABLE report #-}
 report :: Function f => State f -> String

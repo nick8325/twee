@@ -45,12 +45,14 @@ library
     Twee.ChurchList
     Twee.Constraints
     Twee.CP
+    Twee.Equation
     Twee.Index
     Twee.Index.Lookup
     Twee.Join
     Twee.KBO
     Twee.Label
     Twee.Pretty
+    Twee.Proof
     Twee.Rule
     Twee.Term
     Twee.Term.Core
