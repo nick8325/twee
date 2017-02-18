@@ -13,7 +13,7 @@ import Data.Maybe
 -- Equational proofs. Only valid proofs can be constructed.
 ----------------------------------------------------------------------
 
--- A trusted proof. If you have a value of type Proof f,
+-- A checked proof. If you have a value of type Proof f,
 -- it should jolly well represent a valid proof!
 data Proof f =
   Proof {
@@ -21,7 +21,8 @@ data Proof f =
     derivation :: !(Derivation f) }
   deriving Show
 
--- A derivation is an untrusted proof.
+-- A derivation is an unchecked proof. It might be wrong!
+-- The way to check it is to call "certify" to turn it into a Proof.
 data Derivation f =
     -- Apply a single rule or axiom to the root of a term
     Step !(Lemma f) !(Subst f)
@@ -40,6 +41,12 @@ instance Symbolic (Proof f) where
   termsDL (Proof eqn deriv) = termsDL eqn `mplus` termsDL deriv
   -- Recheck the proof after substitution
   subst_ sub (Proof _ deriv) = certify (subst_ sub deriv)
+-- The source of a proof step. Either an existing rule (with proof)!
+-- or an axiom.
+data Lemma f =
+    Rule {-# UNPACK #-} !VersionedId !(Proof f)
+  | Axiom !String !(Equation f)
+  deriving Show
 
 instance Symbolic (Derivation f) where
   type ConstantOf (Derivation f) = f
@@ -57,13 +64,6 @@ instance Symbolic (Derivation f) where
 
 instance Pretty (Proof f) where pPrint _ = text "<proof>"
 instance Pretty (Derivation f) where pPrint = pPrint . certify
-
--- The source of a proof step. Either an existing rule (with proof)!
--- or an axiom.
-data Lemma f =
-    Rule {-# UNPACK #-} !VersionedId !(Proof f)
-  | Axiom !String !(Equation f)
-  deriving Show
 
 -- What equation does a lemma prove?
 lemmaEquation :: Lemma f -> Equation f
