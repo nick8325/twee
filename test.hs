@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell, FlexibleInstances, FlexibleContexts, UndecidableInstances, StandaloneDeriving, ScopedTypeVariables #-}
 import Twee.Constraints
 import Twee.Term hiding (subst, canonicalise)
-import Test.QuickCheck
+import Test.QuickCheck hiding (Function, Fun)
 import Test.QuickCheck.All
 import Twee.Pretty
 import Twee.CP
@@ -9,6 +9,7 @@ import qualified Twee.KBO as Ord
 import Text.PrettyPrint
 import Twee.Base
 import Twee.Rule
+import Twee.Equation
 import Control.Monad
 import qualified Data.Map as Map
 import Data.Maybe
