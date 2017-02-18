@@ -198,6 +198,11 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
   line
   state <- complete output config withAxioms
 
+  when (solved state) $ do
+    line
+    putStr (pPrintTheorem (st_rule_history state) (solutions state))
+    line
+
   return $
     if solved state then Unsatisfiable else NoAnswer GaveUp
 

@@ -10,10 +10,13 @@ import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
 import Data.Maybe
+import Data.Either
 import Data.List
 import Twee.Utils
 import qualified Data.Set as Set
 import Data.Set(Set)
+import qualified Data.Map.Strict as Map
+import Data.Map(Map)
 import qualified Twee.Term as Term
 import GHC.Generics
 import Data.Ord
@@ -515,7 +518,7 @@ reducesSkolem rule sub =
 newtype Proof f = Proof [ProofStep f] deriving (Show, Monoid, Generic)
 
 instance PrettyTerm f => Pretty (Proof f) where
-  pPrint = pPrintProof
+  pPrint = pPrintProof (\n -> (Right n, Forwards))
 
 data ProofStep f =
   ProofStep {
@@ -524,7 +527,7 @@ data ProofStep f =
   deriving Show
 
 data Direction = Forwards | Backwards
-  deriving Show
+  deriving (Eq, Ord, Show)
 
 data DirectedProofStep f =
     Reduction (Reduction f)
@@ -547,17 +550,19 @@ instance Symbolic (DirectedProofStep f) where
   subst_ sub (Reduction p) = Reduction (subst_ sub p)
   subst_ sub (Axiom name eq s) = Axiom name eq (subst_ sub s)
 
-stepTerms :: ProofStep f -> (Term f, Term f)
-stepTerms (ProofStep Forwards p) = directedStepTerms p
-stepTerms (ProofStep Backwards p) = (u, t)
-  where
-    (t, u) = directedStepTerms p
+stepInitial, stepResult :: ProofStep f -> Term f
+stepInitial p = t where t :=: _ = stepEquation p
+stepResult p = u where _ :=: u = stepEquation p
 
-directedStepTerms :: DirectedProofStep f -> (Term f, Term f)
-directedStepTerms (Reduction p) =
-  (initial p, result p)
-directedStepTerms (Axiom _ (t :=: u) sub) =
-  (subst sub t, subst sub u)
+stepEquation :: ProofStep f -> Equation f
+stepEquation (ProofStep Forwards p) = directedStepEquation p
+stepEquation (ProofStep Backwards p) = u :=: t
+  where
+    t :=: u = directedStepEquation p
+
+directedStepEquation :: DirectedProofStep f -> Equation f
+directedStepEquation (Reduction p) = initial p :=: result p
+directedStepEquation (Axiom _ (t :=: u) sub) = subst sub t :=: subst sub u
 
 -- Construct a proof from an axiom.
 axiomProof :: String -> Equation f -> Proof f
@@ -583,6 +588,11 @@ opposite :: Direction -> Direction
 opposite Forwards = Backwards
 opposite Backwards = Forwards
 
+instance Monoid Direction where
+  mempty = Forwards
+  Backwards `mappend` x = opposite x
+  Forwards `mappend` x = opposite x
+
 -- Check a proof for validity, given the initial and final terms.
 verifyProof :: PrettyTerm f => Term f -> Term f -> Proof f -> Bool
 verifyProof t u (Proof ps) = verify t u ps
@@ -591,7 +601,7 @@ verifyProof t u (Proof ps) = verify t u ps
     verify t v (p:ps) =
       verifyStep t u p && verify u v ps
       where
-        (_, u) = stepTerms p
+        u = stepResult p
 
     verifyStep t u (ProofStep Forwards p) = verifyDirectedStep t u p
     verifyStep t u (ProofStep Backwards p) = verifyDirectedStep u t p
@@ -599,9 +609,12 @@ verifyProof t u (Proof ps) = verify t u ps
     verifyDirectedStep t u (Axiom _ (t' :=: u') sub) =
       subst sub t' == t && subst sub u' == u
 
--- Pretty-print a proof.
-pPrintProof :: PrettyTerm f => Proof f -> Doc
-pPrintProof (Proof ps) =
+-- Pretty-print the proof of a single lemma.
+pPrintProof :: PrettyTerm f =>
+  -- For opportunistically replacing rules.
+  (VersionedId -> (Either String VersionedId, Direction)) ->
+  Proof f -> Doc
+pPrintProof replace (Proof ps) =
   pp (concatMap simplify ps)
   where
     simplify :: ProofStep f -> [ProofStep f]
@@ -629,23 +642,106 @@ pPrintProof (Proof ps) =
     pp [] = text "reflexivity"
     pp ps@(p0:_) =
       vcat $
-        ppTerm (fst (stepTerms p0)):
+        ppTerm (stepInitial p0):
         [ text "= { by" <+> ppStep p <+> text "}" $$
-          ppTerm (snd (stepTerms p))
+          ppTerm (stepResult p)
         | p <- ps ]
 
     ppTerm t = text "  " <> pPrint t
 
-    ppStep (ProofStep Forwards p) = ppDir p
-    ppStep (ProofStep Backwards p) = ppDir p <> text ", backwards"
+    ppStep (ProofStep dir p) =
+      hcat (punctuate "; " (map ppGroup groups))
+      where
+        used = [ (x, dir `mappend` dir') | (x, dir') <- usort (findSteps p) ]
+        groups = partitionBy (\(x, dir) -> (isRight x, dir)) used
 
-    ppDir (Axiom name _ _) = text ("axiom " ++ name)
-    ppDir (Reduction p) =
-      case usort [ n | (n, _, _) <- steps p ] of
-        [] -> error "empty reduction in ppDir"
-        [rule] ->
-          text "rule" <+> pPrint rule
-        rules ->
-          text "rules" <+>
-          hcat (punctuate (text ", ") (map pPrint (init rules))) <+>
-          text "and" <+> pPrint (last rules)
+    ppGroup group@((rule, dir):_) =
+      text (if isLeft rule then "axiom" else "rule") <>
+      text (if length group > 1 then "s" else "") <+>
+      hcat (punctuate (text ", ") (map ppLaw (init group))) <+>
+      ppLaw (last group) <>
+      case dir of
+        Forwards -> text ""
+        Backwards -> text " backwards"
+      where
+        ppLaw (Left name, _) = text name
+        ppLaw (Right n, _) = pPrint n
+
+    findSteps (Axiom name _ _) = [(Left name, Forwards)]
+    findSteps (Reduction p) = [replace n | (n, _, _) <- steps p]
+
+-- Pretty-print a complete proof.
+pPrintTheorem ::
+  forall f a. (PrettyTerm f, Has a (Proof f), Has a (Rule f)) =>
+  Map VersionedId a ->
+  [(String, Proof f)] ->
+  String
+pPrintTheorem rules goals =
+  unlines $ intercalate [""] $
+    [ pp ("Lemma " ++ prettyShow n) (the (fromJust (Map.lookup n rules)))
+    | n <- Set.toList usedRules ] ++
+    [ pp ("Goal " ++ name) proof
+    | (name, proof) <- goals ]
+  where
+    pp title (Proof []) =
+      [ title ++ ": proved by reflexivity."]
+    pp title p@(Proof ps) =
+      let
+        t :=: _ = stepEquation (head ps)
+        _ :=: u = stepEquation (last ps)
+        repl n = replace (unorient (the (fromJust (Map.lookup n rules)))) in
+      [ title ++ ": " ++ prettyShow (t :=: u) ++ ".",
+        "Proof:" ] ++
+      lines (show (pPrintProof repl p))
+
+    -- Compute which rules are used in the proof.
+    usedRules :: Set VersionedId
+    usedRules =
+      usedRulesFrom Set.empty
+        (concatMap (proofRules . snd) goals)
+
+    usedRulesFrom used [] = used
+    usedRulesFrom used ((n, eqn):xs) =
+      case replace eqn of
+        (Right n, _) ->
+          usedRulesFrom (Set.insert n used)
+          (proofRules (the (fromJust (Map.lookup n rules))) ++ xs)
+        (Left _, _) ->
+          usedRulesFrom used xs
+
+    proofRules :: Proof f -> [(VersionedId, Equation f)]
+    proofRules (Proof ps) =
+      usort $
+      [ (n, unorient rule)
+      | ProofStep _ (Reduction p) <- ps,
+        (n, rule, _) <- steps p ]
+
+    -- Replace a rule with an equivalent rule or an axiom.
+    replace :: Equation f -> (Either String VersionedId, Direction)
+    replace eqn =
+      let
+        (n, dir) =
+          fromJust (Map.lookup eqn equations)
+      in
+        case Map.lookup n axioms of
+          Nothing -> (Right n, dir)
+          Just (ax, dir') -> (Left ax, dir `mappend` dir')
+
+    -- Rules whose proofs are just a single axiom.
+    axioms :: Map VersionedId (String, Direction)
+    axioms =
+      Map.mapMaybe
+        (\rule ->
+           case the rule :: Proof f of
+             Proof [ProofStep dir (Axiom name _ _)] -> Just (name, dir)
+             _ -> Nothing)
+        rules
+
+    -- For each equation, the earliest rule which proves that equation.
+    equations :: Map (Equation f) (VersionedId, Direction)
+    equations =
+      Map.fromListWith min $ concat
+        [ [(t :=: u, (n, Forwards)), (u :=: t, (n, Backwards))]
+        | (n, rule) <- Map.toList rules,
+          let t = lhs (the rule)
+              u = rhs (the rule) ]
