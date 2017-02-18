@@ -199,8 +199,12 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
   state <- complete output config withAxioms
 
   when (solved state) $ do
+    unless (and [ verifyProof t u proof | (Goal{goal_eqn = t :=: u}, proof) <- solutions state ]) $
+      error "Made an invalid proof step!"
     line
-    putStr (pPrintTheorem (st_rule_history state) (solutions state))
+    putStr $ pPrintTheorem (st_rule_history state)
+      [ (name, t :=: u, proof)
+      | (Goal{goal_name = name, goal_eqn = t :=: u}, proof) <- solutions state ]
     line
 
   return $

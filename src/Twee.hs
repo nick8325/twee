@@ -51,6 +51,7 @@ data State f =
 data Goal f =
   Goal {
     goal_name :: String,
+    goal_eqn  :: Equation f,
     goal_lhs  :: Set (Reduction f),
     goal_rhs  :: Set (Reduction f) }
 
@@ -306,7 +307,7 @@ consider config state@State{..} cp =
                   rule_positions = positions (lhs rule),
                   rule_models = models,
                   rule_proof = proof }
-              else error $ "Generated rule with invalid proof!"
+              else error $ "Made an invalid proof step!"
             | (rule, prf) <- orient (cp_eqn cp) ]
         in
           foldl' (addRule config) state rules
@@ -328,7 +329,7 @@ addGoal config state@State{..} name (t :=: u) =
   normaliseGoals $
   state {
     st_goals =
-      Goal name (Set.singleton (Refl t)) (Set.singleton (Refl u)):st_goals }
+      Goal name (t :=: u) (Set.singleton (Refl t)) (Set.singleton (Refl u)):st_goals }
 
 ----------------------------------------------------------------------
 -- Interreduction.
@@ -430,15 +431,15 @@ solved = not . null . solutions
 
 -- Return whatever goals we have proved and their proofs.
 {-# INLINEABLE solutions #-}
-solutions :: Function f => State f -> [(String, Proof f)]
+solutions :: Function f => State f -> [(Goal f, Proof f)]
 solutions State{..} = do
-  Goal name ts us <- st_goals
+  goal@(Goal _ _ ts us) <- st_goals
   guard (not (null (Set.intersection ts us)))
   return $
     let t:_ = filter (`Set.member` us) (Set.toList ts)
         u:_ = filter (== t) (Set.toList us)
-    in (name,
-        backwards (reductionProof t) `mappend` reductionProof u)
+    in (goal,
+        reductionProof t `mappend` backwards (reductionProof u))
 
 {-# INLINEABLE report #-}
 report :: Function f => State f -> String

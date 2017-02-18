@@ -674,23 +674,20 @@ pPrintProof replace (Proof ps) =
 pPrintTheorem ::
   forall f a. (PrettyTerm f, Has a (Proof f), Has a (Rule f)) =>
   Map VersionedId a ->
-  [(String, Proof f)] ->
+  [(String, Equation f, Proof f)] ->
   String
 pPrintTheorem rules goals =
   unlines $ intercalate [""] $
-    [ pp ("Lemma " ++ prettyShow n) (the (fromJust (Map.lookup n rules)))
-    | n <- Set.toList usedRules ] ++
-    [ pp ("Goal " ++ name) proof
-    | (name, proof) <- goals ]
+    [ pp ("Lemma " ++ prettyShow n) (unorient (the rule)) (the rule)
+    | n <- Set.toList usedRules,
+      let rule = fromJust (Map.lookup n rules)] ++
+    [ pp ("Goal " ++ name) eqn proof
+    | (name, eqn, proof) <- goals ]
   where
-    pp title (Proof []) =
-      [ title ++ ": proved by reflexivity."]
-    pp title p@(Proof ps) =
+    pp title eqn p =
       let
-        t :=: _ = stepEquation (head ps)
-        _ :=: u = stepEquation (last ps)
         repl n = replace (unorient (the (fromJust (Map.lookup n rules)))) in
-      [ title ++ ": " ++ prettyShow (t :=: u) ++ ".",
+      [ title ++ ": " ++ prettyShow eqn ++ ".",
         "Proof:" ] ++
       lines (show (pPrintProof repl p))
 
@@ -698,7 +695,7 @@ pPrintTheorem rules goals =
     usedRules :: Set VersionedId
     usedRules =
       usedRulesFrom Set.empty
-        (concatMap (proofRules . snd) goals)
+        (concat [proofRules proof | (_, _, proof) <- goals])
 
     usedRulesFrom used [] = used
     usedRulesFrom used ((n, eqn):xs) =
