@@ -246,7 +246,7 @@ instance Ord (Reduction f) where
 
 instance Symbolic (Reduction f) where
   type ConstantOf (Reduction f) = f
-  termsDL (Step _ _ rule sub) = termsDL rule `mplus` termsDL sub
+  termsDL (Step _ _ rule sub) = termsDL sub
   termsDL (Refl t) = termsDL t
   termsDL (Trans p q) = termsDL p `mplus` termsDL q
   termsDL (Cong _ ps) = termsDL ps

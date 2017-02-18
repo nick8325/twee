@@ -36,11 +36,6 @@ data Derivation f =
   | Cong {-# UNPACK #-} !(Fun f) ![Derivation f]
   deriving Show
 
-instance Symbolic (Proof f) where
-  type ConstantOf (Proof f) = f
-  termsDL (Proof eqn deriv) = termsDL eqn `mplus` termsDL deriv
-  -- Recheck the proof after substitution
-  subst_ sub (Proof _ deriv) = certify (subst_ sub deriv)
 -- The source of a proof step. Either an existing rule (with proof)!
 -- or an axiom.
 data Lemma f =
@@ -50,7 +45,7 @@ data Lemma f =
 
 instance Symbolic (Derivation f) where
   type ConstantOf (Derivation f) = f
-  termsDL (Step lemma sub) = termsDL (lemmaEquation lemma) `mplus` termsDL sub
+  termsDL (Step _ sub) = termsDL sub
   termsDL (Refl t) = termsDL t
   termsDL (Symm p) = termsDL p
   termsDL (Trans p q) = termsDL p `mplus` termsDL q
