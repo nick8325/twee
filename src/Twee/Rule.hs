@@ -591,7 +591,7 @@ opposite Backwards = Forwards
 instance Monoid Direction where
   mempty = Forwards
   Backwards `mappend` x = opposite x
-  Forwards `mappend` x = opposite x
+  Forwards `mappend` x = x
 
 -- Check a proof for validity, given the initial and final terms.
 verifyProof :: PrettyTerm f => Term f -> Term f -> Proof f -> Bool
