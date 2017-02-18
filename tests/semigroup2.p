@@ -21,6 +21,6 @@
 % SPC      : CNF_UNS_RFO_PEQ_UEQ
 % Comments : The problem was originally posed for cancellative semigroups,
 %            Otter does this with a nonstandard representation [MP96].
-cnf(a, axiom, '*'('*'(A,B),C)='*'(A,'*'(B,C))).
-cnf(a, axiom, '*'(A,'*'(B,'*'(B,B)))='*'(B,'*'(B,'*'(B,A)))).
-cnf(a, axiom, '*'(a,'*'(b,'*'(a,'*'(b,'*'(a,'*'(b,'*'(a,'*'(b,'*'(a,'*'(b,'*'(a,'*'(b,'*'(a,'*'(b,'*'(a,'*'(b,'*'(a,b))))))))))))))))) != '*'(a,'*'(a,'*'(a,'*'(a,'*'(a,'*'(a,'*'(a,'*'(a,'*'(a,'*'(b,'*'(b,'*'(b,'*'(b,'*'(b,'*'(b,'*'(b,'*'(b,b)))))))))))))))))).
+cnf(assoc, axiom, '*'('*'(A,B),C)='*'(A,'*'(B,C))).
+cnf(twiddle, axiom, '*'(A,'*'(B,'*'(B,B)))='*'(B,'*'(B,'*'(B,A)))).
+cnf(conjecture, axiom, '*'(a,'*'(b,'*'(a,'*'(b,'*'(a,'*'(b,'*'(a,'*'(b,'*'(a,'*'(b,'*'(a,'*'(b,'*'(a,'*'(b,'*'(a,'*'(b,'*'(a,b))))))))))))))))) != '*'(a,'*'(a,'*'(a,'*'(a,'*'(a,'*'(a,'*'(a,'*'(a,'*'(a,'*'(b,'*'(b,'*'(b,'*'(b,'*'(b,'*'(b,'*'(b,'*'(b,b)))))))))))))))))).

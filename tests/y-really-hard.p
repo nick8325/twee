@@ -1,3 +1,3 @@
-cnf(a, axiom, '@'('@'(k, X), Y) = X).
-cnf(a, axiom, '@'('@'('@'(s, X), Y), Z) = '@'('@'(X, Z), '@'(Y, Z))).
-cnf(a, axiom, '@'(X, a(X)) != '@'(a(X), '@'(X, a(X)))).
+cnf(k_def, axiom, '@'('@'(k, X), Y) = X).
+cnf(s_def, axiom, '@'('@'('@'(s, X), Y), Z) = '@'('@'(X, Z), '@'(Y, Z))).
+cnf(conjecture, axiom, '@'(X, a(X)) != '@'(a(X), '@'(X, a(X)))).

@@ -1,4 +1,4 @@
-cnf(a, axiom, '+'(X, Y) = '+'(Y, X)).
-cnf(a, axiom, '+'(X, '+'(Y, Z)) = '+'('+'(X, Y), Z)).
-cnf(a, axiom, '-'('+'('-'('+'(X, Y)), '-'('+'(X, '-'(Y))))) = X).
-cnf(a, axiom, '+'(X, X) != X).
+cnf(comm, axiom, '+'(X, Y) = '+'(Y, X)).
+cnf(assoc, axiom, '+'(X, '+'(Y, Z)) = '+'('+'(X, Y), Z)).
+cnf(funny, axiom, '-'('+'('-'('+'(X, Y)), '-'('+'(X, '-'(Y))))) = X).
+cnf(conjecture, axiom, '+'(X, X) != X).

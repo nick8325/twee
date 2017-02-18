@@ -1,5 +1,3 @@
-% Goes into a loop!
-
 %--------------------------------------------------------------------------
 % File     : ROB007-1 : TPTP v6.2.0. Released v1.0.0.
 % Domain   : Robbins Algebra
