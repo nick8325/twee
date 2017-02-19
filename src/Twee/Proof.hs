@@ -269,18 +269,26 @@ presentWithGoals goals lemmas
         Map.lookup n usesAtRoot == Just 1 = Just (derivation p)
     tryInline (Lemma n p)
       -- Check for subsumption by an earlier lemma
-      | Just (Lemma m q) <- Map.lookup (t :=: u) equations, m < n =
-        Just (Symm (derivation q))
-      | Just (Lemma m q) <- Map.lookup (u :=: t) equations, m < n =
-        Just (Symm (derivation q))
+      | Just (Lemma m q) <- Map.lookup (canonicalise (t :=: u)) equations, m < n =
+        Just (subsume p (derivation q))
+      | Just (Lemma m q) <- Map.lookup (canonicalise (u :=: t)) equations, m < n =
+        Just (subsume p (Symm (derivation q)))
       where
         t :=: u = equation p
     tryInline _ = Nothing
 
+    subsume p q =
+      -- Rename q so its variables match p's
+      subst sub q
+      where
+        t  :=: u  = equation p
+        t' :=: u' = equation (certify q)
+        Just sub  = matchList (buildList [t', u']) (buildList [t, u])
+
     -- Record which lemma proves each equation
     equations =
       Map.fromList
-        [ (equation lemma_proof, lemma)
+        [ (canonicalise (equation lemma_proof), lemma)
         | lemma@Lemma{..} <- lemmas]
 
     -- Count how many times each lemma is used at the root
