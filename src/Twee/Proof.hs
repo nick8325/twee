@@ -336,15 +336,18 @@ pPrintFinalGoalsAndLemmas ::
   [(String, Proof f)] -> [Lemma f] -> String
 pPrintFinalGoalsAndLemmas goals lemmas =
   unlines $ intercalate [""] $
+    [ [ppTitle ("Axiom " ++ show n ++ " (" ++ name ++ ")") eqn]
+    | Axiom n name eqn <- axioms ] ++
     [ pp ("Lemma " ++ num n) p
     | Lemma n p <- lemmas ] ++
     [ pp ("Goal " ++ name) p
     | (name, p) <- goals ]
   where
     pp title p =
-      [ title ++ ": " ++ prettyShow (equation p) ++ ".",
-        "Proof:" ] ++
+      [ppTitle title (equation p), "Proof:"] ++
       lines (show (pPrintLemma num p))
+    ppTitle title eqn =
+      title ++ ": " ++ prettyShow eqn ++ "."
 
     num x = show (fromJust (Map.lookup x nums))
     nums = Map.fromList (zip (map lemma_id lemmas) [n+1 ..])
