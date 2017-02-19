@@ -202,7 +202,7 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
 
   when (solved state && not (quiet globals)) $ do
     line
-    putStr $ Proof.pPrintTheorem
+    prettyPrint $ Proof.present
       [ (name, proof)
       | (Goal{goal_name = name}, proof) <- solutions state ]
     line

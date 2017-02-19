@@ -3,7 +3,7 @@ module Twee.Proof(
   Proof, Derivation(..), Lemma(..), Axiom(..),
   certify, equation, derivation,
   lemma, axiom, symm, trans, cong, simplify,
-  pPrintLemma, pPrintTheorem) where
+  Presentation(..), present) where
 
 import Twee.Base
 import Twee.Equation
@@ -198,58 +198,25 @@ usedAxioms p = lem p []
     lem (Cong _ ps) = foldr (.) id (map lem ps)
     lem _ = id
 
--- Pretty-print the proof of a single lemma.
-pPrintLemma :: PrettyTerm f => (VersionedId -> String) -> Proof f -> Doc
-pPrintLemma lemmaName p =
-  ppTerm (eqn_lhs (equation p)) $$ pp q
-  where
-    q = floatTrans (simplify (const Nothing) (derivation p))
+----------------------------------------------------------------------
+-- Pretty-printing of proofs.
+----------------------------------------------------------------------
 
-    -- Lift Trans outside of Cong, so that each Cong only
-    -- uses one lemma or axiom.
-    floatTrans :: Derivation f -> Derivation f
-    floatTrans (Symm p) = Symm (floatTrans p)
-    floatTrans (Trans p q) = Trans (floatTrans p) (floatTrans q)
-    floatTrans (Cong f ps)
-      | any isTrans ps =
-        Cong f (map fst peeled) `Trans`
-        floatTrans (Cong f (map snd peeled))
-      where
-        peeled = map peel ps
-        peel (Trans p q) = (p, q)
-        peel p = (p, Refl (eqn_rhs (equation (certify p))))
+-- A proof, with all axioms and lemmas explicitly listed.
+data Presentation f =
+  Presentation {
+    pres_axioms :: [Axiom f],
+    pres_lemmas :: [Lemma f],
+    pres_goals  :: [(String, Proof f)] }
+  deriving Show
 
-        isTrans Trans{} = True
-        isTrans _ = False
-    floatTrans p = p
+instance PrettyTerm f => Pretty (Presentation f) where
+  pPrint = pPrintPresentation
 
-    pp (Trans p q) = pp p $$ pp q
-    pp p =
-      (text "= { by" <+>
-       ppStep
-         (nub (map showLemma (usedLemmas p)) ++
-          nub (map showAxiom (usedAxioms p))) <+>
-       text "}" $$
-       ppTerm (eqn_rhs (equation (certify p))))
-
-    ppTerm t = text "  " <> pPrint t
-
-    ppStep [] = text "reflexivity" -- ??
-    ppStep [x] = text x
-    ppStep xs =
-      hcat (punctuate (text ", ") (map text (init xs))) <+>
-      text "and" <+>
-      text (last xs)
-
-    showLemma Lemma{..} = "lemma " ++ lemmaName lemma_id
-    showAxiom Axiom{..} =
-      "axiom " ++ show axiom_number ++ " (" ++ axiom_name ++ ")"
-
--- Pretty-print a complete proof.
-pPrintTheorem :: PrettyTerm f => [(String, Proof f)] -> String
-pPrintTheorem goals =
-  -- First find all the used lemmas, then hand off to presentTheorem
-  pPrintGoalsAndLemmas goals
+present :: PrettyTerm f => [(String, Proof f)] -> Presentation f
+present goals =
+  -- First find all the used lemmas, then hand off to presentWithGoals
+  presentWithGoals goals
     (used Map.empty (concatMap (usedLemmas . derivation . snd) goals))
   where
     used lems [] = Map.elems lems
@@ -259,17 +226,24 @@ pPrintTheorem goals =
         used (Map.insert n lem lems)
           (usedLemmas (derivation p) ++ xs)
 
-pPrintGoalsAndLemmas ::
+presentWithGoals ::
   PrettyTerm f =>
-  [(String, Proof f)] -> [Lemma f] -> String
-pPrintGoalsAndLemmas goals lemmas
+  [(String, Proof f)] -> [Lemma f] -> Presentation f
+presentWithGoals goals lemmas
   -- We inline a lemma if one of the following holds:
   --   * It only has one step
   --   * It is subsumed by an earlier lemma
   --   * It is only used once, and that use is at the root of the term
   -- First we compute all inlinings, then apply simplify to remove them,
   -- then repeat if any lemma was inlined
-  | Map.null inlinings = pPrintFinalGoalsAndLemmas goals lemmas
+  | Map.null inlinings =
+    let
+      axioms = usort $
+        concatMap (usedAxioms . derivation . snd) goals ++
+        concatMap (usedAxioms . derivation . lemma_proof) lemmas
+    in
+      Presentation axioms lemmas goals
+
   | otherwise =
     let
       inline Lemma{..} = Map.lookup lemma_id inlinings
@@ -281,7 +255,7 @@ pPrintGoalsAndLemmas goals lemmas
         [ Lemma n (certify $ simplify inline (derivation p))
         | Lemma n p <- lemmas, not (n `Map.member` inlinings) ]
     in
-      pPrintGoalsAndLemmas goals' lemmas'
+      presentWithGoals goals' lemmas'
 
   where
     inlinings =
@@ -331,12 +305,57 @@ pPrintGoalsAndLemmas goals lemmas
     oneStep Trans{} = False
     oneStep _ = True
 
-pPrintFinalGoalsAndLemmas ::
-  PrettyTerm f =>
-  [(String, Proof f)] -> [Lemma f] -> String
-pPrintFinalGoalsAndLemmas goals lemmas =
-  unlines $ intercalate [""] $
-    [ [ppTitle ("Axiom " ++ show n ++ " (" ++ name ++ ")") eqn]
+-- Pretty-print the proof of a single lemma.
+pPrintLemma :: PrettyTerm f => (VersionedId -> String) -> Proof f -> Doc
+pPrintLemma lemmaName p =
+  ppTerm (eqn_lhs (equation p)) $$ pp q
+  where
+    q = floatTrans (simplify (const Nothing) (derivation p))
+
+    -- Lift Trans outside of Cong, so that each Cong only
+    -- uses one lemma or axiom.
+    floatTrans :: Derivation f -> Derivation f
+    floatTrans (Symm p) = Symm (floatTrans p)
+    floatTrans (Trans p q) = Trans (floatTrans p) (floatTrans q)
+    floatTrans (Cong f ps)
+      | any isTrans ps =
+        Cong f (map fst peeled) `Trans`
+        floatTrans (Cong f (map snd peeled))
+      where
+        peeled = map peel ps
+        peel (Trans p q) = (p, q)
+        peel p = (p, Refl (eqn_rhs (equation (certify p))))
+
+        isTrans Trans{} = True
+        isTrans _ = False
+    floatTrans p = p
+
+    pp (Trans p q) = pp p $$ pp q
+    pp p =
+      (text "= { by" <+>
+       ppStep
+         (nub (map showLemma (usedLemmas p)) ++
+          nub (map showAxiom (usedAxioms p))) <+>
+       text "}" $$
+       ppTerm (eqn_rhs (equation (certify p))))
+
+    ppTerm t = text "  " <> pPrint t
+
+    ppStep [] = text "reflexivity" -- ??
+    ppStep [x] = text x
+    ppStep xs =
+      hcat (punctuate (text ", ") (map text (init xs))) <+>
+      text "and" <+>
+      text (last xs)
+
+    showLemma Lemma{..} = "lemma " ++ lemmaName lemma_id
+    showAxiom Axiom{..} =
+      "axiom " ++ show axiom_number ++ " (" ++ axiom_name ++ ")"
+
+pPrintPresentation :: PrettyTerm f => Presentation f -> Doc
+pPrintPresentation (Presentation axioms lemmas goals) =
+  vcat $ intersperse (text "") $
+    [ ppTitle ("Axiom " ++ show n ++ " (" ++ name ++ ")") eqn
     | Axiom n name eqn <- axioms ] ++
     [ pp ("Lemma " ++ num n) p
     | Lemma n p <- lemmas ] ++
@@ -344,17 +363,12 @@ pPrintFinalGoalsAndLemmas goals lemmas =
     | (name, p) <- goals ]
   where
     pp title p =
-      [ppTitle title (equation p), "Proof:"] ++
-      lines (show (pPrintLemma num p))
+      ppTitle title (equation p) $$
+      text "Proof:" $$
+      pPrintLemma num p
     ppTitle title eqn =
-      title ++ ": " ++ prettyShow eqn ++ "."
+      text (title ++ ":") <+> pPrint eqn <> text "."
 
     num x = show (fromJust (Map.lookup x nums))
     nums = Map.fromList (zip (map lemma_id lemmas) [n+1 ..])
-    -- Maximum axiom number used in the proof
     n = maximum $ 0:map axiom_number axioms
-
-    axioms =
-      usort $
-        concatMap (usedAxioms . derivation . snd) goals ++
-        concatMap (usedAxioms . derivation . lemma_proof) lemmas
