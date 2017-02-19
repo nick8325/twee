@@ -314,13 +314,13 @@ consider config state@State{..} cp =
 
 -- Add a new equation.
 {-# INLINEABLE addAxiom #-}
-addAxiom :: Function f => Config -> State f -> String -> Equation f -> State f
-addAxiom config state name eqn =
+addAxiom :: Function f => Config -> State f -> Int -> String -> Equation f -> State f
+addAxiom config state n name eqn =
   consider config state $
     CriticalPair {
       cp_eqn = eqn,
       cp_top = Nothing,
-      cp_proof = Proof.step (Axiom name eqn) }
+      cp_proof = Proof.axiom (Proof.Axiom n name eqn) }
 
 -- Add a new goal.
 {-# INLINEABLE addGoal #-}

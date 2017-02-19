@@ -321,7 +321,7 @@ steps r = aux r []
 -- Turn a reduction into a proof.
 reductionProof :: Reduction f -> Derivation f
 reductionProof (Step n p rule sub) =
-  subst sub (Proof.step (Proof.Rule n p))
+  subst sub (Proof.lemma (Proof.Lemma n p))
 reductionProof (Refl t) = Proof.Refl t
 reductionProof (Trans p q) =
   Proof.trans (reductionProof p) (reductionProof q)

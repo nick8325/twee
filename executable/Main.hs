@@ -183,7 +183,7 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
     withGoals =
       foldl' (uncurry . addGoal config) initialState (map unInput goals2)
     withAxioms =
-      foldl' (uncurry . addAxiom config) withGoals (map unInput axioms2)
+      foldl' (\state (n, (name, x)) -> addAxiom config state n name x) withGoals (zip [1..] (map unInput axioms2))
 
   let
     line = unless (quiet globals) (putStrLn "")
