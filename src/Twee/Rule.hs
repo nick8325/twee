@@ -19,7 +19,7 @@ import GHC.Generics
 import Data.Ord
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Proof, Derivation)
+import Twee.Proof(Proof, Derivation, Lemma(..))
 
 --------------------------------------------------------------------------------
 -- Rewrite rules.
@@ -226,7 +226,7 @@ type Strategy f = Term f -> [Reduction f]
 -- A multi-step rewrite proof t ->* u
 data Reduction f =
     -- Apply a single rewrite rule to the root of a term
-    Step {-# UNPACK #-} !VersionedId !(Proof f) !(Rule f) !(Subst f)
+    Step {-# UNPACK #-} !(Lemma f) !(Rule f) !(Subst f)
     -- Reflexivity
   | Refl {-# UNPACK #-} !(Term f)
     -- Transivitity
@@ -243,12 +243,12 @@ instance Ord (Reduction f) where
 
 instance Symbolic (Reduction f) where
   type ConstantOf (Reduction f) = f
-  termsDL (Step _ _ _ sub) = termsDL sub
+  termsDL (Step _ _ sub) = termsDL sub
   termsDL (Refl t) = termsDL t
   termsDL (Trans p q) = termsDL p `mplus` termsDL q
   termsDL (Cong _ ps) = termsDL ps
 
-  subst_ sub (Step n p rule s) = Step n p rule (subst_ sub s)
+  subst_ sub (Step lemma rule s) = Step lemma rule (subst_ sub s)
   subst_ sub (Refl t) = Refl (subst_ sub t)
   subst_ sub (Trans p q) = Trans (subst_ sub p) (subst_ sub q)
   subst_ sub (Cong f ps) = Cong f (subst_ sub ps)
@@ -290,7 +290,7 @@ initial (Trans p _) = initial p
 initial (Refl t) = t
 initial p = {-# SCC result_emitInitial #-} build (emitInitial p)
   where
-    emitInitial (Step _ _ r sub) = Term.subst sub (lhs r)
+    emitInitial (Step _ r sub) = Term.subst sub (lhs r)
     emitInitial (Refl t) = builder t
     emitInitial (Trans p _) = emitInitial p
     emitInitial (Cong f ps) = app f (map emitInitial ps)
@@ -301,7 +301,7 @@ result (Trans _ q) = result q
 result (Refl t) = t
 result p = {-# SCC result_emitResult #-} build (emitResult p)
   where
-    emitResult (Step _ _ r sub) = Term.subst sub (rhs r)
+    emitResult (Step _ r sub) = Term.subst sub (rhs r)
     emitResult (Refl t) = builder t
     emitResult (Trans _ q) = emitResult q
     emitResult (Cong f ps) = app f (map emitResult ps)
@@ -317,12 +317,17 @@ steps r = aux r []
 
 -- Turn a reduction into a proof.
 reductionProof :: Reduction f -> Derivation f
-reductionProof (Step n p _ sub) =
-  subst sub (Proof.lemma (Proof.Lemma n p))
+reductionProof (Step lemma _ sub) =
+  subst sub (Proof.lemma lemma)
 reductionProof (Refl t) = Proof.Refl t
 reductionProof (Trans p q) =
   Proof.trans (reductionProof p) (reductionProof q)
 reductionProof (Cong f ps) = Proof.cong f (map reductionProof ps)
+
+-- Construct a basic rewrite step.
+{-# INLINE step #-}
+step :: (Has a VersionedId, Has a (Rule f), Has a (Proof f)) => a -> Subst f -> Reduction f
+step x sub = Step (Lemma (the x) (the x)) (the x) sub
 
 --------------------------------------------------------------------------------
 -- Strategy combinators.
@@ -407,7 +412,7 @@ tryRule :: (Function f, Has a (Rule f), Has a (Proof f), Has a VersionedId) => (
 tryRule p rule t = do
   sub <- maybeToList (match (lhs (the rule)) t)
   guard (p (the rule) sub)
-  return (Step (the rule) (the rule) (the rule) sub)
+  return (step rule sub)
 
 -- Check if a rule can be applied, given an ordering <= on terms.
 {-# INLINEABLE reducesWith #-}
