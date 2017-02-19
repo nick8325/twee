@@ -200,7 +200,7 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
   line
   state <- complete output config withAxioms
 
-  when (solved state) $ do
+  when (solved state && not (quiet globals)) $ do
     line
     putStr $ Proof.pPrintTheorem
       [ (name, proof)
