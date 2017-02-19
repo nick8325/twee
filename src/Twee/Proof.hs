@@ -139,7 +139,7 @@ axiom ax@Axiom{..} = UseAxiom ax (substFor axiom_eqn)
 substFor :: Equation f -> Subst f
 substFor eqn =
   fromJust $
-  flattenSubst [(x, build (var x)) | x <- vars (eqn_lhs eqn)]
+  flattenSubst [(x, build (var x)) | x <- vars eqn]
 
 symm :: Derivation f -> Derivation f
 symm (Refl t) = Refl t
