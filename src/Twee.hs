@@ -435,12 +435,13 @@ solutions :: Function f => State f -> [(Goal f, Proof f)]
 solutions State{..} = do
   goal@(Goal _ _ ts us) <- st_goals
   guard (not (null (Set.intersection ts us)))
-  return $
-    let t:_ = filter (`Set.member` us) (Set.toList ts)
-        u:_ = filter (== t) (Set.toList us)
-    in (goal,
+  let t:_ = filter (`Set.member` us) (Set.toList ts)
+      u:_ = filter (== t) (Set.toList us)
+      -- Strict so that we check the proof before returning a solution
+      !p =
         Proof.certify $
-        reductionProof t `Proof.trans` Proof.symm (reductionProof u))
+          reductionProof t `Proof.trans` Proof.symm (reductionProof u)
+  return (goal, p)
 
 {-# INLINEABLE report #-}
 report :: Function f => State f -> String

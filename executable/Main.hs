@@ -12,6 +12,7 @@ import Twee hiding (message)
 import Twee.Base hiding (char, lookup, (<>))
 import Twee.Rule hiding (Axiom)
 import Twee.Equation
+import qualified Twee.Proof as Proof
 import Twee.Utils
 import qualified Twee.CP as CP
 import Data.Ord
@@ -200,14 +201,11 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
   state <- complete output config withAxioms
 
   when (solved state) $ do
-    putStrLn "OK!"
-    -- unless (and [ verifyProof t u proof | (Goal{goal_eqn = t :=: u}, proof) <- solutions state ]) $
-    --   error "Made an invalid proof step!"
-    -- line
-    -- putStr $ pPrintTheorem (st_rule_history state)
-    --   [ (name, t :=: u, proof)
-    --   | (Goal{goal_name = name, goal_eqn = t :=: u}, proof) <- solutions state ]
-    -- line
+    line
+    putStr $ Proof.pPrintTheorem
+      [ (name, proof)
+      | (Goal{goal_name = name}, proof) <- solutions state ]
+    line
 
   return $
     if solved state then Unsatisfiable else NoAnswer GaveUp

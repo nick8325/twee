@@ -1,13 +1,18 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies, PatternGuards #-}
 module Twee.Proof(
   Proof, equation, derivation, Derivation(..), Lemma(..),
-  certify, lemmaEquation, 
-  simplify, step, symm, trans, cong) where
+  certify, lemmaEquation,
+  simplify, step, symm, trans, cong,
+  pPrintLemma, pPrintTheorem) where
 
 import Twee.Base
 import Twee.Equation
 import Control.Monad
 import Data.Maybe
+import Data.List
+import Data.Function
+import qualified Data.Map.Strict as Map
+import Data.Map(Map)
 
 ----------------------------------------------------------------------
 -- Equational proofs. Only valid proofs can be constructed.
@@ -94,15 +99,26 @@ instance Symbolic (Derivation f) where
   subst_ sub (Trans p q) = trans (subst_ sub p) (subst_ sub q)
   subst_ sub (Cong f ps) = cong f (subst_ sub ps)
 
-instance Pretty (Proof f) where pPrint _ = text "<proof>"
-instance Pretty (Derivation f) where pPrint = pPrint . certify
+instance PrettyTerm f => Pretty (Proof f) where pPrint = pPrintLemma prettyShow
+instance PrettyTerm f => Pretty (Derivation f) where pPrint = pPrint . certify
 
 -- Simplify a derivation.
-simplify p@Step{} = p
-simplify p@Refl{} = p
-simplify (Symm p) = symm (simplify p)
-simplify (Trans p q) = trans (simplify p) (simplify q)
-simplify (Cong f ps) = cong f (map simplify ps)
+-- After simplification, a derivation has the following properties:
+--   * Trans is right-associated and only appears at the top level
+--   * Symm is pushed down next to Step
+--   * Each Cong only does one rewrite (i.e. contains one Step constructor)
+--   * Refl only occurs inside Cong
+simplify :: (Lemma f -> Maybe (Derivation f)) -> Derivation f -> Derivation f
+simplify lem p = simp p
+  where
+    simp p@(Step lemma sub) =
+      case lem lemma of
+        Nothing -> p
+        Just q -> simp (subst sub q)
+    simp p@Refl{} = p
+    simp (Symm p) = symm (simp p)
+    simp (Trans p q) = trans (simp p) (simp q)
+    simp (Cong f ps) = cong f (map simp ps)
 
 -- Smart constructors for derivations.
 step :: Lemma f -> Derivation f
@@ -148,136 +164,159 @@ cong f ps =
     unRefl (Refl t) = Just t
     unRefl _ = Nothing
 
--- -- Pretty-print the proof of a single lemma.
--- pPrintProof :: PrettyTerm f =>
---   -- For opportunistically replacing rules.
---   (VersionedId -> (Either String VersionedId, Direction)) ->
---   Proof f -> Doc
--- pPrintProof replace (Proof ps) =
---   pp (concatMap simplify ps)
---   where
---     simplify :: ProofStep f -> [ProofStep f]
---     simplify (ProofStep dir p) = ProofStep dir <$> simplifyDir p
---     simplifyDir (Reduction p) = Reduction <$> flatten p
---     simplifyDir p@Axiom{} = [p]
+-- Find all lemmas which are used in a derivation.
+usedLemmas :: Derivation f -> [Lemma f]
+usedLemmas p = lem p []
+  where
+    lem (Step lemma _) = (lemma:)
+    lem Refl{} = id
+    lem (Symm p) = lem p
+    lem (Trans p q) = lem p . lem q
+    lem (Cong _ ps) = foldr (.) id (map lem ps)
 
---     -- Transform each reduction so it only uses Step, Cong and Refl,
---     -- and no top-level Refls.
---     flatten Refl{} = []
---     flatten (Trans p q) = flatten p ++ flatten q
---     flatten (Cong f ps) = map (cong f) (transpose (flattenPad ps))
---     flatten p@Step{} = [p]
+-- Pretty-print the proof of a single lemma.
+pPrintLemma :: PrettyTerm f => (VersionedId -> String) -> Proof f -> Doc
+pPrintLemma lemmaName p =
+  ppTerm (eqn_lhs (equation p)) $$ pp q
+  where
+    q = floatTrans (simplify (const Nothing) (derivation p))
 
---     -- Given a list of (unrelated) reductions, flatten each of them,
---     -- making each flattened reduction have the same length
---     -- (by padding with Refl)..
---     flattenPad ps =
---       map (take (maximum (0:map length pss))) $
---       zipWith pad ps pss
---       where
---         pad p ps = ps ++ repeat (Refl (result p))
---         pss = map flatten ps
+    -- Lift Trans outside of Cong, so that each Cong only
+    -- uses one Step constructor.
+    floatTrans :: Derivation f -> Derivation f
+    floatTrans (Symm p) = Symm (floatTrans p)
+    floatTrans (Trans p q) = Trans (floatTrans p) (floatTrans q)
+    floatTrans (Cong f ps)
+      | any isTrans ps =
+        Cong f (map fst peeled) `Trans`
+        floatTrans (Cong f (map snd peeled))
+      where
+        peeled = map peel ps
+        peel (Trans p q) = (p, q)
+        peel p = (p, Refl (eqn_rhs (equation (certify p))))
 
---     pp [] = text "reflexivity"
---     pp ps@(p0:_) =
---       vcat $
---         ppTerm (stepInitial p0):
---         [ text "= { by" <+> ppStep p <+> text "}" $$
---           ppTerm (stepResult p)
---         | p <- ps ]
+        isTrans Trans{} = True
+        isTrans _ = False
+    floatTrans p = p
 
---     ppTerm t = text "  " <> pPrint t
+    pp (Trans p q) = pp p $$ pp q
+    pp p =
+      (text "= { by" <+> ppStep (nub (map showLemma (usedLemmas p))) <+> text "}" $$
+       ppTerm (eqn_rhs (equation (certify p))))
 
---     ppStep (ProofStep dir p) =
---       hcat (punctuate "; " (map ppGroup groups))
---       where
---         used = [ (x, dir `mappend` dir') | (x, dir') <- usort (findSteps p) ]
---         groups = partitionBy (\(x, dir) -> (isRight x, dir)) used
+    ppTerm t = text "  " <> pPrint t
 
---     ppGroup group@((rule, dir):_) =
---       text (if isLeft rule then "axiom" else "rule") <>
---       text (if length group > 1 then "s" else "") <+>
---       hcat (punctuate (text ", ") (map ppLaw (init group))) <+>
---       ppLaw (last group) <>
---       case dir of
---         Forwards -> text ""
---         Backwards -> text " backwards"
---       where
---         ppLaw (Left name, _) = text name
---         ppLaw (Right n, _) = pPrint n
+    ppStep [] = text "reflexivity" -- ??
+    ppStep [x] = text x
+    ppStep xs =
+      hcat (punctuate (text ", ") (map text (init xs))) <+>
+      text "and" <+>
+      text (last xs)
 
---     findSteps (Axiom name _ _) = [(Left name, Forwards)]
---     findSteps (Reduction p) = [replace n | (n, _, _) <- steps p]
+    showLemma (Rule n _) = "lemma " ++ lemmaName n
+    showLemma (Axiom name _) = "axiom " ++ name
 
--- -- Pretty-print a complete proof.
--- pPrintTheorem ::
---   forall f a. (PrettyTerm f, Has a (Proof f), Has a (Rule f)) =>
---   Map VersionedId a ->
---   [(String, Equation f, Proof f)] ->
---   String
--- pPrintTheorem rules goals =
---   unlines $ intercalate [""] $
---     [ pp ("Lemma " ++ prettyShow n) (unorient (the rule)) (the rule)
---     | n <- Set.toList usedRules,
---       let rule = fromJust (Map.lookup n rules)] ++
---     [ pp ("Goal " ++ name) eqn proof
---     | (name, eqn, proof) <- goals ]
---   where
---     pp title eqn p =
---       let
---         repl n = replace (unorient (the (fromJust (Map.lookup n rules)))) in
---       [ title ++ ": " ++ prettyShow eqn ++ ".",
---         "Proof:" ] ++
---       lines (show (pPrintProof repl p))
+-- Pretty-print a complete proof.
+pPrintTheorem :: PrettyTerm f => [(String, Proof f)] -> String
+pPrintTheorem goals =
+  -- First find all the used lemmas, then hand off to pPrintGoalsAndLemmas
+  pPrintGoalsAndLemmas goals (used Map.empty (concatMap (rules . snd) goals))
+  where
+    used ps [] = ps
+    used ps ((n, p):xs)
+      | n `Map.member` ps = used ps xs
+      | otherwise =
+        used (Map.insert n p ps) (rules p ++ xs)
+    rules x =
+      [ (n, p) | Rule n p <- usedLemmas (derivation x) ]
 
---     -- Compute which rules are used in the proof.
---     usedRules :: Set VersionedId
---     usedRules =
---       usedRulesFrom Set.empty
---         (concat [proofRules proof | (_, _, proof) <- goals])
+pPrintGoalsAndLemmas ::
+  PrettyTerm f =>
+  [(String, Proof f)] -> Map VersionedId (Proof f) -> String
+pPrintGoalsAndLemmas goals lemmas
+  -- We inline a lemma if one of the following holds:
+  --   * It only has one step
+  --   * It is subsumed by an earlier lemma
+  --   * It is only used once, and that use is at the root of the term
+  -- First we compute all inlinings, then apply simplify to remove them,
+  -- then repeat if any lemma was inlined
+  | Map.null inlinings = pPrintFinalGoalsAndLemmas goals lemmas
+  | otherwise =
+    let
+      inline (Rule n _) = Map.lookup n inlinings
+      inline Axiom{} = Nothing
 
---     usedRulesFrom used [] = used
---     usedRulesFrom used ((n, eqn):xs) =
---       case replace eqn of
---         (Right n, _) ->
---           usedRulesFrom (Set.insert n used)
---           (proofRules (the (fromJust (Map.lookup n rules))) ++ xs)
---         (Left _, _) ->
---           usedRulesFrom used xs
+      goals' =
+        [ (name, certify $ simplify inline (derivation p))
+        | (name, p) <- goals ]
+      lemmas' =
+        Map.fromList
+        [ (n, certify $ simplify inline (derivation p))
+        | (n, p) <- Map.toList lemmas,
+          not (n `Map.member` inlinings) ]
+    in
+      pPrintGoalsAndLemmas goals' lemmas'
 
---     proofRules :: Proof f -> [(VersionedId, Equation f)]
---     proofRules (Proof ps) =
---       usort $
---       [ (n, unorient rule)
---       | ProofStep _ (Reduction p) <- ps,
---         (n, rule, _) <- steps p ]
+  where
+    inlinings =
+      Map.mapMaybeWithKey tryInline lemmas
 
---     -- Replace a rule with an equivalent rule or an axiom.
---     replace :: Equation f -> (Either String VersionedId, Direction)
---     replace eqn =
---       let
---         (n, dir) =
---           fromJust (Map.lookup eqn equations)
---       in
---         case Map.lookup n axioms of
---           Nothing -> (Right n, dir)
---           Just (ax, dir') -> (Left ax, dir `mappend` dir')
+    tryInline n p
+      | oneStep (derivation p) = Just (derivation p)
+      | Map.lookup n uses == Just 1,
+        Map.lookup n usesAtRoot == Just 1 = Just (derivation p)
+    tryInline n p
+      -- Check for subsumption by an earlier lemma
+      | Just (m, q) <- Map.lookup (t :=: u) equations, m < n =
+        Just q
+      | Just (m, q) <- Map.lookup (u :=: t) equations, m < n =
+        Just (Symm q)
+      where
+        t :=: u = equation p
+    tryInline _ _ = Nothing
 
---     -- Rules whose proofs are just a single axiom.
---     axioms :: Map VersionedId (String, Direction)
---     axioms =
---       Map.mapMaybe
---         (\rule ->
---            case the rule :: Proof f of
---              Proof [ProofStep dir (Axiom name _ _)] -> Just (name, dir)
---              _ -> Nothing)
---         rules
+    -- Record which lemma proves each equation
+    equations =
+      Map.fromList
+        [ (equation p, (n, step (Rule n p)))
+        | (n, p) <- Map.toList lemmas]
 
---     -- For each equation, the earliest rule which proves that equation.
---     equations :: Map (Equation f) (VersionedId, Direction)
---     equations =
---       Map.fromListWith min $ concat
---         [ [(t :=: u, (n, Forwards)), (u :=: t, (n, Backwards))]
---         | (n, rule) <- Map.toList rules,
---           let t = lhs (the rule)
---               u = rhs (the rule) ]
+    -- Count how many times each lemma is used at the root
+    uses = usesWith usedLemmas
+    usesAtRoot = usesWith lemmasAtRoot
+    usesWith lem =
+      Map.fromListWith (+)
+        [ (n, 1)
+        | Rule n _ <-
+            concatMap lem
+              (map (derivation . snd) goals ++
+               map derivation (Map.elems lemmas)) ]
+
+    -- Find all lemmas that occur at the root
+    lemmasAtRoot (Step lemma _) = [lemma]
+    lemmasAtRoot (Symm p) = lemmasAtRoot p
+    lemmasAtRoot (Trans p q) = lemmasAtRoot p ++ lemmasAtRoot q
+    lemmasAtRoot _ = []
+
+    -- Check if a proof only has one step.
+    -- Trans only occurs at the top level by this point.
+    oneStep Trans{} = False
+    oneStep _ = True
+
+pPrintFinalGoalsAndLemmas ::
+  PrettyTerm f =>
+  [(String, Proof f)] -> Map VersionedId (Proof f) -> String
+pPrintFinalGoalsAndLemmas goals lemmas =
+  unlines $ intercalate [""] $
+    [ pp ("Lemma " ++ num x) p
+    | (x, p) <- Map.toList lemmas ] ++
+    [ pp ("Goal " ++ name) p
+    | (name, p) <- goals ]
+  where
+    pp title p =
+      [ title ++ ": " ++ prettyShow (equation p) ++ ".",
+        "Proof:" ] ++
+      lines (show (pPrintLemma num p))
+
+    num x = show (fromJust (Map.lookup x nums))
+    nums = Map.fromList (zip (Map.keys lemmas) [1..])
