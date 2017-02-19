@@ -268,6 +268,7 @@ addRule config state@State{..} rule0 =
 {-# INLINEABLE normaliseGoals #-}
 normaliseGoals :: Function f => State f -> State f
 normaliseGoals state@State{..} =
+  {-# SCC normaliseGoals #-}
   state {
     st_goals =
       map (goalMap (normalForms (rewrite reduces st_rules) . Set.toList)) st_goals }
@@ -432,7 +433,7 @@ solved = not . null . solutions
 -- Return whatever goals we have proved and their proofs.
 {-# INLINEABLE solutions #-}
 solutions :: Function f => State f -> [(Goal f, Proof f)]
-solutions State{..} = do
+solutions State{..} = {-# SCC solutions #-} do
   goal@(Goal _ _ ts us) <- st_goals
   guard (not (null (Set.intersection ts us)))
   let t:_ = filter (`Set.member` us) (Set.toList ts)
