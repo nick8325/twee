@@ -43,6 +43,7 @@ joinCriticalPair ::
   Index f (Equation f) -> Index f a ->
   CriticalPair f -> ([Equation f], Maybe (CriticalPair f, [Model f]))
 joinCriticalPair eqns idx cp =
+  {-# SCC joinCriticalPair #-}
   case allSteps eqns idx cp of
     Just cp ->
       case groundJoin eqns idx (branches (And [])) cp of
