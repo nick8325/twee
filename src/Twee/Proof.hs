@@ -61,6 +61,7 @@ data Axiom f =
 -- Turns a derivation into a proof, while checking the derivation.
 certify :: Derivation f -> Proof f
 certify p =
+  {-# SCC certify #-}
   case check p of
     Nothing -> error ("Invalid proof created!\n" ++ show p)
     Just eqn -> Proof eqn p
