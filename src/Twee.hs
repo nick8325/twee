@@ -55,8 +55,8 @@ data Goal f =
   Goal {
     goal_name :: String,
     goal_eqn  :: Equation f,
-    goal_lhs  :: Set (Reduction f),
-    goal_rhs  :: Set (Reduction f) }
+    goal_lhs  :: Set (Resulting f),
+    goal_rhs  :: Set (Resulting f) }
 
 defaultConfig :: Config
 defaultConfig =
@@ -330,7 +330,7 @@ addGoal _config state@State{..} name (t :=: u) =
   normaliseGoals $
   state {
     st_goals =
-      Goal name (t :=: u) (Set.singleton (Refl t)) (Set.singleton (Refl u)):st_goals }
+      Goal name (t :=: u) (Set.singleton (reduce (Refl t))) (Set.singleton (reduce (Refl u))):st_goals }
 
 ----------------------------------------------------------------------
 -- Interreduction.
@@ -441,7 +441,8 @@ solutions State{..} = {-# SCC solutions #-} do
       -- Strict so that we check the proof before returning a solution
       !p =
         Proof.certify $
-          reductionProof t `Proof.trans` Proof.symm (reductionProof u)
+          reductionProof (reduction t) `Proof.trans`
+          Proof.symm (reductionProof (reduction u))
   return (goal, p)
 
 {-# INLINEABLE report #-}

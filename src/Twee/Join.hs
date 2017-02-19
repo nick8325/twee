@@ -90,16 +90,16 @@ step3 eqns idx cp =
 {-# INLINEABLE joinWith #-}
 joinWith ::
   (Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
-  Index f (Equation f) -> Index f a -> (Term f -> Reduction f) -> CriticalPair f -> Maybe (CriticalPair f)
+  Index f (Equation f) -> Index f a -> (Term f -> Resulting f) -> CriticalPair f -> Maybe (CriticalPair f)
 joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
   | subsumed Symmetric eqns idx eqn = Nothing
   | otherwise =
     Just cp {
       cp_eqn = eqn,
       cp_proof =
-        Proof.symm (reductionProof lred) `Proof.trans`
+        Proof.symm (reductionProof (reduction lred)) `Proof.trans`
         cp_proof `Proof.trans`
-        reductionProof rred }
+        reductionProof (reduction rred) }
   where
     lred = reduce lhs
     rred = reduce rhs
@@ -145,7 +145,7 @@ groundJoin eqns idx ctx r@CriticalPair{cp_eqn = t :=: u} =
     (model:_, _)
       | isJust (allSteps eqns idx r { cp_eqn = t' :=: u' }) -> Left model
       | otherwise ->
-          let model1 = optimise model weakenModel (\m -> valid m nt && valid m nu)
+          let model1 = optimise model weakenModel (\m -> valid m (reduction nt) && valid m (reduction nu))
               model2 = optimise model1 weakenModel (\m -> isNothing (allSteps eqns idx r { cp_eqn = result (normaliseIn m t) :=: result (normaliseIn m u) }))
 
               diag [] = Or []

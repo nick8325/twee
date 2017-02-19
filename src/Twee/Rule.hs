@@ -235,12 +235,6 @@ data Reduction f =
   | Cong {-# UNPACK #-} !(Fun f) ![Reduction f]
   deriving Show
 
--- Two reductions are equal if they rewrite to the same thing.
--- This is useful for normalForms.
-instance Eq (Reduction f) where x == y = compare x y == EQ
-instance Ord (Reduction f) where
-  compare = comparing (\p -> result p)
-
 instance Symbolic (Reduction f) where
   type ConstantOf (Reduction f) = f
   termsDL (Step _ _ sub) = termsDL sub
@@ -266,7 +260,7 @@ trans p q = Trans p q
 
 cong :: Fun f -> [Reduction f] -> Reduction f
 cong f ps
-  | all isRefl ps = Refl (result (Cong f ps))
+  | all isRefl ps = Refl (result (reduce (Cong f ps)))
   | otherwise = Cong f ps
   where
     isRefl Refl{} = True
@@ -283,28 +277,6 @@ congPath (n:ns) (App f t) p | n <= length ts =
   where
     ts = unpack t
 congPath _ _ _ = error "bad path"
-
--- Find the initial term of a rewrite proof.
-initial :: Reduction f -> Term f
-initial (Trans p _) = initial p
-initial (Refl t) = t
-initial p = {-# SCC result_emitInitial #-} build (emitInitial p)
-  where
-    emitInitial (Step _ r sub) = Term.subst sub (lhs r)
-    emitInitial (Refl t) = builder t
-    emitInitial (Trans p _) = emitInitial p
-    emitInitial (Cong f ps) = app f (map emitInitial ps)
-
--- Find the final term of a rewrite proof.
-result :: Reduction f -> Term f
-result (Trans _ q) = result q
-result (Refl t) = t
-result p = {-# SCC result_emitResult #-} build (emitResult p)
-  where
-    emitResult (Step _ r sub) = Term.subst sub (rhs r)
-    emitResult (Refl t) = builder t
-    emitResult (Trans _ q) = emitResult q
-    emitResult (Cong f ps) = app f (map emitResult ps)
 
 -- The list of all rewrite rules used in a rewrite proof
 steps :: Reduction f -> [Reduction f]
@@ -329,13 +301,46 @@ reductionProof (Cong f ps) = Proof.cong f (map reductionProof ps)
 step :: (Has a VersionedId, Has a (Rule f), Has a (Proof f)) => a -> Subst f -> Reduction f
 step x sub = Step (Lemma (the x) (the x)) (the x) sub
 
+----------------------------------------------------------------------
+-- A rewrite proof with the final term attached.
+-- Has an Ord instance which compares the final term.
+----------------------------------------------------------------------
+
+data Resulting f =
+  Resulting {
+    result :: {-# UNPACK #-} !(Term f),
+    reduction :: !(Reduction f) }
+  deriving (Show, Generic)
+
+instance Eq (Resulting f) where x == y = compare x y == EQ
+instance Ord (Resulting f) where compare = comparing result
+
+instance Symbolic (Resulting f) where
+  type ConstantOf (Resulting f) = f
+
+instance PrettyTerm f => Pretty (Resulting f) where
+  pPrint = pPrint . reduction
+
+reduce :: Reduction f -> Resulting f
+reduce p =
+  Resulting (res p) p
+  where
+    res (Trans _ q) = res q
+    res (Refl t) = t
+    res p = {-# SCC res_emitRes #-} build (emitResult p)
+
+    emitResult (Step _ r sub) = Term.subst sub (rhs r)
+    emitResult (Refl t) = builder t
+    emitResult (Trans _ q) = emitResult q
+    emitResult (Cong f ps) = app f (map emitResult ps)
+
 --------------------------------------------------------------------------------
 -- Strategy combinators.
 --------------------------------------------------------------------------------
 
 -- Normalise a term wrt a particular strategy.
 {-# INLINE normaliseWith #-}
-normaliseWith :: PrettyTerm f => (Term f -> Bool) -> Strategy f -> Term f -> Reduction f
+normaliseWith :: PrettyTerm f => (Term f -> Bool) -> Strategy f -> Term f -> Resulting f
 normaliseWith ok strat t = {-# SCC normaliseWith #-} res
   where
     res = aux 0 (Refl t) t
@@ -344,14 +349,15 @@ normaliseWith ok strat t = {-# SCC normaliseWith #-} res
             prettyShow p)
     aux n p t =
       case parallel strat t of
-        (q:_) | u <- result q, ok u ->
+        (q:_) | u <- result (reduce q), ok u ->
           aux (n+1) (p `trans` q) u
-        _ -> p
+        _ -> Resulting t p
 
 -- Compute all normal forms of a term wrt a particular strategy.
 {-# INLINEABLE normalForms #-}
-normalForms :: Function f => Strategy f -> [Reduction f] -> Set (Reduction f)
-normalForms strat ps = {-# SCC normalForms #-} go Set.empty Set.empty ps
+normalForms :: Function f => Strategy f -> [Resulting f] -> Set (Resulting f)
+normalForms strat ps =
+  {-# SCC normalForms #-} go Set.empty Set.empty ps
   where
     go _ norm [] = norm
     go dead norm (p:ps)
@@ -361,7 +367,9 @@ normalForms strat ps = {-# SCC normalForms #-} go Set.empty Set.empty ps
       | otherwise =
         go (Set.insert p dead) norm (qs ++ ps)
       where
-        qs = [ p `Trans` q | q <- anywhere strat (result p) ]
+        qs =
+          [ reduce (reduction p `Trans` q)
+          | q <- anywhere strat (result p) ]
 
 -- Apply a strategy anywhere in a term.
 anywhere :: Strategy f -> Strategy f
