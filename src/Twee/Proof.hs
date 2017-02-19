@@ -11,9 +11,7 @@ import Twee.Utils
 import Control.Monad
 import Data.Maybe
 import Data.List
-import Data.Function
 import qualified Data.Map.Strict as Map
-import Data.Map(Map)
 
 ----------------------------------------------------------------------
 -- Equational proofs. Only valid proofs can be constructed.

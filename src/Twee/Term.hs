@@ -514,7 +514,7 @@ pathToPosition t ns = term 0 t ns
     term k _ [] = k
     term k t (n:ns) = list (k+1) (children t) n ns
 
-    list k Empty _ _ = error "bad path"
-    list k (Cons t u) 0 ns = term k t ns
+    list _ Empty _ _ = error "bad path"
+    list k (Cons t _) 0 ns = term k t ns
     list k (Cons t u) n ns =
       list (k+len t) u (n-1) ns

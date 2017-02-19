@@ -10,7 +10,6 @@ import Data.Char
 import Data.Either
 import Twee hiding (message)
 import Twee.Base hiding (char, lookup, (<>))
-import Twee.Rule hiding (Axiom)
 import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Utils
@@ -28,7 +27,6 @@ import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
 import Jukebox.Monotonox.ToFOF
 import Jukebox.TPTP.Print
-import qualified Data.Set as Set
 
 parseConfig :: OptionParser Config
 parseConfig =

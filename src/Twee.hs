@@ -4,8 +4,8 @@ module Twee where
 import Twee.Base
 import Twee.Rule
 import Twee.Equation
-import Twee.Proof(Proof, Derivation, Lemma(..))
 import qualified Twee.Proof as Proof
+import Twee.Proof(Proof)
 import Twee.CP hiding (Config)
 import qualified Twee.CP as CP
 import Twee.Join
@@ -149,7 +149,7 @@ findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
   rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
   rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
   overlap <-
-    overlapAt st_oriented_rules (fromIntegral passive_pos)
+    overlapAt (fromIntegral passive_pos)
       (renameAvoiding (the rule2 :: Rule f) (the rule1)) (the rule2)
   return (rule1, rule2, overlap)
 
@@ -325,7 +325,7 @@ addAxiom config state n name eqn =
 -- Add a new goal.
 {-# INLINEABLE addGoal #-}
 addGoal :: Function f => Config -> State f -> String -> Equation f -> State f
-addGoal config state@State{..} name (t :=: u) =
+addGoal _config state@State{..} name (t :=: u) =
   normaliseGoals $
   state {
     st_goals =

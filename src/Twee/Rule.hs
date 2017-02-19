@@ -10,13 +10,10 @@ import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
 import Data.Maybe
-import Data.Either
 import Data.List
 import Twee.Utils
 import qualified Data.Set as Set
 import Data.Set(Set)
-import qualified Data.Map.Strict as Map
-import Data.Map(Map)
 import qualified Twee.Term as Term
 import GHC.Generics
 import Data.Ord
@@ -246,7 +243,7 @@ instance Ord (Reduction f) where
 
 instance Symbolic (Reduction f) where
   type ConstantOf (Reduction f) = f
-  termsDL (Step _ _ rule sub) = termsDL sub
+  termsDL (Step _ _ _ sub) = termsDL sub
   termsDL (Refl t) = termsDL t
   termsDL (Trans p q) = termsDL p `mplus` termsDL q
   termsDL (Cong _ ps) = termsDL ps
@@ -295,7 +292,7 @@ initial p = {-# SCC result_emitInitial #-} build (emitInitial p)
   where
     emitInitial (Step _ _ r sub) = Term.subst sub (lhs r)
     emitInitial (Refl t) = builder t
-    emitInitial (Trans p q) = emitInitial p
+    emitInitial (Trans p _) = emitInitial p
     emitInitial (Cong f ps) = app f (map emitInitial ps)
 
 -- Find the final term of a rewrite proof.
@@ -320,7 +317,7 @@ steps r = aux r []
 
 -- Turn a reduction into a proof.
 reductionProof :: Reduction f -> Derivation f
-reductionProof (Step n p rule sub) =
+reductionProof (Step n p _ sub) =
   subst sub (Proof.lemma (Proof.Lemma n p))
 reductionProof (Refl t) = Proof.Refl t
 reductionProof (Trans p q) =
@@ -367,7 +364,7 @@ anywhere strat t = strat t ++ nested (anywhere strat) t
 
 -- Apply a strategy to some child of the root function.
 nested :: Strategy f -> Strategy f
-nested strat Var{} = []
+nested _ Var{} = []
 nested strat (App f ts) =
   cong f <$> inner [] ts
   where

@@ -80,16 +80,14 @@ asymmetricOverlaps ::
 asymmetricOverlaps idx posns r1 r2 = do
   n <- positionsChurch posns
   ChurchList.fromMaybe $
-    overlapAt idx n r1 r2 >>=
+    overlapAt n r1 r2 >>=
     simplifyOverlap idx
 
 -- Create an overlap at a particular position in a term.
 -- Doesn't simplify or check for primeness.
 {-# INLINE overlapAt #-}
-overlapAt ::
-  (Function f, Has a (Rule f)) =>
-  Index f a -> Int -> Rule f -> Rule f -> Maybe (Overlap f)
-overlapAt !idx !n (Rule _ !outer !outer') (Rule _ !inner !inner') = do
+overlapAt :: Int -> Rule f -> Rule f -> Maybe (Overlap f)
+overlapAt !n (Rule _ !outer !outer') (Rule _ !inner !inner') = do
   let t = at n (singleton outer)
   sub <- unifyTri inner t
   let
