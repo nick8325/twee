@@ -5,7 +5,7 @@ import Twee.Base
 import Twee.Rule
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Proof)
+import Twee.Proof(Proof, Axiom(..))
 import Twee.CP hiding (Config)
 import qualified Twee.CP as CP
 import Twee.Join
@@ -50,13 +50,15 @@ data State f =
     st_considered     :: {-# UNPACK #-} !Int,
     st_messages_rev   :: ![Message f] }
 
--- For goal terms we store the set of all their normal forms
+-- For goal terms we store the set of all their normal forms.
+-- Name and number are for information only.
 data Goal f =
   Goal {
-    goal_name :: String,
-    goal_eqn  :: Equation f,
-    goal_lhs  :: Set (Resulting f),
-    goal_rhs  :: Set (Resulting f) }
+    goal_name   :: String,
+    goal_number :: Int,
+    goal_eqn    :: Equation f,
+    goal_lhs    :: Set (Resulting f),
+    goal_rhs    :: Set (Resulting f) }
 
 defaultConfig :: Config
 defaultConfig =
@@ -315,22 +317,30 @@ consider config state@State{..} cp =
 
 -- Add a new equation.
 {-# INLINEABLE addAxiom #-}
-addAxiom :: Function f => Config -> State f -> Int -> String -> Equation f -> State f
-addAxiom config state n name eqn =
+addAxiom :: Function f => Config -> State f -> Axiom f -> State f
+addAxiom config state axiom =
   consider config state $
     CriticalPair {
-      cp_eqn = eqn,
+      cp_eqn = axiom_eqn axiom,
       cp_top = Nothing,
-      cp_proof = Proof.axiom (Proof.Axiom n name eqn) }
+      cp_proof = Proof.axiom axiom }
 
 -- Add a new goal.
 {-# INLINEABLE addGoal #-}
-addGoal :: Function f => Config -> State f -> String -> Equation f -> State f
-addGoal _config state@State{..} name (t :=: u) =
-  normaliseGoals $
-  state {
-    st_goals =
-      Goal name (t :=: u) (Set.singleton (reduce (Refl t))) (Set.singleton (reduce (Refl u))):st_goals }
+addGoal :: Function f => Config -> State f -> Goal f -> State f
+addGoal _config state@State{..} goal =
+  normaliseGoals state { st_goals = goal:st_goals }
+
+-- Create a goal.
+{-# INLINE goal #-}
+goal :: Int -> String -> Equation f -> Goal f
+goal n name (t :=: u) =
+  Goal {
+    goal_name = name,
+    goal_number = n,
+    goal_eqn = t :=: u,
+    goal_lhs = Set.singleton (reduce (Refl t)),
+    goal_rhs = Set.singleton (reduce (Refl u)) }
 
 ----------------------------------------------------------------------
 -- Interreduction.
@@ -407,9 +417,9 @@ data Output m f =
 complete :: (Function f, Monad m) => Output m f -> Config -> State f -> m (State f)
 complete output@Output{..} config state =
   let (progress, state') = complete1 config state in do
+    mapM_ output_message (messages state')
     when (st_label state `div` 100 /= st_label state' `div` 100) $
       output_report state'
-    mapM_ output_message (messages state')
     if progress then
       complete output config (clearMessages state')
     else return state'
@@ -434,7 +444,7 @@ solved = not . null . solutions
 {-# INLINEABLE solutions #-}
 solutions :: Function f => State f -> [(Goal f, Proof f)]
 solutions State{..} = {-# SCC solutions #-} do
-  goal@(Goal _ _ ts us) <- st_goals
+  goal@Goal{goal_lhs = ts, goal_rhs = us} <- st_goals
   guard (not (null (Set.intersection ts us)))
   let t:_ = filter (`Set.member` us) (Set.toList ts)
       u:_ = filter (== t) (Set.toList us)

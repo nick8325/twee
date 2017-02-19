@@ -8,6 +8,7 @@ import Twee hiding (message)
 import Twee.Base hiding (char, lookup, (<>))
 import Twee.Equation
 import qualified Twee.Proof as Proof
+import Twee.Proof(Axiom(..), describeEquation)
 import Twee.Utils
 import qualified Twee.CP as CP
 import Data.Ord
@@ -20,7 +21,7 @@ import Jukebox.Options
 import Jukebox.Toolbox
 import Jukebox.Name
 import qualified Jukebox.Form as Jukebox
-import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term)
+import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom)
 import Jukebox.Monotonox.ToFOF
 import Jukebox.TPTP.Print
 
@@ -140,9 +141,9 @@ addNarrowing (axioms, goals) =
     (ground, nonground) = partition (isGround . what) goals
 
     eqGoal =
-      [Input "$contradiction" Conjecture (build (con falseCon) :=: build (con trueCon))]
+      [Input "contradiction" Conjecture (build (con falseCon) :=: build (con trueCon))]
     eqAxiom =
-      [Input "$equality" Axiom
+      [Input "equals" Jukebox.Axiom
         (build (app equalsCon [var (V 0), var (V 0)]) :=: build (con trueCon))]
 
     encode inp@Input{what = t :=: u} =
@@ -173,11 +174,11 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
     goals1  = map (fmap (bothSides replace)) goals0
     (axioms2, goals2) = addNarrowing (axioms1, goals1)
 
-    unInput input = (tag input, what input)
-    withGoals =
-      foldl' (uncurry . addGoal config) initialState (map unInput goals2)
-    withAxioms =
-      foldl' (\state (n, (name, x)) -> addAxiom config state n name x) withGoals (zip [1..] (map unInput axioms2))
+    goals = [ goal n (tag inp) (canonicalise (what inp)) | (n, inp) <- zip [1..] goals2 ]
+    axioms = [ Axiom n (tag inp) (canonicalise (what inp)) | (n, inp) <- zip [1..] axioms2 ]
+
+    withGoals = foldl' (addGoal config) initialState goals
+    withAxioms = foldl' (addAxiom config) withGoals axioms
 
   let
     line = unless (quiet globals) (putStrLn "")
@@ -192,11 +193,30 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
       output_message = say . prettyShow }
 
   line
-  state <- complete output config withAxioms
+  say "Here is the input problem:"
+  forM_ axioms $ \Axiom{..} ->
+    say $ "  " ++
+      describeEquation "Axiom"
+        (show axiom_number) (Just axiom_name) axiom_eqn
+  forM_ goals $ \Goal{..} ->
+    say $ "  " ++
+      describeEquation "Goal"
+        (show goal_number) (Just goal_name) goal_eqn
 
-  when (solved state && not (quiet globals)) $ do
+  line
+  state <- complete output config withAxioms
+  line
+
+  when (solved state) $ do
+    let sol = solutions state
+    say ("Proved the following conjecture" ++ if length sol > 1 then "s:" else ":")
+    forM_ sol $ \(Goal{..}, _) ->
+      say $ "  " ++
+        describeEquation "Goal"
+          (show goal_number) (Just goal_name) goal_eqn
+    say "The proof is as follows."
     line
-    prettyPrint $ Proof.present
+    say $ prettyShow $ Proof.present
       [ (name, proof)
       | (Goal{goal_name = name}, proof) <- solutions state ]
     line

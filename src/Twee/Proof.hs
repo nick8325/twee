@@ -3,7 +3,7 @@ module Twee.Proof(
   Proof, Derivation(..), Lemma(..), Axiom(..),
   certify, equation, derivation,
   lemma, axiom, symm, trans, cong, simplify,
-  Presentation(..), present) where
+  Presentation(..), present, describeEquation) where
 
 import Twee.Base
 import Twee.Equation
@@ -361,20 +361,30 @@ pPrintLemma lemmaName p =
 pPrintPresentation :: PrettyTerm f => Presentation f -> Doc
 pPrintPresentation (Presentation axioms lemmas goals) =
   vcat $ intersperse (text "") $
-    [ ppTitle ("Axiom " ++ show n ++ " (" ++ name ++ ")") eqn
-    | Axiom n name eqn <- axioms ] ++
-    [ pp ("Lemma " ++ num n) p
+    vcat [ text (describeEquation "Axiom" (show n) (Just name) eqn)
+         | Axiom n name eqn <- axioms ]:
+    [ pp "Lemma" (num n) Nothing p
     | Lemma n p <- lemmas ] ++
-    [ pp ("Goal " ++ name) p
-    | (name, p) <- goals ]
+    [ pp "Goal" (show num) (Just name) p
+    | (num, (name, p)) <- zip [1..] goals ]
   where
-    pp title p =
-      ppTitle title (equation p) $$
+    pp kind n mname p =
+      text (describeEquation kind n mname (equation p)) $$
       text "Proof:" $$
       pPrintLemma num p
-    ppTitle title eqn =
-      text (title ++ ":") <+> pPrint eqn <> text "."
 
     num x = show (fromJust (Map.lookup x nums))
     nums = Map.fromList (zip (map lemma_id lemmas) [n+1 ..])
     n = maximum $ 0:map axiom_number axioms
+
+-- Format an equation nicely. Used both here and in the main file.
+describeEquation ::
+  PrettyTerm f =>
+  String -> String -> Maybe String -> Equation f -> String
+describeEquation kind num mname eqn =
+  prettyShow $
+  text kind <+> text num <>
+  (case mname of
+     Nothing -> text ""
+     Just name -> text (" (" ++ name ++ ")")) <>
+  text ":" <+> pPrint eqn <> text "."
