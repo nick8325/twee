@@ -4,7 +4,7 @@ import Control.Monad
 import Data.Char
 import Data.Either
 import Twee hiding (message)
-import Twee.Base hiding (char, lookup, (<>))
+import Twee.Base hiding (char, lookup, (<>), vars)
 import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof
@@ -24,6 +24,7 @@ import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom)
 import Jukebox.Monotonox.ToFOF
 import Jukebox.TPTP.Print
+import qualified Data.Set as Set
 
 parseConfig :: OptionParser Config
 parseConfig =
@@ -189,8 +190,10 @@ addNarrowing TweeContext{..} prob =
           justification =
             Input {
               tag  = "new_negated_conjecture",
-              kind = Jukebox.Axiom,
-              what = toForm (clause (map snd equalityLiterals)),
+              kind = Jukebox.Axiom "negated_conjecture",
+              what =
+                let form = And (map (Literal . snd) equalityLiterals) in
+                ForAll (Bind (Set.fromList (vars form)) form),
               source =
                 Inference "encode_existential" "esa"
                   (map (fmap toForm . fst) nonGroundGoals) }
@@ -334,7 +337,7 @@ presentToJukebox ::
 presentToJukebox ctx axioms goals Presentation{..} =
   [ Input {
       tag = pg_name,
-      kind = Jukebox.Axiom,
+      kind = Jukebox.Axiom "axiom",
       what = false,
       source =
         Inference "resolution" "cth"
@@ -367,7 +370,7 @@ presentToJukebox ctx axioms goals Presentation{..} =
     derivFrom sources p =
       Input {
         tag = "step",
-        kind = Jukebox.Axiom,
+        kind = Jukebox.Axiom "axiom",
         what = jukeboxEquation (equation (certify p)),
         source =
           Inference "rw" "thm" sources }
