@@ -5,7 +5,7 @@ import Twee.Base
 import Twee.Rule
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Proof, Axiom(..))
+import Twee.Proof(Proof, Axiom(..), ProvedGoal(..))
 import Twee.CP hiding (Config)
 import qualified Twee.CP as CP
 import Twee.Join
@@ -439,9 +439,9 @@ solved = not . null . solutions
 
 -- Return whatever goals we have proved and their proofs.
 {-# INLINEABLE solutions #-}
-solutions :: Function f => State f -> [(Goal f, Proof f)]
+solutions :: Function f => State f -> [ProvedGoal f]
 solutions State{..} = {-# SCC solutions #-} do
-  goal@Goal{goal_lhs = ts, goal_rhs = us} <- st_goals
+  Goal{goal_lhs = ts, goal_rhs = us, ..} <- st_goals
   guard (not (null (Set.intersection ts us)))
   let t:_ = filter (`Set.member` us) (Set.toList ts)
       u:_ = filter (== t) (Set.toList us)
@@ -450,7 +450,11 @@ solutions State{..} = {-# SCC solutions #-} do
         Proof.certify $
           reductionProof (reduction t) `Proof.trans`
           Proof.symm (reductionProof (reduction u))
-  return (goal, p)
+  return
+    ProvedGoal {
+      pg_number = goal_number,
+      pg_name = goal_name,
+      pg_proof = p }
 
 {-# INLINEABLE report #-}
 report :: Function f => State f -> String

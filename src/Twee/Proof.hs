@@ -3,7 +3,7 @@ module Twee.Proof(
   Proof, Derivation(..), Lemma(..), Axiom(..),
   certify, equation, derivation,
   lemma, axiom, symm, trans, cong, simplify, usedLemmas, usedAxioms,
-  Presentation(..), present, describeEquation) where
+  Presentation(..), ProvedGoal(..), present, describeEquation) where
 
 import Twee.Base
 import Twee.Equation
@@ -206,17 +206,24 @@ data Presentation f =
   Presentation {
     pres_axioms :: [Axiom f],
     pres_lemmas :: [Lemma f],
-    pres_goals  :: [(String, Proof f)] }
+    pres_goals  :: [ProvedGoal f] }
+  deriving Show
+
+data ProvedGoal f =
+  ProvedGoal {
+    pg_number :: Int,
+    pg_name   :: String,
+    pg_proof  :: Proof f }
   deriving Show
 
 instance PrettyTerm f => Pretty (Presentation f) where
   pPrint = pPrintPresentation
 
-present :: PrettyTerm f => [(String, Proof f)] -> Presentation f
+present :: PrettyTerm f => [ProvedGoal f] -> Presentation f
 present goals =
   -- First find all the used lemmas, then hand off to presentWithGoals
   presentWithGoals goals
-    (used Map.empty (concatMap (usedLemmas . derivation . snd) goals))
+    (used Map.empty (concatMap (usedLemmas . derivation . pg_proof) goals))
   where
     used lems [] = Map.elems lems
     used lems (lem@(Lemma n p):xs)
@@ -227,7 +234,7 @@ present goals =
 
 presentWithGoals ::
   PrettyTerm f =>
-  [(String, Proof f)] -> [Lemma f] -> Presentation f
+  [ProvedGoal f] -> [Lemma f] -> Presentation f
 presentWithGoals goals lemmas
   -- We inline a lemma if one of the following holds:
   --   * It only has one step
@@ -238,7 +245,7 @@ presentWithGoals goals lemmas
   | Map.null inlinings =
     let
       axioms = usort $
-        concatMap (usedAxioms . derivation . snd) goals ++
+        concatMap (usedAxioms . derivation . pg_proof) goals ++
         concatMap (usedAxioms . derivation . lemma_proof) lemmas
     in
       Presentation axioms lemmas goals
@@ -248,8 +255,8 @@ presentWithGoals goals lemmas
       inline Lemma{..} = Map.lookup lemma_id inlinings
 
       goals' =
-        [ (name, certify $ simplify inline (derivation p))
-        | (name, p) <- goals ]
+        [ goal { pg_proof = certify $ simplify inline (derivation pg_proof) }
+        | goal@ProvedGoal{..} <- goals ]
       lemmas' =
         [ Lemma n (certify $ simplify inline (derivation p))
         | Lemma n p <- lemmas, not (n `Map.member` inlinings) ]
@@ -298,7 +305,7 @@ presentWithGoals goals lemmas
         [ (lemma_id, 1)
         | Lemma{..} <-
             concatMap lem
-              (map (derivation . snd) goals ++
+              (map (derivation . pg_proof) goals ++
                map (derivation . lemma_proof) lemmas) ]
 
     -- Find all lemmas that occur at the root
@@ -366,8 +373,8 @@ pPrintPresentation (Presentation axioms lemmas goals) =
          | Axiom n name eqn <- axioms ]:
     [ pp "Lemma" (num n) Nothing p
     | Lemma n p <- lemmas ] ++
-    [ pp "Goal" (show num) (Just name) p
-    | (num, (name, p)) <- zip [1..] goals ]
+    [ pp "Goal" (show num) (Just pg_name) pg_proof
+    | (num, ProvedGoal{..}) <- zip [1..] goals ]
   where
     pp kind n mname p =
       text (describeEquation kind n mname (equation p)) $$

@@ -7,7 +7,7 @@ import Twee hiding (message)
 import Twee.Base hiding (char, lookup, (<>))
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Axiom(..), Lemma(..), describeEquation, Presentation(..))
+import Twee.Proof
 import Twee.Pretty
 import Twee.Utils
 import qualified Twee.CP as CP
@@ -164,8 +164,9 @@ addNarrowing TweeContext{..} prob =
   where
     (unchanged, nonGroundGoals) = partitionEithers (map f prob)
       where
-        f inp@Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])} =
-          Right (inp, (x, y))
+        f inp@Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])}
+          | not (ground x) || not (ground y) =
+            Right (inp, (x, y))
         f inp = Left inp
 
     equalityClauses
@@ -204,31 +205,34 @@ addNarrowing TweeContext{..} prob =
 
         in [input tag form | (tag, form) <- equalityLiterals]
 
+data PreEquation =
+  PreEquation {
+    pre_name :: String,
+    pre_form :: Input Form,
+    pre_eqn  :: (Jukebox.Term, Jukebox.Term) }
+
 -- Split the problem into axioms and ground goals.
 identifyProblem ::
-  TweeContext -> Problem Clause ->
-  ([Input (Jukebox.Term, Jukebox.Term)],
-   [Input (Jukebox.Term, Jukebox.Term)])
+  TweeContext -> Problem Clause -> ([PreEquation], [PreEquation])
 identifyProblem TweeContext{..} prob =
   partitionEithers (map identify prob)
 
   where
-    toInput inp x =
-      Input {
-        tag = tag inp,
-        kind = kind inp,
-        what = x,
-        source = Inference "tautology" "thm" [fmap toForm inp] }
+    pre inp x =
+      PreEquation {
+        pre_name = tag inp,
+        pre_form = fmap toForm inp,
+        pre_eqn = x }
 
     identify inp@Input{what = Clause (Bind _ [Pos (t Jukebox.:=: u)])} =
-      Left (toInput inp (t, u))
+      Left (pre inp (t, u))
     identify inp@Input{what = Clause (Bind _ [Neg (t Jukebox.:=: u)])}
       | ground t && ground u =
-        Right (toInput inp (t, u))
+        Right (pre inp (t, u))
     identify inp@Input{what = Clause (Bind _ [])} =
       -- The empty clause can appear after clausification if
       -- the conjecture was trivial
-      Left (toInput inp (Jukebox.Var ctx_var, ctx_minimal :@: []))
+      Left (pre inp (Jukebox.Var ctx_var, ctx_minimal :@: []))
     identify inp =
       error ("Problem contains a non-UEQ axiom:\n  " ++ show (prettyNames inp) ++ "\n")
 
@@ -252,11 +256,11 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
       canonicalise (tweeTerm prec t :=: tweeTerm prec u)
 
     goals =
-      [ goal n (tag inp) (toEquation (what inp))
-      | (n, inp) <- zip [1..] goals0 ]
+      [ goal n pre_name (toEquation pre_eqn)
+      | (n, PreEquation{..}) <- zip [1..] goals0 ]
     axioms =
-      [ Axiom n (tag inp) (toEquation (what inp))
-      | (n, inp) <- zip [1..] axioms0 ]
+      [ Axiom n pre_name (toEquation pre_eqn)
+      | (n, PreEquation{..}) <- zip [1..] axioms0 ]
 
     withGoals = foldl' (addGoal config) initialState goals
     withAxioms = foldl' (addAxiom config) withGoals axioms
@@ -291,26 +295,25 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
   when (solved state) $ do
     let
       sol = solutions state
-      pres =
-        Proof.present
-          [ (name, proof)
-          | (Goal{goal_name = name}, proof) <- solutions state ]
+      pres = present (solutions state)
 
     say ("Proved the following conjecture" ++ if length sol > 1 then "s:" else ":")
-    forM_ sol $ \(Goal{..}, _) ->
+    forM_ sol $ \ProvedGoal{..} ->
       say $ "  " ++
         describeEquation "Goal"
-          (show goal_number) (Just goal_name) goal_eqn
+          (show pg_number) (Just pg_name) (equation pg_proof)
     say "The proof is as follows."
     line
-    say $ prettyShow $ Proof.present
-      [ (name, proof)
-      | (Goal{goal_name = name}, proof) <- solutions state ]
+    say $ prettyShow pres
 
     when tstp $ do
+      line
       say "SZS output start CNFRefutation"
-      -- print (pPrintProof ( pres)
-      -- XXX transform back to Jukebox and then use Jukebox.pPrintProof
+      print $ pPrintProof $
+        presentToJukebox ctx
+          (zip (map axiom_number axioms) (map pre_form axioms0))
+          (zip (map goal_number goals) (map pre_form goals0))
+          pres
       say "SZS output end CNFRefutation"
       return ()
 
@@ -319,77 +322,66 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
   return $
     if solved state then Unsatisfiable else NoAnswer GaveUp
 
--- pPrintTSTPEquation :: PrettyTerm f => Equation f -> Doc
--- pPrintTSTPEquation (t :=: u) =
---   pPrintTSTPTerm t <+> text "=" <+> pPrintTSTPTerm u
+-- Transform a proof presentation into a Jukebox proof.
+presentToJukebox ::
+  TweeContext ->
+  -- Axioms, indexed by axiom number.
+  [(Int, Input Form)] ->
+  -- N.B. the formula here proves the negated goal.
+  [(Int, Input Form)] ->
+  Presentation (Extended Constant) ->
+  Problem Form
+presentToJukebox ctx axioms goals Presentation{..} =
+  [ Input {
+      tag = pg_name,
+      kind = Jukebox.Axiom,
+      what = false,
+      source =
+        Inference "resolution" "cth"
+          [-- A proof of t != u
+           fromJust (lookup pg_number goals),
+           -- A proof of t = u
+           fromJust (Map.lookup pg_number goal_proofs)] }
+  | ProvedGoal{..} <- pres_goals ]
 
--- pPrintTSTPTerm :: PrettyTerm f => Term f -> Doc
--- pPrintTSTPTerm (Var x) = pPrint x
--- pPrintTSTPTerm (App f t) =
---   text (escapeAtom (prettyShow f)) <>
---   case ts of
---     [] -> text ""
---     _ ->
---       parens (hcat (punctuate comma (map pPrintTSTPTerm ts)))
---   where
---     ts = unpack t
+  where
+    axiom_proofs =
+      Map.fromList
+        [ (axiom_number, fromJust (lookup axiom_number axioms))
+        | Axiom{..} <- pres_axioms ]
 
--- pPrintTSTP :: PrettyTerm f => Presentation f -> Doc
--- pPrintTSTP Presentation{..} =
---   vcat $
---     [ ppProof (ppLemma lemma) (lemma_proof lemma)
---     | lemma <- pres_lemmas ] ++
---     [ ppProof name (snd goal) $$
---       fun "cnf"
---         [text "contradiction_" <> name,
---          text "plain",
---          text "$false",
---          inference "resolution" "thm"
---            [name, text "negated_" <> name]] <> text "."
---     | (i, goal) <- zip [1..] pres_goals,
---       let name = text "goal" <> pPrint (i :: Int) ]
---   where
---     clause num eqn reason =
---       fun "cnf" [num, text "plain", pPrintTSTPEquation eqn, reason] <>
---       text "."
+    lemma_proofs =
+      Map.fromList [(lemma_id, tstp lemma_proof) | Lemma{..} <- pres_lemmas]
 
---     inference name status used =
---       fun "inference"
---         [name,
---          list [text "status" <> parens (text status)],
---          list used]
+    goal_proofs =
+      Map.fromList [(pg_number, tstp pg_proof) | ProvedGoal{..} <- pres_goals]
 
---     list :: [Doc] -> Doc
---     list = brackets . hcat . punctuate comma
+    tstp :: Proof (Extended Constant) -> Input Form
+    tstp = deriv . derivation
 
---     fun :: String -> [Doc] -> Doc
---     fun f xs = text f <> parens (hcat (punctuate comma xs))
+    deriv :: Derivation (Extended Constant) -> Input Form
+    deriv p@(Trans q r) = derivFrom (deriv r:sources q) p
+    deriv p = derivFrom (sources p) p
 
---     ppLemma Lemma{..} = text "lem" <> pPrint lemma_id
---     ppAxiom Axiom{..} = text "ax" <> pPrint axiom_number
+    derivFrom :: [Input Form] -> Derivation (Extended Constant) -> Input Form
+    derivFrom sources p =
+      Input {
+        tag = "step",
+        kind = Jukebox.Axiom,
+        what = jukeboxEquation (equation (certify p)),
+        source =
+          Inference "rw" "thm" sources }
 
---     ppProof name p =
---       fst $ from Nothing (Proof.derivation p)
---       where
---         makeName Nothing = name
---         makeName (Just n) = name <> text "_" <> pPrint (n :: Int)
+    jukeboxEquation :: Equation (Extended Constant) -> Form
+    jukeboxEquation (t :=: u) =
+      toForm $ clause [Pos (jukeboxTerm ctx t Jukebox.:=: jukeboxTerm ctx u)]
 
---         makeClause mn p used =
---           clause (makeName mn) (Proof.equation (Proof.certify p))
---             (inference "rw" "thm" used)
-
---         used p =
---           map ppLemma (usortBy (comparing lemma_id) (Proof.usedLemmas p)) ++
---           map ppAxiom (usort (Proof.usedAxioms p))
-
---         from mn p@(Proof.Trans q r) =
---           let
---             (doc1, used1) = from (Just (fromMaybe 0 mn + 1)) r
---             used2 = used q
---           in
---             (doc1 $$ makeClause mn p (used1 ++ used2), [makeName mn])
---         from mn p =
---           (makeClause mn p (used p), [makeName mn])
+    sources :: Derivation (Extended Constant) -> [Input Form]
+    sources p =
+      [ fromJust (Map.lookup lemma_id lemma_proofs)
+      | Lemma{..} <- usortBy (comparing lemma_id) (usedLemmas p) ] ++
+      [ fromJust (Map.lookup axiom_number axiom_proofs)
+      | Axiom{..} <- usort (usedAxioms p) ]
 
 main = do
   let twee = Tool "twee" "twee - the Wonderful Equation Engine" "1" "Reads in an equational problem and tries to prove it"
