@@ -8,7 +8,6 @@ import Twee.Base hiding (char, lookup, (<>), vars)
 import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof
-import Twee.Pretty
 import Twee.Utils
 import qualified Twee.CP as CP
 import Data.Ord
@@ -76,7 +75,7 @@ data Precedence = Precedence !Bool !(Maybe Int) !Int
   deriving (Eq, Ord)
 
 instance Sized Constant where
-  size con@Constant{..} = if con_arity >= 2 then 0 else 1
+  size Constant{..} = if con_arity >= 2 then 0 else 1
 instance Arity Constant where
   arity Constant{..} = con_arity
 

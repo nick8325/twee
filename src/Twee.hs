@@ -16,8 +16,6 @@ import qualified Data.Heap as Heap
 import Data.Heap(Heap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.IntMap(IntMap)
-import qualified Data.Map.Strict as Map
-import Data.Map(Map)
 import Data.Maybe
 import Data.List
 import Data.Function
