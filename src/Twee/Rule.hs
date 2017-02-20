@@ -116,12 +116,6 @@ orient (l :=: r) =
     ls = usort (vars l) \\ usort (vars r)
     rs = usort (vars r) \\ usort (vars l)
 
-    erase :: (Symbolic a, ConstantOf a ~ f) => [Var] -> a -> a
-    erase [] t = t
-    erase xs t = subst sub t
-      where
-        sub = fromMaybe __ $ flattenSubst [(x, minimalTerm) | x <- xs]
-
 -- Turn a pair of terms t and u into a rule t -> u by computing the
 -- orientation info (e.g. oriented, permutative or unoriented).
 makeRule :: Function f => Term f -> Term f -> Rule f
@@ -247,7 +241,7 @@ instance Symbolic (Reduction f) where
   subst_ sub (Trans p q) = Trans (subst_ sub p) (subst_ sub q)
   subst_ sub (Cong f ps) = Cong f (subst_ sub ps)
 
-instance PrettyTerm f => Pretty (Reduction f) where
+instance Function f => Pretty (Reduction f) where
   pPrint = pPrint . reductionProof
 
 -- Smart constructors for Trans and Cong which simplify Refl.
@@ -318,7 +312,7 @@ instance Ord (Resulting f) where compare = comparing result
 instance Symbolic (Resulting f) where
   type ConstantOf (Resulting f) = f
 
-instance PrettyTerm f => Pretty (Resulting f) where
+instance Function f => Pretty (Resulting f) where
   pPrint = pPrint . reduction
 
 reduce :: Reduction f -> Resulting f
@@ -340,7 +334,7 @@ reduce p =
 
 -- Normalise a term wrt a particular strategy.
 {-# INLINE normaliseWith #-}
-normaliseWith :: PrettyTerm f => (Term f -> Bool) -> Strategy f -> Term f -> Resulting f
+normaliseWith :: Function f => (Term f -> Bool) -> Strategy f -> Term f -> Resulting f
 normaliseWith ok strat t = {-# SCC normaliseWith #-} res
   where
     res = aux 0 (Refl t) t

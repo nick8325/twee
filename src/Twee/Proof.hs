@@ -109,8 +109,8 @@ instance Symbolic (Derivation f) where
   subst_ sub (Trans p q) = trans (subst_ sub p) (subst_ sub q)
   subst_ sub (Cong f ps) = cong f (subst_ sub ps)
 
-instance PrettyTerm f => Pretty (Proof f) where pPrint = pPrintLemma prettyShow
-instance PrettyTerm f => Pretty (Derivation f) where pPrint = pPrint . certify
+instance Function f => Pretty (Proof f) where pPrint = pPrintLemma prettyShow
+instance Function f => Pretty (Derivation f) where pPrint = pPrint . certify
 
 -- Simplify a derivation.
 -- After simplification, a derivation has the following properties:
@@ -118,13 +118,18 @@ instance PrettyTerm f => Pretty (Derivation f) where pPrint = pPrint . certify
 --   * Symm is pushed down next to Step
 --   * Each Cong only does one rewrite (i.e. contains one Step constructor)
 --   * Refl only occurs inside Cong
-simplify :: (Lemma f -> Maybe (Derivation f)) -> Derivation f -> Derivation f
+simplify :: Minimal f => (Lemma f -> Maybe (Derivation f)) -> Derivation f -> Derivation f
 simplify lem p = simp p
   where
     simp p@(UseLemma lemma sub) =
       case lem lemma of
         Nothing -> p
-        Just q -> simp (subst sub q)
+        Just q ->
+          let
+            -- Get rid of any variables that are not bound by sub
+            -- (e.g., ones which only occur internally in q)
+            dead = usort (vars q) \\ substDomain sub
+          in simp (subst sub (erase dead q))
     simp (Symm p) = symm (simp p)
     simp (Trans p q) = trans (simp p) (simp q)
     simp (Cong f ps) = cong f (map simp ps)
@@ -217,7 +222,7 @@ data ProvedGoal f =
 instance Function f => Pretty (Presentation f) where
   pPrint = pPrintPresentation
 
-present :: PrettyTerm f => [ProvedGoal f] -> Presentation f
+present :: Function f => [ProvedGoal f] -> Presentation f
 present goals =
   -- First find all the used lemmas, then hand off to presentWithGoals
   presentWithGoals goals
@@ -231,7 +236,7 @@ present goals =
           (usedLemmas (derivation p) ++ xs)
 
 presentWithGoals ::
-  PrettyTerm f =>
+  Function f =>
   [ProvedGoal f] -> [Lemma f] -> Presentation f
 presentWithGoals goals lemmas
   -- We inline a lemma if one of the following holds:
@@ -318,7 +323,7 @@ presentWithGoals goals lemmas
     oneStep _ = True
 
 -- Pretty-print the proof of a single lemma.
-pPrintLemma :: PrettyTerm f => (VersionedId -> String) -> Proof f -> Doc
+pPrintLemma :: Function f => (VersionedId -> String) -> Proof f -> Doc
 pPrintLemma lemmaName p =
   ppTerm (eqn_lhs (equation p)) $$ pp q
   where

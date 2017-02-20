@@ -67,7 +67,7 @@ var :: Var -> Builder f
 var = emitVar
 
 --------------------------------------------------------------------------------
--- Pattern synonyms for substitutions.
+-- Functions for substitutions.
 --------------------------------------------------------------------------------
 
 {-# INLINE listSubstList #-}
@@ -89,6 +89,10 @@ allSubst p = foldSubst (\x t y -> p x t && y) True
 {-# INLINE forMSubst_ #-}
 forMSubst_ :: Monad m => Subst f -> (Var -> TermList f -> m ()) -> m ()
 forMSubst_ sub f = foldSubst (\x t m -> do { f x t; m }) (return ()) sub
+
+{-# INLINE substDomain #-}
+substDomain :: Subst f -> [Var]
+substDomain (Subst sub) = map V (IntMap.keys sub)
 
 --------------------------------------------------------------------------------
 -- Substitution.

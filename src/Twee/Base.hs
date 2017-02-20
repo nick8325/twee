@@ -4,7 +4,7 @@
 module Twee.Base(
   Id(..), VersionedId(..), Symbolic(..), subst, GSymbolic(..), Has(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding,
-  Minimal(..), minimalTerm, isMinimal,
+  Minimal(..), minimalTerm, isMinimal, erase,
   Skolem(..), Arity(..), Sized(..), Ordered(..), Equals(..), Strictness(..), Function, Extended(..),
   module Twee.Term, module Twee.Pretty) where
 
@@ -20,6 +20,7 @@ import Data.DList(DList)
 import GHC.Generics hiding (Arity)
 import Data.Typeable
 import Data.Int
+import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
 
 -- Represents a unique identifier (e.g., for a rule).
@@ -166,6 +167,12 @@ isMinimal _ = False
 
 minimalTerm :: Minimal f => Term f
 minimalTerm = build (con minimal)
+
+erase :: (Symbolic a, ConstantOf a ~ f, Minimal f) => [Var] -> a -> a
+erase [] t = t
+erase xs t = subst sub t
+  where
+    sub = fromMaybe __ $ flattenSubst [(x, minimalTerm) | x <- xs]
 
 class Skolem f where
   skolem  :: Var -> Fun f
