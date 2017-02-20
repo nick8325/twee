@@ -42,7 +42,6 @@ data State f =
     st_oriented_rules :: !(Index f (TweeRule f)),
     st_rules          :: !(Index f (TweeRule f)),
     st_rule_ids       :: !(IntMap (TweeRule f)),
-    st_rule_history   :: !(Map VersionedId (TweeRule f)),
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
     st_queue          :: !(Heap (Passive f)),
@@ -77,7 +76,6 @@ initialState =
   State {
     st_oriented_rules = Index.Nil,
     st_rules = Index.Nil,
-    st_rule_history = Map.empty,
     st_rule_ids = IntMap.empty,
     st_joinable = Index.Nil,
     st_goals = [],
@@ -255,7 +253,6 @@ addRule config state@State{..} rule0 =
           then Index.insert (lhs (rule_rule rule)) rule st_oriented_rules
           else st_oriented_rules,
         st_rules = Index.insert (lhs (rule_rule rule)) rule st_rules,
-        st_rule_history = Map.insert (rule_versionedid rule) rule st_rule_history,
         st_rule_ids = IntMap.insert (fromIntegral (rule_id rule)) rule st_rule_ids,
         st_label = st_label+1 }
     passives =
