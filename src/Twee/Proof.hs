@@ -443,7 +443,10 @@ goalWitness ProvedGoal{..}
       simplify simp (derivation pg_proof)
 
     simp Lemma{..} = do
-      guard (eqn_rhs (equation lemma_proof) == false)
+      guard $
+        eqn_rhs (equation lemma_proof) == false ||
+        eqn_lhs (equation lemma_proof) == false
+
       return (derivation lemma_proof)
 
     -- Here we can assume that the lemma ends in an axiom
