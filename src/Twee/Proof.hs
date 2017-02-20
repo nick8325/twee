@@ -438,7 +438,9 @@ goalWitness ProvedGoal{..}
   | otherwise = Nothing
   where
     t :=: u = equation pg_proof
-    deriv = simplify simp (derivation pg_proof)
+    deriv =
+      derivation $ certify $ -- double-check the proof just to be sure
+      simplify simp (derivation pg_proof)
 
     simp Lemma{..} = do
       guard (eqn_rhs (equation lemma_proof) == false)
