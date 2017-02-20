@@ -290,7 +290,7 @@ steps r = aux r []
 -- Turn a reduction into a proof.
 reductionProof :: Reduction f -> Derivation f
 reductionProof (Step lemma _ sub) =
-  subst sub (Proof.lemma lemma)
+  Proof.lemma lemma sub
 reductionProof (Refl t) = Proof.Refl t
 reductionProof (Trans p q) =
   Proof.trans (reductionProof p) (reductionProof q)

@@ -131,17 +131,14 @@ simplify lem p = simp p
     simp p = p
 
 -- Smart constructors for derivations.
-lemma :: Lemma f -> Derivation f
-lemma lem@Lemma{..} = UseLemma lem (substFor (equation lemma_proof))
+lemma :: Lemma f -> Subst f -> Derivation f
+lemma lem@Lemma{..} sub = UseLemma lem sub
 
 axiom :: Axiom f -> Derivation f
-axiom ax@Axiom{..} = UseAxiom ax (substFor axiom_eqn)
-
--- Helper for lemma and axiom.
-substFor :: Equation f -> Subst f
-substFor eqn =
-  fromJust $
-  flattenSubst [(x, build (var x)) | x <- vars eqn]
+axiom ax@Axiom{..} =
+  UseAxiom ax $
+    fromJust $
+    flattenSubst [(x, build (var x)) | x <- vars axiom_eqn]
 
 symm :: Derivation f -> Derivation f
 symm (Refl t) = Refl t
