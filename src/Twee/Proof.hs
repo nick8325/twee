@@ -2,7 +2,7 @@
 module Twee.Proof(
   Proof, Derivation(..), Lemma(..), Axiom(..),
   certify, equation, derivation,
-  lemma, axiom, symm, trans, cong, simplify,
+  lemma, axiom, symm, trans, cong, simplify, usedLemmas, usedAxioms,
   Presentation(..), present, describeEquation) where
 
 import Twee.Base
