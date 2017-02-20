@@ -1,0 +1,10 @@
+resolver: lts-8.2
+
+packages:
+- '.'
+
+extra-deps:
+- jukebox-0.2.16
+- minisat-0.1.2
+
+flags: {}
