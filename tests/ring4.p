@@ -6,4 +6,4 @@ cnf(times_ssoc, axiom, '*'(X, '*'(Y, Z)) = '*'('*'(X, Y), Z)).
 cnf(distrib, axiom, '*'(X, '+'(Y, Z)) = '+'('*'(X, Y), '*'(X, Z))).
 cnf(distrib, axiom, '*'('+'(X, Y), Z) = '+'('*'(X, Z), '*'(Y, Z))).
 cnf(power_five, axiom, X = '*'(X, '*'(X, '*'(X, '*'(X, X))))).
-cnf(conjecture, axiom, '*'(a, b) != '*'(b, a)).
+cnf(conjecture, negated_conjecture, '*'(a, b) != '*'(b, a)).

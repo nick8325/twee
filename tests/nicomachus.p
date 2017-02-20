@@ -15,4 +15,4 @@ cnf(cubes_zero, axiom, cubes(zero) = zero).
 cnf(cubes_s, axiom, cubes(s(N)) = plus(times(s(N), times(s(N), s(N))), cubes(N))).
 cnf(plus_sum, axiom, plus(sum(N), sum(N)) = times(N, s(N))).
 cnf(ih, axiom, times(sum(a), sum(a)) = cubes(a)).
-cnf(conjecture, axiom, times(sum(s(a)), sum(s(a))) != cubes(s(a))).
+cnf(conjecture, negated_conjecture, times(sum(s(a)), sum(s(a))) != cubes(s(a))).

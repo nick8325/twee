@@ -4,4 +4,4 @@ cnf(wajsberg_3, axiom,
 cnf(wajsberg_4, axiom,
     implies(implies(not(X), not(Y)), implies(Y, X))=truth).
 cnf(lemma_antecedent, axiom, implies(X, Y)=implies(Y, X)).
-cnf(prove_wajsberg_lemma, axiom, x!=y).
+cnf(prove_wajsberg_lemma, negated_conjecture, x!=y).

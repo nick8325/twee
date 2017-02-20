@@ -11,6 +11,6 @@ cnf(associativity_of_join, axiom,
 cnf(equation_H34, axiom,
     meet(X, join(Y, meet(Z, U)))=meet(X,
                                       join(Y, meet(Z, join(Y, meet(U, join(Y, Z))))))).
-cnf(prove_H28, axiom,
+cnf(prove_H28, negated_conjecture,
     meet(a, join(b, meet(a, meet(c, d))))!=meet(a,
                                                 join(b, meet(c, meet(d, join(a, meet(b, d))))))).
