@@ -201,12 +201,16 @@ data Extended f =
     Minimal
   | Skolem Var
   | Function f
+  | EqualsCon | TrueCon | FalseCon
   deriving (Eq, Ord, Show, Functor)
 
 instance Pretty f => Pretty (Extended f) where
   pPrintPrec _ _ Minimal = text "?"
   pPrintPrec _ _ (Skolem (V n)) = text "sk" <> pPrint n
   pPrintPrec l p (Function f) = pPrintPrec l p f
+  pPrintPrec _ _ EqualsCon = text "$equals"
+  pPrintPrec _ _ TrueCon   = text "$true"
+  pPrintPrec _ _ FalseCon  = text "$false"
 
 instance PrettyTerm f => PrettyTerm (Extended f) where
   termStyle (Function f) = termStyle f
@@ -214,10 +218,14 @@ instance PrettyTerm f => PrettyTerm (Extended f) where
 
 instance Sized f => Sized (Extended f) where
   size (Function f) = size f
+  size EqualsCon = 0
+  size TrueCon = 0
+  size FalseCon = 0
   size _ = 1
 
 instance Arity f => Arity (Extended f) where
   arity (Function f) = arity f
+  arity EqualsCon = 2
   arity _ = 0
 
 instance (Typeable f, Ord f) => Minimal (Extended f) where
@@ -225,3 +233,8 @@ instance (Typeable f, Ord f) => Minimal (Extended f) where
 
 instance (Typeable f, Ord f) => Skolem (Extended f) where
   skolem x = fun (Skolem x)
+
+instance (Typeable f, Ord f) => Equals (Extended f) where
+  equalsCon = fun EqualsCon
+  trueCon   = fun TrueCon
+  falseCon  = fun FalseCon
