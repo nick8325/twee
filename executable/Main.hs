@@ -107,9 +107,13 @@ data TweeContext =
     ctx_type    :: Type }
 
 -- Convert back and forth between Twee and Jukebox.
-tweeConstant :: Precedence -> Jukebox.Function -> Constant
-tweeConstant prec fun =
-  Constant prec fun (Jukebox.arity fun)
+tweeConstant :: TweeContext -> Precedence -> Jukebox.Function -> Extended Constant
+tweeConstant TweeContext{..} prec fun
+  | fun == ctx_minimal = Minimal
+  | fun == ctx_true = TrueCon
+  | fun == ctx_false = FalseCon
+  | fun == ctx_equals = EqualsCon
+  | otherwise = Function (Constant prec fun (Jukebox.arity fun))
 
 jukeboxFunction :: TweeContext -> Extended Constant -> Jukebox.Function
 jukeboxFunction _ (Function Constant{..}) = con_id
@@ -120,13 +124,13 @@ jukeboxFunction TweeContext{..} Minimal = ctx_minimal
 jukeboxFunction TweeContext{..} (Skolem _) =
   error "Skolem variable leaked into rule"
 
-tweeTerm :: (Jukebox.Function -> Precedence) -> Jukebox.Term -> Term (Extended Constant)
-tweeTerm prec t = build (tm t)
+tweeTerm :: TweeContext -> (Jukebox.Function -> Precedence) -> Jukebox.Term -> Term (Extended Constant)
+tweeTerm ctx prec t = build (tm t)
   where
     tm (Jukebox.Var (Unique x _ _ ::: _)) =
       var (V (fromIntegral x))
     tm (f :@: ts) =
-      app (fun (Function (tweeConstant (prec f) f))) (map tm ts)
+      app (fun (tweeConstant ctx (prec f) f)) (map tm ts)
 
 jukeboxTerm :: TweeContext -> Term (Extended Constant) -> Jukebox.Term
 jukeboxTerm TweeContext{..} (Var (V x)) =
@@ -256,7 +260,7 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
 
     -- Translate everything to Twee.
     toEquation (t, u) =
-      canonicalise (tweeTerm prec t :=: tweeTerm prec u)
+      canonicalise (tweeTerm ctx prec t :=: tweeTerm ctx prec u)
 
     goals =
       [ goal n pre_name (toEquation pre_eqn)

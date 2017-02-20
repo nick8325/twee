@@ -1,9 +1,9 @@
-{-# LANGUAGE TypeFamilies, PatternGuards, RecordWildCards #-}
+{-# LANGUAGE TypeFamilies, PatternGuards, RecordWildCards, ScopedTypeVariables #-}
 module Twee.Proof(
   Proof, Derivation(..), Lemma(..), Axiom(..),
   certify, equation, derivation,
   lemma, axiom, symm, trans, cong, simplify, usedLemmas, usedAxioms,
-  Presentation(..), ProvedGoal(..), present, describeEquation) where
+  Presentation(..), ProvedGoal(..), goalWitness, present, describeEquation) where
 
 import Twee.Base
 import Twee.Equation
@@ -12,6 +12,7 @@ import Control.Monad
 import Data.Maybe
 import Data.List
 import qualified Data.Map.Strict as Map
+import qualified Text.PrettyPrint as PP
 
 ----------------------------------------------------------------------
 -- Equational proofs. Only valid proofs can be constructed.
@@ -216,7 +217,7 @@ data ProvedGoal f =
     pg_proof  :: Proof f }
   deriving Show
 
-instance PrettyTerm f => Pretty (Presentation f) where
+instance Function f => Pretty (Presentation f) where
   pPrint = pPrintPresentation
 
 present :: PrettyTerm f => [ProvedGoal f] -> Presentation f
@@ -366,15 +367,16 @@ pPrintLemma lemmaName p =
     showAxiom Axiom{..} =
       "axiom " ++ show axiom_number ++ " (" ++ axiom_name ++ ")"
 
-pPrintPresentation :: PrettyTerm f => Presentation f -> Doc
+pPrintPresentation :: forall f. Function f => Presentation f -> Doc
 pPrintPresentation (Presentation axioms lemmas goals) =
   vcat $ intersperse (text "") $
     vcat [ text (describeEquation "Axiom" (show n) (Just name) eqn)
          | Axiom n name eqn <- axioms ]:
     [ pp "Lemma" (num n) Nothing p
     | Lemma n p <- lemmas ] ++
-    [ pp "Goal" (show num) (Just pg_name) pg_proof
-    | (num, ProvedGoal{..}) <- zip [1..] goals ]
+    [ pp "Goal" (show num) (Just pg_name) pg_proof $$
+      ppWitness goal
+    | (num, goal@ProvedGoal{..}) <- zip [1..] goals ]
   where
     pp kind n mname p =
       text (describeEquation kind n mname (equation p)) $$
@@ -384,6 +386,23 @@ pPrintPresentation (Presentation axioms lemmas goals) =
     num x = show (fromJust (Map.lookup x nums))
     nums = Map.fromList (zip (map lemma_id lemmas) [n+1 ..])
     n = maximum $ 0:map axiom_number axioms
+
+    ppWitness goal =
+      case goalWitness goal of
+        Nothing -> PP.empty
+        Just (eqn, sub) ->
+          vcat [
+            text "",
+            text "The conjecture",
+            nest 2 (pPrint eqn),
+            text "is true when:",
+            nest 2 $ vcat
+              [ pPrint x <+> text "=" <+> pPrint t
+              | (x, t) <- listSubst sub ],
+            if minimal `elem` funs (eqn, sub) then
+              text "where" <+> doubleQuotes (pPrint (minimal :: Fun f)) <+>
+              text "stands for an arbitrary term of your choosing."
+            else PP.empty]
 
 -- Format an equation nicely. Used both here and in the main file.
 describeEquation ::
@@ -396,3 +415,46 @@ describeEquation kind num mname eqn =
      Nothing -> text ""
      Just name -> text (" (" ++ name ++ ")")) <>
   text ":" <+> pPrint eqn <> text "."
+
+-- Try to find a witness for a proof of an existentially-quantified
+-- formula, given the proof of $true = $false.
+goalWitness :: Function f => ProvedGoal f -> Maybe (Equation f, Subst f)
+goalWitness ProvedGoal{..}
+  -- The idea: in a proof $true = $false, the very last step
+  -- (if we also expand lemmas) must be an application of an
+  -- axiom $equals(..) = $false. (This is because these are the
+  -- only axioms which mention $false.)
+  --
+  -- All we have to do is pick out the substitution from that step.
+  --
+  -- To make this work, we first simplify the proof, in order to:
+  --   a) expand any lemma which proves ... = $false
+  --      (strictly speaking we need only do this if this lemma
+  --      is the last step of the proof);
+  --   b) make sure that the proof doesn't end in a Refl.
+  | u == false = extract deriv
+    -- Orient the equation so that $false is the RHS.
+  | t == false = extract (symm deriv)
+  | otherwise = Nothing
+  where
+    t :=: u = equation pg_proof
+    deriv = simplify simp (derivation pg_proof)
+
+    simp Lemma{..} = do
+      guard (eqn_rhs (equation lemma_proof) == false)
+      return (derivation lemma_proof)
+
+    -- Here we can assume that the lemma ends in an axiom
+    -- $equals(..) = $false.
+    extract (Trans _ p) = extract p
+    extract (UseAxiom Axiom{axiom_eqn = t :=: u} sub) = do
+      eqn <- getEquals t
+      guard (u == false)
+      guard (substSize sub /= 0)
+      return (eqn, sub)
+    extract _ = Nothing
+
+    false = build (con falseCon)
+    getEquals (App equals (Cons t (Cons u Empty)))
+      | equals == equalsCon = Just (t :=: u)
+    getEquals _ = Nothing
