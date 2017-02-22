@@ -28,6 +28,12 @@ data CriticalPair f =
 instance Symbolic (CriticalPair f) where
   type ConstantOf (CriticalPair f) = f
 
+instance PrettyTerm f => Pretty (CriticalPair f) where
+  pPrint CriticalPair{..} =
+    vcat [
+      pPrint cp_eqn,
+      nest 2 (text "top:" <+> pPrint cp_top) ]
+
 {-# INLINEABLE makeCriticalPair #-}
 makeCriticalPair ::
   (Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
