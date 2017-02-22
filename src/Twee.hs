@@ -5,7 +5,7 @@ import Twee.Base
 import Twee.Rule
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Proof, Axiom(..), ProvedGoal(..))
+import Twee.Proof(Proof, Axiom(..), ProvedGoal(..), Lemma(..))
 import Twee.CP hiding (Config)
 import qualified Twee.CP as CP
 import Twee.Join
@@ -21,6 +21,8 @@ import Data.List
 import Data.Function
 import qualified Data.Set as Set
 import Data.Set(Set)
+import qualified Data.IntSet as IntSet
+import Data.IntSet(IntSet)
 import Text.Printf
 import Data.Int
 import Control.Monad
@@ -222,7 +224,9 @@ data TweeRule f =
     -- Models in which the rule is false (used when reorienting)
     rule_models    :: [Model f],
     -- Proof of the rule
-    rule_proof     :: !(Proof f) }
+    rule_proof     :: !(Proof f),
+    -- Lemmas used in the proof (computed from rule_proof)
+    rule_lemmas    :: !IntSet }
 
 instance Eq (TweeRule f) where
   (==) = (==) `on` rule_id
@@ -299,13 +303,18 @@ consider config state@State{..} cp =
         let
           rules =
             [ \n ->
+              let p = Proof.certify (prf (cp_proof cp)) in
               TweeRule {
                 rule_id = n,
                 rule_version = 0,
                 rule_rule = rule,
                 rule_positions = positions (lhs rule),
                 rule_models = models,
-                rule_proof = Proof.certify (prf (cp_proof cp)) }
+                rule_proof = p,
+                rule_lemmas =
+                  IntSet.fromList $
+                    map (fromIntegral . versioned_id . lemma_id)
+                      (Proof.usedLemmas (Proof.derivation p)) }
             | (rule, prf) <- orient (cp_eqn cp) ]
         in
           foldl' (addRule config) state rules
