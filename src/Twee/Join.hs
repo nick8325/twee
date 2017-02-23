@@ -47,22 +47,25 @@ makeCriticalPair r1 r2 overlap@Overlap{..} =
 joinCriticalPair ::
   (Function f, Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
   Index f (Equation f) -> Index f a ->
-  CriticalPair f -> ([Equation f], Maybe (CriticalPair f, [Model f]))
+  CriticalPair f ->
+  Either
+    -- Failed to join critical pair.
+    -- Returns simplified critical pair and model in which it failed to hold.
+    (CriticalPair f, Model f)
+    -- Split critical pair into several instances.
+    -- Returns list of instances which must be joined,
+    -- and an optional equation which can be added to the joinable set
+    -- after successfully joining all instances.
+    (Maybe (CriticalPair f), [CriticalPair f])
 joinCriticalPair eqns idx cp =
   {-# SCC joinCriticalPair #-}
   case allSteps eqns idx cp of
     Just cp ->
       case groundJoin eqns idx (branches (And [])) cp of
-        Left model -> ([], Just (cp, [model]))
-        Right cps ->
-          let
-            (eqnss, mcps) = unzip (map (joinCriticalPair eqns idx) cps)
-          in
-            case all isNothing mcps of
-              True -> (cp_eqn cp:concat eqnss, Nothing)
-              False -> (concat eqnss, Just (cp, []))
+        Left model -> Left (cp, model)
+        Right cps -> Right (Just cp, cps)
     Nothing ->
-      ([], Nothing)
+      Right (Nothing, [])
 
 {-# INLINEABLE step1 #-}
 {-# INLINEABLE step2 #-}

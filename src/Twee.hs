@@ -288,36 +288,38 @@ addJoinable state eqn@(t :=: u) =
 -- Try to join a critical pair.
 {-# INLINEABLE consider #-}
 consider :: Function f => Config -> State f -> CriticalPair f -> State f
-consider config state@State{..} cp =
+consider config state@State{..} cp0 =
   {-# SCC consider #-}
-  let
-    -- Important to canonicalise the rule so that we don't get
-    -- bigger and bigger variable indices over time
-    (eqns, mcp) =
-      joinCriticalPair st_joinable st_rules (canonicalise cp)
-  in
-    flip (foldl' addJoinable) eqns $
-    case mcp of
-      Nothing -> state
-      Just (cp, models) ->
-        let
-          rules =
-            [ \n ->
-              let p = Proof.certify (prf (cp_proof cp)) in
-              TweeRule {
-                rule_id = n,
-                rule_version = 0,
-                rule_rule = rule,
-                rule_positions = positions (lhs rule),
-                rule_models = models,
-                rule_proof = p,
-                rule_lemmas =
-                  IntSet.fromList $
-                    map (fromIntegral . versioned_id . lemma_id)
-                      (Proof.usedLemmas (Proof.derivation p)) }
-            | (rule, prf) <- orient (cp_eqn cp) ]
-        in
-          foldl' (addRule config) state rules
+  -- Important to canonicalise the rule so that we don't get
+  -- bigger and bigger variable indices over time
+  let cp = canonicalise cp0 in
+  case joinCriticalPair st_joinable st_rules cp of
+    Right (mcp, cps) ->
+      let
+        state' = foldl' (consider config) state cps
+      in case mcp of
+        Just cp -> addJoinable state' (cp_eqn cp)
+        Nothing -> state'
+
+    Left (cp, model) ->
+      let
+        rules =
+          [ \n ->
+            let p = Proof.certify (prf (cp_proof cp)) in
+            TweeRule {
+              rule_id = n,
+              rule_version = 0,
+              rule_rule = rule,
+              rule_positions = positions (lhs rule),
+              rule_models = [model],
+              rule_proof = p,
+              rule_lemmas =
+                IntSet.fromList $
+                  map (fromIntegral . versioned_id . lemma_id)
+                    (Proof.usedLemmas (Proof.derivation p)) }
+          | (rule, prf) <- orient (cp_eqn cp) ]
+      in
+        foldl' (addRule config) state rules
 
 -- Add a new equation.
 {-# INLINEABLE addAxiom #-}
