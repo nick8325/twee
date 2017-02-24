@@ -99,8 +99,8 @@ data Branch f =
   -- Branches are kept normalised wrt equals
   Branch {
     funs        :: [Fun f],
-    less        :: [(Atom f, Atom f)],
-    equals      :: [(Atom f, Atom f)] } -- greatest atom first
+    less        :: [(Atom f, Atom f)],  -- sorted
+    equals      :: [(Atom f, Atom f)] } -- sorted, greatest atom first in each pair
   deriving (Eq, Ord)
 
 instance PrettyTerm f => Pretty (Branch f) where
@@ -177,8 +177,10 @@ addTerm (Constant f) b
   | f `notElem` funs b =
     b {
       funs = f:funs b,
-      less = [ (Constant f, Constant g) | g <- funs b, f << g ] ++
-             [ (Constant g, Constant f) | g <- funs b, g << f ] ++ less b }
+      less =
+        usort $
+          [ (Constant f, Constant g) | g <- funs b, f << g ] ++
+          [ (Constant g, Constant f) | g <- funs b, g << f ] ++ less b }
 addTerm _ b = b
 
 newtype Model f = Model (Map (Atom f) (Int, Int))
