@@ -403,7 +403,7 @@ pPrintPresentation (Presentation axioms lemmas goals) =
               | (x, t) <- listSubst sub ],
             if minimal `elem` funs (eqn, sub) then
               text "where" <+> doubleQuotes (pPrint (minimal :: Fun f)) <+>
-              text "stands for an arbitrary term of your choosing."
+              text "stands for an arbitrary term of your choice."
             else PP.empty]
 
 -- Format an equation nicely. Used both here and in the main file.
