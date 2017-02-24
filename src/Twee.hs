@@ -101,9 +101,9 @@ instance PrettyTerm f => Pretty (Message f) where
     where
       digits = length (show (unId n))
   pPrint (SimplifyRule old new) =
-    pPrint new <+> text "(simplified)"
+    text "(simplify)" <+> pPrint new
   pPrint (ReorientRule rule) =
-    pPrint (rule_versionedid rule) <+> text "removed (redundant)"
+    text "(delete)" <+> pPrint rule
 
 message :: PrettyTerm f => Message f -> State f -> State f
 message !msg state@State{..} =
@@ -256,7 +256,7 @@ rule_cp TweeRule{..} =
 
 instance PrettyTerm f => Pretty (TweeRule f) where
   pPrint rule@TweeRule{..} =
-    pPrint (rule_versionedid rule) <> text "." <+> pPrint rule_rule
+    pPrint rule_id <> text "." <+> pPrint rule_rule
 
 -- Add a new rule.
 {-# INLINEABLE addRule #-}
@@ -410,6 +410,7 @@ instance Pretty (Simplification f) where pPrint = text . show
 {-# INLINEABLE interreduce #-}
 interreduce :: Function f => Config -> State f -> TweeRule f -> State f
 interreduce config state new =
+  {-# SCC interreduce #-}
   foldl' (interreduce1 config) state simpls
   where
     simpls =
@@ -421,22 +422,26 @@ interreduce config state new =
 
 {-# INLINEABLE interreduce1 #-}
 interreduce1 :: Function f => Config -> State f -> (TweeRule f, Simplification f) -> State f
-interreduce1 config state@State{..} (rule, Simplify) =
+interreduce1 config state@State{..} (rule@TweeRule{rule_rule = Rule _ lhs rhs, ..}, Simplify) =
   message (SimplifyRule rule rule') $
   flip addRuleOnly rule' $ deleteRule state rule
   where
     rule' =
       rule {
-        rule_rule = simp (rule_rule rule),
-        rule_version = rule_version rule + 1 }
-    simp (Rule _ lhs rhs) =
-      makeRule lhs (result (normaliseWith (const True) (rewrite reduces st_rules) rhs))
-interreduce1 config state@State{..} (rule, NewModel model) =
+        rule_rule = makeRule lhs (result rhs'),
+        rule_version = rule_version + 1,
+        rule_proof =
+          Proof.certify $
+          Proof.derivation rule_proof `Proof.trans` reductionProof (reduction rhs') }
+
+    rhs' = normaliseWith (const True) (rewrite reduces st_rules) rhs
+
+interreduce1 config state@State{..} (rule@TweeRule{..}, NewModel model) =
   flip addRuleOnly rule' $ deleteRule state rule
   where
     rule' =
       rule {
-        rule_models = model:rule_models rule }
+        rule_models = model:rule_models }
 interreduce1 config state@State{..} (rule, Reorient) =
   state' { st_joinable = st_joinable }
   where
