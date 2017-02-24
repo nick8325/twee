@@ -294,4 +294,7 @@ class Ord f => Ordered f where
   lessEq :: Term f -> Term f -> Bool
   lessIn :: Model f -> Term f -> Term f -> Maybe Strictness
 
+lessThan :: Ordered f => Term f -> Term f -> Bool
+lessThan t u = lessEq t u && isNothing (unify t u)
+
 data Strictness = Strict | Nonstrict deriving (Eq, Show)
