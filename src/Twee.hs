@@ -96,9 +96,9 @@ data Message f =
 
 instance PrettyTerm f => Pretty (Message f) where
   pPrint (NewRule rule) = pPrint rule
-  pPrint (NewEquation n eqn) =
+  pPrint (NewEquation _ eqn) =
     text "  (hard)" <+> pPrint eqn
-  pPrint (SimplifyRule old new) =
+  pPrint (SimplifyRule _ new) =
     text "  (simplify)" <+> pPrint new
   pPrint (ReorientRule rule) =
     text "  (delete)" <+> pPrint rule
@@ -253,7 +253,7 @@ rule_cp TweeRule{..} =
     cp_proof = Proof.derivation rule_proof }
 
 instance PrettyTerm f => Pretty (TweeRule f) where
-  pPrint rule@TweeRule{..} =
+  pPrint TweeRule{..} =
     pPrint rule_id <> text "." <+> pPrint rule_rule
 
 -- Add a new rule.
@@ -416,11 +416,11 @@ interreduce config state new =
       | old <- IntMap.elems (st_rule_ids state),
         old /= new,
         let state' = deleteRule state { st_joinable = Index.Nil } old,
-        simp <- maybeToList (simplification config state' new old) ]
+        simp <- maybeToList (simplification state' new old) ]
 
 {-# INLINEABLE interreduce1 #-}
 interreduce1 :: Function f => Config -> State f -> (TweeRule f, Simplification f) -> State f
-interreduce1 config state@State{..} (rule@TweeRule{rule_rule = Rule _ lhs rhs, ..}, Simplify) =
+interreduce1 _ state@State{..} (rule@TweeRule{rule_rule = Rule _ lhs rhs, ..}, Simplify) =
   message (SimplifyRule rule rule') $
   flip addRuleOnly rule' $ deleteRule state rule
   where
@@ -434,7 +434,7 @@ interreduce1 config state@State{..} (rule@TweeRule{rule_rule = Rule _ lhs rhs, .
 
     rhs' = normaliseWith (const True) (rewrite reduces st_rules) rhs
 
-interreduce1 config state@State{..} (rule@TweeRule{..}, NewModel model) =
+interreduce1 _ state@State{..} (rule@TweeRule{..}, NewModel model) =
   flip addRuleOnly rule' $ deleteRule state rule
   where
     rule' =
@@ -450,8 +450,8 @@ interreduce1 config state@State{..} (rule, Reorient) =
 
 -- Work out what sort of simplification can be applied to a rule.
 {-# INLINEABLE simplification #-}
-simplification :: Function f => Config -> State f -> TweeRule f -> TweeRule f -> Maybe (Simplification f)
-simplification config state@State{..} new oldRule@TweeRule{rule_rule = old, rule_models = models} =
+simplification :: Function f => State f -> TweeRule f -> TweeRule f -> Maybe (Simplification f)
+simplification State{..} new oldRule@TweeRule{rule_rule = old, rule_models = models} =
   guarded lhs reorient `mplus` guarded rhs simplify
   where
     simplify = reduce (rhs old) Simplify
@@ -488,9 +488,6 @@ simplification config state@State{..} new oldRule@TweeRule{rule_rule = old, rule
     guarded f x = do
       guard (any isJust [ match (lhs (the new)) t | t <- subterms (f old) ])
       x
-
-    rules = Index.delete (lhs old) oldRule st_rules
-    oriented_rules = Index.delete (lhs old) oldRule st_oriented_rules
 
 ----------------------------------------------------------------------
 -- The main loop.
