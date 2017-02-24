@@ -278,6 +278,7 @@ normaliseGoals state@State{..} =
       goal { goal_lhs = f goal_lhs, goal_rhs = f goal_rhs }
 
 -- Record an equation as being joinable.
+{-# INLINEABLE addJoinable #-}
 addJoinable :: Function f => State f -> Equation f -> State f
 addJoinable state eqn@(t :=: u) =
   message (NewEquation (st_label state) eqn) $

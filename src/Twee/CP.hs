@@ -125,6 +125,7 @@ termSubst :: TriangleSubst f -> Term f -> Term f
 termSubst sub t = build (Term.subst sub t)
 
 -- Return a proof for a critical pair.
+{-# INLINEABLE overlapProof #-}
 overlapProof ::
   forall a f.
   (Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
@@ -152,6 +153,7 @@ data Config =
 --   cfg_lhsweight * size l + cfg_rhsweight * size r
 -- where l is the biggest term and r is the smallest,
 -- and variables have weight 1 and functions have weight cfg_funweight.
+{-# INLINEABLE score #-}
 score :: Function f => Config -> Overlap f -> Int
 score config overlap@Overlap{overlap_eqn = t :=: u}
   | isInequality t u || isInequality u t =

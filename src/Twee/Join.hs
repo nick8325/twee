@@ -170,6 +170,7 @@ groundJoin eqns idx ctx r@CriticalPair{cp_eqn = t :=: u} =
         t' = result nt
         u' = result nu
 
+{-# INLINEABLE valid #-}
 valid :: Function f => Model f -> Reduction f -> Bool
 valid model red =
   and [ reducesInModel model rule sub
