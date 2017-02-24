@@ -97,13 +97,11 @@ data Message f =
 instance PrettyTerm f => Pretty (Message f) where
   pPrint (NewRule rule) = pPrint rule
   pPrint (NewEquation n eqn) =
-    text (replicate digits 'x') <> text "." <+> pPrint eqn
-    where
-      digits = length (show (unId n))
+    text "  (hard)" <+> pPrint eqn
   pPrint (SimplifyRule old new) =
-    text "(simplify)" <+> pPrint new
+    text "  (simplify)" <+> pPrint new
   pPrint (ReorientRule rule) =
-    text "(delete)" <+> pPrint rule
+    text "  (delete)" <+> pPrint rule
 
 message :: PrettyTerm f => Message f -> State f -> State f
 message !msg state@State{..} =
@@ -443,6 +441,7 @@ interreduce1 config state@State{..} (rule@TweeRule{..}, NewModel model) =
       rule {
         rule_models = model:rule_models }
 interreduce1 config state@State{..} (rule, Reorient) =
+  message (ReorientRule rule) $
   state' { st_joinable = st_joinable }
   where
     state' =
