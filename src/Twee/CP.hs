@@ -170,10 +170,10 @@ score Config{..} Overlap{..} =
   intMax m n * (cfg_lhsweight - cfg_rhsweight)
   where
     l :=: r = overlap_eqn
-    m = size l
-    n = size r
+    m = size' l
+    n = size' r
 
-    size t =
-      len t * cfg_funweight -
+    size' t =
+      size t * cfg_funweight -
       (length (filter isVar (subterms t)) + length (nub (vars t))) *
       (cfg_funweight - cfg_varweight)
