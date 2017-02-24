@@ -91,16 +91,21 @@ initialState =
 data Message f =
     NewRule !(TweeRule f)
   | NewEquation !Id !(Equation f)
+  | SimplifyRule !(TweeRule f) !(TweeRule f)
+  | ReorientRule !(TweeRule f)
 
 instance PrettyTerm f => Pretty (Message f) where
-  pPrint (NewRule rule) =
-    pPrint (rule_versionedid rule) <> text "." <+> pPrint (rule_rule rule)
+  pPrint (NewRule rule) = pPrint rule
   pPrint (NewEquation n eqn) =
     text (replicate digits 'x') <> text "." <+> pPrint eqn
     where
       digits = length (show (unId n))
+  pPrint (SimplifyRule old new) =
+    pPrint new <+> text "(simplified)"
+  pPrint (ReorientRule rule) =
+    pPrint (rule_versionedid rule) <+> text "removed (redundant)"
 
-message :: Message f -> State f -> State f
+message :: PrettyTerm f => Message f -> State f -> State f
 message !msg state@State{..} =
   state { st_messages_rev = msg:st_messages_rev }
 
@@ -222,7 +227,9 @@ data TweeRule f =
     -- Positions at which the rule can form CPs
     rule_positions :: !(Positions f),
     -- Models in which the rule is false (used when reorienting)
-    rule_models    :: [Model f],
+    rule_models    :: ![Model f],
+    -- The top term from the rule's CP (used in interreduction)
+    rule_top       :: !(Maybe (Term f)),
     -- Proof of the rule
     rule_proof     :: !(Proof f),
     -- Lemmas used in the proof (computed from rule_proof)
@@ -240,6 +247,17 @@ instance Has (TweeRule f) VersionedId where the = rule_versionedid
 rule_versionedid :: TweeRule f -> VersionedId
 rule_versionedid TweeRule{..} = VersionedId rule_id rule_version
 
+rule_cp :: TweeRule f -> CriticalPair f
+rule_cp TweeRule{..} =
+  CriticalPair {
+    cp_eqn = unorient rule_rule,
+    cp_top = rule_top,
+    cp_proof = Proof.derivation rule_proof }
+
+instance PrettyTerm f => Pretty (TweeRule f) where
+  pPrint rule@TweeRule{..} =
+    pPrint (rule_versionedid rule) <> text "." <+> pPrint rule_rule
+
 -- Add a new rule.
 {-# INLINEABLE addRule #-}
 addRule :: Function f => Config -> State f -> (Id -> TweeRule f) -> State f
@@ -249,14 +267,9 @@ addRule config state@State{..} rule0 =
     rule = rule0 st_label
     state' =
       message (NewRule rule) $
-      state {
-        st_oriented_rules =
-          if oriented (orientation (rule_rule rule))
-          then Index.insert (lhs (rule_rule rule)) rule st_oriented_rules
-          else st_oriented_rules,
-        st_rules = Index.insert (lhs (rule_rule rule)) rule st_rules,
-        st_rule_ids = IntMap.insert (fromIntegral (rule_id rule)) rule st_rule_ids,
-        st_label = st_label+1 }
+      flip (interreduce config) rule $
+      flip addRuleOnly rule $
+      state { st_label = st_label+1 }
     passives =
       makePassive config state' Nothing (rule_id rule)
   in if subsumed Asymmetric st_joinable st_rules (unorient (rule_rule rule)) then
@@ -264,6 +277,27 @@ addRule config state@State{..} rule0 =
   else
     normaliseGoals $
     foldl' enqueue state' passives
+
+-- Add a rule without generating critical pairs. Used in interreduction.
+{-# INLINEABLE addRuleOnly #-}
+addRuleOnly :: Function f => State f -> TweeRule f -> State f
+addRuleOnly state@State{..} rule =
+  state {
+    st_oriented_rules =
+      if oriented (orientation (rule_rule rule))
+      then Index.insert (lhs (rule_rule rule)) rule st_oriented_rules
+      else st_oriented_rules,
+    st_rules = Index.insert (lhs (rule_rule rule)) rule st_rules,
+    st_rule_ids = IntMap.insert (fromIntegral (rule_id rule)) rule st_rule_ids }
+
+-- Delete a rule. Used in interreduction, not suitable for general use.
+{-# INLINE deleteRule #-}
+deleteRule :: State f -> TweeRule f -> State f
+deleteRule state@State{..} rule@TweeRule{..} =
+  state {
+    st_oriented_rules = Index.delete (lhs rule_rule) rule st_oriented_rules,
+    st_rules = Index.delete (lhs rule_rule) rule st_rules,
+    st_rule_ids = IntMap.delete (fromIntegral rule_id) st_rule_ids }
 
 -- Normalise all goals.
 {-# INLINEABLE normaliseGoals #-}
@@ -309,10 +343,11 @@ consider config state@State{..} cp0 =
             let p = Proof.certify (prf (cp_proof cp)) in
             TweeRule {
               rule_id = n,
-              rule_version = 0,
+              rule_version = 1,
               rule_rule = rule,
               rule_positions = positions (lhs rule),
               rule_models = [model],
+              rule_top = cp_top cp,
               rule_proof = p,
               rule_lemmas =
                 IntSet.fromList $
@@ -353,63 +388,105 @@ goal n name (t :=: u) =
 -- Interreduction.
 ----------------------------------------------------------------------
 
--- data Simplification f = Simplify [Model f] | Reorient
---
--- reduce :: Function f => Config -> State f -> Rule f -> TweeRule f -> Maybe (Simplification f)
--- reduce config state@State{..} new oldRule@TweeRule{rule_rule = old, rule_models = models} =
---   guarded lhs reorient `mplus` guarded rhs simplify
---   where
---     reorient = undefined
---       -- guard . not . null . concat $
---       --   [ anywhere (tryRule (reducesInModel model) new) (f old)
---       --   | model <- models ]
---
---     simplify =
---       case anywhere (tryRule reduces new) (rhs old) of
---         [] -> Nothing
---         _  -> Just (Simplify models)
---
---     guarded f x = do
---       guard (any isJust [ match (lhs new) t | t <- subterms (f old) ])
---       x
---
---     rules = Index.delete (lhs old) oldRule st_rules
---     oriented_rules = Index.delete (lhs old) oldRule st_oriented_rules
+data Simplification f = Simplify | Reorient | NewModel (Model f)
+  deriving Show
+instance Pretty (Simplification f) where pPrint = text . show
 
--- reduceWith :: Function f => Twee f -> Label -> Rule f -> Modelled (Critical (Rule f)) -> Maybe (Simplification f)
--- reduceWith s lab new old0@(Modelled model _ (Critical info old@(Rule _ l r)))
---   | not (isWeak new) &&
---     not (lhs new `isInstanceOf` l) &&
---     not (null (anywhere (tryRule reduces new) l)) =
---       Just (Reorient old0)
---   | not (isWeak new) &&
---     not (lhs new `isInstanceOf` l) &&
---     not (oriented (orientation new)) &&
---     not (all isNothing [ match (lhs new) l' | l' <- subterms l ]) &&
---     modelJoinable =
---     tryGroundJoin
---   | not (null (anywhere (tryRule reduces new) (rhs old))) =
---       Just (Simplify model old0)
---   | not (oriented (orientation old)) &&
---     not (oriented (orientation new)) &&
---     not (lhs new `isInstanceOf` r) &&
---     not (all isNothing [ match (lhs new) r' | r' <- subterms r ]) &&
---     modelJoinable =
---     tryGroundJoin
---   | otherwise = Nothing
---   where
---     s' = s { labelledRules = Indexes.delete (Labelled lab old0) (labelledRules s) }
---     modelJoinable = isLeft (normaliseCP s' (Critical info (lm :=: rm)))
---     lm = result (normaliseIn s' model l)
---     rm = result (normaliseIn s' model r)
---     tryGroundJoin =
---       case groundJoin s' (branches (And [])) (Critical info (l :=: r)) of
---         Left model' ->
---           Just (Simplify model' old0)
---         Right _ ->
---           Just (Reorient old0)
---     isWeak (Rule (WeaklyOriented _) _ _) = True
---     isWeak _ = False
+-- Note on st_rules and st_joinable during interreduction.
+-- After adding a new rule we check if any old rules can now be joined
+-- or simplified. When we try rewriting an old rule, we must of course
+-- remove it from the ruleset first, so as to avoid using the rule to
+-- rewrite itself. We must also not use an equation in st_joinable to
+-- simplify a rule if the equation was derived from the rule. As we
+-- don't keep track of the origin of each joinable equation, we simply
+-- disable st_joinable during interreduction.
+--
+-- After considering all reoriented rules, we put back st_joinable.
+-- This is fine because all the equations that were in st_joinable
+-- before should indeed still be joinable once the reoriented rules
+-- are added.
+
+-- Simplify all old rules wrt a new rule.
+{-# INLINEABLE interreduce #-}
+interreduce :: Function f => Config -> State f -> TweeRule f -> State f
+interreduce config state new =
+  foldl' (interreduce1 config) state simpls
+  where
+    simpls =
+      [ (old, simp)
+      | old <- IntMap.elems (st_rule_ids state),
+        old /= new,
+        let state' = deleteRule state { st_joinable = Index.Nil } old,
+        simp <- maybeToList (simplification config state' new old) ]
+
+{-# INLINEABLE interreduce1 #-}
+interreduce1 :: Function f => Config -> State f -> (TweeRule f, Simplification f) -> State f
+interreduce1 config state@State{..} (rule, Simplify) =
+  message (SimplifyRule rule rule') $
+  flip addRuleOnly rule' $ deleteRule state rule
+  where
+    rule' =
+      rule {
+        rule_rule = simp (rule_rule rule),
+        rule_version = rule_version rule + 1 }
+    simp (Rule _ lhs rhs) =
+      makeRule lhs (result (normaliseWith (const True) (rewrite reduces st_rules) rhs))
+interreduce1 config state@State{..} (rule, NewModel model) =
+  flip addRuleOnly rule' $ deleteRule state rule
+  where
+    rule' =
+      rule {
+        rule_models = model:rule_models rule }
+interreduce1 config state@State{..} (rule, Reorient) =
+  state' { st_joinable = st_joinable }
+  where
+    state' =
+      flip (consider config) (rule_cp rule) $
+      deleteRule state { st_joinable = Index.Nil } rule
+
+-- Work out what sort of simplification can be applied to a rule.
+{-# INLINEABLE simplification #-}
+simplification :: Function f => Config -> State f -> TweeRule f -> TweeRule f -> Maybe (Simplification f)
+simplification config state@State{..} new oldRule@TweeRule{rule_rule = old, rule_models = models} =
+  guarded lhs reorient `mplus` guarded rhs simplify
+  where
+    simplify = reduce (rhs old) Simplify
+
+    reorient =
+      reduce (lhs old) Reorient `mplus`
+      joinable
+
+    -- Discover rules which have become ground joinable
+    joinable = do
+      -- reorient will have taken care of oriented rules
+      guard (not (oriented (orientation (rule_rule new))))
+      -- Check that all existing models make the old rule joinable
+      guard $ all isNothing
+        -- Use empty
+        [ joinWith st_joinable st_rules norm (rule_cp oldRule)
+        | m <- models,
+          let norm = normaliseWith (const True) (rewrite (reducesInModel m) st_rules) ]
+      -- Now find out if the rule really is ground joinable.
+      -- Even if not, we want to update the list of models.
+      return $
+        case groundJoin st_joinable st_rules (branches (And [])) (rule_cp oldRule) of
+          Left model ->
+            NewModel model
+          Right _ ->
+            Reorient
+
+    reduce t res =
+      case anywhere (tryRule reduces new) t of
+        [] -> Nothing
+        _  -> Just res
+
+    -- Only try simplifying the old rule if the new rule matches it somewhere.
+    guarded f x = do
+      guard (any isJust [ match (lhs (the new)) t | t <- subterms (f old) ])
+      x
+
+    rules = Index.delete (lhs old) oldRule st_rules
+    oriented_rules = Index.delete (lhs old) oldRule st_oriented_rules
 
 ----------------------------------------------------------------------
 -- The main loop.

@@ -41,8 +41,8 @@ instance Pretty VersionedId where
   pPrint VersionedId{..} =
     pPrint versioned_id <>
     case versioned_version of
-      0 -> text ""
-      _ -> text "_" <> pPrint versioned_version
+      1 -> text ""
+      _ -> text "-" <> pPrint versioned_version
 
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where
