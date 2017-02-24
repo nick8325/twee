@@ -86,7 +86,7 @@ step3 eqns idx cp =
     _ -> Just cp
   where
     join (cp, top) =
-      joinWith eqns idx (normaliseWith (lessThan top) (rewrite reducesSkolem idx)) cp
+      joinWith eqns idx (normaliseWith (`lessThan` top) (rewrite reducesSkolem idx)) cp
 
     flipCP :: Symbolic a => a -> a
     flipCP t = subst sub t
