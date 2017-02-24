@@ -75,7 +75,7 @@ data Precedence = Precedence !Bool !(Maybe Int) !Int
   deriving (Eq, Ord)
 
 instance Sized Constant where
-  size Constant{..} = if con_arity >= 2 then 0 else 1
+  size Constant{..} = 1
 instance Arity Constant where
   arity Constant{..} = con_arity
 
