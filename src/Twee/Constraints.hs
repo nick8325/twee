@@ -275,7 +275,7 @@ solve xs branch@Branch{..}
         [(x, toTerm y) | (Variable x, y) <- equals] ++
         [(y, toTerm x) | (x@Constant{}, Variable y) <- equals]
       vs = Constant minimal:reverse (flattenSCCs (stronglyConnComp edges))
-      edges = [(x, x, [y | (x', y) <- less', x == x']) | x <- as]
+      edges = [(x, x, [y | (x', y) <- less', x == x']) | x <- as, x /= Constant minimal]
       less' = less ++ [(Constant x, Constant y) | Constant x <- as, Constant y <- as, x << y]
       as = usort $ xs ++ map fst less ++ map snd less
       model = modelFromOrder vs
