@@ -92,16 +92,16 @@ data Message f =
     NewRule !(TweeRule f)
   | NewEquation !Id !(Equation f)
   | SimplifyRule !(TweeRule f) !(TweeRule f)
-  | ReorientRule !(TweeRule f)
+  | ReorientRule !(TweeRule f) !(TweeRule f)
 
 instance PrettyTerm f => Pretty (Message f) where
   pPrint (NewRule rule) = pPrint rule
   pPrint (NewEquation _ eqn) =
     text "  (hard)" <+> pPrint eqn
-  pPrint (SimplifyRule _ new) =
-    text "  (simplify)" <+> pPrint new
-  pPrint (ReorientRule rule) =
-    text "  (delete)" <+> pPrint rule
+  pPrint (SimplifyRule using new) =
+    text "  (simplify using " <> pPrint (rule_id using) <> text ")" <+> pPrint new
+  pPrint (ReorientRule using rule) =
+    text "  (delete using " <> pPrint (rule_id using) <> text ")" <+> pPrint rule
 
 message :: PrettyTerm f => Message f -> State f -> State f
 message !msg state@State{..} =
@@ -264,8 +264,8 @@ addRule config state@State{..} rule0 =
   let
     rule = rule0 st_label
     state' =
-      message (NewRule rule) $
       flip (interreduce config) rule $
+      message (NewRule rule) $
       flip addRuleOnly rule $
       state { st_label = st_label+1 }
     passives =
@@ -409,7 +409,7 @@ instance Pretty (Simplification f) where pPrint = text . show
 interreduce :: Function f => Config -> State f -> TweeRule f -> State f
 interreduce config state new =
   {-# SCC interreduce #-}
-  foldl' (interreduce1 config) state simpls
+  foldl' (interreduce1 config new) state simpls
   where
     simpls =
       [ (old, simp)
@@ -419,9 +419,9 @@ interreduce config state new =
         simp <- maybeToList (simplification state' new old) ]
 
 {-# INLINEABLE interreduce1 #-}
-interreduce1 :: Function f => Config -> State f -> (TweeRule f, Simplification f) -> State f
-interreduce1 _ state@State{..} (rule@TweeRule{rule_rule = Rule _ lhs rhs, ..}, Simplify) =
-  message (SimplifyRule rule rule') $
+interreduce1 :: Function f => Config -> TweeRule f -> State f -> (TweeRule f, Simplification f) -> State f
+interreduce1 _ using state@State{..} (rule@TweeRule{rule_rule = Rule _ lhs rhs, ..}, Simplify) =
+  message (SimplifyRule using rule') $
   flip addRuleOnly rule' $ deleteRule state rule
   where
     rule' =
@@ -434,14 +434,14 @@ interreduce1 _ state@State{..} (rule@TweeRule{rule_rule = Rule _ lhs rhs, ..}, S
 
     rhs' = normaliseWith (const True) (rewrite reduces st_rules) rhs
 
-interreduce1 _ state@State{..} (rule@TweeRule{..}, NewModel model) =
+interreduce1 _ _ state@State{..} (rule@TweeRule{..}, NewModel model) =
   flip addRuleOnly rule' $ deleteRule state rule
   where
     rule' =
       rule {
         rule_models = model:rule_models }
-interreduce1 config state@State{..} (rule, Reorient) =
-  message (ReorientRule rule) $
+interreduce1 config using state@State{..} (rule, Reorient) =
+  message (ReorientRule using rule) $
   state' { st_joinable = st_joinable }
   where
     state' =
