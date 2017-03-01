@@ -100,7 +100,7 @@ joinWith ::
   (Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
   Index f (Equation f) -> Index f a -> (Term f -> Resulting f) -> CriticalPair f -> Maybe (CriticalPair f)
 joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
-  | subsumed Symmetric eqns idx eqn = Nothing
+  | subsumed eqns idx eqn = Nothing
   | otherwise =
     Just cp {
       cp_eqn = eqn,
@@ -113,33 +113,36 @@ joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
     rred = reduce rhs
     eqn = result lred :=: result rred
 
-data SubsumptionMode = Symmetric | Asymmetric deriving Eq
-
 {-# INLINEABLE subsumed #-}
 subsumed ::
   (Has a (Rule f), Has a VersionedId) =>
-  SubsumptionMode -> Index f (Equation f) -> Index f a -> Equation f -> Bool
-subsumed mode eqns idx (t :=: u)
+  Index f (Equation f) -> Index f a -> Equation f -> Bool
+subsumed eqns idx (t :=: u)
   | t == u = True
+    -- Important to do this asymmetrically, because otherwise we get
+    -- the following bug:
+    --   * discover new unorientable equation t=u
+    --   * add t -> u
+    --   * add u -> t. Oops, subsumed!
+    -- This bug can also occur during interreduction, so we can't just
+    -- treat new rules specially.
   | or [ rhs rule == u | rule <- Index.lookup t idx ] = True
-  | mode == Symmetric &&
-    or [ rhs rule == t | rule <- Index.lookup u idx ] = True
   | subEqn t u || subEqn u t = True
   where
     subEqn t u =
       or [ u == subst sub u'
          | t' :=: u' <- Index.approxMatches t eqns,
            sub <- maybeToList (match t' t) ]
-subsumed mode eqns idx (App f ts :=: App g us)
+subsumed eqns idx (App f ts :=: App g us)
   | f == g =
     let
       sub Empty Empty = False
       sub (Cons t ts) (Cons u us) =
-        subsumed mode eqns idx (t :=: u) && sub ts us
+        subsumed eqns idx (t :=: u) && sub ts us
       sub _ _ = error "Function used with multiple arities"
     in
       sub ts us
-subsumed _ _ _ _ = False
+subsumed _ _ _ = False
 
 {-# INLINEABLE groundJoin #-}
 groundJoin ::
