@@ -28,14 +28,19 @@ import Twee.Proof(Proof, Derivation, Lemma(..))
 data Rule f =
   Rule {
     orientation :: !(Orientation f),
+    -- Invariant:
+    -- For oriented rules: vars rhs `isSubsetOf` vars lhs
+    -- For unoriented rules: vars lhs == vars rhs
     lhs :: {-# UNPACK #-} !(Term f),
     rhs :: {-# UNPACK #-} !(Term f) }
   deriving (Eq, Ord, Show, Generic)
 type RuleOf a = Rule (ConstantOf a)
 
 data Orientation f =
+    -- Oriented rules: used only left-to-right
     Oriented
   | WeaklyOriented {-# UNPACK #-} !(Fun f) [Term f]
+    -- Unoriented rules: used bidirectionally
   | Permutative [(Term f, Term f)]
   | Unoriented
   deriving Show
@@ -83,38 +88,6 @@ instance PrettyTerm f => Pretty (Rule f) where
 -- Turn a rule into an equation.
 unorient :: Rule f -> Equation f
 unorient (Rule _ l r) = l :=: r
-
--- Turn an equation into a set of rules.
--- Along with each rule, returns a function which transforms a proof
--- of the equation into a proof of the rule.
-orient :: forall f. Function f => Equation f -> [(Rule f, Derivation f -> Derivation f)]
-orient (l :=: r) | l == r = []
-orient (l :=: r) =
-  -- If we have an equation where some variables appear only on one side, e.g.:
-  --   f x y = g x z
-  -- then replace it with the equations:
-  --   f x y = f x k
-  --   g x z = g x k
-  --   f x k = g x k
-  -- where k is an arbitrary constant
-  [ (makeRule l r',
-     \pf -> erase rs pf)
-  | ord /= Just LT && ord /= Just EQ ] ++
-  [ (makeRule r l',
-     \pf -> Proof.symm (erase ls pf))
-  | ord /= Just GT && ord /= Just EQ ] ++
-  [ (makeRule l l',
-     \pf -> pf `Proof.trans` Proof.symm (erase ls pf))
-  | not (null ls), ord /= Just GT ] ++
-  [ (makeRule r r',
-     \pf -> Proof.symm pf `Proof.trans` erase rs pf)
-  | not (null rs), ord /= Just LT ]
-  where
-    ord = orientTerms l' r'
-    l' = erase ls l
-    r' = erase rs r
-    ls = usort (vars l) \\ usort (vars r)
-    rs = usort (vars r) \\ usort (vars l)
 
 -- Turn a pair of terms t and u into a rule t -> u by computing the
 -- orientation info (e.g. oriented, permutative or unoriented).

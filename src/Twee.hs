@@ -49,16 +49,6 @@ data State f =
     st_considered     :: {-# UNPACK #-} !Int,
     st_messages_rev   :: ![Message f] }
 
--- For goal terms we store the set of all their normal forms.
--- Name and number are for information only.
-data Goal f =
-  Goal {
-    goal_name   :: String,
-    goal_number :: Int,
-    goal_eqn    :: Equation f,
-    goal_lhs    :: Set (Resulting f),
-    goal_rhs    :: Set (Resulting f) }
-
 defaultConfig :: Config
 defaultConfig =
   Config {
@@ -297,27 +287,6 @@ deleteRule state@State{..} rule@TweeRule{..} =
     st_rules = Index.delete (lhs rule_rule) rule st_rules,
     st_rule_ids = IntMap.delete (fromIntegral rule_id) st_rule_ids }
 
--- Normalise all goals.
-{-# INLINEABLE normaliseGoals #-}
-normaliseGoals :: Function f => State f -> State f
-normaliseGoals state@State{..} =
-  {-# SCC normaliseGoals #-}
-  state {
-    st_goals =
-      map (goalMap (normalForms (rewrite reduces st_rules) . Set.toList)) st_goals }
-  where
-    goalMap f goal@Goal{..} =
-      goal { goal_lhs = f goal_lhs, goal_rhs = f goal_rhs }
-
--- Record an equation as being joinable.
-{-# INLINEABLE addJoinable #-}
-addJoinable :: Function f => State f -> Equation f -> State f
-addJoinable state eqn@(t :=: u) =
-  message (NewEquation (st_label state) eqn) $
-  state {
-    st_joinable =
-      Index.insert t (t :=: u) (st_joinable state) }
-
 -- Try to join a critical pair.
 {-# INLINEABLE consider #-}
 consider :: Function f => Config -> State f -> CriticalPair f -> State f
@@ -338,20 +307,20 @@ consider config state@State{..} cp0 =
       let
         rules =
           [ \n ->
-            let p = Proof.certify (prf (cp_proof cp)) in
+            let p = Proof.certify cr_proof in
             TweeRule {
               rule_id = n,
               rule_version = 1,
-              rule_rule = rule,
-              rule_positions = positions (lhs rule),
+              rule_rule = cr_rule,
+              rule_positions = positions (lhs cr_rule),
               rule_models = [model],
-              rule_top = cp_top cp,
+              rule_top = cr_top,
               rule_proof = p,
               rule_lemmas =
                 IntSet.fromList $
                   map (fromIntegral . versioned_id . lemma_id)
                     (Proof.usedLemmas (Proof.derivation p)) }
-          | (rule, prf) <- orient (cp_eqn cp) ]
+          | CriticalRule{..} <- orientCP cp ]
       in
         foldl' (addRule config) state rules
 
@@ -365,11 +334,42 @@ addAxiom config state axiom =
       cp_top = Nothing,
       cp_proof = Proof.axiom axiom }
 
+-- Record an equation as being joinable.
+{-# INLINEABLE addJoinable #-}
+addJoinable :: Function f => State f -> Equation f -> State f
+addJoinable state eqn@(t :=: u) =
+  message (NewEquation (st_label state) eqn) $
+  state {
+    st_joinable =
+      Index.insert t (t :=: u) (st_joinable state) }
+
+-- For goal terms we store the set of all their normal forms.
+-- Name and number are for information only.
+data Goal f =
+  Goal {
+    goal_name   :: String,
+    goal_number :: Int,
+    goal_eqn    :: Equation f,
+    goal_lhs    :: Set (Resulting f),
+    goal_rhs    :: Set (Resulting f) }
+
 -- Add a new goal.
 {-# INLINEABLE addGoal #-}
 addGoal :: Function f => Config -> State f -> Goal f -> State f
 addGoal _config state@State{..} goal =
   normaliseGoals state { st_goals = goal:st_goals }
+
+-- Normalise all goals.
+{-# INLINEABLE normaliseGoals #-}
+normaliseGoals :: Function f => State f -> State f
+normaliseGoals state@State{..} =
+  {-# SCC normaliseGoals #-}
+  state {
+    st_goals =
+      map (goalMap (normalForms (rewrite reduces st_rules) . Set.toList)) st_goals }
+  where
+    goalMap f goal@Goal{..} =
+      goal { goal_lhs = f goal_lhs, goal_rhs = f goal_rhs }
 
 -- Create a goal.
 {-# INLINE goal #-}

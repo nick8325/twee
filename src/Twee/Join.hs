@@ -15,6 +15,7 @@ import Twee.Utils
 import Data.Maybe
 import Data.Either
 import Data.Ord
+import Data.List
 import GHC.Generics
 
 -- A critical pair together with information about how it was derived
@@ -33,6 +34,82 @@ instance PrettyTerm f => Pretty (CriticalPair f) where
     vcat [
       pPrint cp_eqn,
       nest 2 (text "top:" <+> pPrint cp_top) ]
+
+-- A critical pair oriented into a rewrite rule.
+data CriticalRule f =
+  CriticalRule {
+    cr_rule  :: {-# UNPACK #-} !(Rule f),
+    cr_top   :: !(Maybe (Term f)),
+    cr_proof :: !(Derivation f) }
+
+-- Turn a critical pair into a set of critical rules.
+orientCP :: Function f => CriticalPair f -> [CriticalRule f]
+orientCP CriticalPair{cp_eqn = l :=: r, ..}
+  | l == r = []
+  | otherwise =
+    -- If we have something which is almost a rule, except that some
+    -- variables appear only on the right-hand side, e.g.:
+    --   f x y -> g x z
+    -- then we replace it with the following two rules:
+    --   f x y -> g x ?
+    --   g x z -> g x ?
+    -- where the second rule is weakly oriented and ? is the minimal
+    -- constant.
+    --
+    -- If we have an unoriented equation with a similar problem, e.g.:
+    --   f x y = g x z
+    -- then we replace it with potentially three rules:
+    --   f x ? = g x ?
+    --   f x y -> f x ?
+    --   g x z -> g x ?
+
+    -- The main rule l -> r' or r -> l' or l' = r'
+    [ CriticalRule {
+        cr_rule  = makeRule l r',
+        cr_top   = cp_top,
+        cr_proof = erase rs cp_proof }
+    | ord == Just GT ] ++
+    [ CriticalRule {
+        cr_rule  = makeRule r l',
+        cr_top   = cp_top,
+        cr_proof = Proof.symm (erase ls cp_proof) }
+    | ord == Just LT ] ++
+    [ CriticalRule {
+        cr_rule  = makeRule l' r',
+        cr_top   = cp_top,
+        cr_proof = erase (ls++rs) cp_proof }
+    | ord == Nothing ] ++
+    [ CriticalRule {
+        cr_rule  = makeRule r' l',
+        cr_top   = cp_top,
+        cr_proof = Proof.symm (erase (ls++rs) cp_proof) }
+    | ord == Nothing ] ++
+
+    -- Weak rules l -> l' or r -> r'
+    [ CriticalRule {
+        cr_rule  = makeRule l l',
+        cr_top   = Just r, -- overlap of r -> l with itself
+        cr_proof = cp_proof `Proof.trans` Proof.symm (erase ls cp_proof) }
+    | not (null ls), ord /= Just GT ] ++
+    [ CriticalRule {
+        cr_rule  = makeRule r r',
+        cr_top   = Just l, -- overlap of l -> r with itself
+        cr_proof = Proof.symm cp_proof `Proof.trans` erase rs cp_proof }
+    | not (null rs), ord /= Just LT ]
+    where
+      ord = orientTerms l' r'
+      l' = erase ls l
+      r' = erase rs r
+      ls = usort (vars l) \\ usort (vars r)
+      rs = usort (vars r) \\ usort (vars l)
+
+-- Turn a critical rule back into a critical pair.
+unorientCP :: CriticalRule f -> CriticalPair f
+unorientCP CriticalRule{cr_rule = Rule _ l r, ..} =
+  CriticalPair {
+    cp_eqn = l :=: r,
+    cp_top = cr_top,
+    cp_proof = cr_proof }
 
 {-# INLINEABLE makeCriticalPair #-}
 makeCriticalPair ::
@@ -119,20 +196,12 @@ subsumed ::
   Index f (Equation f) -> Index f a -> Equation f -> Bool
 subsumed eqns idx (t :=: u)
   | t == u = True
-    -- Important to do this asymmetrically, because otherwise we get
-    -- the following bug:
-    --   * discover new unorientable equation t=u
-    --   * add t -> u
-    --   * add u -> t. Oops, subsumed!
-    -- This bug can also occur during interreduction, so we can't just
-    -- treat new rules specially.
   | or [ rhs rule == u | rule <- Index.lookup t idx ] = True
-  | subEqn t u || subEqn u t = True
-  where
-    subEqn t u =
-      or [ u == subst sub u'
-         | t' :=: u' <- Index.approxMatches t eqns,
-           sub <- maybeToList (match t' t) ]
+    -- No need to do this symmetrically because addJoinable adds
+    -- both orientations of each equation
+  | or [ u == subst sub u'
+       | t' :=: u' <- Index.approxMatches t eqns,
+         sub <- maybeToList (match t' t) ] = True
 subsumed eqns idx (App f ts :=: App g us)
   | f == g =
     let
