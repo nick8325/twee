@@ -174,6 +174,6 @@ score Config{..} Overlap{..} =
     n = size' r
 
     size' t =
-      size t * cfg_funweight -
+      (size t + len t) * cfg_funweight -
       (length (filter isVar (subterms t)) + length (nub (vars t))) *
       (cfg_funweight - cfg_varweight)
