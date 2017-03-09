@@ -82,7 +82,7 @@ data Message f =
     NewRule !(TweeRule f)
   | NewEquation !Id !(Equation f)
   | SimplifyRule !(TweeRule f) !(TweeRule f)
-  | ReorientRule !(TweeRule f) !(TweeRule f)
+  | DeleteRule !(TweeRule f) !(TweeRule f)
 
 instance PrettyTerm f => Pretty (Message f) where
   pPrint (NewRule rule) = pPrint rule
@@ -90,7 +90,7 @@ instance PrettyTerm f => Pretty (Message f) where
     text "  (hard)" <+> pPrint eqn
   pPrint (SimplifyRule using new) =
     text "  (simplify using " <> pPrint (rule_id using) <> text ")" <+> pPrint new
-  pPrint (ReorientRule using rule) =
+  pPrint (DeleteRule using rule) =
     text "  (delete using " <> pPrint (rule_id using) <> text ")" <+> pPrint rule
 
 message :: PrettyTerm f => Message f -> State f -> State f
@@ -386,7 +386,7 @@ goal n name (t :=: u) =
 -- Interreduction.
 ----------------------------------------------------------------------
 
-data Simplification f = Simplify | Reorient | NewModel (Model f)
+data Simplification f = Simplify | Delete | NewModels [Model f]
   deriving Show
 instance Pretty (Simplification f) where pPrint = text . show
 
@@ -434,60 +434,61 @@ interreduce1 _ using state@State{..} (rule@TweeRule{rule_rule = Rule _ lhs rhs, 
 
     rhs' = normaliseWith (const True) (rewrite reduces st_rules) rhs
 
-interreduce1 _ _ state@State{..} (rule@TweeRule{..}, NewModel model) =
+interreduce1 _ _ state@State{..} (rule@TweeRule{..}, NewModels models) =
   flip addRuleOnly rule' $ deleteRule state rule
   where
     rule' =
       rule {
-        rule_models = model:rule_models }
-interreduce1 config using state@State{..} (rule, Reorient) =
-  message (ReorientRule using rule) $
-  state' { st_joinable = st_joinable }
-  where
-    state' =
-      flip (consider config) (rule_cp rule) $
-      deleteRule state { st_joinable = Index.Nil } rule
+        rule_models = models }
+interreduce1 config using state@State{..} (rule, Delete) =
+  message (DeleteRule using rule) $
+  deleteRule state rule
 
 -- Work out what sort of simplification can be applied to a rule.
 {-# INLINEABLE simplification #-}
 simplification :: Function f => State f -> TweeRule f -> TweeRule f -> Maybe (Simplification f)
-simplification State{..} new oldRule@TweeRule{rule_rule = old, rule_models = models} =
-  guarded lhs reorient `mplus` guarded rhs simplify
+simplification State{..} new oldRule@TweeRule{rule_rule = old, rule_models = models} = do
+  -- Don't do anything unless the new rule matches the old one
+  guard (any isJust [ match (lhs (the new)) t | t <- subterms (lhs old) ++ subterms (rhs old) ])
+  reorient `mplus` simplify
   where
-    simplify = reduce (rhs old) Simplify
-
-    reorient =
-      reduce (lhs old) Reorient `mplus`
-      joinable
+    simplify = do
+      guard (reducesWith reduces (rhs old))
+      return Simplify
 
     -- Discover rules which have become ground joinable
-    joinable = do
-      -- reorient will have taken care of oriented rules
-      guard (not (oriented (orientation (rule_rule new))))
-      -- Check that all existing models make the old rule joinable
-      guard $ all isNothing
-        -- Use empty
-        [ joinWith st_joinable st_rules norm (rule_cp oldRule)
-        | m <- models,
-          let norm = normaliseWith (const True) (rewrite (reducesInModel m) st_rules) ]
-      -- Now find out if the rule really is ground joinable.
-      -- Even if not, we want to update the list of models.
-      return $
-        case groundJoin st_joinable st_rules (branches (And [])) (rule_cp oldRule) of
-          Left model ->
-            NewModel model
-          Right _ ->
-            Reorient
+    reorient =
+      case partition joinable models of
+        ([], _) ->
+          -- No models are joinable
+          Nothing
+        (_, []) ->
+          -- All existing models are joinable - find out if the rule
+          -- really has become ground joinable
+          return $
+            case groundJoin st_joinable st_rules (branches (And [])) (rule_cp oldRule) of
+              Left model ->
+                NewModels [model]
+              Right cps
+                | all (isNothing . allSteps st_joinable st_rules) cps ->
+                  Delete
+                | otherwise ->
+                  NewModels []
+        (_, models') ->
+          -- Some but not all models are joinable
+          return (NewModels models')
 
-    reduce t res =
-      case anywhere (tryRule reduces new) t of
-        [] -> Nothing
-        _  -> Just res
+    -- Check if a rule is joinable in a given model
+    joinable model =
+      (reducesWith (reducesInModel model) (lhs old) ||
+       reducesWith (reducesInModel model) (rhs old)) &&
+      isNothing (joinWith st_joinable st_rules norm (rule_cp oldRule))
+      where
+        norm = normaliseWith (const True) (rewrite (reducesInModel model) st_rules)
 
-    -- Only try simplifying the old rule if the new rule matches it somewhere.
-    guarded f x = do
-      guard (any isJust [ match (lhs (the new)) t | t <- subterms (f old) ])
-      x
+    -- Check if the new rule has any effect on a given term
+    reducesWith f t =
+      not (null (anywhere (tryRule f new) t))
 
 ----------------------------------------------------------------------
 -- The main loop.
