@@ -257,7 +257,7 @@ addRule config state@State{..} rule0 =
   let
     rule = rule0 st_label
     state' =
-      flip (interreduce config) rule $
+      flip interreduce rule $
       message (NewRule rule) $
       flip addRuleOnly rule $
       state { st_label = st_label+1 }
@@ -419,10 +419,10 @@ instance Pretty (Simplification f) where pPrint = text . show
 
 -- Simplify all old rules wrt a new rule.
 {-# INLINEABLE interreduce #-}
-interreduce :: Function f => Config -> State f -> TweeRule f -> State f
-interreduce config state new =
+interreduce :: Function f => State f -> TweeRule f -> State f
+interreduce state new =
   {-# SCC interreduce #-}
-  foldl' (interreduce1 config new) state simpls
+  foldl' interreduce1 state simpls
   where
     simpls =
       [ (old, simp)
@@ -432,8 +432,8 @@ interreduce config state new =
         simp <- maybeToList (simplification state' new old) ]
 
 {-# INLINEABLE interreduce1 #-}
-interreduce1 :: Function f => Config -> TweeRule f -> State f -> (TweeRule f, Simplification f) -> State f
-interreduce1 _ using state@State{..} (rule@TweeRule{rule_rule = Rule _ lhs rhs, ..}, Simplify) =
+interreduce1 :: Function f => State f -> (TweeRule f, Simplification f) -> State f
+interreduce1 state@State{..} (rule@TweeRule{rule_rule = Rule _ lhs rhs, ..}, Simplify) =
   message (DeleteRule rule) $
   message (NewRule rule') $
   replaceRule state' rule rule'
@@ -449,13 +449,13 @@ interreduce1 _ using state@State{..} (rule@TweeRule{rule_rule = Rule _ lhs rhs, 
 
     rhs' = normaliseWith (const True) (rewrite reduces st_rules) rhs
 
-interreduce1 _ _ state@State{..} (rule@TweeRule{..}, NewModels models) =
+interreduce1 state@State{..} (rule@TweeRule{..}, NewModels models) =
   flip addRuleOnly rule' $ deleteRule state rule
   where
     rule' =
       rule {
         rule_models = models }
-interreduce1 config using state@State{..} (rule, Delete) =
+interreduce1 state@State{..} (rule, Delete) =
   message (DeleteRule rule) $
   deleteRule state rule
 
