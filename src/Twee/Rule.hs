@@ -265,7 +265,7 @@ reductionProof (Cong f ps) = Proof.cong f (map reductionProof ps)
 
 -- Construct a basic rewrite step.
 {-# INLINE step #-}
-step :: (Has a VersionedId, Has a (Rule f), Has a (Proof f)) => a -> Subst f -> Reduction f
+step :: (Has a Id, Has a (Rule f), Has a (Proof f)) => a -> Subst f -> Reduction f
 step x sub = Step (Lemma (the x) (the x)) (the x) sub
 
 ----------------------------------------------------------------------
@@ -376,14 +376,14 @@ parallel strat t =
 
 -- A strategy which rewrites using an index.
 {-# INLINE rewrite #-}
-rewrite :: (Function f, Has a (Rule f), Has a (Proof f), Has a VersionedId) => (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
+rewrite :: (Function f, Has a (Rule f), Has a (Proof f), Has a Id) => (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
 rewrite p rules t = do
   rule <- Index.approxMatches t rules
   tryRule p rule t
 
 -- A strategy which applies one rule only.
 {-# INLINEABLE tryRule #-}
-tryRule :: (Function f, Has a (Rule f), Has a (Proof f), Has a VersionedId) => (Rule f -> Subst f -> Bool) -> a -> Strategy f
+tryRule :: (Function f, Has a (Rule f), Has a (Proof f), Has a Id) => (Rule f -> Subst f -> Bool) -> a -> Strategy f
 tryRule p rule t = do
   sub <- maybeToList (match (lhs (the rule)) t)
   guard (p (the rule) sub)

@@ -43,6 +43,7 @@ data State f =
     st_oriented_rules :: !(Index f (TweeRule f)),
     st_rules          :: !(Index f (TweeRule f)),
     st_rule_ids       :: !(IntMap (TweeRule f)),
+    st_replaced_rules :: !(IntMap Id),
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
     st_queue          :: !(Heap (Passive f)),
@@ -72,6 +73,7 @@ initialState =
     st_oriented_rules = Index.Nil,
     st_rules = Index.Nil,
     st_rule_ids = IntMap.empty,
+    st_replaced_rules = IntMap.empty,
     st_joinable = Index.Nil,
     st_goals = [],
     st_queue = Heap.empty,
@@ -86,17 +88,14 @@ initialState =
 data Message f =
     NewRule !(TweeRule f)
   | NewEquation !Id !(Equation f)
-  | SimplifyRule !(TweeRule f) !(TweeRule f)
-  | DeleteRule !(TweeRule f) !(TweeRule f)
+  | DeleteRule !(TweeRule f)
 
 instance PrettyTerm f => Pretty (Message f) where
   pPrint (NewRule rule) = pPrint rule
   pPrint (NewEquation _ eqn) =
     text "  (hard)" <+> pPrint eqn
-  pPrint (SimplifyRule using new) =
-    text "  (simplify using " <> pPrint (rule_id using) <> text ")" <+> pPrint new
-  pPrint (DeleteRule using rule) =
-    text "  (delete using " <> pPrint (rule_id using) <> text ")" <+> pPrint rule
+  pPrint (DeleteRule rule) =
+    text "  (delete rule " <> pPrint (rule_id rule) <> text ")"
 
 message :: PrettyTerm f => Message f -> State f -> State f
 message !msg state@State{..} =
@@ -144,8 +143,12 @@ makePassive Config{..} State{..} mrange id =
 {-# INLINEABLE findPassive #-}
 findPassive :: forall f. Function f => Config -> State f -> Passive f -> Maybe (TweeRule f, TweeRule f, Overlap f)
 findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
-  rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
-  rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
+  let
+    lookup id =
+      IntMap.lookup (fromIntegral id) st_rule_ids `mplus`
+      (IntMap.lookup (fromIntegral id) st_replaced_rules >>= lookup)
+  rule1 <- lookup (fromIntegral passive_rule1)
+  rule2 <- lookup (fromIntegral passive_rule2)
   overlap <-
     overlapAt (fromIntegral passive_pos)
       (renameAvoiding (the rule2 :: Rule f) (the rule1)) (the rule2)
@@ -215,7 +218,6 @@ dequeue config@Config{..} state@State{..} =
 data TweeRule f =
   TweeRule {
     rule_id        :: {-# UNPACK #-} !Id,
-    rule_version   :: {-# UNPACK #-} !Int,
     rule_rule      :: {-# UNPACK #-} !(Rule f),
     -- Positions at which the rule can form CPs
     rule_positions :: !(Positions f),
@@ -235,10 +237,6 @@ instance f ~ g => Has (TweeRule f) (Rule g) where the = rule_rule
 instance f ~ g => Has (TweeRule f) (Positions g) where the = rule_positions
 instance f ~ g => Has (TweeRule f) (Proof g) where the = rule_proof
 instance Has (TweeRule f) Id where the = rule_id
-instance Has (TweeRule f) VersionedId where the = rule_versionedid
-
-rule_versionedid :: TweeRule f -> VersionedId
-rule_versionedid TweeRule{..} = VersionedId rule_id rule_version
 
 rule_cp :: TweeRule f -> CriticalPair f
 rule_cp TweeRule{..} =
@@ -292,6 +290,17 @@ deleteRule state@State{..} rule@TweeRule{..} =
     st_rules = Index.delete (lhs rule_rule) rule st_rules,
     st_rule_ids = IntMap.delete (fromIntegral rule_id) st_rule_ids }
 
+-- Replace a rule with its simplification. Used in interreduction.
+{-# INLINE replaceRule #-}
+replaceRule :: Function f => State f -> TweeRule f -> TweeRule f -> State f
+replaceRule state@State{..} rule rule' =
+  flip addRuleOnly rule' $
+  flip deleteRule rule $
+  state {
+    st_replaced_rules =
+      IntMap.insert (fromIntegral (rule_id rule)) (rule_id rule')
+        st_replaced_rules }
+
 -- Try to join a critical pair.
 {-# INLINEABLE consider #-}
 consider :: Function f => Config -> State f -> CriticalPair f -> State f
@@ -315,7 +324,6 @@ consider config state@State{..} cp0 =
             let p = Proof.certify cr_proof in
             TweeRule {
               rule_id = n,
-              rule_version = 1,
               rule_rule = cr_rule,
               rule_positions = positions (lhs cr_rule),
               rule_models = [model],
@@ -323,7 +331,7 @@ consider config state@State{..} cp0 =
               rule_proof = p,
               rule_lemmas =
                 IntSet.fromList $
-                  map (fromIntegral . versioned_id . lemma_id)
+                  map (fromIntegral . lemma_id)
                     (Proof.usedLemmas (Proof.derivation p)) }
           | CriticalRule{..} <- orientCP cp ]
       in
@@ -426,16 +434,18 @@ interreduce config state new =
 {-# INLINEABLE interreduce1 #-}
 interreduce1 :: Function f => Config -> TweeRule f -> State f -> (TweeRule f, Simplification f) -> State f
 interreduce1 _ using state@State{..} (rule@TweeRule{rule_rule = Rule _ lhs rhs, ..}, Simplify) =
-  message (SimplifyRule using rule') $
-  flip addRuleOnly rule' $ deleteRule state rule
+  message (DeleteRule rule) $
+  message (NewRule rule') $
+  replaceRule state' rule rule'
   where
     rule' =
       rule {
         rule_rule = makeRule lhs (result rhs'),
-        rule_version = rule_version + 1,
+        rule_id = st_label,
         rule_proof =
           Proof.certify $
           Proof.derivation rule_proof `Proof.trans` reductionProof (reduction rhs') }
+    state' = state { st_label = succ st_label }
 
     rhs' = normaliseWith (const True) (rewrite reduces st_rules) rhs
 
@@ -446,7 +456,7 @@ interreduce1 _ _ state@State{..} (rule@TweeRule{..}, NewModels models) =
       rule {
         rule_models = models }
 interreduce1 config using state@State{..} (rule, Delete) =
-  message (DeleteRule using rule) $
+  message (DeleteRule rule) $
   deleteRule state rule
 
 -- Work out what sort of simplification can be applied to a rule.

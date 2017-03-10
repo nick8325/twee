@@ -47,7 +47,7 @@ data Derivation f =
 -- A lemma, which includes a proof.
 data Lemma f =
   Lemma {
-    lemma_id :: {-# UNPACK #-} !VersionedId,
+    lemma_id :: {-# UNPACK #-} !Id,
     lemma_proof :: !(Proof f) }
   deriving Show
 
@@ -364,7 +364,7 @@ presentWithGoals config@Config{..} goals lemmas
     oneStep _ = True
 
 -- Pretty-print the proof of a single lemma.
-pPrintLemma :: Function f => (VersionedId -> String) -> Proof f -> Doc
+pPrintLemma :: Function f => (Id -> String) -> Proof f -> Doc
 pPrintLemma lemmaName p =
   ppTerm (eqn_lhs (equation p)) $$ pp q
   where

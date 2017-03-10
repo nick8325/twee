@@ -128,7 +128,7 @@ termSubst sub t = build (Term.subst sub t)
 {-# INLINEABLE overlapProof #-}
 overlapProof ::
   forall a f.
-  (Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
+  (Has a (Rule f), Has a (Proof f), Has a Id) =>
   a -> a -> Overlap f -> Derivation f
 overlapProof left right Overlap{..} =
   Proof.symm (reductionProof (step left leftSub))

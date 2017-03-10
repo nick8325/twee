@@ -113,7 +113,7 @@ unorientCP CriticalRule{cr_rule = Rule _ l r, ..} =
 
 {-# INLINEABLE makeCriticalPair #-}
 makeCriticalPair ::
-  (Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
+  (Has a (Rule f), Has a (Proof f), Has a Id) =>
   a -> a -> Overlap f -> CriticalPair f
 makeCriticalPair r1 r2 overlap@Overlap{..} =
   CriticalPair overlap_eqn
@@ -122,7 +122,7 @@ makeCriticalPair r1 r2 overlap@Overlap{..} =
 
 {-# INLINEABLE joinCriticalPair #-}
 joinCriticalPair ::
-  (Function f, Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
+  (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
   Index f (Equation f) -> Index f a ->
   CriticalPair f ->
   Either
@@ -149,7 +149,7 @@ joinCriticalPair eqns idx cp =
 {-# INLINEABLE step3 #-}
 {-# INLINEABLE allSteps #-}
 step1, step2, step3, allSteps ::
-  (Function f, Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
+  (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
   Index f (Equation f) -> Index f a -> CriticalPair f -> Maybe (CriticalPair f)
 allSteps eqns idx cp = step1 eqns idx cp >>= step2 eqns idx >>= step3 eqns idx
 step1 eqns idx = joinWith eqns idx (normaliseWith (const True) (rewrite reducesOriented idx))
@@ -174,7 +174,7 @@ step3 eqns idx cp =
 
 {-# INLINEABLE joinWith #-}
 joinWith ::
-  (Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
+  (Has a (Rule f), Has a (Proof f), Has a Id) =>
   Index f (Equation f) -> Index f a -> (Term f -> Resulting f) -> CriticalPair f -> Maybe (CriticalPair f)
 joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
   | subsumed eqns idx eqn = Nothing
@@ -192,7 +192,7 @@ joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
 
 {-# INLINEABLE subsumed #-}
 subsumed ::
-  (Has a (Rule f), Has a VersionedId) =>
+  (Has a (Rule f), Has a Id) =>
   Index f (Equation f) -> Index f a -> Equation f -> Bool
 subsumed eqns idx (t :=: u)
   | t == u = True
@@ -215,7 +215,7 @@ subsumed _ _ _ = False
 
 {-# INLINEABLE groundJoin #-}
 groundJoin ::
-  (Function f, Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
+  (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
   Index f (Equation f) -> Index f a -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
 groundJoin eqns idx ctx r@CriticalPair{cp_eqn = t :=: u, ..} =
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of

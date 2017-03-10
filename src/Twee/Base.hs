@@ -2,7 +2,7 @@
 -- To suppress a warning about hiding Arity
 {-# OPTIONS_GHC -fno-warn-dodgy-imports #-}
 module Twee.Base(
-  Id(..), VersionedId(..), Symbolic(..), subst, GSymbolic(..), Has(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
+  Id(..), Symbolic(..), subst, GSymbolic(..), Has(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding,
   Minimal(..), minimalTerm, isMinimal, erase,
   Skolem(..), Arity(..), Sized(..), Ordered(..), Equals(..), Strictness(..), Function, Extended(..),
@@ -29,20 +29,6 @@ newtype Id = Id { unId :: Int32 }
 
 instance Pretty Id where
   pPrint = text . show . unId
-
--- Identifies e.g. a rule as it was at a particular point in time.
-data VersionedId =
-  VersionedId {
-    versioned_id :: {-# UNPACK #-} !Id,
-    versioned_version :: {-# UNPACK #-} !Int }
-  deriving (Eq, Ord, Show)
-
-instance Pretty VersionedId where
-  pPrint VersionedId{..} =
-    pPrint versioned_id <>
-    case versioned_version of
-      1 -> text ""
-      _ -> text "-" <> pPrint versioned_version
 
 -- Generalisation of term functionality to things that contain terms.
 class Symbolic a where
