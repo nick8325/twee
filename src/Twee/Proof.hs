@@ -303,8 +303,7 @@ presentWithGoals goals lemmas
 
     tryInline (Lemma n p)
       | oneStep (derivation p) = Just (derivation p)
-      | Map.lookup n uses == Just 1,
-        Map.lookup n usesAtRoot == Just 1 = Just (derivation p)
+      | Map.lookup n uses == Just 1 = Just (derivation p)
     tryInline (Lemma n p)
       -- Check for subsumption by an earlier lemma
       | Just (Lemma m q) <- Map.lookup (canonicalise (t :=: u)) equations, m < n =
@@ -330,21 +329,13 @@ presentWithGoals goals lemmas
         | lemma@Lemma{..} <- lemmas]
 
     -- Count how many times each lemma is used at the root
-    uses = usesWith usedLemmas
-    usesAtRoot = usesWith rootLemmas
-    usesWith lem =
+    uses =
       Map.fromListWith (+)
         [ (lemma_id, 1)
         | Lemma{..} <-
-            concatMap lem
+            concatMap usedLemmas
               (map (derivation . pg_proof) goals ++
                map (derivation . lemma_proof) lemmas) ]
-
-    -- Find all lemmas that occur at the root
-    rootLemmas (UseLemma lemma _) = [lemma]
-    rootLemmas (Symm p) = rootLemmas p
-    rootLemmas (Trans p q) = rootLemmas p ++ rootLemmas q
-    rootLemmas _ = []
 
     -- Check if a proof only has one step.
     -- Trans only occurs at the top level by this point.
