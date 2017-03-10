@@ -66,7 +66,7 @@ certify :: PrettyTerm f => Derivation f -> Proof f
 certify p =
   {-# SCC certify #-}
   case check p of
-    Nothing -> error ("Invalid proof created!\n" ++ show p)
+    Nothing -> error ("Invalid proof created!\n" ++ prettyShow p)
     Just eqn -> Proof eqn p
   where
     check (UseLemma Lemma{..} sub) =
