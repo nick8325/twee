@@ -24,7 +24,7 @@ data Proof f =
   Proof {
     equation   :: !(Equation f),
     derivation :: !(Derivation f) }
-  deriving Show
+  deriving (Eq, Show)
 
 -- A derivation is an unchecked proof. It might be wrong!
 -- The way to check it is to call "certify" to turn it into a Proof.
@@ -41,7 +41,7 @@ data Derivation f =
   | Trans !(Derivation f) !(Derivation f)
     -- Congruence
   | Cong {-# UNPACK #-} !(Fun f) ![Derivation f]
-  deriving Show
+  deriving (Eq, Show)
 
 -- A lemma, which includes a proof.
 data Lemma f =
@@ -94,6 +94,13 @@ certify p =
 ----------------------------------------------------------------------
 
 -- Typeclass instances.
+instance Eq (Lemma f) where
+  x == y =
+    -- Don't look into lemma proofs when comparing derivations,
+    -- to avoid exponential blowup
+    lemma_id x == lemma_id y &&
+    equation (lemma_proof x) == equation (lemma_proof y)
+
 instance Symbolic (Derivation f) where
   type ConstantOf (Derivation f) = f
   termsDL (UseLemma _ sub) = termsDL sub
@@ -137,10 +144,9 @@ instance PrettyTerm f => Pretty (Lemma f) where
 
 -- Simplify a derivation.
 -- After simplification, a derivation has the following properties:
---   * Trans is right-associated and only appears at the top level
 --   * Symm is pushed down next to Step
---   * Each Cong only does one rewrite (i.e. contains one Step constructor)
---   * Refl only occurs inside Cong
+--   * Refl only occurs inside Cong or at the top level
+--   * Trans is right-associated and is pushed inside Cong if possible
 simplify :: Minimal f => (Lemma f -> Maybe (Derivation f)) -> Derivation f -> Derivation f
 simplify lem p = simp p
   where
@@ -354,13 +360,19 @@ pPrintLemma lemmaName p =
 
     -- Lift Trans outside of Cong, so that each Cong only
     -- uses one lemma or axiom.
-    floatTrans :: Derivation f -> Derivation f
+    floatTrans :: PrettyTerm f => Derivation f -> Derivation f
     floatTrans (Symm p) = Symm (floatTrans p)
     floatTrans (Trans p q) = Trans (floatTrans p) (floatTrans q)
     floatTrans (Cong f ps)
+      | ps /= qs =
+        floatTrans (Cong f qs)
+      where
+        qs = map floatTrans ps
+    floatTrans (Cong f ps)
       | any isTrans ps =
-        Cong f (map fst peeled) `Trans`
+        floatTrans (Cong f (map fst peeled)) `Trans`
         floatTrans (Cong f (map snd peeled))
+      | otherwise = Cong f ps
       where
         peeled = map peel ps
         peel (Trans p q) = (p, q)

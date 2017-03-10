@@ -132,6 +132,7 @@ subst sub t = substList sub (singleton t)
 newtype Subst f =
   Subst {
     unSubst :: IntMap (TermList f) }
+  deriving Eq
 
 {-# INLINE substSize #-}
 substSize :: Subst f -> Int
