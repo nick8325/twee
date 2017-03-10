@@ -60,7 +60,8 @@ data Axiom f =
 
 -- The trusted core of the module.
 -- Turns a derivation into a proof, while checking the derivation.
-certify :: Derivation f -> Proof f
+{-# INLINEABLE certify #-}
+certify :: PrettyTerm f => Derivation f -> Proof f
 certify p =
   {-# SCC certify #-}
   case check p of
@@ -110,7 +111,29 @@ instance Symbolic (Derivation f) where
   subst_ sub (Cong f ps) = cong f (subst_ sub ps)
 
 instance Function f => Pretty (Proof f) where pPrint = pPrintLemma prettyShow
-instance Function f => Pretty (Derivation f) where pPrint = pPrint . certify
+instance PrettyTerm f => Pretty (Derivation f) where
+  pPrint (UseLemma lemma sub) =
+    text "subst" <> pPrintTuple [pPrint lemma, pPrint sub]
+  pPrint (UseAxiom axiom sub) =
+    text "subst" <> pPrintTuple [pPrint axiom, pPrint sub]
+  pPrint (Refl t) =
+    text "refl" <> pPrintTuple [pPrint t]
+  pPrint (Symm p) =
+    text "symm" <> pPrintTuple [pPrint p]
+  pPrint (Trans p q) =
+    text "trans" <> pPrintTuple [pPrint p, pPrint q]
+  pPrint (Cong f ps) =
+    text "cong" <> pPrintTuple (pPrint f:map pPrint ps)
+
+instance PrettyTerm f => Pretty (Axiom f) where
+  pPrint Axiom{..} =
+    text "axiom" <>
+    pPrintTuple [pPrint axiom_number, text axiom_name, pPrint axiom_eqn]
+
+instance PrettyTerm f => Pretty (Lemma f) where
+  pPrint Lemma{..} =
+    text "lemma" <>
+    pPrintTuple [pPrint lemma_id, pPrint (equation lemma_proof)]
 
 -- Simplify a derivation.
 -- After simplification, a derivation has the following properties:
