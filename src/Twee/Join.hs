@@ -217,16 +217,16 @@ subsumed _ _ _ = False
 groundJoin ::
   (Function f, Has a (Rule f), Has a (Proof f), Has a VersionedId) =>
   Index f (Equation f) -> Index f a -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
-groundJoin eqns idx ctx r@CriticalPair{cp_eqn = t :=: u} =
+groundJoin eqns idx ctx r@CriticalPair{cp_eqn = t :=: u, ..} =
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
     ([], instances) ->
       let rs = [ subst sub r | sub <- instances ] in
       Right (usortBy (comparing (canonicalise . order . cp_eqn)) rs)
     (model:_, _)
-      | isJust (allSteps eqns idx r { cp_eqn = t' :=: u' }) -> Left model
+      | modelOK model && isJust (allSteps eqns idx r { cp_eqn = t' :=: u' }) -> Left model
       | otherwise ->
-          let model1 = optimise model weakenModel (\m -> valid m (reduction nt) && valid m (reduction nu))
-              model2 = optimise model1 weakenModel (\m -> isNothing (allSteps eqns idx r { cp_eqn = result (normaliseIn m t) :=: result (normaliseIn m u) }))
+          let model1 = optimise model weakenModel (\m -> not (modelOK m) || (valid m (reduction nt) && valid m (reduction nu)))
+              model2 = optimise model1 weakenModel (\m -> not (modelOK m) || isNothing (allSteps eqns idx r { cp_eqn = result (normaliseIn m t) :=: result (normaliseIn m u) }))
 
               diag [] = Or []
               diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
@@ -241,6 +241,12 @@ groundJoin eqns idx ctx r@CriticalPair{cp_eqn = t :=: u} =
         nu = normaliseIn model u
         t' = result nt
         u' = result nu
+
+        modelOK m =
+          case cp_top of
+            Nothing -> True
+            Just top ->
+              isNothing (lessIn m top t) && isNothing (lessIn m top u)
 
 {-# INLINEABLE valid #-}
 valid :: Function f => Model f -> Reduction f -> Bool
