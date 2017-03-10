@@ -83,7 +83,7 @@ executable twee
                        containers,
                        pretty,
                        split,
-                       jukebox >= 0.2.16
+                       jukebox >= 0.2.17
   ghc-options:         -W -fno-warn-incomplete-patterns -O2 -fmax-worker-args=100
 
   if flag(llvm)

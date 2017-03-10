@@ -4,7 +4,7 @@ packages:
 - '.'
 
 extra-deps:
-- jukebox-0.2.16
+- jukebox-0.2.17
 - minisat-0.1.2
 
 flags: {}
