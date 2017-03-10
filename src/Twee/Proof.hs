@@ -366,33 +366,9 @@ presentWithGoals config@Config{..} goals lemmas
 -- Pretty-print the proof of a single lemma.
 pPrintLemma :: Function f => (Id -> String) -> Proof f -> Doc
 pPrintLemma lemmaName p =
-  ppTerm (eqn_lhs (equation p)) $$ pp q
+  ppTerm (eqn_lhs (equation q)) $$ pp (derivation q)
   where
-    q = floatTrans (simplify (const Nothing) (derivation p))
-
-    -- Lift Trans outside of Cong, so that each Cong only
-    -- uses one lemma or axiom.
-    floatTrans :: PrettyTerm f => Derivation f -> Derivation f
-    floatTrans (Symm p) = Symm (floatTrans p)
-    floatTrans (Trans p q) = Trans (floatTrans p) (floatTrans q)
-    floatTrans (Cong f ps)
-      | ps /= qs =
-        floatTrans (Cong f qs)
-      where
-        qs = map floatTrans ps
-    floatTrans (Cong f ps)
-      | any isTrans ps =
-        floatTrans (Cong f (map fst peeled)) `Trans`
-        floatTrans (Cong f (map snd peeled))
-      | otherwise = Cong f ps
-      where
-        peeled = map peel ps
-        peel (Trans p q) = (p, q)
-        peel p = (p, Refl (eqn_rhs (equation (certify p))))
-
-        isTrans Trans{} = True
-        isTrans _ = False
-    floatTrans p = p
+    q = certify $ flattenDerivation (derivation p)
 
     pp (Trans p q) = pp p $$ pp q
     pp p =
@@ -415,6 +391,38 @@ pPrintLemma lemmaName p =
     showLemma Lemma{..} = "lemma " ++ lemmaName lemma_id
     showAxiom Axiom{..} =
       "axiom " ++ show axiom_number ++ " (" ++ axiom_name ++ ")"
+
+-- Transform a derivation so that each step uses exactly one axiom
+-- or lemma. The derivation will have the following form afterwards:
+--   * Trans only occurs at the outermost level
+--   * Symm only occurs next to UseLemma or UseAxiom
+--   * Each Cong contains exactly one non-Refl derivation
+flattenDerivation :: Function f => Derivation f -> Derivation f
+flattenDerivation = flat . simplify (const Nothing)
+  where
+    flat (Trans p q) = trans (flat p) (flat q)
+    flat p@(Cong f ps) =
+      foldr trans (reflAfter p)
+        [ Cong f $
+            map reflAfter (take i ps) ++
+            [p] ++
+            map reflBefore (drop (i+1) ps)
+        | (i, q) <- zip [0..] qs,
+          p <- steps q ]
+      where
+        qs = map flat ps
+    flat p = p
+
+    reflBefore p = Refl (eqn_lhs (equation (certify p)))
+    reflAfter p  = Refl (eqn_rhs (equation (certify p)))
+
+    steps Refl{} = []
+    steps (Trans p q) = steps p ++ steps q
+    steps p = [p]
+
+    trans Refl{} p = p
+    trans p Refl{} = p
+    trans p q = Trans p q
 
 pPrintPresentation :: forall f. Function f => Presentation f -> Doc
 pPrintPresentation (Presentation axioms lemmas goals) =
