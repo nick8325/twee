@@ -7,7 +7,7 @@ import Twee hiding (message)
 import Twee.Base hiding (char, lookup, (<>), vars)
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof
+import Twee.Proof hiding (Config)
 import Twee.Utils
 import qualified Twee.CP as CP
 import Data.Ord
@@ -27,7 +27,9 @@ import qualified Data.Set as Set
 
 parseConfig :: OptionParser Config
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*> (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight)
+  Config <$> maxSize <*> maxCPs <*>
+    (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight) <*>
+    (Proof.Config <$> fewer_lemmas <*> flat_proof)
   where
     maxSize =
       inGroup "Resource limits" $
@@ -47,6 +49,12 @@ parseConfig =
     varweight =
       inGroup "Critical pair weighting heuristics" $
       defaultFlag "var-weight" "Weight given to variable symbols" (CP.cfg_varweight . cfg_critical_pairs) argNum
+    fewer_lemmas =
+      inGroup "Proof presentation" $
+      bool "fewer-lemmas" ["Produce a proof with fewer lemmas"]
+    flat_proof =
+      inGroup "Proof presentation" $
+      bool "no-lemmas" ["Produce a proof with no lemmas (may lead to exponentially large proofs)"]
     defaultFlag name desc field parser =
       flag name [desc ++ " (defaults to " ++ show def ++ ")."] def parser
       where
@@ -301,7 +309,7 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
   when (solved state) $ do
     let
       sol = solutions state
-      pres = present (solutions state)
+      pres = present (cfg_proof_presentation config) (solutions state)
 
     say ("Proved the following conjecture" ++ if length sol > 1 then "s:" else ":")
     forM_ sol $ \ProvedGoal{..} ->

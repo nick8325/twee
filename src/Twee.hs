@@ -35,7 +35,8 @@ data Config =
   Config {
     cfg_max_term_size      :: Int,
     cfg_max_critical_pairs :: Int,
-    cfg_critical_pairs     :: CP.Config }
+    cfg_critical_pairs     :: CP.Config,
+    cfg_proof_presentation :: Proof.Config }
 
 data State f =
   State {
@@ -59,7 +60,11 @@ defaultConfig =
         cfg_lhsweight = 2,
         cfg_rhsweight = 1,
         cfg_funweight = 4,
-        cfg_varweight = 3 } }
+        cfg_varweight = 3 },
+    cfg_proof_presentation =
+      Proof.Config {
+        cfg_fewer_lemmas = False,
+        cfg_no_lemmas = False } }
 
 initialState :: State f
 initialState =

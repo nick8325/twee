@@ -3,7 +3,8 @@ module Twee.Proof(
   Proof, Derivation(..), Lemma(..), Axiom(..),
   certify, equation, derivation,
   lemma, axiom, symm, trans, cong, simplify, usedLemmas, usedAxioms,
-  Presentation(..), ProvedGoal(..), goalWitness, present, describeEquation) where
+  Config(..), Presentation(..), ProvedGoal(..),
+  goalWitness, present, describeEquation) where
 
 import Twee.Base
 import Twee.Equation
@@ -233,6 +234,12 @@ usedAxioms p = lem p []
 -- Pretty-printing of proofs.
 ----------------------------------------------------------------------
 
+-- Options for proof presentation.
+data Config =
+  Config {
+    cfg_fewer_lemmas :: !Bool,
+    cfg_no_lemmas   :: !Bool }
+
 -- A proof, with all axioms and lemmas explicitly listed.
 data Presentation f =
   Presentation {
@@ -251,10 +258,10 @@ data ProvedGoal f =
 instance Function f => Pretty (Presentation f) where
   pPrint = pPrintPresentation
 
-present :: Function f => [ProvedGoal f] -> Presentation f
-present goals =
+present :: Function f => Config -> [ProvedGoal f] -> Presentation f
+present config goals =
   -- First find all the used lemmas, then hand off to presentWithGoals
-  presentWithGoals goals
+  presentWithGoals config goals
     (used Map.empty (concatMap (usedLemmas . derivation . pg_proof) goals))
   where
     used lems [] = Map.elems lems
@@ -266,12 +273,14 @@ present goals =
 
 presentWithGoals ::
   Function f =>
-  [ProvedGoal f] -> [Lemma f] -> Presentation f
-presentWithGoals goals lemmas
+  Config -> [ProvedGoal f] -> [Lemma f] -> Presentation f
+presentWithGoals config@Config{..} goals lemmas
   -- We inline a lemma if one of the following holds:
   --   * It only has one step
   --   * It is subsumed by an earlier lemma
-  --   * It is only used once, and that use is at the root of the term
+  --   * It is only used once, and either that use is at the root of
+  --     the term, or the option cfg_fewer_lemmas is true
+  --   * The option cfg_no_lemmas is true
   -- First we compute all inlinings, then apply simplify to remove them,
   -- then repeat if any lemma was inlined
   | Map.null inlinings =
@@ -293,7 +302,7 @@ presentWithGoals goals lemmas
         [ Lemma n (certify $ simplify inline (derivation p))
         | Lemma n p <- lemmas, not (n `Map.member` inlinings) ]
     in
-      presentWithGoals goals' lemmas'
+      presentWithGoals config goals' lemmas'
 
   where
     inlinings =
@@ -302,9 +311,7 @@ presentWithGoals goals lemmas
         | lemma@Lemma{..} <- lemmas, Just p <- [tryInline lemma]]
 
     tryInline (Lemma n p)
-      | oneStep (derivation p) = Just (derivation p)
-      | Map.lookup n uses == Just 1,
-        Map.lookup n usesAtRoot == Just 1 = Just (derivation p)
+      | shouldInline n p = Just (derivation p)
     tryInline (Lemma n p)
       -- Check for subsumption by an earlier lemma
       | Just (Lemma m q) <- Map.lookup (canonicalise (t :=: u)) equations, m < n =
@@ -315,6 +322,11 @@ presentWithGoals goals lemmas
         t :=: u = equation p
     tryInline _ = Nothing
 
+    shouldInline n p =
+      cfg_no_lemmas ||
+      oneStep (derivation p) ||
+      (Map.lookup n uses == Just 1 &&
+       (cfg_fewer_lemmas || Map.lookup n usesAtRoot == Just 1))
     subsume p q =
       -- Rename q so its variables match p's
       subst sub q
