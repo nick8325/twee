@@ -409,8 +409,8 @@ pPrintLemma Config{..} lemmaName p =
       text "axiom" <+> pPrint axiom_number <+> parens (text axiom_name) <> showSubst sub
 
     showSubst sub
-      | cfg_show_instances =
-        text " at " <>
+      | cfg_show_instances && not (null (listSubst sub)) =
+        text " with " <>
         fsep (punctuate comma
           [ pPrint x <+> text "->" <+> pPrint t
           | (x, t) <- listSubst sub ])
