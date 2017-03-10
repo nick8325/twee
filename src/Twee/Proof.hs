@@ -304,7 +304,11 @@ presentWithGoals config@Config{..} goals lemmas
         concatMap (usedAxioms . derivation . pg_proof) goals ++
         concatMap (usedAxioms . derivation . lemma_proof) lemmas
     in
-      Presentation axioms lemmas goals
+      Presentation axioms
+        [ lemma { lemma_proof = flattenProof lemma_proof }
+        | lemma@Lemma{..} <- lemmas ]
+        [ goal { pg_proof = flattenProof pg_proof }
+        | goal@ProvedGoal{..} <- goals ]
 
   | otherwise =
     let
@@ -383,7 +387,7 @@ pPrintLemma :: Function f => Config -> (Id -> String) -> Proof f -> Doc
 pPrintLemma Config{..} lemmaName p =
   ppTerm (eqn_lhs (equation q)) $$ pp (derivation q)
   where
-    q = certify $ flattenDerivation (derivation p)
+    q = flattenProof p
 
     pp (Trans p q) = pp p $$ pp q
     pp p =
@@ -416,13 +420,14 @@ pPrintLemma Config{..} lemmaName p =
           | (x, t) <- listSubst sub ])
       | otherwise = pPrintEmpty
 
--- Transform a derivation so that each step uses exactly one axiom
--- or lemma. The derivation will have the following form afterwards:
---   * Trans only occurs at the outermost level
+-- Transform a proof so that each step uses exactly one axiom
+-- or lemma. The proof will have the following form afterwards:
+--   * Trans only occurs at the outermost level and is right-associated
 --   * Symm only occurs next to UseLemma or UseAxiom
 --   * Each Cong contains exactly one non-Refl derivation
-flattenDerivation :: Function f => Derivation f -> Derivation f
-flattenDerivation = flat . simplify (const Nothing)
+flattenProof :: Function f => Proof f -> Proof f
+flattenProof =
+  certify . flat . simplify (const Nothing) . derivation
   where
     flat (Trans p q) = trans (flat p) (flat q)
     flat p@(Cong f ps) =
@@ -444,6 +449,7 @@ flattenDerivation = flat . simplify (const Nothing)
     steps (Trans p q) = steps p ++ steps q
     steps p = [p]
 
+    trans (Trans p q) r = trans p (trans q r)
     trans Refl{} p = p
     trans p Refl{} = p
     trans p q = Trans p q
