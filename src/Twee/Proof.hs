@@ -2,8 +2,9 @@
 module Twee.Proof(
   Proof, Derivation(..), Lemma(..), Axiom(..),
   certify, equation, derivation,
-  lemma, axiom, symm, trans, cong, simplify, usedLemmas, usedAxioms,
-  Config(..), Presentation(..), ProvedGoal(..),
+  lemma, axiom, symm, trans, cong, simplify,
+  usedLemmas, usedAxioms, usedLemmasAndSubsts, usedAxiomsAndSubsts,
+  Config(..), defaultConfig, Presentation(..), ProvedGoal(..), pPrintPresentation,
   goalWitness, present, describeEquation) where
 
 import Twee.Base
@@ -13,7 +14,6 @@ import Control.Monad
 import Data.Maybe
 import Data.List
 import qualified Data.Map.Strict as Map
-import qualified Text.PrettyPrint as PP
 
 ----------------------------------------------------------------------
 -- Equational proofs. Only valid proofs can be constructed.
@@ -118,7 +118,8 @@ instance Symbolic (Derivation f) where
   subst_ sub (Trans p q) = trans (subst_ sub p) (subst_ sub q)
   subst_ sub (Cong f ps) = cong f (subst_ sub ps)
 
-instance Function f => Pretty (Proof f) where pPrint = pPrintLemma prettyShow
+instance Function f => Pretty (Proof f) where
+  pPrint = pPrintLemma defaultConfig prettyShow
 instance PrettyTerm f => Pretty (Derivation f) where
   pPrint (UseLemma lemma sub) =
     text "subst" <> pPrintTuple [pPrint lemma, pPrint sub]
@@ -212,9 +213,12 @@ cong f ps =
 
 -- Find all lemmas which are used in a derivation.
 usedLemmas :: Derivation f -> [Lemma f]
-usedLemmas p = lem p []
+usedLemmas p = map fst (usedLemmasAndSubsts p)
+
+usedLemmasAndSubsts :: Derivation f -> [(Lemma f, Subst f)]
+usedLemmasAndSubsts p = lem p []
   where
-    lem (UseLemma lemma _) = (lemma:)
+    lem (UseLemma lemma sub) = ((lemma, sub):)
     lem (Symm p) = lem p
     lem (Trans p q) = lem p . lem q
     lem (Cong _ ps) = foldr (.) id (map lem ps)
@@ -222,13 +226,16 @@ usedLemmas p = lem p []
 
 -- Find all axioms which are used in a derivation.
 usedAxioms :: Derivation f -> [Axiom f]
-usedAxioms p = lem p []
+usedAxioms p = map fst (usedAxiomsAndSubsts p)
+
+usedAxiomsAndSubsts :: Derivation f -> [(Axiom f, Subst f)]
+usedAxiomsAndSubsts p = ax p []
   where
-    lem (UseAxiom axiom _) = (axiom:)
-    lem (Symm p) = lem p
-    lem (Trans p q) = lem p . lem q
-    lem (Cong _ ps) = foldr (.) id (map lem ps)
-    lem _ = id
+    ax (UseAxiom axiom sub) = ((axiom, sub):)
+    ax (Symm p) = ax p
+    ax (Trans p q) = ax p . ax q
+    ax (Cong _ ps) = foldr (.) id (map ax ps)
+    ax _ = id
 
 ----------------------------------------------------------------------
 -- Pretty-printing of proofs.
@@ -238,7 +245,15 @@ usedAxioms p = lem p []
 data Config =
   Config {
     cfg_fewer_lemmas :: !Bool,
-    cfg_no_lemmas   :: !Bool }
+    cfg_no_lemmas :: !Bool,
+    cfg_show_instances :: !Bool }
+
+defaultConfig :: Config
+defaultConfig =
+  Config {
+    cfg_fewer_lemmas = False,
+    cfg_no_lemmas = False,
+    cfg_show_instances = False }
 
 -- A proof, with all axioms and lemmas explicitly listed.
 data Presentation f =
@@ -256,7 +271,7 @@ data ProvedGoal f =
   deriving Show
 
 instance Function f => Pretty (Presentation f) where
-  pPrint = pPrintPresentation
+  pPrint = pPrintPresentation defaultConfig
 
 present :: Function f => Config -> [ProvedGoal f] -> Presentation f
 present config goals =
@@ -364,8 +379,8 @@ presentWithGoals config@Config{..} goals lemmas
     oneStep _ = True
 
 -- Pretty-print the proof of a single lemma.
-pPrintLemma :: Function f => (Id -> String) -> Proof f -> Doc
-pPrintLemma lemmaName p =
+pPrintLemma :: Function f => Config -> (Id -> String) -> Proof f -> Doc
+pPrintLemma Config{..} lemmaName p =
   ppTerm (eqn_lhs (equation q)) $$ pp (derivation q)
   where
     q = certify $ flattenDerivation (derivation p)
@@ -374,8 +389,8 @@ pPrintLemma lemmaName p =
     pp p =
       (text "= { by" <+>
        ppStep
-         (nub (map showLemma (usedLemmas p)) ++
-          nub (map showAxiom (usedAxioms p))) <+>
+         (nub (map (show . ppLemma) (usedLemmasAndSubsts p)) ++
+          nub (map (show . ppAxiom) (usedAxiomsAndSubsts p))) <+>
        text "}" $$
        ppTerm (eqn_rhs (equation (certify p))))
 
@@ -388,9 +403,18 @@ pPrintLemma lemmaName p =
       text "and" <+>
       text (last xs)
 
-    showLemma Lemma{..} = "lemma " ++ lemmaName lemma_id
-    showAxiom Axiom{..} =
-      "axiom " ++ show axiom_number ++ " (" ++ axiom_name ++ ")"
+    ppLemma (Lemma{..}, sub) =
+      text "lemma" <+> text (lemmaName lemma_id) <> showSubst sub
+    ppAxiom (Axiom{..}, sub) =
+      text "axiom" <+> pPrint axiom_number <+> parens (text axiom_name) <> showSubst sub
+
+    showSubst sub
+      | cfg_show_instances =
+        text " at " <>
+        fsep (punctuate comma
+          [ pPrint x <+> text "->" <+> pPrint t
+          | (x, t) <- listSubst sub ])
+      | otherwise = pPrintEmpty
 
 -- Transform a derivation so that each step uses exactly one axiom
 -- or lemma. The derivation will have the following form afterwards:
@@ -424,8 +448,8 @@ flattenDerivation = flat . simplify (const Nothing)
     trans p Refl{} = p
     trans p q = Trans p q
 
-pPrintPresentation :: forall f. Function f => Presentation f -> Doc
-pPrintPresentation (Presentation axioms lemmas goals) =
+pPrintPresentation :: forall f. Function f => Config -> Presentation f -> Doc
+pPrintPresentation config (Presentation axioms lemmas goals) =
   vcat $ intersperse (text "") $
     vcat [ text (describeEquation "Axiom" (show n) (Just name) eqn)
          | Axiom n name eqn <- axioms ]:
@@ -438,7 +462,7 @@ pPrintPresentation (Presentation axioms lemmas goals) =
     pp kind n mname p =
       text (describeEquation kind n mname (equation p)) $$
       text "Proof:" $$
-      pPrintLemma num p
+      pPrintLemma config num p
 
     num x = show (fromJust (Map.lookup x nums))
     nums = Map.fromList (zip (map lemma_id lemmas) [n+1 ..])
@@ -446,7 +470,7 @@ pPrintPresentation (Presentation axioms lemmas goals) =
 
     ppWitness goal =
       case goalWitness goal of
-        Nothing -> PP.empty
+        Nothing -> pPrintEmpty
         Just (eqn, sub) ->
           vcat [
             text "",
@@ -459,7 +483,7 @@ pPrintPresentation (Presentation axioms lemmas goals) =
             if minimal `elem` funs (eqn, sub) then
               text "where" <+> doubleQuotes (pPrint (minimal :: Fun f)) <+>
               text "stands for an arbitrary term of your choice."
-            else PP.empty]
+            else pPrintEmpty]
 
 -- Format an equation nicely. Used both here and in the main file.
 describeEquation ::

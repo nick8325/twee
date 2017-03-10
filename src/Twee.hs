@@ -62,10 +62,7 @@ defaultConfig =
         cfg_rhsweight = 1,
         cfg_funweight = 4,
         cfg_varweight = 3 },
-    cfg_proof_presentation =
-      Proof.Config {
-        cfg_fewer_lemmas = False,
-        cfg_no_lemmas = False } }
+    cfg_proof_presentation = Proof.defaultConfig }
 
 initialState :: State f
 initialState =

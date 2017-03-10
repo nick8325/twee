@@ -7,7 +7,7 @@ import Twee hiding (message)
 import Twee.Base hiding (char, lookup, (<>), vars)
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof hiding (Config)
+import Twee.Proof hiding (Config, defaultConfig)
 import Twee.Utils
 import qualified Twee.CP as CP
 import Data.Ord
@@ -29,7 +29,7 @@ parseConfig :: OptionParser Config
 parseConfig =
   Config <$> maxSize <*> maxCPs <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight) <*>
-    (Proof.Config <$> fewer_lemmas <*> flat_proof)
+    (Proof.Config <$> fewer_lemmas <*> flat_proof <*> show_instances)
   where
     maxSize =
       inGroup "Resource limits" $
@@ -55,6 +55,9 @@ parseConfig =
     flat_proof =
       inGroup "Proof presentation" $
       bool "no-lemmas" ["Produce a proof with no lemmas (may lead to exponentially large proofs)"]
+    show_instances =
+      inGroup "Proof presentation" $
+      bool "show-instances" ["Show which instances of each axiom and lemma were used"]
     defaultFlag name desc field parser =
       flag name [desc ++ " (defaults to " ++ show def ++ ")."] def parser
       where
@@ -318,7 +321,7 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
           (show pg_number) (Just pg_name) (equation pg_proof)
     say "The proof is as follows."
     line
-    say $ prettyShow pres
+    say $ show $ pPrintPresentation (cfg_proof_presentation config) pres
 
     when tstp $ do
       line

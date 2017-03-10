@@ -4,6 +4,7 @@
 module Twee.Pretty(module Twee.Pretty, module Text.PrettyPrint.HughesPJClass, Pretty(..)) where
 
 import Text.PrettyPrint.HughesPJClass hiding (empty)
+import qualified Text.PrettyPrint.HughesPJClass as PP
 import qualified Data.Map as Map
 import Data.Map(Map)
 import qualified Data.Set as Set
@@ -19,6 +20,9 @@ prettyPrint x = putStrLn (prettyShow x)
 pPrintParen :: Bool -> Doc -> Doc
 pPrintParen True  d = parens d
 pPrintParen False d = d
+
+pPrintEmpty :: Doc
+pPrintEmpty = PP.empty
 
 instance Pretty Doc where pPrint = id
 
