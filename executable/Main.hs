@@ -51,13 +51,13 @@ parseConfig =
       defaultFlag "var-weight" "Weight given to variable symbols" (CP.cfg_varweight . cfg_critical_pairs) argNum
     fewer_lemmas =
       inGroup "Proof presentation" $
-      bool "fewer-lemmas" ["Produce a proof with fewer lemmas"]
+      bool "fewer-lemmas" ["Produce a proof with fewer lemmas."]
     flat_proof =
       inGroup "Proof presentation" $
-      bool "no-lemmas" ["Produce a proof with no lemmas (may lead to exponentially large proofs)"]
+      bool "no-lemmas" ["Produce a proof with no lemmas (may lead to exponentially large proofs)."]
     show_instances =
       inGroup "Proof presentation" $
-      bool "show-instances" ["Show which instances of each axiom and lemma were used"]
+      bool "show-instances" ["Show which instances of each axiom and lemma were used."]
     defaultFlag name desc field parser =
       flag name [desc ++ " (defaults to " ++ show def ++ ")."] def parser
       where
@@ -67,7 +67,7 @@ parsePrecedence :: OptionParser [String]
 parsePrecedence =
   inGroup "Term order options" $
   fmap (splitOn ",")
-  (flag "precedence" ["List of functions in descending order of precedence"] [] (arg "<function>" "expected a function name" Just))
+  (flag "precedence" ["List of functions in descending order of precedence."] [] (arg "<function>" "expected a function name" Just))
 
 parseTSTP :: OptionParser Bool
 parseTSTP =
