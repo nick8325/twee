@@ -2,7 +2,7 @@
 module Twee.Proof(
   Proof, Derivation(..), Lemma(..), Axiom(..),
   certify, equation, derivation,
-  lemma, axiom, symm, trans, cong, simplify,
+  lemma, axiom, symm, trans, cong, simplify, congPath,
   usedLemmas, usedAxioms, usedLemmasAndSubsts, usedAxiomsAndSubsts,
   Config(..), defaultConfig, Presentation(..), ProvedGoal(..), pPrintPresentation,
   goalWitness, present, describeEquation) where
@@ -236,6 +236,18 @@ usedAxiomsAndSubsts p = ax p []
     ax (Trans p q) = ax p . ax q
     ax (Cong _ ps) = foldr (.) id (map ax ps)
     ax _ = id
+
+-- Applies a derivation at a particular path in a term.
+congPath :: [Int] -> Term f -> Derivation f -> Derivation f
+congPath [] _ p = p
+congPath (n:ns) (App f t) p | n <= length ts =
+  cong f $
+    map Refl (take n ts) ++
+    [congPath ns (ts !! n) p] ++
+    map Refl (drop (n+1) ts)
+  where
+    ts = unpack t
+congPath _ _ _ = error "bad path"
 
 ----------------------------------------------------------------------
 -- Pretty-printing of proofs.

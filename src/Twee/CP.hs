@@ -15,7 +15,7 @@ import Twee.ChurchList (ChurchList(..))
 import Twee.Utils
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Proof, Derivation)
+import Twee.Proof(Proof, Derivation, congPath)
 
 -- The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
@@ -130,16 +130,23 @@ overlapProof ::
   forall a f.
   (Has a (Rule f), Has a (Proof f), Has a Id) =>
   a -> a -> Overlap f -> Derivation f
-overlapProof left right Overlap{..} =
-  Proof.symm (reductionProof (step left leftSub))
-  `Proof.trans`
-  reductionProof (congPath path overlap_top (step right rightSub))
+overlapProof left right overlap@Overlap{..} =
+  customOverlapProof (lhs (the left)) leftDeriv rightDeriv overlap
   where
     Just leftSub = match (lhs (the left)) overlap_top
     Just rightSub = match (lhs (the right)) overlap_inner
-    path =
-      positionToPath (lhs (the left) :: Term f) $
-      overlap_pos
+
+    leftDeriv = reductionProof (step left leftSub)
+    rightDeriv = reductionProof (step right rightSub)
+
+customOverlapProof ::
+  Term f -> Derivation f -> Derivation f -> Overlap f -> Derivation f
+customOverlapProof left leftDeriv rightDeriv Overlap{..} =
+  Proof.symm leftDeriv
+  `Proof.trans`
+  congPath path overlap_top rightDeriv
+  where
+    path = positionToPath left overlap_pos
 
 -- The critical pair ordering heuristic.
 data Config =

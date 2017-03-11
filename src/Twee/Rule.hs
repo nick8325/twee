@@ -233,18 +233,6 @@ cong f ps
     isRefl Refl{} = True
     isRefl _ = False
 
--- Applies a reduction at a particular path in a term.
-congPath :: [Int] -> Term f -> Reduction f -> Reduction f
-congPath [] _ p = p
-congPath (n:ns) (App f t) p | n <= length ts =
-  cong f $
-    map Refl (take n ts) ++
-    [congPath ns (ts !! n) p] ++
-    map Refl (drop (n+1) ts)
-  where
-    ts = unpack t
-congPath _ _ _ = error "bad path"
-
 -- The list of all rewrite rules used in a rewrite proof
 steps :: Reduction f -> [Reduction f]
 steps r = aux r []
