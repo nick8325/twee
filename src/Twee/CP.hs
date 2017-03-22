@@ -130,23 +130,15 @@ overlapProof ::
   forall a f.
   (Has a (Rule f), Has a (Proof f), Has a Id) =>
   a -> a -> Overlap f -> Derivation f
-overlapProof left right overlap@Overlap{..} =
-  customOverlapProof (lhs (the left)) leftDeriv rightDeriv overlap
+overlapProof left right Overlap{..} =
+  Proof.symm (reductionProof (step left leftSub))
+  `Proof.trans`
+  congPath path overlap_top (reductionProof (step right rightSub))
   where
     Just leftSub = match (lhs (the left)) overlap_top
     Just rightSub = match (lhs (the right)) overlap_inner
 
-    leftDeriv = reductionProof (step left leftSub)
-    rightDeriv = reductionProof (step right rightSub)
-
-customOverlapProof ::
-  Term f -> Derivation f -> Derivation f -> Overlap f -> Derivation f
-customOverlapProof left leftDeriv rightDeriv Overlap{..} =
-  Proof.symm leftDeriv
-  `Proof.trans`
-  congPath path overlap_top rightDeriv
-  where
-    path = positionToPath left overlap_pos
+    path = positionToPath (lhs (the left) :: Term f) overlap_pos
 
 -- The critical pair ordering heuristic.
 data Config =
