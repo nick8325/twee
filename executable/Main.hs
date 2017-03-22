@@ -412,4 +412,4 @@ main = do
          (runTwee <$> globalFlags <*> parseTSTP <*> parseConfig <*> parsePrecedence))
 
 -- addRule doesn't get automatically specialised for some reason.
-{-# SPECIALISE addRule :: Config -> State (Extended Constant) -> (Id -> TweeRule (Extended Constant)) -> State (Extended Constant) #-}
+-- {-# SPECIALISE addRule :: Config -> State (Extended Constant) -> (Id -> TweeRule (Extended Constant)) -> State (Extended Constant) #-}

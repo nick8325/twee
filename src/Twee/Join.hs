@@ -35,16 +35,10 @@ instance PrettyTerm f => Pretty (CriticalPair f) where
       pPrint cp_eqn,
       nest 2 (text "top:" <+> pPrint cp_top) ]
 
--- A critical pair oriented into a rewrite rule.
-data CriticalRule f =
-  CriticalRule {
-    cr_rule  :: {-# UNPACK #-} !(Rule f),
-    cr_top   :: !(Maybe (Term f)),
-    cr_proof :: !(Derivation f) }
-
--- Turn a critical pair into a set of critical rules.
-orientCP :: Function f => CriticalPair f -> [CriticalRule f]
-orientCP CriticalPair{cp_eqn = l :=: r, ..}
+-- Split a critical pair so that it can be turned into rules.
+-- See the comment below.
+split :: Function f => CriticalPair f -> [CriticalPair f]
+split CriticalPair{cp_eqn = l :=: r, ..}
   | l == r = []
   | otherwise =
     -- If we have something which is almost a rule, except that some
@@ -64,37 +58,32 @@ orientCP CriticalPair{cp_eqn = l :=: r, ..}
     --   g x z -> g x ?
 
     -- The main rule l -> r' or r -> l' or l' = r'
-    [ CriticalRule {
-        cr_rule  = makeRule l r',
-        cr_top   = cp_top,
-        cr_proof = erase rs cp_proof }
+    [ CriticalPair {
+        cp_eqn   = l :=: r',
+        cp_top   = cp_top,
+        cp_proof = erase rs cp_proof }
     | ord == Just GT ] ++
-    [ CriticalRule {
-        cr_rule  = makeRule r l',
-        cr_top   = cp_top,
-        cr_proof = Proof.symm (erase ls cp_proof) }
+    [ CriticalPair {
+        cp_eqn   = r :=: l',
+        cp_top   = cp_top,
+        cp_proof = Proof.symm (erase ls cp_proof) }
     | ord == Just LT ] ++
-    [ CriticalRule {
-        cr_rule  = makeRule l' r',
-        cr_top   = cp_top,
-        cr_proof = erase (ls++rs) cp_proof }
-    | ord == Nothing ] ++
-    [ CriticalRule {
-        cr_rule  = makeRule r' l',
-        cr_top   = cp_top,
-        cr_proof = Proof.symm (erase (ls++rs) cp_proof) }
+    [ CriticalPair {
+        cp_eqn   = l' :=: r',
+        cp_top   = cp_top,
+        cp_proof = erase (ls++rs) cp_proof }
     | ord == Nothing ] ++
 
     -- Weak rules l -> l' or r -> r'
-    [ CriticalRule {
-        cr_rule  = makeRule l l',
-        cr_top   = Just r, -- overlap of r -> l with itself
-        cr_proof = cp_proof `Proof.trans` Proof.symm (erase ls cp_proof) }
+    [ CriticalPair {
+        cp_eqn   = l :=: l',
+        cp_top   = Just r, -- overlap of r -> l with itself
+        cp_proof = cp_proof `Proof.trans` Proof.symm (erase ls cp_proof) }
     | not (null ls), ord /= Just GT ] ++
-    [ CriticalRule {
-        cr_rule  = makeRule r r',
-        cr_top   = Just l, -- overlap of l -> r with itself
-        cr_proof = Proof.symm cp_proof `Proof.trans` erase rs cp_proof }
+    [ CriticalPair {
+        cp_eqn   = r :=: r',
+        cp_top   = Just l, -- overlap of l -> r with itself
+        cp_proof = Proof.symm cp_proof `Proof.trans` erase rs cp_proof }
     | not (null rs), ord /= Just LT ]
     where
       ord = orientTerms l' r'
@@ -102,14 +91,6 @@ orientCP CriticalPair{cp_eqn = l :=: r, ..}
       r' = erase rs r
       ls = usort (vars l) \\ usort (vars r)
       rs = usort (vars r) \\ usort (vars l)
-
--- Turn a critical rule back into a critical pair.
-unorientCP :: CriticalRule f -> CriticalPair f
-unorientCP CriticalRule{cr_rule = Rule _ l r, ..} =
-  CriticalPair {
-    cp_eqn = l :=: r,
-    cp_top = cr_top,
-    cp_proof = cr_proof }
 
 {-# INLINEABLE makeCriticalPair #-}
 makeCriticalPair ::

@@ -1,17 +1,18 @@
-{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables #-}
+{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables, GeneralizedNewtypeDeriving #-}
 module Twee where
 
 import Twee.Base
 import Twee.Rule
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Proof, Axiom(..), ProvedGoal(..), Lemma(..))
+import Twee.Proof(Proof, Derivation, Axiom(..), ProvedGoal(..), Lemma(..), certify, derivation, symm)
 import Twee.CP hiding (Config)
 import qualified Twee.CP as CP
 import Twee.Join
 import qualified Twee.Index as Index
 import Twee.Index(Index)
 import Twee.Constraints
+import Twee.Utils
 import qualified Data.Heap as Heap
 import Data.Heap(Heap)
 import qualified Data.IntMap.Strict as IntMap
@@ -25,6 +26,7 @@ import qualified Data.IntSet as IntSet
 import Data.IntSet(IntSet)
 import Text.Printf
 import Data.Int
+import Data.Ord
 import Control.Monad
 
 ----------------------------------------------------------------------
@@ -40,14 +42,15 @@ data Config =
 
 data State f =
   State {
-    st_oriented_rules :: !(Index f (TweeRule f)),
-    st_rules          :: !(Index f (TweeRule f)),
-    st_rule_ids       :: !(IntMap (TweeRule f)),
-    st_replaced_rules :: !(IntMap Id),
+    st_oriented_rules :: !(Index f (ActiveRule f)),
+    st_rules          :: !(Index f (ActiveRule f)),
+    st_active_ids     :: !(IntMap (Active f)),
+    st_rule_ids       :: !(IntMap (ActiveRule f)),
+    st_replaced_rules :: !(IntMap RuleId),
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
     st_queue          :: !(Heap (Passive f)),
-    st_label          :: {-# UNPACK #-} !Id,
+    st_next_active    :: {-# UNPACK #-} !Id,
     st_considered     :: {-# UNPACK #-} !Int,
     st_messages_rev   :: ![Message f] }
 
@@ -69,12 +72,13 @@ initialState =
   State {
     st_oriented_rules = Index.Nil,
     st_rules = Index.Nil,
+    st_active_ids = IntMap.empty,
     st_rule_ids = IntMap.empty,
     st_replaced_rules = IntMap.empty,
     st_joinable = Index.Nil,
     st_goals = [],
     st_queue = Heap.empty,
-    st_label = 1,
+    st_next_active = 1,
     st_considered = 0,
     st_messages_rev = [] }
 
@@ -83,16 +87,16 @@ initialState =
 ----------------------------------------------------------------------
 
 data Message f =
-    NewRule !(TweeRule f)
-  | NewEquation !Id !(Equation f)
-  | DeleteRule !(TweeRule f)
+    NewRule !(Active f)
+  | NewEquation !(Equation f)
+  | DeleteRule !(Active f)
 
-instance PrettyTerm f => Pretty (Message f) where
+instance Function f => Pretty (Message f) where
   pPrint (NewRule rule) = pPrint rule
-  pPrint (NewEquation _ eqn) =
+  pPrint (NewEquation eqn) =
     text "  (hard)" <+> pPrint eqn
   pPrint (DeleteRule rule) =
-    text "  (delete rule " <> pPrint (rule_id rule) <> text ")"
+    text "  (delete rule " <> pPrint (active_id rule) <> text ")"
 
 message :: PrettyTerm f => Message f -> State f -> State f
 message !msg state@State{..} =
@@ -111,39 +115,31 @@ messages state = reverse (st_messages_rev state)
 
 data Passive f =
   Passive {
-    passive_score   :: {-# UNPACK #-} !Int32,
-    passive_rule1   :: {-# UNPACK #-} !Id,
-    passive_rule2   :: {-# UNPACK #-} !Id,
-    passive_pos     :: {-# UNPACK #-} !Int32 }
+    passive_score :: {-# UNPACK #-} !Int32,
+    passive_rule1 :: {-# UNPACK #-} !RuleId,
+    passive_rule2 :: {-# UNPACK #-} !RuleId,
+    passive_pos   :: {-# UNPACK #-} !Int32 }
   deriving (Eq, Ord, Show)
 
 -- Compute all critical pairs from a rule and condense into a Passive.
--- Takes an optional range of rules to use.
 {-# INLINEABLE makePassive #-}
-makePassive :: Function f => Config -> State f -> Maybe (Id, Id) -> Id -> [Passive f]
-makePassive Config{..} State{..} mrange id =
+makePassive :: Function f => Config -> State f -> ActiveRule f -> [Passive f]
+makePassive Config{..} State{..} rule =
   {-# SCC makePassive #-}
-  case IntMap.lookup (fromIntegral id) st_rule_ids of
-    Nothing -> []
-    Just rule ->
-      [ Passive (fromIntegral (score cfg_critical_pairs o)) (rule_id rule1) (rule_id rule2) (fromIntegral (overlap_pos o))
-      | (rule1, rule2, o) <- overlaps st_oriented_rules rules rule ]
+  [ Passive (fromIntegral (score cfg_critical_pairs o)) (rule_rid rule1) (rule_rid rule2) (fromIntegral (overlap_pos o))
+  | (rule1, rule2, o) <- overlaps st_oriented_rules rules rule ]
   where
-    (lo, hi) = fromMaybe (0, id) mrange
-    rules =
-      IntMap.elems $
-      fst $ IntMap.split (fromIntegral (hi+1)) $
-      snd $ IntMap.split (fromIntegral (lo-1)) st_rule_ids
+    rules = IntMap.elems st_rule_ids
 
 -- Turn a Passive back into an overlap.
 -- Doesn't try to simplify it.
 {-# INLINEABLE findPassive #-}
-findPassive :: forall f. Function f => Config -> State f -> Passive f -> Maybe (TweeRule f, TweeRule f, Overlap f)
+findPassive :: forall f. Function f => Config -> State f -> Passive f -> Maybe (ActiveRule f, ActiveRule f, Overlap f)
 findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
   let
-    lookup id =
-      IntMap.lookup (fromIntegral id) st_rule_ids `mplus`
-      (IntMap.lookup (fromIntegral id) st_replaced_rules >>= lookup)
+    lookup rid =
+      IntMap.lookup (fromIntegral rid) st_rule_ids `mplus`
+      (IntMap.lookup (fromIntegral rid) st_replaced_rules >>= lookup)
   rule1 <- lookup (fromIntegral passive_rule1)
   rule2 <- lookup (fromIntegral passive_rule2)
   overlap <-
@@ -209,94 +205,110 @@ dequeue config@Config{..} state@State{..} =
         _ -> deq (n+1) queue
 
 ----------------------------------------------------------------------
--- Rules.
+-- Active rewrite rules.
 ----------------------------------------------------------------------
 
-data TweeRule f =
-  TweeRule {
-    rule_id        :: {-# UNPACK #-} !Id,
-    rule_rule      :: {-# UNPACK #-} !(Rule f),
-    -- Positions at which the rule can form CPs
-    rule_positions :: !(Positions f),
+data Active f =
+  Active {
+    active_id :: {-# UNPACK #-} !Id,
+    active_rule :: {-# UNPACK #-} !(Rule f),
+    active_top :: !(Maybe (Term f)),
+    active_proof :: {-# UNPACK #-} !(Proof f),
     -- Models in which the rule is false (used when reorienting)
-    rule_models    :: ![Model f],
-    -- The top term from the rule's CP (used in interreduction)
-    rule_top       :: !(Maybe (Term f)),
-    -- Proof of the rule
-    rule_proof     :: !(Proof f),
-    -- Lemmas used in the proof (computed from rule_proof)
-    rule_lemmas    :: !IntSet }
+    active_models    :: ![Model f],
+    active_rules :: ![ActiveRule f] }
 
-instance Eq (TweeRule f) where
-  (==) = (==) `on` rule_id
+-- An active oriented in a particular direction.
+data ActiveRule f =
+  ActiveRule {
+    rule_active    :: {-# UNPACK #-} !Id,
+    rule_rid       :: {-# UNPACK #-} !RuleId,
+    rule_rule      :: {-# UNPACK #-} !(Rule f),
+    rule_proof     :: {-# UNPACK #-} !(Proof f),
+    rule_positions :: !(Positions f) }
 
-instance f ~ g => Has (TweeRule f) (Rule g) where the = rule_rule
-instance f ~ g => Has (TweeRule f) (Positions g) where the = rule_positions
-instance f ~ g => Has (TweeRule f) (Proof g) where the = rule_proof
-instance Has (TweeRule f) Id where the = rule_id
+instance Eq (Active f) where
+  (==) = (==) `on` active_id
 
-rule_cp :: TweeRule f -> CriticalPair f
-rule_cp TweeRule{..} =
-  CriticalPair {
-    cp_eqn = unorient rule_rule,
-    cp_top = rule_top,
-    cp_proof = Proof.derivation rule_proof }
+instance Eq (ActiveRule f) where
+  (==) = (==) `on` rule_rid
 
-instance PrettyTerm f => Pretty (TweeRule f) where
-  pPrint TweeRule{..} =
-    pPrint rule_id <> text "." <+> pPrint rule_rule
+instance Function f => Pretty (Active f) where
+  pPrint Active{..} =
+    pPrint active_id <> text "." <+> pPrint active_rule
 
--- Add a new rule.
-{-# INLINEABLE addRule #-}
-addRule :: Function f => Config -> State f -> (Id -> TweeRule f) -> State f
-addRule config state@State{..} rule0 =
-  {-# SCC addRule #-}
+instance Has (ActiveRule f) Id where the = rule_active
+instance f ~ g => Has (ActiveRule f) (Rule g) where the = rule_rule
+instance f ~ g => Has (ActiveRule f) (Proof g) where the = rule_proof
+instance f ~ g => Has (ActiveRule f) (Positions g) where the = rule_positions
+
+newtype RuleId = RuleId Id deriving (Eq, Ord, Show, Num, Real, Integral, Enum)
+
+-- Add a new active.
+{-# INLINEABLE addActive #-}
+addActive :: Function f => Config -> State f -> (Id -> Active f) -> State f
+addActive config state@State{..} active0 =
+  {-# SCC addActive #-}
   let
-    rule = rule0 st_label
+    active@Active{..} = active0 st_next_active
     state' =
-      flip interreduce rule $
-      message (NewRule rule) $
-      flip addRuleOnly rule $
-      state { st_label = st_label+1 }
+      flip interreduce active $
+      message (NewRule active) $
+      addActiveOnly state{st_next_active = st_next_active+1} active
     passives =
-      makePassive config state' Nothing (rule_id rule)
-  in if subsumed st_joinable st_rules (unorient (rule_rule rule)) then
+      concatMap (makePassive config state') active_rules
+  in if subsumed st_joinable st_rules (unorient active_rule) then
     state
   else
     normaliseGoals $
     foldl' enqueue state' passives
 
--- Add a rule without generating critical pairs. Used in interreduction.
-{-# INLINEABLE addRuleOnly #-}
-addRuleOnly :: Function f => State f -> TweeRule f -> State f
-addRuleOnly state@State{..} rule =
+-- Add an active without generating critical pairs. Used in interreduction.
+{-# INLINEABLE addActiveOnly #-}
+addActiveOnly :: Function f => State f -> Active f -> State f
+addActiveOnly state@State{..} active@Active{..} =
   state {
     st_oriented_rules =
-      if oriented (orientation (rule_rule rule))
-      then Index.insert (lhs (rule_rule rule)) rule st_oriented_rules
+      if oriented (orientation active_rule)
+      then foldl' insertRule st_oriented_rules active_rules
       else st_oriented_rules,
-    st_rules = Index.insert (lhs (rule_rule rule)) rule st_rules,
-    st_rule_ids = IntMap.insert (fromIntegral (rule_id rule)) rule st_rule_ids }
+    st_rules = foldl' insertRule st_rules active_rules,
+    st_active_ids = IntMap.insert (fromIntegral active_id) active st_active_ids,
+    st_rule_ids = foldl' insertRuleId st_rule_ids active_rules }
+  where
+    insertRule rules rule@ActiveRule{..} =
+      Index.insert (lhs rule_rule) rule rules
+    insertRuleId rules rule@ActiveRule{..} =
+      IntMap.insert (fromIntegral rule_rid) rule rules
 
--- Delete a rule. Used in interreduction, not suitable for general use.
-{-# INLINE deleteRule #-}
-deleteRule :: State f -> TweeRule f -> State f
-deleteRule state@State{..} rule@TweeRule{..} =
+-- Delete an active. Used in interreduction, not suitable for general use.
+{-# INLINE deleteActive #-}
+deleteActive :: State f -> Active f -> State f
+deleteActive state@State{..} Active{..} =
   state {
-    st_oriented_rules = Index.delete (lhs rule_rule) rule st_oriented_rules,
-    st_rules = Index.delete (lhs rule_rule) rule st_rules,
-    st_rule_ids = IntMap.delete (fromIntegral rule_id) st_rule_ids }
+    st_oriented_rules = foldl' deleteRule st_oriented_rules active_rules,
+    st_rules = foldl' deleteRule st_rules active_rules,
+    st_active_ids = IntMap.delete (fromIntegral active_id) st_active_ids,
+    st_rule_ids = foldl' deleteRuleId st_rule_ids active_rules }
+  where
+    deleteRule rules rule@ActiveRule{..} =
+      Index.delete (lhs rule_rule) rule rules
+    deleteRuleId rules rule@ActiveRule{..} =
+      IntMap.delete (fromIntegral rule_rid) rules
 
--- Replace a rule with its simplification. Used in interreduction.
-{-# INLINE replaceRule #-}
-replaceRule :: Function f => State f -> TweeRule f -> TweeRule f -> State f
-replaceRule state@State{..} rule rule' =
-  flip addRuleOnly rule' $
-  flip deleteRule rule $
+-- Replace an active with its simplification. Used in interreduction.
+{-# INLINE replaceActive #-}
+replaceActive :: Function f => State f -> Active f -> Active f -> State f
+replaceActive state@State{..} active active' =
+  flip addActiveOnly active' $
+  flip deleteActive active $
   state {
     st_replaced_rules =
-      IntMap.insert (fromIntegral (rule_id rule)) (rule_id rule')
+      IntMap.insert (fromIntegral (rid active)) (rid active')
         st_replaced_rules }
+  where
+    rid Active{active_rules = [ActiveRule{..}]} = rule_rid
+    rid _ = error "replaceRule called on unoriented rule"
 
 -- Try to join a critical pair.
 {-# INLINEABLE consider #-}
@@ -315,24 +327,35 @@ consider config state@State{..} cp0 =
         Nothing -> state'
 
     Left (cp, model) ->
-      let
-        rules =
-          [ \n ->
-            let p = Proof.certify cr_proof in
-            TweeRule {
-              rule_id = n,
-              rule_rule = cr_rule,
-              rule_positions = positions (lhs cr_rule),
-              rule_models = [model],
-              rule_top = cr_top,
-              rule_proof = p,
-              rule_lemmas =
-                IntSet.fromList $
-                  map (fromIntegral . lemma_id)
-                    (Proof.usedLemmas (Proof.derivation p)) }
-          | CriticalRule{..} <- orientCP cp ]
-      in
-        foldl' (addRule config) state rules
+      foldl' (addCP config model) state (split cp)
+
+{-# INLINEABLE addCP #-}
+addCP :: Function f => Config -> Model f -> State f -> CriticalPair f -> State f
+addCP config model state@State{..} cp@CriticalPair{..} =
+  addActive config state $ \n ->
+  let
+    pf = certify cp_proof
+    rule = orient cp_eqn
+
+    makeRule k r p =
+      ActiveRule {
+        rule_active = n,
+        rule_rid = RuleId (n*2+k),
+        rule_rule = r rule,
+        rule_proof = p pf,
+        rule_positions = positions (lhs (r rule)) }
+  in
+  Active {
+    active_id = n,
+    active_rule = rule,
+    active_models = [model],
+    active_top = cp_top,
+    active_proof = pf,
+    active_rules =
+      usortBy (comparing (canonicalise . rule_rule)) $
+        makeRule 0 id id:
+        [ makeRule 1 backwards (certify . symm . derivation)
+        | not (oriented (orientation rule)) ] }
 
 -- Add a new equation.
 {-# INLINEABLE addAxiom #-}
@@ -348,7 +371,7 @@ addAxiom config state axiom =
 {-# INLINEABLE addJoinable #-}
 addJoinable :: Function f => State f -> Equation f -> State f
 addJoinable state eqn@(t :=: u) =
-  message (NewEquation (st_label state) eqn) $
+  message (NewEquation eqn) $
   state {
     st_joinable =
       Index.insert t (t :=: u) (st_joinable state) }
@@ -392,115 +415,116 @@ goal n name (t :=: u) =
     goal_lhs = Set.singleton (reduce (Refl t)),
     goal_rhs = Set.singleton (reduce (Refl u)) }
 
-----------------------------------------------------------------------
--- Interreduction.
-----------------------------------------------------------------------
+-- ----------------------------------------------------------------------
+-- -- Interreduction.
+-- ----------------------------------------------------------------------
 
-data Simplification f = Simplify | Delete | NewModels [Model f]
-  deriving Show
-instance Pretty (Simplification f) where pPrint = text . show
+-- data Simplification f = Simplify | Delete | NewModels [Model f]
+--   deriving Show
+-- instance Pretty (Simplification f) where pPrint = text . show
 
--- Note on st_rules and st_joinable during interreduction.
--- After adding a new rule we check if any old rules can now be joined
--- or simplified. When we try rewriting an old rule, we must of course
--- remove it from the ruleset first, so as to avoid using the rule to
--- rewrite itself. We must also not use an equation in st_joinable to
--- simplify a rule if the equation was derived from the rule. As we
--- don't keep track of the origin of each joinable equation, we simply
--- disable st_joinable during interreduction.
---
--- After considering all reoriented rules, we put back st_joinable.
--- This is fine because all the equations that were in st_joinable
--- before should indeed still be joinable once the reoriented rules
--- are added.
+-- -- Note on st_rules and st_joinable during interreduction.
+-- -- After adding a new rule we check if any old rules can now be joined
+-- -- or simplified. When we try rewriting an old rule, we must of course
+-- -- remove it from the ruleset first, so as to avoid using the rule to
+-- -- rewrite itself. We must also not use an equation in st_joinable to
+-- -- simplify a rule if the equation was derived from the rule. As we
+-- -- don't keep track of the origin of each joinable equation, we simply
+-- -- disable st_joinable during interreduction.
+-- --
+-- -- After considering all reoriented rules, we put back st_joinable.
+-- -- This is fine because all the equations that were in st_joinable
+-- -- before should indeed still be joinable once the reoriented rules
+-- -- are added.
 
 -- Simplify all old rules wrt a new rule.
 {-# INLINEABLE interreduce #-}
-interreduce :: Function f => State f -> TweeRule f -> State f
+interreduce :: Function f => State f -> Active f -> State f
 interreduce state new =
-  {-# SCC interreduce #-}
-  foldl' interreduce1 state simpls
-  where
-    simpls =
-      [ (old, simp)
-      | old <- IntMap.elems (st_rule_ids state),
-        old /= new,
-        let state' = deleteRule state { st_joinable = Index.Nil } old,
-        simp <- maybeToList (simplification state' new old) ]
+  state
+--   {-# SCC interreduce #-}
+--   foldl' interreduce1 state simpls
+--   where
+--     simpls =
+--       [ (old, simp)
+--       | old <- IntMap.elems (st_active_ids state),
+--         old /= new,
+--         let state' = deleteRule state { st_joinable = Index.Nil } old,
+--         simp <- maybeToList (simplification state' new old) ]
 
-{-# INLINEABLE interreduce1 #-}
-interreduce1 :: Function f => State f -> (TweeRule f, Simplification f) -> State f
-interreduce1 state@State{..} (rule@TweeRule{rule_rule = Rule _ lhs rhs, ..}, Simplify) =
-  message (DeleteRule rule) $
-  message (NewRule rule') $
-  replaceRule state' rule rule'
-  where
-    rule' =
-      rule {
-        rule_rule = makeRule lhs (result rhs'),
-        rule_id = st_label,
-        rule_proof =
-          Proof.certify $
-          Proof.derivation rule_proof `Proof.trans` reductionProof (reduction rhs') }
-    state' = state { st_label = succ st_label }
+-- {-# INLINEABLE interreduce1 #-}
+-- interreduce1 :: Function f => State f -> (Active f, Simplification f) -> State f
+-- interreduce1 state@State{..} (rule@Active{active_rule = Rule _ lhs rhs, ..}, Simplify) =
+--   message (DeleteRule rule) $
+--   message (NewRule rule') $
+--   replaceRule state' rule rule'
+--   where
+--     rule' =
+--       rule {
+--         active_rule = makeRule lhs (result rhs'),
+--         active_id = st_label,
+--         active_proof =
+--           Proof.certify $
+--           Proof.derivation active_proof `Proof.trans` reductionProof (reduction rhs') }
+--     state' = state { st_label = succ st_label }
 
-    rhs' = normaliseWith (const True) (rewrite reduces st_rules) rhs
+--     rhs' = normaliseWith (const True) (rewrite reduces st_rules) rhs
 
-interreduce1 state@State{..} (rule@TweeRule{..}, NewModels models) =
-  flip addRuleOnly rule' $ deleteRule state rule
-  where
-    rule' =
-      rule {
-        rule_models = models }
-interreduce1 state@State{..} (rule, Delete) =
-  message (DeleteRule rule) $
-  deleteRule state rule
+-- interreduce1 state@State{..} (rule@Active{..}, NewModels models) =
+--   flip addRuleOnly rule' $ deleteRule state rule
+--   where
+--     rule' =
+--       rule {
+--         active_models = models }
+-- interreduce1 state@State{..} (rule, Delete) =
+--   message (DeleteRule rule) $
+--   deleteRule state rule
 
--- Work out what sort of simplification can be applied to a rule.
-{-# INLINEABLE simplification #-}
-simplification :: Function f => State f -> TweeRule f -> TweeRule f -> Maybe (Simplification f)
-simplification State{..} new oldRule@TweeRule{rule_rule = old, rule_models = models} = do
-  -- Don't do anything unless the new rule matches the old one
-  guard (any isJust [ match (lhs (the new)) t | t <- subterms (lhs old) ++ subterms (rhs old) ])
-  reorient `mplus` simplify
-  where
-    simplify = do
-      guard (reducesWith reduces (rhs old))
-      return Simplify
+-- -- Work out what sort of simplification can be applied to a rule.
+-- {-# INLINEABLE simplification #-}
+-- simplification :: Function f => State f -> Active f -> Active f -> Maybe (Simplification f)
+-- simplification State{..} new oldRule@Active{active_rule = old, active_models = models} = do
+--   -- Don't do anything unless the new rule matches the old one
+--   guard (any isJust [ match (lhs (the new)) t | t <- subterms (lhs old) ++ subterms (rhs old) ])
+--   reorient `mplus` simplify
+--   where
+--     simplify = do
+--       guard (reducesWith reduces (rhs old))
+--       return Simplify
 
-    -- Discover rules which have become ground joinable
-    reorient =
-      case partition joinable models of
-        ([], _) ->
-          -- No models are joinable
-          Nothing
-        (_, []) ->
-          -- All existing models are joinable - find out if the rule
-          -- really has become ground joinable
-          return $
-            case groundJoin st_joinable st_rules (branches (And [])) (rule_cp oldRule) of
-              Left model ->
-                NewModels [model]
-              Right cps
-                | all (isNothing . allSteps st_joinable st_rules) cps ->
-                  Delete
-                | otherwise ->
-                  NewModels []
-        (_, models') ->
-          -- Some but not all models are joinable
-          return (NewModels models')
+--     -- Discover rules which have become ground joinable
+--     reorient =
+--       case partition joinable models of
+--         ([], _) ->
+--           -- No models are joinable
+--           Nothing
+--         (_, []) ->
+--           -- All existing models are joinable - find out if the rule
+--           -- really has become ground joinable
+--           return $
+--             case groundJoin st_joinable st_rules (branches (And [])) (active_cp oldRule) of
+--               Left model ->
+--                 NewModels [model]
+--               Right cps
+--                 | all (isNothing . allSteps st_joinable st_rules) cps ->
+--                   Delete
+--                 | otherwise ->
+--                   NewModels []
+--         (_, models') ->
+--           -- Some but not all models are joinable
+--           return (NewModels models')
 
-    -- Check if a rule is joinable in a given model
-    joinable model =
-      (reducesWith (reducesInModel model) (lhs old) ||
-       reducesWith (reducesInModel model) (rhs old)) &&
-      isNothing (joinWith st_joinable st_rules norm (rule_cp oldRule))
-      where
-        norm = normaliseWith (const True) (rewrite (reducesInModel model) st_rules)
+--     -- Check if a rule is joinable in a given model
+--     joinable model =
+--       (reducesWith (reducesInModel model) (lhs old) ||
+--        reducesWith (reducesInModel model) (rhs old)) &&
+--       isNothing (joinWith st_joinable st_rules norm (active_cp oldRule))
+--       where
+--         norm = normaliseWith (const True) (rewrite (reducesInModel model) st_rules)
 
-    -- Check if the new rule has any effect on a given term
-    reducesWith f t =
-      not (null (anywhere (tryRule f new) t))
+--     -- Check if the new rule has any effect on a given term
+--     reducesWith f t =
+--       not (null (anywhere (tryRule f new) t))
 
 ----------------------------------------------------------------------
 -- The main loop.
@@ -516,7 +540,7 @@ complete :: (Function f, Monad m) => Output m f -> Config -> State f -> m (State
 complete output@Output{..} config state =
   let (progress, state') = complete1 config state in do
     mapM_ output_message (messages state')
-    when (st_label state `div` 100 /= st_label state' `div` 100) $
+    when (st_next_active state `div` 100 /= st_next_active state' `div` 100) $
       output_report state'
     if progress then
       complete output config (clearMessages state')

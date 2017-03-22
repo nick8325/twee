@@ -13,6 +13,8 @@ import Twee.Utils
 import Control.Monad
 import Data.Maybe
 import Data.List
+import Data.Ord
+import qualified Data.Set as Set
 import qualified Data.Map.Strict as Map
 
 ----------------------------------------------------------------------
@@ -96,11 +98,13 @@ certify p =
 
 -- Typeclass instances.
 instance Eq (Lemma f) where
-  x == y =
-    -- Don't look into lemma proofs when comparing derivations,
-    -- to avoid exponential blowup
-    lemma_id x == lemma_id y &&
-    equation (lemma_proof x) == equation (lemma_proof y)
+  x == y = compare x y == EQ
+instance Ord (Lemma f) where
+  compare =
+    comparing (\x ->
+      -- Don't look into lemma proofs when comparing derivations,
+      -- to avoid exponential blowup
+      (lemma_id x, equation (lemma_proof x)))
 
 instance Symbolic (Derivation f) where
   type ConstantOf (Derivation f) = f
@@ -289,14 +293,14 @@ present :: Function f => Config -> [ProvedGoal f] -> Presentation f
 present config goals =
   -- First find all the used lemmas, then hand off to presentWithGoals
   presentWithGoals config goals
-    (used Map.empty (concatMap (usedLemmas . derivation . pg_proof) goals))
+    (used Set.empty (concatMap (usedLemmas . derivation . pg_proof) goals))
   where
-    used lems [] = Map.elems lems
-    used lems (lem@(Lemma n p):xs)
-      | n `Map.member` lems = used lems xs
+    used lems [] = Set.elems lems
+    used lems (x:xs)
+      | x `Set.member` lems = used lems xs
       | otherwise =
-        used (Map.insert n lem lems)
-          (usedLemmas (derivation p) ++ xs)
+        used (Set.insert x lems)
+          (usedLemmas (derivation (lemma_proof x)) ++ xs)
 
 presentWithGoals ::
   Function f =>
@@ -324,22 +328,22 @@ presentWithGoals config@Config{..} goals lemmas
 
   | otherwise =
     let
-      inline Lemma{..} = Map.lookup lemma_id inlinings
+      inline lemma = Map.lookup lemma inlinings
 
       goals' =
         [ goal { pg_proof = certify $ simplify inline (derivation pg_proof) }
         | goal@ProvedGoal{..} <- goals ]
       lemmas' =
         [ Lemma n (certify $ simplify inline (derivation p))
-        | Lemma n p <- lemmas, not (n `Map.member` inlinings) ]
+        | lemma@(Lemma n p) <- lemmas, not (lemma `Map.member` inlinings) ]
     in
       presentWithGoals config goals' lemmas'
 
   where
     inlinings =
       Map.fromList
-        [ (lemma_id, p)
-        | lemma@Lemma{..} <- lemmas, Just p <- [tryInline lemma]]
+        [ (lemma, p)
+        | lemma <- lemmas, Just p <- [tryInline lemma]]
 
     tryInline (Lemma n p)
       | shouldInline n p = Just (derivation p)

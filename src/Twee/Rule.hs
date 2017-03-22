@@ -20,6 +20,7 @@ import Data.Ord
 import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof(Proof, Derivation, Lemma(..))
+import Data.Tuple
 
 --------------------------------------------------------------------------------
 -- Rewrite rules.
@@ -89,10 +90,11 @@ instance PrettyTerm f => Pretty (Rule f) where
 unorient :: Rule f -> Equation f
 unorient (Rule _ l r) = l :=: r
 
--- Turn a pair of terms t and u into a rule t -> u by computing the
+-- Turn an equation t :=: u into a rule t -> u by computing the
 -- orientation info (e.g. oriented, permutative or unoriented).
-makeRule :: Function f => Term f -> Term f -> Rule f
-makeRule t u = Rule o t u
+-- Crashes if t -> u is not a valid rule.
+orient :: Function f => Equation f -> Rule f
+orient (t :=: u) = Rule o t u
   where
     o | lessEq u t =
         case unify t u of
@@ -135,6 +137,14 @@ makeRule t u = Rule o t u
               fmap concat (zipWithM makePermutative (unpack ts) (unpack us))
 
           aux _ _ = mzero
+
+-- Flip an unoriented rule so that it goes right-to-left.
+backwards :: Rule f -> Rule f
+backwards (Rule or t u) = Rule (back or) u t
+  where
+    back (Permutative xs) = Permutative (map swap xs)
+    back Unoriented = Unoriented
+    back _ = error "Can't turn oriented rule backwards"
 
 --------------------------------------------------------------------------------
 -- Extra-fast rewriting, without proof output or unorientable rules.
