@@ -178,6 +178,7 @@ subsumed ::
 subsumed eqns idx (t :=: u)
   | t == u = True
   | or [ rhs rule == u | rule <- Index.lookup t idx ] = True
+  | or [ rhs rule == t | rule <- Index.lookup u idx ] = True
     -- No need to do this symmetrically because addJoinable adds
     -- both orientations of each equation
   | or [ u == subst sub u'

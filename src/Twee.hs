@@ -218,6 +218,13 @@ data Active f =
     active_models    :: ![Model f],
     active_rules :: ![ActiveRule f] }
 
+active_cp :: Active f -> CriticalPair f
+active_cp Active{..} =
+  CriticalPair {
+    cp_eqn = unorient active_rule,
+    cp_top = active_top,
+    cp_proof = derivation active_proof }
+
 -- An active oriented in a particular direction.
 data ActiveRule f =
   ActiveRule {
@@ -374,7 +381,8 @@ addJoinable state eqn@(t :=: u) =
   message (NewEquation eqn) $
   state {
     st_joinable =
-      Index.insert t (t :=: u) (st_joinable state) }
+      Index.insert t (t :=: u) $
+      Index.insert u (u :=: t) (st_joinable state) }
 
 -- For goal terms we store the set of all their normal forms.
 -- Name and number are for information only.
@@ -415,116 +423,125 @@ goal n name (t :=: u) =
     goal_lhs = Set.singleton (reduce (Refl t)),
     goal_rhs = Set.singleton (reduce (Refl u)) }
 
--- ----------------------------------------------------------------------
--- -- Interreduction.
--- ----------------------------------------------------------------------
+----------------------------------------------------------------------
+-- Interreduction.
+----------------------------------------------------------------------
 
--- data Simplification f = Simplify | Delete | NewModels [Model f]
---   deriving Show
--- instance Pretty (Simplification f) where pPrint = text . show
+data Simplification f = Simplify | Delete | NewModels [Model f]
+  deriving Show
+instance Pretty (Simplification f) where pPrint = text . show
 
--- -- Note on st_rules and st_joinable during interreduction.
--- -- After adding a new rule we check if any old rules can now be joined
--- -- or simplified. When we try rewriting an old rule, we must of course
--- -- remove it from the ruleset first, so as to avoid using the rule to
--- -- rewrite itself. We must also not use an equation in st_joinable to
--- -- simplify a rule if the equation was derived from the rule. As we
--- -- don't keep track of the origin of each joinable equation, we simply
--- -- disable st_joinable during interreduction.
--- --
--- -- After considering all reoriented rules, we put back st_joinable.
--- -- This is fine because all the equations that were in st_joinable
--- -- before should indeed still be joinable once the reoriented rules
--- -- are added.
+-- Note on st_rules and st_joinable during interreduction.
+-- After adding a new rule we check if any old rules can now be joined
+-- or simplified. When we try rewriting an old rule, we must of course
+-- remove it from the ruleset first, so as to avoid using the rule to
+-- rewrite itself. We must also not use an equation in st_joinable to
+-- simplify a rule if the equation was derived from the rule. As we
+-- don't keep track of the origin of each joinable equation, we simply
+-- disable st_joinable during interreduction.
+--
+-- After considering all reoriented rules, we put back st_joinable.
+-- This is fine because all the equations that were in st_joinable
+-- before should indeed still be joinable once the reoriented rules
+-- are added.
 
 -- Simplify all old rules wrt a new rule.
 {-# INLINEABLE interreduce #-}
 interreduce :: Function f => State f -> Active f -> State f
 interreduce state new =
-  state
---   {-# SCC interreduce #-}
---   foldl' interreduce1 state simpls
---   where
---     simpls =
---       [ (old, simp)
---       | old <- IntMap.elems (st_active_ids state),
---         old /= new,
---         let state' = deleteRule state { st_joinable = Index.Nil } old,
---         simp <- maybeToList (simplification state' new old) ]
+  {-# SCC interreduce #-}
+  foldl' interreduce1 state simpls
+  where
+    simpls =
+      [ (old, simp)
+      | old <- IntMap.elems (st_active_ids state),
+        old /= new,
+        let state' = deleteActive state { st_joinable = Index.Nil } old,
+        simp <- maybeToList (simplification state' new old) ]
 
--- {-# INLINEABLE interreduce1 #-}
--- interreduce1 :: Function f => State f -> (Active f, Simplification f) -> State f
--- interreduce1 state@State{..} (rule@Active{active_rule = Rule _ lhs rhs, ..}, Simplify) =
---   message (DeleteRule rule) $
---   message (NewRule rule') $
---   replaceRule state' rule rule'
---   where
---     rule' =
---       rule {
---         active_rule = makeRule lhs (result rhs'),
---         active_id = st_label,
---         active_proof =
---           Proof.certify $
---           Proof.derivation active_proof `Proof.trans` reductionProof (reduction rhs') }
---     state' = state { st_label = succ st_label }
+{-# INLINEABLE interreduce1 #-}
+interreduce1 :: Function f => State f -> (Active f, Simplification f) -> State f
+interreduce1 state@State{..} (active@Active{active_rule = Rule _ lhs rhs, active_rules = ~[rule], ..}, Simplify) =
+  message (DeleteRule active) $
+  message (NewRule active') $
+  replaceActive state' active active'
+  where
+    proof =
+      Proof.certify $
+      Proof.derivation active_proof `Proof.trans` reductionProof (reduction rhs')
+    rule' = orient (lhs :=: result rhs')
 
---     rhs' = normaliseWith (const True) (rewrite reduces st_rules) rhs
+    active' =
+      active {
+        active_rule = rule',
+        active_id = st_next_active,
+        active_proof = proof,
+        active_rules =
+          [rule {
+             rule_active = st_next_active,
+             rule_rid = RuleId (st_next_active*2),
+             rule_rule = rule',
+             rule_proof = proof }]}
 
--- interreduce1 state@State{..} (rule@Active{..}, NewModels models) =
---   flip addRuleOnly rule' $ deleteRule state rule
---   where
---     rule' =
---       rule {
---         active_models = models }
--- interreduce1 state@State{..} (rule, Delete) =
---   message (DeleteRule rule) $
---   deleteRule state rule
+    state' = state { st_next_active = succ st_next_active }
 
--- -- Work out what sort of simplification can be applied to a rule.
--- {-# INLINEABLE simplification #-}
--- simplification :: Function f => State f -> Active f -> Active f -> Maybe (Simplification f)
--- simplification State{..} new oldRule@Active{active_rule = old, active_models = models} = do
---   -- Don't do anything unless the new rule matches the old one
---   guard (any isJust [ match (lhs (the new)) t | t <- subterms (lhs old) ++ subterms (rhs old) ])
---   reorient `mplus` simplify
---   where
---     simplify = do
---       guard (reducesWith reduces (rhs old))
---       return Simplify
+    rhs' = normaliseWith (const True) (rewrite reduces st_rules) rhs
 
---     -- Discover rules which have become ground joinable
---     reorient =
---       case partition joinable models of
---         ([], _) ->
---           -- No models are joinable
---           Nothing
---         (_, []) ->
---           -- All existing models are joinable - find out if the rule
---           -- really has become ground joinable
---           return $
---             case groundJoin st_joinable st_rules (branches (And [])) (active_cp oldRule) of
---               Left model ->
---                 NewModels [model]
---               Right cps
---                 | all (isNothing . allSteps st_joinable st_rules) cps ->
---                   Delete
---                 | otherwise ->
---                   NewModels []
---         (_, models') ->
---           -- Some but not all models are joinable
---           return (NewModels models')
+interreduce1 state@State{..} (rule@Active{..}, NewModels models) =
+  flip addActiveOnly rule' $ deleteActive state rule
+  where
+    rule' =
+      rule {
+        active_models = models }
+interreduce1 state@State{..} (rule, Delete) =
+  message (DeleteRule rule) $
+  deleteActive state rule
 
---     -- Check if a rule is joinable in a given model
---     joinable model =
---       (reducesWith (reducesInModel model) (lhs old) ||
---        reducesWith (reducesInModel model) (rhs old)) &&
---       isNothing (joinWith st_joinable st_rules norm (active_cp oldRule))
---       where
---         norm = normaliseWith (const True) (rewrite (reducesInModel model) st_rules)
+-- Work out what sort of simplification can be applied to a rule.
+{-# INLINEABLE simplification #-}
+simplification :: Function f => State f -> Active f -> Active f -> Maybe (Simplification f)
+simplification State{..} new oldRule@Active{active_rule = old, active_models = models} = do
+  -- Don't do anything unless the new rule matches the old one
+  guard (any isJust [ match (lhs (the r)) t | t <- subterms (lhs old) ++ subterms (rhs old), r <- active_rules new ])
+  reorient `mplus` simplify
+  where
+    simplify = do
+      guard (oriented (orientation old) && reducesWith reduces (rhs old))
+      return Simplify
 
---     -- Check if the new rule has any effect on a given term
---     reducesWith f t =
---       not (null (anywhere (tryRule f new) t))
+    -- Discover rules which have become ground joinable
+    reorient =
+      case partition joinable models of
+        ([], _) ->
+          -- No models are joinable
+          Nothing
+        (_, []) ->
+          -- All existing models are joinable - find out if the rule
+          -- really has become ground joinable
+          return $
+            case groundJoin st_joinable st_rules (branches (And [])) (active_cp oldRule) of
+              Left model ->
+                NewModels [model]
+              Right cps
+                | all (isNothing . allSteps st_joinable st_rules) cps ->
+                  Delete
+                | otherwise ->
+                  NewModels []
+        (_, models') ->
+          -- Some but not all models are joinable
+          return (NewModels models')
+
+    -- Check if a rule is joinable in a given model
+    joinable model =
+      (reducesWith (reducesInModel model) (lhs old) ||
+       reducesWith (reducesInModel model) (rhs old)) &&
+      isNothing (joinWith st_joinable st_rules norm (active_cp oldRule))
+      where
+        norm = normaliseWith (const True) (rewrite (reducesInModel model) st_rules)
+
+    -- Check if the new rule has any effect on a given term
+    reducesWith f t =
+      not (null [ u | r <- active_rules new, u <- anywhere (tryRule f r) t ])
 
 ----------------------------------------------------------------------
 -- The main loop.
