@@ -5,7 +5,7 @@ module Twee.Join where
 import Twee.Base
 import Twee.Rule
 import Twee.Equation
-import Twee.Proof(Proof, Derivation)
+import Twee.Proof(Proof)
 import qualified Twee.Proof as Proof
 import Twee.CP
 import Twee.Constraints
@@ -15,8 +15,6 @@ import Twee.Utils
 import Data.Maybe
 import Data.Either
 import Data.Ord
-import Data.List
-import GHC.Generics
 
 {-# INLINEABLE joinCriticalPair #-}
 joinCriticalPair ::

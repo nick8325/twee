@@ -5,7 +5,7 @@ import Twee.Base
 import Twee.Rule
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Proof, Derivation, Axiom(..), ProvedGoal(..), Lemma(..), certify, derivation, symm)
+import Twee.Proof(Proof, Axiom(..), ProvedGoal(..), certify, derivation, symm)
 import Twee.CP hiding (Config)
 import qualified Twee.CP as CP
 import Twee.Join
@@ -22,8 +22,6 @@ import Data.List
 import Data.Function
 import qualified Data.Set as Set
 import Data.Set(Set)
-import qualified Data.IntSet as IntSet
-import Data.IntSet(IntSet)
 import Text.Printf
 import Data.Int
 import Data.Ord
@@ -300,7 +298,7 @@ deleteActive state@State{..} Active{..} =
   where
     deleteRule rules rule@ActiveRule{..} =
       Index.delete (lhs rule_rule) rule rules
-    deleteRuleId rules rule@ActiveRule{..} =
+    deleteRuleId rules ActiveRule{..} =
       IntMap.delete (fromIntegral rule_rid) rules
 
 -- Replace an active with its simplification. Used in interreduction.
@@ -338,7 +336,7 @@ consider config state@State{..} cp0 =
 
 {-# INLINEABLE addCP #-}
 addCP :: Function f => Config -> Model f -> State f -> CriticalPair f -> State f
-addCP config model state@State{..} cp@CriticalPair{..} =
+addCP config model state@State{..} CriticalPair{..} =
   addActive config state $ \n ->
   let
     pf = certify cp_proof
