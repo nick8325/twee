@@ -1,5 +1,5 @@
 -- Critical pairs.
-{-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards, OverloadedStrings, TypeFamilies #-}
+{-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards, OverloadedStrings, TypeFamilies, DeriveGeneric #-}
 module Twee.CP where
 
 import qualified Twee.Term as Term
@@ -16,6 +16,7 @@ import Twee.Utils
 import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof(Proof, Derivation, congPath)
+import GHC.Generics
 
 -- The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
@@ -124,22 +125,6 @@ buildReplacePositionSub !sub !n !inner' !outer =
 termSubst :: TriangleSubst f -> Term f -> Term f
 termSubst sub t = build (Term.subst sub t)
 
--- Return a proof for a critical pair.
-{-# INLINEABLE overlapProof #-}
-overlapProof ::
-  forall a f.
-  (Has a (Rule f), Has a (Proof f), Has a Id) =>
-  a -> a -> Overlap f -> Derivation f
-overlapProof left right Overlap{..} =
-  Proof.symm (reductionProof (step left leftSub))
-  `Proof.trans`
-  congPath path overlap_top (reductionProof (step right rightSub))
-  where
-    Just leftSub = match (lhs (the left)) overlap_top
-    Just rightSub = match (lhs (the right)) overlap_inner
-
-    path = positionToPath (lhs (the left) :: Term f) overlap_pos
-
 -- The critical pair ordering heuristic.
 data Config =
   Config {
@@ -176,3 +161,106 @@ score Config{..} Overlap{..} =
       (size t + len t) * cfg_funweight -
       (length (filter isVar (subterms t)) + length (nub (vars t))) *
       (cfg_funweight - cfg_varweight)
+
+----------------------------------------------------------------------
+-- Higher-level handling of critical pairs.
+----------------------------------------------------------------------
+
+-- A critical pair together with information about how it was derived
+data CriticalPair f =
+  CriticalPair {
+    cp_eqn   :: {-# UNPACK #-} !(Equation f),
+    cp_top   :: !(Maybe (Term f)),
+    cp_proof :: !(Derivation f) }
+  deriving Generic
+
+instance Symbolic (CriticalPair f) where
+  type ConstantOf (CriticalPair f) = f
+
+instance PrettyTerm f => Pretty (CriticalPair f) where
+  pPrint CriticalPair{..} =
+    vcat [
+      pPrint cp_eqn,
+      nest 2 (text "top:" <+> pPrint cp_top) ]
+
+-- Split a critical pair so that it can be turned into rules.
+-- See the comment below.
+split :: Function f => CriticalPair f -> [CriticalPair f]
+split CriticalPair{cp_eqn = l :=: r, ..}
+  | l == r = []
+  | otherwise =
+    -- If we have something which is almost a rule, except that some
+    -- variables appear only on the right-hand side, e.g.:
+    --   f x y -> g x z
+    -- then we replace it with the following two rules:
+    --   f x y -> g x ?
+    --   g x z -> g x ?
+    -- where the second rule is weakly oriented and ? is the minimal
+    -- constant.
+    --
+    -- If we have an unoriented equation with a similar problem, e.g.:
+    --   f x y = g x z
+    -- then we replace it with potentially three rules:
+    --   f x ? = g x ?
+    --   f x y -> f x ?
+    --   g x z -> g x ?
+
+    -- The main rule l -> r' or r -> l' or l' = r'
+    [ CriticalPair {
+        cp_eqn   = l :=: r',
+        cp_top   = cp_top,
+        cp_proof = erase rs cp_proof }
+    | ord == Just GT ] ++
+    [ CriticalPair {
+        cp_eqn   = r :=: l',
+        cp_top   = cp_top,
+        cp_proof = Proof.symm (erase ls cp_proof) }
+    | ord == Just LT ] ++
+    [ CriticalPair {
+        cp_eqn   = l' :=: r',
+        cp_top   = cp_top,
+        cp_proof = erase (ls++rs) cp_proof }
+    | ord == Nothing ] ++
+
+    -- Weak rules l -> l' or r -> r'
+    [ CriticalPair {
+        cp_eqn   = l :=: l',
+        cp_top   = Just r, -- overlap of r -> l with itself
+        cp_proof = cp_proof `Proof.trans` Proof.symm (erase ls cp_proof) }
+    | not (null ls), ord /= Just GT ] ++
+    [ CriticalPair {
+        cp_eqn   = r :=: r',
+        cp_top   = Just l, -- overlap of l -> r with itself
+        cp_proof = Proof.symm cp_proof `Proof.trans` erase rs cp_proof }
+    | not (null rs), ord /= Just LT ]
+    where
+      ord = orientTerms l' r'
+      l' = erase ls l
+      r' = erase rs r
+      ls = usort (vars l) \\ usort (vars r)
+      rs = usort (vars r) \\ usort (vars l)
+
+{-# INLINEABLE makeCriticalPair #-}
+makeCriticalPair ::
+  (Has a (Rule f), Has a (Proof f), Has a Id) =>
+  a -> a -> Overlap f -> CriticalPair f
+makeCriticalPair r1 r2 overlap@Overlap{..} =
+  CriticalPair overlap_eqn
+    (Just overlap_top)
+    (overlapProof r1 r2 overlap)
+
+-- Return a proof for a critical pair.
+{-# INLINEABLE overlapProof #-}
+overlapProof ::
+  forall a f.
+  (Has a (Rule f), Has a (Proof f), Has a Id) =>
+  a -> a -> Overlap f -> Derivation f
+overlapProof left right Overlap{..} =
+  Proof.symm (reductionProof (step left leftSub))
+  `Proof.trans`
+  congPath path overlap_top (reductionProof (step right rightSub))
+  where
+    Just leftSub = match (lhs (the left)) overlap_top
+    Just rightSub = match (lhs (the right)) overlap_inner
+
+    path = positionToPath (lhs (the left) :: Term f) overlap_pos
