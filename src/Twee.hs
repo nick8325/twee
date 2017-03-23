@@ -14,6 +14,7 @@ import qualified Twee.Index as Index
 import Twee.Index(Index)
 import Twee.Constraints
 import Twee.Utils
+import Twee.Task
 import qualified Data.Heap as Heap
 import Data.Heap(Heap)
 import qualified Data.IntMap.Strict as IntMap
@@ -27,6 +28,9 @@ import Text.Printf
 import Data.Int
 import Data.Ord
 import Control.Monad
+import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
+import qualified Control.Monad.Trans.State.Strict as StateM
 
 ----------------------------------------------------------------------
 -- Configuration and prover state.
@@ -93,6 +97,7 @@ data Message f =
     NewRule !(Active f)
   | NewEquation !(Equation f)
   | DeleteRule !(Active f)
+  | SimplifyQueue
 
 instance Function f => Pretty (Message f) where
   pPrint (NewRule rule) = pPrint rule
@@ -100,6 +105,8 @@ instance Function f => Pretty (Message f) where
     text "  (hard)" <+> pPrint eqn
   pPrint (DeleteRule rule) =
     text "  (delete rule " <> pPrint (active_id rule) <> text ")"
+  pPrint SimplifyQueue =
+    text "  (simplifying queued critical pairs...)"
 
 message :: PrettyTerm f => Message f -> State f -> State f
 message !msg state@State{..} =
@@ -558,15 +565,30 @@ data Output m f =
     output_message :: Message f -> m () }
 
 {-# INLINE complete #-}
-complete :: (Function f, Monad m) => Output m f -> Config -> State f -> m (State f)
+complete :: (Function f, MonadIO m) => Output m f -> Config -> State f -> m (State f)
 complete output@Output{..} config state =
-  let (progress, state') = complete1 config state in do
-    mapM_ output_message (messages state')
-    when (st_next_active state `div` 100 /= st_next_active state' `div` 100) $
-      output_report state'
-    if progress then
-      complete output config (clearMessages state')
-    else return state'
+  flip StateM.execStateT state $ do
+    tasks <- sequence
+      [newTask 0.5 0.1 $ do
+         lift $ output_message SimplifyQueue
+         state <- StateM.get
+         StateM.put $! simplifyQueue config state,
+       newTask 30 0 $ do
+         state <- StateM.get
+         lift $ output_report state]
+
+    let
+      loop = do
+        progress <- StateM.state (complete1 config)
+        state <- StateM.get
+        lift $ mapM_ output_message (messages state)
+        StateM.put (clearMessages state)
+        mapM_ checkTask tasks
+        when progress loop
+
+    loop
+    state <- StateM.get
+    lift $ output_report state
 
 {-# INLINEABLE complete1 #-}
 complete1 :: Function f => Config -> State f -> (Bool, State f)
