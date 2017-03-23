@@ -575,7 +575,7 @@ data Output m f =
 
 {-# INLINE complete #-}
 complete :: (Function f, MonadIO m) => Output m f -> Config -> State f -> m (State f)
-complete output@Output{..} config state =
+complete Output{..} config state =
   flip StateM.execStateT state $ do
     tasks <- sequence
       [newTask 1 0.1 $ do
