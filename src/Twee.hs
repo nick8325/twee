@@ -8,7 +8,8 @@ import qualified Twee.Proof as Proof
 import Twee.Proof(Proof, Axiom(..), ProvedGoal(..), certify, derivation, symm)
 import Twee.CP hiding (Config)
 import qualified Twee.CP as CP
-import Twee.Join
+import Twee.Join hiding (Config, defaultConfig)
+import qualified Twee.Join as Join
 import qualified Twee.Index as Index
 import Twee.Index(Index)
 import Twee.Constraints
@@ -35,7 +36,9 @@ data Config =
   Config {
     cfg_max_term_size      :: Int,
     cfg_max_critical_pairs :: Int,
+    cfg_simplify           :: Bool,
     cfg_critical_pairs     :: CP.Config,
+    cfg_join               :: Join.Config,
     cfg_proof_presentation :: Proof.Config }
 
 data State f =
@@ -57,12 +60,14 @@ defaultConfig =
   Config {
     cfg_max_term_size = maxBound,
     cfg_max_critical_pairs = maxBound,
+    cfg_simplify = True,
     cfg_critical_pairs =
       CP.Config {
         cfg_lhsweight = 2,
         cfg_rhsweight = 1,
         cfg_funweight = 4,
         cfg_varweight = 3 },
+    cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig }
 
 initialState :: State f
@@ -257,7 +262,7 @@ addActive config state@State{..} active0 =
   let
     active@Active{..} = active0 st_next_active
     state' =
-      flip interreduce active $
+      flip (interreduce config) active $
       message (NewRule active) $
       addActiveOnly state{st_next_active = st_next_active+1} active
     passives =
@@ -318,12 +323,12 @@ replaceActive state@State{..} active active' =
 -- Try to join a critical pair.
 {-# INLINEABLE consider #-}
 consider :: Function f => Config -> State f -> CriticalPair f -> State f
-consider config state@State{..} cp0 =
+consider config@Config{..} state@State{..} cp0 =
   {-# SCC consider #-}
   -- Important to canonicalise the rule so that we don't get
   -- bigger and bigger variable indices over time
   let cp = canonicalise cp0 in
-  case joinCriticalPair st_joinable st_rules cp of
+  case joinCriticalPair cfg_join st_joinable st_rules cp of
     Right (mcp, cps) ->
       let
         state' = foldl' (consider config) state cps
@@ -445,17 +450,19 @@ instance Pretty (Simplification f) where pPrint = text . show
 
 -- Simplify all old rules wrt a new rule.
 {-# INLINEABLE interreduce #-}
-interreduce :: Function f => State f -> Active f -> State f
-interreduce state new =
-  {-# SCC interreduce #-}
-  foldl' interreduce1 state simpls
-  where
-    simpls =
-      [ (old, simp)
-      | old <- IntMap.elems (st_active_ids state),
-        old /= new,
-        let state' = deleteActive state { st_joinable = Index.Nil } old,
-        simp <- maybeToList (simplification state' new old) ]
+interreduce :: Function f => Config -> State f -> Active f -> State f
+interreduce config@Config{..} state new
+  | not cfg_simplify = state
+  | otherwise =
+    {-# SCC interreduce #-}
+    foldl' interreduce1 state simpls
+    where
+      simpls =
+        [ (old, simp)
+        | old <- IntMap.elems (st_active_ids state),
+          old /= new,
+          let state' = deleteActive state { st_joinable = Index.Nil } old,
+          simp <- maybeToList (simplification config state' new old) ]
 
 {-# INLINEABLE interreduce1 #-}
 interreduce1 :: Function f => State f -> (Active f, Simplification f) -> State f
@@ -497,8 +504,8 @@ interreduce1 state@State{..} (rule, Delete) =
 
 -- Work out what sort of simplification can be applied to a rule.
 {-# INLINEABLE simplification #-}
-simplification :: Function f => State f -> Active f -> Active f -> Maybe (Simplification f)
-simplification State{..} new oldRule@Active{active_rule = old, active_models = models} = do
+simplification :: Function f => Config -> State f -> Active f -> Active f -> Maybe (Simplification f)
+simplification Config{..} State{..} new oldRule@Active{active_rule = old, active_models = models} = do
   -- Don't do anything unless the new rule matches the old one
   guard (any isJust [ match (lhs (the r)) t | t <- subterms (lhs old) ++ subterms (rhs old), r <- active_rules new ])
   reorient `mplus` simplify
@@ -517,11 +524,11 @@ simplification State{..} new oldRule@Active{active_rule = old, active_models = m
           -- All existing models are joinable - find out if the rule
           -- really has become ground joinable
           return $
-            case groundJoin st_joinable st_rules (branches (And [])) (active_cp oldRule) of
+            case groundJoin cfg_join st_joinable st_rules (branches (And [])) (active_cp oldRule) of
               Left model ->
                 NewModels [model]
               Right cps
-                | all (isNothing . allSteps st_joinable st_rules) cps ->
+                | all (isNothing . allSteps cfg_join st_joinable st_rules) cps ->
                   Delete
                 | otherwise ->
                   NewModels []

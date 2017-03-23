@@ -7,7 +7,7 @@ import Twee.Rule
 import Twee.Equation
 import Twee.Proof(Proof)
 import qualified Twee.Proof as Proof
-import Twee.CP
+import Twee.CP hiding (Config)
 import Twee.Constraints
 import qualified Twee.Index as Index
 import Twee.Index(Index)
@@ -16,9 +16,21 @@ import Data.Maybe
 import Data.Either
 import Data.Ord
 
+data Config =
+  Config {
+    cfg_ground_join :: !Bool,
+    cfg_use_connectedness :: !Bool }
+
+defaultConfig :: Config
+defaultConfig =
+  Config {
+    cfg_ground_join = True,
+    cfg_use_connectedness = True }
+
 {-# INLINEABLE joinCriticalPair #-}
 joinCriticalPair ::
   (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
+  Config ->
   Index f (Equation f) -> Index f a ->
   CriticalPair f ->
   Either
@@ -30,11 +42,11 @@ joinCriticalPair ::
     -- and an optional equation which can be added to the joinable set
     -- after successfully joining all instances.
     (Maybe (CriticalPair f), [CriticalPair f])
-joinCriticalPair eqns idx cp =
+joinCriticalPair config eqns idx cp =
   {-# SCC joinCriticalPair #-}
-  case allSteps eqns idx cp of
+  case allSteps config eqns idx cp of
     Just cp ->
-      case groundJoin eqns idx (branches (And [])) cp of
+      case groundJoin config eqns idx (branches (And [])) cp of
         Left model -> Left (cp, model)
         Right cps -> Right (Just cp, cps)
     Nothing ->
@@ -46,17 +58,22 @@ joinCriticalPair eqns idx cp =
 {-# INLINEABLE allSteps #-}
 step1, step2, step3, allSteps ::
   (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
-  Index f (Equation f) -> Index f a -> CriticalPair f -> Maybe (CriticalPair f)
-allSteps eqns idx cp = step1 eqns idx cp >>= step2 eqns idx >>= step3 eqns idx
-step1 eqns idx = joinWith eqns idx (normaliseWith (const True) (rewrite reducesOriented idx))
-step2 eqns idx = joinWith eqns idx (normaliseWith (const True) (rewrite reduces idx))
-step3 eqns idx cp =
-  case cp_top cp of
-    Just top ->
-      case (join (cp, top), join (flipCP (cp, top))) of
-        (Just _, Just _) -> Just cp
-        _ -> Nothing
-    _ -> Just cp
+  Config -> Index f (Equation f) -> Index f a -> CriticalPair f -> Maybe (CriticalPair f)
+allSteps config eqns idx cp =
+  step1 config eqns idx cp >>=
+  step2 config eqns idx >>=
+  step3 config eqns idx
+step1 _ eqns idx = joinWith eqns idx (normaliseWith (const True) (rewrite reducesOriented idx))
+step2 _ eqns idx = joinWith eqns idx (normaliseWith (const True) (rewrite reduces idx))
+step3 Config{..} eqns idx cp
+  | not cfg_use_connectedness = Just cp
+  | otherwise =
+    case cp_top cp of
+      Just top ->
+        case (join (cp, top), join (flipCP (cp, top))) of
+          (Just _, Just _) -> Just cp
+          _ -> Nothing
+      _ -> Just cp
   where
     join (cp, top) =
       joinWith eqns idx (normaliseWith (`lessThan` top) (rewrite reducesSkolem idx)) cp
@@ -113,17 +130,18 @@ subsumed _ _ _ = False
 {-# INLINEABLE groundJoin #-}
 groundJoin ::
   (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
-  Index f (Equation f) -> Index f a -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
-groundJoin eqns idx ctx r@CriticalPair{cp_eqn = t :=: u, ..} =
+  Config -> Index f (Equation f) -> Index f a -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
+groundJoin config@Config{..} eqns idx ctx r@CriticalPair{cp_eqn = t :=: u, ..} =
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
     ([], instances) ->
       let rs = [ subst sub r | sub <- instances ] in
       Right (usortBy (comparing (canonicalise . order . cp_eqn)) rs)
     (model:_, _)
-      | modelOK model && isJust (allSteps eqns idx r { cp_eqn = t' :=: u' }) -> Left model
+      | not cfg_ground_join ||
+        (modelOK model && isJust (allSteps config eqns idx r { cp_eqn = t' :=: u' })) -> Left model
       | otherwise ->
           let model1 = optimise model weakenModel (\m -> not (modelOK m) || (valid m (reduction nt) && valid m (reduction nu)))
-              model2 = optimise model1 weakenModel (\m -> not (modelOK m) || isNothing (allSteps eqns idx r { cp_eqn = result (normaliseIn m t) :=: result (normaliseIn m u) }))
+              model2 = optimise model1 weakenModel (\m -> not (modelOK m) || isNothing (allSteps config eqns idx r { cp_eqn = result (normaliseIn m t) :=: result (normaliseIn m u) }))
 
               diag [] = Or []
               diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
@@ -131,7 +149,7 @@ groundJoin eqns idx ctx r@CriticalPair{cp_eqn = t :=: u, ..} =
               weaken x = x
               ctx' = formAnd (diag (modelToLiterals model2)) ctx in
 
-          groundJoin eqns idx ctx' r
+          groundJoin config eqns idx ctx' r
       where
         normaliseIn m = normaliseWith (const True) (rewrite (reducesInModel m) idx)
         nt = normaliseIn model t

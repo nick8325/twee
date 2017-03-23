@@ -8,6 +8,7 @@ import Twee.Base hiding (char, lookup, (<>), vars)
 import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof hiding (Config, defaultConfig)
+import qualified Twee.Join as Join
 import Twee.Utils
 import qualified Twee.CP as CP
 import Data.Ord
@@ -27,8 +28,9 @@ import qualified Data.Set as Set
 
 parseConfig :: OptionParser Config
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*>
+  Config <$> maxSize <*> maxCPs <*> simplify <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight) <*>
+    (Join.Config <$> ground_join <*> connectedness) <*>
     (Proof.Config <$> fewer_lemmas <*> flat_proof <*> show_instances)
   where
     maxSize =
@@ -37,6 +39,10 @@ parseConfig =
     maxCPs =
       inGroup "Resource limits" $
       flag "max-cps" ["Give up after considering this many critical pairs (unlimited by default)."] maxBound argNum
+    simplify =
+      inGroup "Completion heuristics" $
+      not <$>
+      bool "no-simplify" ["Don't simplify rewrite rules with respect to one another."]
     lweight =
       inGroup "Critical pair weighting heuristics" $
       defaultFlag "lhs-weight" "Weight given to LHS of critical pair" (CP.cfg_lhsweight . cfg_critical_pairs) argNum
@@ -49,6 +55,14 @@ parseConfig =
     varweight =
       inGroup "Critical pair weighting heuristics" $
       defaultFlag "var-weight" "Weight given to variable symbols" (CP.cfg_varweight . cfg_critical_pairs) argNum
+    ground_join =
+      inGroup "Critical pair joining heuristics" $
+      not <$>
+      bool "no-ground-joining" ["Disable ground joinability testing."]
+    connectedness =
+      inGroup "Critical pair joining heuristics" $
+      not <$>
+      bool "no-connectedness" ["Disable subconnectedness testing."]
     fewer_lemmas =
       inGroup "Proof presentation" $
       bool "fewer-lemmas" ["Produce a proof with fewer lemmas."]
