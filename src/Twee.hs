@@ -168,13 +168,15 @@ findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
   return (rule1, rule2, overlap)
 
 -- Renormalise a queued Passive.
--- Also takes care of deleting any orphans.
+-- Orphaned passives get a score of 0.
 {-# INLINEABLE simplifyPassive #-}
-simplifyPassive :: Function f => Config -> State f -> Passive f -> Maybe (Passive f)
-simplifyPassive config@Config{..} state@State{..} passive = {-# SCC simplifyPassive #-} do
-  (_, _, overlap) <- findPassive config state passive
-  overlap <- simplifyOverlap st_oriented_rules overlap
-  return passive { passive_score = fromIntegral (score cfg_critical_pairs overlap) }
+simplifyPassive :: Function f => Config -> State f -> Passive f -> Passive f
+simplifyPassive config@Config{..} state@State{..} passive =
+  {-# SCC simplifyPassive #-}
+  fromMaybe passive { passive_score = 0 } $ do
+    (_, _, overlap) <- findPassive config state passive
+    overlap <- simplifyOverlap st_oriented_rules overlap
+    return passive { passive_score = fromIntegral (score cfg_critical_pairs overlap) }
 
 -- Renormalise the entire queue.
 {-# INLINEABLE simplifyQueue #-}
@@ -183,10 +185,7 @@ simplifyQueue config state =
   {-# SCC simplifyQueue #-}
   state { st_queue = simp (st_queue state) }
   where
-    simp =
-      Heap.fromList .
-      mapMaybe (simplifyPassive config state) .
-      Heap.toUnsortedList
+    simp = Heap.map (simplifyPassive config state)
 
 -- Enqueue a critical pair.
 {-# INLINEABLE enqueue #-}
