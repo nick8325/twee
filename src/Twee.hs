@@ -51,7 +51,6 @@ data State f =
     st_rules          :: !(Index f (ActiveRule f)),
     st_active_ids     :: !(IntMap (Active f)),
     st_rule_ids       :: !(IntMap (ActiveRule f)),
-    st_replaced_rules :: !(IntMap RuleId),
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
     st_queue          :: !(Heap (Passive f)),
@@ -81,7 +80,6 @@ initialState =
     st_rules = Index.Nil,
     st_active_ids = IntMap.empty,
     st_rule_ids = IntMap.empty,
-    st_replaced_rules = IntMap.empty,
     st_joinable = Index.Nil,
     st_goals = [],
     st_queue = Heap.empty,
@@ -97,6 +95,7 @@ data Message f =
     NewRule !(Active f)
   | NewEquation !(Equation f)
   | DeleteRule !(Active f)
+  | SimplifyRule !(Active f)
   | SimplifyQueue
 
 instance Function f => Pretty (Message f) where
@@ -105,6 +104,8 @@ instance Function f => Pretty (Message f) where
     text "  (hard)" <+> pPrint eqn
   pPrint (DeleteRule rule) =
     text "  (delete rule " <> pPrint (active_id rule) <> text ")"
+  pPrint (SimplifyRule rule) =
+    text "*" <> pPrint rule
   pPrint SimplifyQueue =
     text "  (simplifying queued critical pairs...)"
 
@@ -156,12 +157,8 @@ makePassive Config{..} State{..} rule =
 {-# INLINEABLE findPassive #-}
 findPassive :: forall f. Function f => Config -> State f -> Passive f -> Maybe (ActiveRule f, ActiveRule f, Overlap f)
 findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
-  let
-    lookup rid =
-      IntMap.lookup (fromIntegral rid) st_rule_ids `mplus`
-      (IntMap.lookup (fromIntegral rid) st_replaced_rules >>= lookup)
-  rule1 <- lookup (fromIntegral passive_rule1)
-  rule2 <- lookup (fromIntegral passive_rule2)
+  rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
+  rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
   overlap <-
     overlapAt (fromIntegral passive_pos)
       (renameAvoiding (the rule2 :: Rule f) (the rule1)) (the rule2)
@@ -327,11 +324,7 @@ deleteActive state@State{..} Active{..} =
 replaceActive :: Function f => State f -> Active f -> Active f -> State f
 replaceActive state@State{..} active active' =
   flip addActiveOnly active' $
-  flip deleteActive active $
-  state {
-    st_replaced_rules =
-      IntMap.insert (fromIntegral (rid active)) (rid active')
-        st_replaced_rules }
+  deleteActive state active
   where
     rid Active{active_rules = [ActiveRule{..}]} = rule_rid
     rid _ = error "replaceRule called on unoriented rule"
@@ -483,9 +476,8 @@ interreduce config@Config{..} state new
 {-# INLINEABLE interreduce1 #-}
 interreduce1 :: Function f => State f -> (Active f, Simplification f) -> State f
 interreduce1 state@State{..} (active@Active{active_rule = Rule _ lhs rhs, active_rules = ~[rule], ..}, Simplify) =
-  message (DeleteRule active) $
-  message (NewRule active') $
-  replaceActive state' active active'
+  message (SimplifyRule active') $
+  replaceActive state active active'
   where
     proof =
       Proof.certify $
@@ -495,16 +487,11 @@ interreduce1 state@State{..} (active@Active{active_rule = Rule _ lhs rhs, active
     active' =
       active {
         active_rule = rule',
-        active_id = st_next_active,
         active_proof = proof,
         active_rules =
           [rule {
-             rule_active = st_next_active,
-             rule_rid = RuleId (st_next_active*2),
              rule_rule = rule',
              rule_proof = proof }]}
-
-    state' = state { st_next_active = succ st_next_active }
 
     rhs' = normaliseWith (const True) (rewrite reduces st_rules) rhs
 
