@@ -573,7 +573,7 @@ complete output@Output{..} config state =
          lift $ output_message SimplifyQueue
          state <- StateM.get
          StateM.put $! simplifyQueue config state,
-       newTask 30 0 $ do
+       newTask 10 1 $ do
          state <- StateM.get
          lift $ output_report state]
 
