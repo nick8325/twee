@@ -129,7 +129,17 @@ data Passive f =
     passive_rule1 :: {-# UNPACK #-} !RuleId,
     passive_rule2 :: {-# UNPACK #-} !RuleId,
     passive_pos   :: {-# UNPACK #-} !Int32 }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Show)
+
+instance Ord (Passive f) where
+  compare = comparing f
+    where
+      f Passive{..} =
+        (passive_score,
+         intMax (fromIntegral passive_rule1) (fromIntegral passive_rule2),
+         passive_rule1,
+         passive_rule2,
+         passive_score)
 
 -- Compute all critical pairs from a rule and condense into a Passive.
 {-# INLINEABLE makePassive #-}
