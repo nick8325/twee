@@ -32,6 +32,7 @@ joinCriticalPair ::
   (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
   Config ->
   Index f (Equation f) -> Index f a ->
+  Maybe (Model f) -> -- A model to try before checking ground joinability
   CriticalPair f ->
   Either
     -- Failed to join critical pair.
@@ -42,11 +43,11 @@ joinCriticalPair ::
     -- and an optional equation which can be added to the joinable set
     -- after successfully joining all instances.
     (Maybe (CriticalPair f), [CriticalPair f])
-joinCriticalPair config eqns idx cp =
+joinCriticalPair config eqns idx mmodel cp =
   {-# SCC joinCriticalPair #-}
   case allSteps config eqns idx cp of
     Just cp ->
-      case groundJoin config eqns idx (branches (And [])) cp of
+      case groundJoinFromMaybe config eqns idx mmodel (branches (And [])) cp of
         Left model -> Left (cp, model)
         Right cps -> Right (Just cp, cps)
     Nothing ->
@@ -131,37 +132,51 @@ subsumed _ _ _ = False
 groundJoin ::
   (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
   Config -> Index f (Equation f) -> Index f a -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
-groundJoin config@Config{..} eqns idx ctx r@CriticalPair{cp_eqn = t :=: u, ..} =
+groundJoin config eqns idx ctx cp@CriticalPair{cp_eqn = t :=: u, ..} =
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
     ([], instances) ->
-      let rs = [ subst sub r | sub <- instances ] in
-      Right (usortBy (comparing (canonicalise . order . cp_eqn)) rs)
-    (model:_, _)
-      | not cfg_ground_join ||
-        (modelOK model && isJust (allSteps config eqns idx r { cp_eqn = t' :=: u' })) -> Left model
-      | otherwise ->
-          let model1 = optimise model weakenModel (\m -> not (modelOK m) || (valid m (reduction nt) && valid m (reduction nu)))
-              model2 = optimise model1 weakenModel (\m -> not (modelOK m) || isNothing (allSteps config eqns idx r { cp_eqn = result (normaliseIn m t) :=: result (normaliseIn m u) }))
+      let cps = [ subst sub cp | sub <- instances ] in
+      Right (usortBy (comparing (canonicalise . order . cp_eqn)) cps)
+    (model:_, _) ->
+      groundJoinFrom config eqns idx model ctx cp
 
-              diag [] = Or []
-              diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
-              weaken (LessEq t u) = Less t u
-              weaken x = x
-              ctx' = formAnd (diag (modelToLiterals model2)) ctx in
+{-# INLINEABLE groundJoinFrom #-}
+groundJoinFrom ::
+  (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
+  Config -> Index f (Equation f) -> Index f a -> Model f -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
+groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :=: u, ..}
+  | not cfg_ground_join ||
+    (modelOK model && isJust (allSteps config eqns idx cp { cp_eqn = t' :=: u' })) = Left model
+  | otherwise =
+      let model1 = optimise model weakenModel (\m -> not (modelOK m) || (valid m (reduction nt) && valid m (reduction nu)))
+          model2 = optimise model1 weakenModel (\m -> not (modelOK m) || isNothing (allSteps config eqns idx cp { cp_eqn = result (normaliseIn m t) :=: result (normaliseIn m u) }))
 
-          groundJoin config eqns idx ctx' r
-      where
-        normaliseIn m = normaliseWith (const True) (rewrite (reducesInModel m) idx)
-        nt = normaliseIn model t
-        nu = normaliseIn model u
-        t' = result nt
-        u' = result nu
+          diag [] = Or []
+          diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
+          weaken (LessEq t u) = Less t u
+          weaken x = x
+          ctx' = formAnd (diag (modelToLiterals model2)) ctx in
 
-        modelOK m =
-          case cp_top of
-            Nothing -> True
-            Just top ->
-              isNothing (lessIn m top t) && isNothing (lessIn m top u)
+      groundJoin config eqns idx ctx' cp
+  where
+    normaliseIn m = normaliseWith (const True) (rewrite (reducesInModel m) idx)
+    nt = normaliseIn model t
+    nu = normaliseIn model u
+    t' = result nt
+    u' = result nu
+
+    modelOK m =
+      case cp_top of
+        Nothing -> True
+        Just top ->
+          isNothing (lessIn m top t) && isNothing (lessIn m top u)
+
+{-# INLINEABLE groundJoinFromMaybe #-}
+groundJoinFromMaybe ::
+  (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
+  Config -> Index f (Equation f) -> Index f a -> Maybe (Model f) -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
+groundJoinFromMaybe config eqns idx Nothing = groundJoin config eqns idx
+groundJoinFromMaybe config eqns idx (Just model) = groundJoinFrom config eqns idx model
 
 {-# INLINEABLE valid #-}
 valid :: Function f => Model f -> Reduction f -> Bool

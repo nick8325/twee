@@ -95,8 +95,8 @@ data Message f =
     NewActive !(Active f)
   | NewEquation !(Equation f)
   | DeleteActive !(Active f)
-  | SimplifyActive !(Active f)
   | SimplifyQueue
+  | Interreduce
 
 instance Function f => Pretty (Message f) where
   pPrint (NewActive rule) = pPrint rule
@@ -104,10 +104,10 @@ instance Function f => Pretty (Message f) where
     text "  (hard)" <+> pPrint eqn
   pPrint (DeleteActive rule) =
     text "  (delete rule " <> pPrint (active_id rule) <> text ")"
-  pPrint (SimplifyActive rule) =
-    text "*" <> pPrint rule
   pPrint SimplifyQueue =
     text "  (simplifying queued critical pairs...)"
+  pPrint Interreduce =
+    text "  (simplifying rules with respect to one another...)"
 
 message :: PrettyTerm f => Message f -> State f -> State f
 message !msg state@State{..} =
@@ -226,12 +226,12 @@ dequeue config@Config{..} state@State{..} =
 
 data Active f =
   Active {
-    active_id :: {-# UNPACK #-} !Id,
-    active_rule :: {-# UNPACK #-} !(Rule f),
-    active_top :: !(Maybe (Term f)),
+    active_id    :: {-# UNPACK #-} !Id,
+    active_rule  :: {-# UNPACK #-} !(Rule f),
+    active_top   :: !(Maybe (Term f)),
     active_proof :: {-# UNPACK #-} !(Proof f),
-    -- Models in which the rule is false (used when reorienting)
-    active_models    :: ![Model f],
+    -- A model in which the rule is false (used when reorienting)
+    active_model :: !(Model f),
     active_rules :: ![ActiveRule f] }
 
 active_cp :: Active f -> CriticalPair f
@@ -275,7 +275,6 @@ addActive config state@State{..} active0 =
   let
     active@Active{..} = active0 st_next_active
     state' =
-      flip (interreduce config) active $
       message (NewActive active) $
       addActiveOnly state{st_next_active = st_next_active+1} active
     passives =
@@ -319,16 +318,6 @@ deleteActive state@State{..} Active{..} =
     deleteRuleId rules ActiveRule{..} =
       IntMap.delete (fromIntegral rule_rid) rules
 
--- Replace an active with its simplification. Used in interreduction.
-{-# INLINE replaceActive #-}
-replaceActive :: Function f => State f -> Active f -> Active f -> State f
-replaceActive state@State{..} active active' =
-  flip addActiveOnly active' $
-  deleteActive state active
-  where
-    rid Active{active_rules = [ActiveRule{..}]} = rule_rid
-    rid _ = error "replaceRule called on unoriented rule"
-
 -- Try to join a critical pair.
 {-# INLINEABLE consider #-}
 consider :: Function f => Config -> State f -> CriticalPair f -> State f
@@ -337,7 +326,7 @@ consider config@Config{..} state@State{..} cp0 =
   -- Important to canonicalise the rule so that we don't get
   -- bigger and bigger variable indices over time
   let cp = canonicalise cp0 in
-  case joinCriticalPair cfg_join st_joinable st_rules cp of
+  case joinCriticalPair cfg_join st_joinable st_rules Nothing cp of
     Right (mcp, cps) ->
       let
         state' = foldl' (consider config) state cps
@@ -367,7 +356,7 @@ addCP config model state@State{..} CriticalPair{..} =
   Active {
     active_id = n,
     active_rule = rule,
-    active_models = [model],
+    active_model = model,
     active_top = cp_top,
     active_proof = pf,
     active_rules =
@@ -439,117 +428,47 @@ goal n name (t :=: u) =
 -- Interreduction.
 ----------------------------------------------------------------------
 
-data Simplification f = Simplify | Delete | NewModels [Model f]
-  deriving Show
-instance Pretty (Simplification f) where pPrint = text . show
-
--- Note on st_rules and st_joinable during interreduction.
--- After adding a new rule we check if any old rules can now be joined
--- or simplified. When we try rewriting an old rule, we must of course
--- remove it from the ruleset first, so as to avoid using the rule to
--- rewrite itself. We must also not use an equation in st_joinable to
--- simplify a rule if the equation was derived from the rule. As we
--- don't keep track of the origin of each joinable equation, we simply
--- disable st_joinable during interreduction.
---
--- After considering all reoriented rules, we put back st_joinable.
--- This is fine because all the equations that were in st_joinable
--- before should indeed still be joinable once the reoriented rules
--- are added.
-
--- Simplify all old rules wrt a new rule.
+-- Simplify all rules.
 {-# INLINEABLE interreduce #-}
-interreduce :: Function f => Config -> State f -> Active f -> State f
-interreduce config@Config{..} state new
+interreduce :: Function f => Config -> State f -> State f
+interreduce config@Config{..} state
   | not cfg_simplify = state
   | otherwise =
     {-# SCC interreduce #-}
-    foldl' interreduce1 state simpls
-    where
-      simpls =
-        [ (old, simp)
-        | old <- IntMap.elems (st_active_ids state),
-          old /= new,
-          let state' = deleteActive state { st_joinable = Index.Nil } old,
-          simp <- maybeToList (simplification config state' new old) ]
+    let
+      state' =
+        foldl' (interreduce1 config)
+          -- Clear out st_joinable, since we don't know which
+          -- equations have made use of each active.
+          state { st_joinable = Index.Nil }
+          (IntMap.elems (st_active_ids state))
+      in state' { st_joinable = st_joinable state }
 
 {-# INLINEABLE interreduce1 #-}
-interreduce1 :: Function f => State f -> (Active f, Simplification f) -> State f
-interreduce1 state@State{..} (active@Active{active_rule = Rule _ lhs rhs, active_rules = ~[rule], ..}, Simplify) =
-  message (SimplifyActive active') $
-  replaceActive state active active'
-  where
-    proof =
-      Proof.certify $
-      Proof.derivation active_proof `Proof.trans` reductionProof (reduction rhs')
-    rule' = orient (lhs :=: result rhs')
-
-    active' =
-      active {
-        active_rule = rule',
-        active_proof = proof,
-        active_rules =
-          [rule {
-             rule_rule = rule',
-             rule_proof = proof }]}
-
-    rhs' = normaliseWith (const True) (rewrite reduces st_rules) rhs
-
-interreduce1 state@State{..} (rule@Active{..}, NewModels models) =
-  flip addActiveOnly rule' $ deleteActive state rule
-  where
-    rule' =
-      rule {
-        active_models = models }
-interreduce1 state@State{..} (rule, Delete) =
-  message (DeleteActive rule) $
-  deleteActive state rule
-
--- Work out what sort of simplification can be applied to a rule.
-{-# INLINEABLE simplification #-}
-simplification :: Function f => Config -> State f -> Active f -> Active f -> Maybe (Simplification f)
-simplification Config{..} State{..} new oldRule@Active{active_rule = old, active_models = models} = do
-  -- Don't do anything unless the new rule matches the old one
-  guard (any isJust [ match (lhs (the r)) t | t <- subterms (lhs old) ++ subterms (rhs old), r <- active_rules new ])
-  reorient `mplus` simplify
-  where
-    simplify = do
-      guard (oriented (orientation old) && reducesWith reduces (rhs old))
-      return Simplify
-
-    -- Discover rules which have become ground joinable
-    reorient =
-      case partition joinable models of
-        ([], _) ->
-          -- No models are joinable
-          Nothing
-        (_, []) ->
-          -- All existing models are joinable - find out if the rule
-          -- really has become ground joinable
-          return $
-            case groundJoin cfg_join st_joinable st_rules (branches (And [])) (active_cp oldRule) of
-              Left model ->
-                NewModels [model]
-              Right cps
-                | all (isNothing . allSteps cfg_join st_joinable st_rules) cps ->
-                  Delete
-                | otherwise ->
-                  NewModels []
-        (_, models') ->
-          -- Some but not all models are joinable
-          return (NewModels models')
-
-    -- Check if a rule is joinable in a given model
-    joinable model =
-      (reducesWith (reducesInModel model) (lhs old) ||
-       reducesWith (reducesInModel model) (rhs old)) &&
-      isNothing (joinWith st_joinable st_rules norm (active_cp oldRule))
-      where
-        norm = normaliseWith (const True) (rewrite (reducesInModel model) st_rules)
-
-    -- Check if the new rule has any effect on a given term
-    reducesWith f t =
-      not (null [ u | r <- active_rules new, u <- anywhere (tryRule f r) t ])
+interreduce1 :: Function f => Config -> State f -> Active f -> State f
+interreduce1 config@Config{..} state active@Active{..} =
+  -- Exclude the active from the rewrite rules when testing
+  -- joinability, otherwise it will be trivially joinable.
+  case
+    joinCriticalPair cfg_join
+      (st_joinable state)
+      (st_rules (deleteActive state active))
+      (Just active_model) (active_cp active)
+  of
+    Right (_, cps) ->
+      flip (foldl' (consider config)) cps $
+      message (DeleteActive active) $
+      deleteActive state active
+    Left (cp, model)
+      | cp_eqn cp /= cp_eqn (active_cp active) ->
+        flip (foldl' (addCP config model)) (split cp) $
+        message (DeleteActive active) $
+        deleteActive state active
+      | model /= active_model ->
+        flip addActiveOnly active { active_model = model } $
+        deleteActive state active
+      | otherwise ->
+        state
 
 ----------------------------------------------------------------------
 -- The main loop.
@@ -569,6 +488,10 @@ complete Output{..} config state =
          lift $ output_message SimplifyQueue
          state <- StateM.get
          StateM.put $! simplifyQueue config state,
+       newTask 0.25 0.05 $ do
+         lift $ output_message Interreduce
+         state <- StateM.get
+         StateM.put $! interreduce config state,
        newTask 10 1 $ do
          state <- StateM.get
          lift $ output_report state]
