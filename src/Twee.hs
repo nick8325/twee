@@ -92,19 +92,19 @@ initialState =
 ----------------------------------------------------------------------
 
 data Message f =
-    NewRule !(Active f)
+    NewActive !(Active f)
   | NewEquation !(Equation f)
-  | DeleteRule !(Active f)
-  | SimplifyRule !(Active f)
+  | DeleteActive !(Active f)
+  | SimplifyActive !(Active f)
   | SimplifyQueue
 
 instance Function f => Pretty (Message f) where
-  pPrint (NewRule rule) = pPrint rule
+  pPrint (NewActive rule) = pPrint rule
   pPrint (NewEquation eqn) =
     text "  (hard)" <+> pPrint eqn
-  pPrint (DeleteRule rule) =
+  pPrint (DeleteActive rule) =
     text "  (delete rule " <> pPrint (active_id rule) <> text ")"
-  pPrint (SimplifyRule rule) =
+  pPrint (SimplifyActive rule) =
     text "*" <> pPrint rule
   pPrint SimplifyQueue =
     text "  (simplifying queued critical pairs...)"
@@ -276,7 +276,7 @@ addActive config state@State{..} active0 =
     active@Active{..} = active0 st_next_active
     state' =
       flip (interreduce config) active $
-      message (NewRule active) $
+      message (NewActive active) $
       addActiveOnly state{st_next_active = st_next_active+1} active
     passives =
       concatMap (makePassive config state') active_rules
@@ -476,7 +476,7 @@ interreduce config@Config{..} state new
 {-# INLINEABLE interreduce1 #-}
 interreduce1 :: Function f => State f -> (Active f, Simplification f) -> State f
 interreduce1 state@State{..} (active@Active{active_rule = Rule _ lhs rhs, active_rules = ~[rule], ..}, Simplify) =
-  message (SimplifyRule active') $
+  message (SimplifyActive active') $
   replaceActive state active active'
   where
     proof =
@@ -502,7 +502,7 @@ interreduce1 state@State{..} (rule@Active{..}, NewModels models) =
       rule {
         active_models = models }
 interreduce1 state@State{..} (rule, Delete) =
-  message (DeleteRule rule) $
+  message (DeleteActive rule) $
   deleteActive state rule
 
 -- Work out what sort of simplification can be applied to a rule.
