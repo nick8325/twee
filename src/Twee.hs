@@ -431,18 +431,16 @@ goal n name (t :=: u) =
 -- Simplify all rules.
 {-# INLINEABLE interreduce #-}
 interreduce :: Function f => Config -> State f -> State f
-interreduce config@Config{..} state
-  | not cfg_simplify = state
-  | otherwise =
-    {-# SCC interreduce #-}
-    let
-      state' =
-        foldl' (interreduce1 config)
-          -- Clear out st_joinable, since we don't know which
-          -- equations have made use of each active.
-          state { st_joinable = Index.Nil }
-          (IntMap.elems (st_active_ids state))
-      in state' { st_joinable = st_joinable state }
+interreduce config@Config{..} state =
+  {-# SCC interreduce #-}
+  let
+    state' =
+      foldl' (interreduce1 config)
+        -- Clear out st_joinable, since we don't know which
+        -- equations have made use of each active.
+        state { st_joinable = Index.Nil }
+        (IntMap.elems (st_active_ids state))
+    in state' { st_joinable = st_joinable state }
 
 {-# INLINEABLE interreduce1 #-}
 interreduce1 :: Function f => Config -> State f -> Active f -> State f
@@ -481,7 +479,7 @@ data Output m f =
 
 {-# INLINE complete #-}
 complete :: (Function f, MonadIO m) => Output m f -> Config -> State f -> m (State f)
-complete Output{..} config state =
+complete Output{..} config@Config{..} state =
   flip StateM.execStateT state $ do
     tasks <- sequence
       [newTask 1 0.1 $ do
@@ -489,9 +487,10 @@ complete Output{..} config state =
          state <- StateM.get
          StateM.put $! simplifyQueue config state,
        newTask 0.25 0.05 $ do
-         lift $ output_message Interreduce
-         state <- StateM.get
-         StateM.put $! interreduce config state,
+         when cfg_simplify $ do
+           lift $ output_message Interreduce
+           state <- StateM.get
+           StateM.put $! interreduce config state,
        newTask 10 1 $ do
          state <- StateM.get
          lift $ output_report state]
