@@ -152,7 +152,7 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
           model2 = optimise model1 weakenModel (\m -> not (modelOK m) || isNothing (allSteps config eqns idx cp { cp_eqn = result (normaliseIn m t) :=: result (normaliseIn m u) }))
 
           diag [] = Or []
-          diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
+          diag (r:rs) = negateFormula r ||| diag rs --(weaken r &&& diag rs)
           weaken (LessEq t u) = Less t u
           weaken x = x
           ctx' = formAnd (diag (modelToLiterals model2)) ctx in
