@@ -321,7 +321,6 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
 
   line
   state <- complete output config withAxioms
-  line
 
   when (solved state) $ do
     let
