@@ -15,17 +15,20 @@ import Twee.Utils
 import Data.Maybe
 import Data.Either
 import Data.Ord
+import qualified Data.Set as Set
 
 data Config =
   Config {
     cfg_ground_join :: !Bool,
-    cfg_use_connectedness :: !Bool }
+    cfg_use_connectedness :: !Bool,
+    cfg_set_join :: !Bool }
 
 defaultConfig :: Config
 defaultConfig =
   Config {
     cfg_ground_join = True,
-    cfg_use_connectedness = True }
+    cfg_use_connectedness = True,
+    cfg_set_join = False }
 
 {-# INLINEABLE joinCriticalPair #-}
 joinCriticalPair ::
@@ -43,15 +46,20 @@ joinCriticalPair ::
     -- and an optional equation which can be added to the joinable set
     -- after successfully joining all instances.
     (Maybe (CriticalPair f), [CriticalPair f])
-joinCriticalPair config eqns idx mmodel cp =
+joinCriticalPair config eqns idx mmodel cp@CriticalPair{cp_eqn = t :=: u} =
   {-# SCC joinCriticalPair #-}
   case allSteps config eqns idx cp of
+    Nothing ->
+      Right (Nothing, [])
+    _ | cfg_set_join config &&
+        not (null $ Set.intersection
+          (normalForms (rewrite reduces idx) [reduce (Refl t)])
+          (normalForms (rewrite reduces idx) [reduce (Refl u)])) ->
+      Right (Just cp, [])
     Just cp ->
       case groundJoinFromMaybe config eqns idx mmodel (branches (And [])) cp of
         Left model -> Left (cp, model)
         Right cps -> Right (Just cp, cps)
-    Nothing ->
-      Right (Nothing, [])
 
 {-# INLINEABLE step1 #-}
 {-# INLINEABLE step2 #-}

@@ -30,7 +30,7 @@ parseConfig :: OptionParser Config
 parseConfig =
   Config <$> maxSize <*> maxCPs <*> simplify <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight) <*>
-    (Join.Config <$> ground_join <*> connectedness) <*>
+    (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
     (Proof.Config <$> fewer_lemmas <*> flat_proof <*> show_instances)
   where
     maxSize =
@@ -63,6 +63,9 @@ parseConfig =
       inGroup "Critical pair joining heuristics" $
       not <$>
       bool "no-connectedness" ["Disable subconnectedness testing."]
+    set_join =
+      inGroup "Critical pair joining heuristics" $
+      bool "set-join" ["Compute all normal forms when joining critical pairs."]
     fewer_lemmas =
       inGroup "Proof presentation" $
       bool "fewer-lemmas" ["Produce a proof with fewer lemmas."]
