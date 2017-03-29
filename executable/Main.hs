@@ -421,7 +421,7 @@ presentToJukebox ctx axioms goals Presentation{..} =
       | Axiom{..} <- usort (usedAxioms p) ]
 
 main = do
-  let twee = Tool "twee" "twee - the Wonderful Equation Engine" "1" "Reads in an equational problem and tries to prove it"
+  let twee = Tool "twee" "twee - the Wonderful Equation Engine" "2.0-preview" "Reads in an equational problem and tries to prove it"
   join . parseCommandLine twee . tool twee $
     greetingBox twee =>>
     allFilesBox <*>
