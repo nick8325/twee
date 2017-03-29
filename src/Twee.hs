@@ -38,12 +38,13 @@ import qualified Control.Monad.Trans.State.Strict as StateM
 
 data Config =
   Config {
-    cfg_max_term_size      :: Int,
-    cfg_max_critical_pairs :: Int,
-    cfg_simplify           :: Bool,
-    cfg_critical_pairs     :: CP.Config,
-    cfg_join               :: Join.Config,
-    cfg_proof_presentation :: Proof.Config }
+    cfg_max_term_size          :: Int,
+    cfg_max_critical_pairs     :: Int,
+    cfg_simplify               :: Bool,
+    cfg_improve_critical_pairs :: Bool,
+    cfg_critical_pairs         :: CP.Config,
+    cfg_join                   :: Join.Config,
+    cfg_proof_presentation     :: Proof.Config }
 
 data State f =
   State {
@@ -64,6 +65,7 @@ defaultConfig =
     cfg_max_term_size = maxBound,
     cfg_max_critical_pairs = maxBound,
     cfg_simplify = True,
+    cfg_improve_critical_pairs = True,
     cfg_critical_pairs =
       CP.Config {
         cfg_lhsweight = 2,
@@ -197,7 +199,7 @@ enqueue state passive =
 --   * splitting ManyCPs up as necessary
 --   * ignoring CPs that are too big
 {-# INLINEABLE dequeue #-}
-dequeue :: Function f => Config -> State f -> (Maybe (CriticalPair f), State f)
+dequeue :: Function f => Config -> State f -> (Maybe (CriticalPair f, ActiveRule f, ActiveRule f), State f)
 dequeue config@Config{..} state@State{..} =
   {-# SCC dequeue #-}
   case deq 0 st_queue of
@@ -216,7 +218,7 @@ dequeue config@Config{..} state@State{..} =
             Just Overlap{overlap_eqn = t :=: u}
               | size t <= cfg_max_term_size,
                 size u <= cfg_max_term_size ->
-                return (makeCriticalPair rule1 rule2 overlap, n+1, queue)
+                return ((makeCriticalPair rule1 rule2 overlap, rule1, rule2), n+1, queue)
             _ -> deq (n+1) queue
         _ -> deq (n+1) queue
 
@@ -321,15 +323,24 @@ deleteActive state@State{..} Active{..} =
 -- Try to join a critical pair.
 {-# INLINEABLE consider #-}
 consider :: Function f => Config -> State f -> CriticalPair f -> State f
-consider config@Config{..} state@State{..} cp0 =
+consider config state cp =
+  considerUsing (st_rules state) config state cp
+
+-- Try to join a critical pair, but using a different set of critical
+-- pairs for normalisation. Used for CP improvement.
+{-# INLINEABLE considerUsing #-}
+considerUsing ::
+  Function f =>
+  Index f (ActiveRule f) -> Config -> State f -> CriticalPair f -> State f
+considerUsing rules config@Config{..} state@State{..} cp0 =
   {-# SCC consider #-}
   -- Important to canonicalise the rule so that we don't get
   -- bigger and bigger variable indices over time
   let cp = canonicalise cp0 in
-  case joinCriticalPair cfg_join st_joinable st_rules Nothing cp of
+  case joinCriticalPair cfg_join st_joinable rules Nothing cp of
     Right (mcp, cps) ->
       let
-        state' = foldl' (consider config) state cps
+        state' = foldl' (considerUsing rules config) state cps
       in case mcp of
         Just cp -> addJoinable state' (cp_eqn cp)
         Nothing -> state'
@@ -384,6 +395,24 @@ addJoinable state eqn@(t :=: u) =
     st_joinable =
       Index.insert t (t :=: u) $
       Index.insert u (u :=: t) (st_joinable state) }
+
+{-# INLINEABLE improves #-}
+improves :: Function f => Config -> CriticalPair f -> CriticalPair f -> Bool
+  -- XXX also try:
+  -- old is renaming of new
+  -- and number of inversions is less
+improves Config{..} _ _ | not cfg_improve_critical_pairs = False
+improves _ old new =
+  size (lhs oldRule) >= size (lhs newRule) &&
+  size (rhs oldRule) >= size (rhs newRule) &&
+  score (orientation oldRule) > score (orientation newRule)
+  where
+    oldRule = orient (cp_eqn old)
+    newRule = orient (cp_eqn new)
+
+    score Unoriented = maxBound
+    score (Permutative xs) = length xs
+    score _ = 0
 
 -- For goal terms we store the set of all their normal forms.
 -- Name and number are for information only.
@@ -447,10 +476,18 @@ interreduce1 :: Function f => Config -> State f -> Active f -> State f
 interreduce1 config@Config{..} state active@Active{..} =
   -- Exclude the active from the rewrite rules when testing
   -- joinability, otherwise it will be trivially joinable.
-  case
+  -- Also exclude rules which are improved by this one.
+  let
+    improved =
+      [ active'
+      | active' <- IntMap.elems (st_active_ids state),
+        improves config (active_cp active') (active_cp active) ]
+  in case
     joinCriticalPair cfg_join
       (st_joinable state)
-      (st_rules (deleteActive state active))
+      (st_rules
+        (foldl' deleteActive state
+         (active:improved)))
       (Just active_model) (active_cp active)
   of
     Right (_, cps) ->
@@ -510,15 +547,23 @@ complete Output{..} config@Config{..} state =
 
 {-# INLINEABLE complete1 #-}
 complete1 :: Function f => Config -> State f -> (Bool, State f)
-complete1 config state
-  | st_considered state >= cfg_max_critical_pairs config =
+complete1 config@Config{..} state
+  | st_considered state >= cfg_max_critical_pairs =
     (False, state)
   | solved state = (False, state)
   | otherwise =
     case dequeue config state of
       (Nothing, state) -> (False, state)
-      (Just overlap, state) ->
-        (True, consider config state overlap)
+      (Just (overlap, rule1, rule2), state) ->
+        let
+          state' =
+            foldl' deleteActive state
+              [ active
+              | ActiveRule{..} <- [rule1, rule2],
+                Just active <- [IntMap.lookup (fromIntegral rule_active) (st_active_ids state)],
+                or [ improves config (active_cp active) cp | cp <- split overlap ] ]
+        in
+          (True, considerUsing (st_rules state') config state overlap)
 
 {-# INLINEABLE solved #-}
 solved :: Function f => State f -> Bool

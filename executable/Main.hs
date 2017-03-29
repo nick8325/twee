@@ -28,7 +28,7 @@ import qualified Data.Set as Set
 
 parseConfig :: OptionParser Config
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*> simplify <*>
+  Config <$> maxSize <*> maxCPs <*> simplify <*> improve <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
     (Proof.Config <$> fewer_lemmas <*> flat_proof <*> show_instances)
@@ -43,6 +43,10 @@ parseConfig =
       inGroup "Completion heuristics" $
       not <$>
       bool "no-simplify" ["Don't simplify rewrite rules with respect to one another."]
+    improve =
+      inGroup "Search strategy" $
+      fmap not $
+      bool "no-improve" ["Don't try to improve critical pairs to nicer ones."]
     lweight =
       inGroup "Critical pair weighting heuristics" $
       defaultFlag "lhs-weight" "Weight given to LHS of critical pair" (CP.cfg_lhsweight . cfg_critical_pairs) argNum
