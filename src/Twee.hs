@@ -398,21 +398,17 @@ addJoinable state eqn@(t :=: u) =
 
 {-# INLINEABLE improves #-}
 improves :: Function f => Config -> CriticalPair f -> CriticalPair f -> Bool
-  -- XXX also try:
-  -- old is renaming of new
-  -- and number of inversions is less
 improves Config{..} _ _ | not cfg_improve_critical_pairs = False
 improves _ old new =
-  size (lhs oldRule) >= size (lhs newRule) &&
-  size (rhs oldRule) >= size (rhs newRule) &&
-  score (orientation oldRule) > score (orientation newRule)
+  lhs oldRule `isVariantOf` lhs newRule &&
+  inversions (vars oldRule) > inversions (vars newRule)
   where
     oldRule = orient (cp_eqn old)
     newRule = orient (cp_eqn new)
 
-    score Unoriented = maxBound
-    score (Permutative xs) = length xs
-    score _ = 0
+    inversions [] = 0
+    inversions (x:xs) =
+      length (filter (< x) xs) + inversions xs
 
 -- For goal terms we store the set of all their normal forms.
 -- Name and number are for information only.
@@ -556,12 +552,12 @@ complete1 config@Config{..} state
       (Nothing, state) -> (False, state)
       (Just (overlap, rule1, rule2), state) ->
         let
-          state' =
-            foldl' deleteActive state
-              [ active
-              | ActiveRule{..} <- [rule1, rule2],
-                Just active <- [IntMap.lookup (fromIntegral rule_active) (st_active_ids state)],
-                or [ improves config (active_cp active) cp | cp <- split overlap ] ]
+          improved =
+            [ active
+            | ActiveRule{..} <- [rule1, rule2],
+              Just active <- [IntMap.lookup (fromIntegral rule_active) (st_active_ids state)],
+              or [ improves config (active_cp active) cp | cp <- split overlap ] ]
+          state' = foldl' deleteActive state improved
         in
           (True, considerUsing (st_rules state') config state overlap)
 
