@@ -601,5 +601,5 @@ report State{..} =
   printf "  %d queued critical pairs.\n" queuedPairs ++
   printf "  %d critical pairs considered so far.\n" st_considered
   where
-    orients = map (orientation . the) (Index.elems st_rules)
+    orients = map (orientation . active_rule) (IntMap.elems st_active_ids)
     queuedPairs = Heap.size st_queue
