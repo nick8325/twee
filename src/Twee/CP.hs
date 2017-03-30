@@ -225,12 +225,12 @@ split CriticalPair{cp_eqn = l :=: r, ..}
     -- Weak rules l -> l' or r -> r'
     [ CriticalPair {
         cp_eqn   = l :=: l',
-        cp_top   = Just r, -- overlap of r -> l with itself
+        cp_top   = cp_top,
         cp_proof = cp_proof `Proof.trans` Proof.symm (erase ls cp_proof) }
     | not (null ls), ord /= Just GT ] ++
     [ CriticalPair {
         cp_eqn   = r :=: r',
-        cp_top   = Just l, -- overlap of l -> r with itself
+        cp_top   = cp_top,
         cp_proof = Proof.symm cp_proof `Proof.trans` erase rs cp_proof }
     | not (null rs), ord /= Just LT ]
     where
