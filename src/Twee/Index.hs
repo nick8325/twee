@@ -91,8 +91,11 @@ delete !t x !idx = {-# SCC delete #-} aux (key t) idx
       withPrefix (Term.singleton t) (aux ts idx{prefix = us})
     aux _ idx@Index{prefix = Cons{}} = idx
 
-    aux Empty idx =
-      idx { here = List.delete x (here idx) }
+    aux Empty idx
+      | x `List.elem` here idx =
+        idx { here = List.delete x (here idx) }
+      | otherwise =
+        error "deleted term not found in index"
     aux (ConsSym (App f _) t) idx =
       idx { fun = update (fun_id f) (aux t (fun idx ! fun_id f)) (fun idx) }
     aux (ConsSym (Var v) t) idx =

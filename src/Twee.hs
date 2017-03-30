@@ -307,16 +307,19 @@ addActiveOnly state@State{..} active@Active{..} =
 
 -- Delete an active. Used in interreduction, not suitable for general use.
 {-# INLINE deleteActive #-}
-deleteActive :: State f -> Active f -> State f
+deleteActive :: Function f => State f -> Active f -> State f
 deleteActive state@State{..} Active{..} =
   state {
-    st_oriented_rules = foldl' deleteRule st_oriented_rules active_rules,
+    st_oriented_rules =
+      if oriented (orientation active_rule)
+      then foldl' deleteRule st_oriented_rules active_rules
+      else st_oriented_rules,
     st_rules = foldl' deleteRule st_rules active_rules,
     st_active_ids = IntMap.delete (fromIntegral active_id) st_active_ids,
     st_rule_ids = foldl' deleteRuleId st_rule_ids active_rules }
   where
-    deleteRule rules rule@ActiveRule{..} =
-      Index.delete (lhs rule_rule) rule rules
+    deleteRule rules rule =
+      Index.delete (lhs (rule_rule rule)) rule rules
     deleteRuleId rules ActiveRule{..} =
       IntMap.delete (fromIntegral rule_rid) rules
 
@@ -469,7 +472,7 @@ interreduce config@Config{..} state =
 
 {-# INLINEABLE interreduce1 #-}
 interreduce1 :: Function f => Config -> State f -> Active f -> State f
-interreduce1 config@Config{..} state active@Active{..} =
+interreduce1 config@Config{..} state active =
   -- Exclude the active from the rewrite rules when testing
   -- joinability, otherwise it will be trivially joinable.
   -- Also exclude rules which are improved by this one.
@@ -483,8 +486,8 @@ interreduce1 config@Config{..} state active@Active{..} =
       (st_joinable state)
       (st_rules
         (foldl' deleteActive state
-         (active:improved)))
-      (Just active_model) (active_cp active)
+         (usortBy (comparing active_id) (active:improved))))
+      (Just (active_model active)) (active_cp active)
   of
     Right (_, cps) ->
       flip (foldl' (consider config)) cps $
@@ -495,7 +498,7 @@ interreduce1 config@Config{..} state active@Active{..} =
         flip (foldl' (addCP config model)) (split cp) $
         message (DeleteActive active) $
         deleteActive state active
-      | model /= active_model ->
+      | model /= active_model active ->
         flip addActiveOnly active { active_model = model } $
         deleteActive state active
       | otherwise ->
@@ -553,6 +556,7 @@ complete1 config@Config{..} state
       (Just (overlap, rule1, rule2), state) ->
         let
           improved =
+            usortBy (comparing active_id)
             [ active
             | ActiveRule{..} <- [rule1, rule2],
               Just active <- [IntMap.lookup (fromIntegral rule_active) (st_active_ids state)],
