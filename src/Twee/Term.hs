@@ -245,8 +245,16 @@ flattenSubst sub = matchList pat t
 match :: Term f -> Term f -> Maybe (Subst f)
 match pat t = matchList (singleton pat) (singleton t)
 
+{-# INLINE matchIn #-}
+matchIn :: Subst f -> Term f -> Term f -> Maybe (Subst f)
+matchIn sub pat t = matchListIn sub (singleton pat) (singleton t)
+
+{-# INLINE matchList #-}
 matchList :: TermList f -> TermList f -> Maybe (Subst f)
-matchList !pat !t
+matchList pat t = matchListIn emptySubst pat t
+
+matchListIn :: Subst f -> TermList f -> TermList f -> Maybe (Subst f)
+matchListIn !sub !pat !t
   | lenList t < lenList pat = Nothing
   | otherwise =
     let loop !_ !_ !_ | False = __
@@ -258,7 +266,7 @@ matchList !pat !t
           sub <- extend x t sub
           loop sub pat u
         loop _ _ _ = Nothing
-    in {-# SCC match #-} loop emptySubst pat t
+    in {-# SCC match #-} loop sub pat t
 
 --------------------------------------------------------------------------------
 -- Unification.

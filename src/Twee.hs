@@ -494,7 +494,7 @@ interreduce1 config@Config{..} state active =
       message (DeleteActive active) $
       deleteActive state active
     Left (cp, model)
-      | cp_eqn cp /= cp_eqn (active_cp active) ->
+      | not (cp_eqn cp `isInstanceOf` cp_eqn (active_cp active)) ->
         flip (foldl' (addCP config model)) (split cp) $
         message (DeleteActive active) $
         deleteActive state active
@@ -503,6 +503,11 @@ interreduce1 config@Config{..} state active =
         deleteActive state active
       | otherwise ->
         state
+  where
+    (t :=: u) `isInstanceOf` (t' :=: u') = isJust $ do
+      sub <- match t' t
+      matchIn sub u' u
+
 
 ----------------------------------------------------------------------
 -- The main loop.
