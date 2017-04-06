@@ -10,6 +10,8 @@ import Twee.CP hiding (Config)
 import qualified Twee.CP as CP
 import Twee.Join hiding (Config, defaultConfig)
 import qualified Twee.Join as Join
+import qualified Twee.Rule.Index as RuleIndex
+import Twee.Rule.Index(RuleIndex(..))
 import qualified Twee.Index as Index
 import Twee.Index(Index)
 import Twee.Constraints
@@ -48,8 +50,7 @@ data Config =
 
 data State f =
   State {
-    st_oriented_rules :: !(Index f (ActiveRule f)),
-    st_rules          :: !(Index f (ActiveRule f)),
+    st_rules          :: !(RuleIndex f (ActiveRule f)),
     st_active_ids     :: !(IntMap (Active f)),
     st_rule_ids       :: !(IntMap (ActiveRule f)),
     st_joinable       :: !(Index f (Equation f)),
@@ -78,8 +79,7 @@ defaultConfig =
 initialState :: State f
 initialState =
   State {
-    st_oriented_rules = Index.Nil,
-    st_rules = Index.Nil,
+    st_rules = RuleIndex.nil,
     st_active_ids = IntMap.empty,
     st_rule_ids = IntMap.empty,
     st_joinable = Index.Nil,
@@ -150,7 +150,7 @@ makePassive :: Function f => Config -> State f -> ActiveRule f -> [Passive f]
 makePassive Config{..} State{..} rule =
   {-# SCC makePassive #-}
   [ Passive (fromIntegral (score cfg_critical_pairs o)) (rule_rid rule1) (rule_rid rule2) (fromIntegral (overlap_pos o))
-  | (rule1, rule2, o) <- overlaps st_oriented_rules rules rule ]
+  | (rule1, rule2, o) <- overlaps (index_oriented st_rules) rules rule ]
   where
     rules = IntMap.elems st_rule_ids
 
@@ -174,7 +174,7 @@ simplifyPassive config@Config{..} state@State{..} passive =
   {-# SCC simplifyPassive #-}
   fromMaybe passive { passive_score = 0 } $ do
     (_, _, overlap) <- findPassive config state passive
-    overlap <- simplifyOverlap st_oriented_rules overlap
+    overlap <- simplifyOverlap (index_oriented st_rules) overlap
     return passive { passive_score = fromIntegral (score cfg_critical_pairs overlap) }
 
 -- Renormalise the entire queue.
@@ -214,7 +214,7 @@ dequeue config@Config{..} state@State{..} =
       (passive, queue) <- Heap.uncons queue
       case findPassive config state passive of
         Just (rule1, rule2, overlap) ->
-          case simplifyOverlap st_oriented_rules overlap of
+          case simplifyOverlap (index_oriented st_rules) overlap of
             Just Overlap{overlap_eqn = t :=: u}
               | size t <= cfg_max_term_size,
                 size u <= cfg_max_term_size ->
@@ -292,16 +292,12 @@ addActive config state@State{..} active0 =
 addActiveOnly :: Function f => State f -> Active f -> State f
 addActiveOnly state@State{..} active@Active{..} =
   state {
-    st_oriented_rules =
-      if oriented (orientation active_rule)
-      then foldl' insertRule st_oriented_rules active_rules
-      else st_oriented_rules,
     st_rules = foldl' insertRule st_rules active_rules,
     st_active_ids = IntMap.insert (fromIntegral active_id) active st_active_ids,
     st_rule_ids = foldl' insertRuleId st_rule_ids active_rules }
   where
     insertRule rules rule@ActiveRule{..} =
-      Index.insert (lhs rule_rule) rule rules
+      RuleIndex.insert (lhs rule_rule) rule rules
     insertRuleId rules rule@ActiveRule{..} =
       IntMap.insert (fromIntegral rule_rid) rule rules
 
@@ -310,16 +306,12 @@ addActiveOnly state@State{..} active@Active{..} =
 deleteActive :: Function f => State f -> Active f -> State f
 deleteActive state@State{..} Active{..} =
   state {
-    st_oriented_rules =
-      if oriented (orientation active_rule)
-      then foldl' deleteRule st_oriented_rules active_rules
-      else st_oriented_rules,
     st_rules = foldl' deleteRule st_rules active_rules,
     st_active_ids = IntMap.delete (fromIntegral active_id) st_active_ids,
     st_rule_ids = foldl' deleteRuleId st_rule_ids active_rules }
   where
     deleteRule rules rule =
-      Index.delete (lhs (rule_rule rule)) rule rules
+      RuleIndex.delete (lhs (rule_rule rule)) rule rules
     deleteRuleId rules ActiveRule{..} =
       IntMap.delete (fromIntegral rule_rid) rules
 
@@ -334,7 +326,7 @@ consider config state cp =
 {-# INLINEABLE considerUsing #-}
 considerUsing ::
   Function f =>
-  Index f (ActiveRule f) -> Config -> State f -> CriticalPair f -> State f
+  RuleIndex f (ActiveRule f) -> Config -> State f -> CriticalPair f -> State f
 considerUsing rules config@Config{..} state@State{..} cp0 =
   {-# SCC consider #-}
   -- Important to canonicalise the rule so that we don't get
@@ -436,7 +428,7 @@ normaliseGoals state@State{..} =
   {-# SCC normaliseGoals #-}
   state {
     st_goals =
-      map (goalMap (normalForms (rewrite reduces st_rules) . Set.toList)) st_goals }
+      map (goalMap (normalForms (rewrite reduces (index_all st_rules)) . Set.toList)) st_goals }
   where
     goalMap f goal@Goal{..} =
       goal { goal_lhs = f goal_lhs, goal_rhs = f goal_rhs }

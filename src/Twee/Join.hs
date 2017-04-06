@@ -11,6 +11,7 @@ import Twee.CP hiding (Config)
 import Twee.Constraints
 import qualified Twee.Index as Index
 import Twee.Index(Index)
+import Twee.Rule.Index(RuleIndex(..))
 import Twee.Utils
 import Data.Maybe
 import Data.Either
@@ -34,7 +35,7 @@ defaultConfig =
 joinCriticalPair ::
   (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
   Config ->
-  Index f (Equation f) -> Index f a ->
+  Index f (Equation f) -> RuleIndex f a ->
   Maybe (Model f) -> -- A model to try before checking ground joinability
   CriticalPair f ->
   Either
@@ -53,8 +54,8 @@ joinCriticalPair config eqns idx mmodel cp@CriticalPair{cp_eqn = t :=: u} =
       Right (Nothing, [])
     _ | cfg_set_join config &&
         not (null $ Set.intersection
-          (normalForms (rewrite reduces idx) [reduce (Refl t)])
-          (normalForms (rewrite reduces idx) [reduce (Refl u)])) ->
+          (normalForms (rewrite reduces (index_all idx)) [reduce (Refl t)])
+          (normalForms (rewrite reduces (index_all idx)) [reduce (Refl u)])) ->
       Right (Just cp, [])
     Just cp ->
       case groundJoinFromMaybe config eqns idx mmodel (branches (And [])) cp of
@@ -67,13 +68,13 @@ joinCriticalPair config eqns idx mmodel cp@CriticalPair{cp_eqn = t :=: u} =
 {-# INLINEABLE allSteps #-}
 step1, step2, step3, allSteps ::
   (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
-  Config -> Index f (Equation f) -> Index f a -> CriticalPair f -> Maybe (CriticalPair f)
+  Config -> Index f (Equation f) -> RuleIndex f a -> CriticalPair f -> Maybe (CriticalPair f)
 allSteps config eqns idx cp =
   step1 config eqns idx cp >>=
   step2 config eqns idx >>=
   step3 config eqns idx
-step1 _ eqns idx = joinWith eqns idx (normaliseWith (const True) (rewrite reducesOriented idx))
-step2 _ eqns idx = joinWith eqns idx (normaliseWith (const True) (rewrite reduces idx))
+step1 _ eqns idx = joinWith eqns idx (normaliseWith (const True) (rewrite reducesOriented (index_oriented idx)))
+step2 _ eqns idx = joinWith eqns idx (normaliseWith (const True) (rewrite reduces (index_all idx)))
 step3 Config{..} eqns idx cp
   | not cfg_use_connectedness = Just cp
   | otherwise =
@@ -85,7 +86,7 @@ step3 Config{..} eqns idx cp
       _ -> Just cp
   where
     join (cp, top) =
-      joinWith eqns idx (normaliseWith (`lessThan` top) (rewrite reducesSkolem idx)) cp
+      joinWith eqns idx (normaliseWith (`lessThan` top) (rewrite reducesSkolem (index_all idx))) cp
 
     flipCP :: Symbolic a => a -> a
     flipCP t = subst sub t
@@ -97,7 +98,7 @@ step3 Config{..} eqns idx cp
 {-# INLINEABLE joinWith #-}
 joinWith ::
   (Has a (Rule f), Has a (Proof f), Has a Id) =>
-  Index f (Equation f) -> Index f a -> (Term f -> Resulting f) -> CriticalPair f -> Maybe (CriticalPair f)
+  Index f (Equation f) -> RuleIndex f a -> (Term f -> Resulting f) -> CriticalPair f -> Maybe (CriticalPair f)
 joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
   | subsumed eqns idx eqn = Nothing
   | otherwise =
@@ -115,11 +116,11 @@ joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
 {-# INLINEABLE subsumed #-}
 subsumed ::
   (Has a (Rule f), Has a Id) =>
-  Index f (Equation f) -> Index f a -> Equation f -> Bool
+  Index f (Equation f) -> RuleIndex f a -> Equation f -> Bool
 subsumed eqns idx (t :=: u)
   | t == u = True
-  | or [ rhs rule == u | rule <- Index.lookup t idx ] = True
-  | or [ rhs rule == t | rule <- Index.lookup u idx ] = True
+  | or [ rhs rule == u | rule <- Index.lookup t (index_all idx) ] = True
+  | or [ rhs rule == t | rule <- Index.lookup u (index_all idx) ] = True
     -- No need to do this symmetrically because addJoinable adds
     -- both orientations of each equation
   | or [ u == subst sub u'
@@ -139,7 +140,7 @@ subsumed _ _ _ = False
 {-# INLINEABLE groundJoin #-}
 groundJoin ::
   (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
-  Config -> Index f (Equation f) -> Index f a -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
+  Config -> Index f (Equation f) -> RuleIndex f a -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
 groundJoin config eqns idx ctx cp@CriticalPair{cp_eqn = t :=: u, ..} =
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
     ([], instances) ->
@@ -151,7 +152,7 @@ groundJoin config eqns idx ctx cp@CriticalPair{cp_eqn = t :=: u, ..} =
 {-# INLINEABLE groundJoinFrom #-}
 groundJoinFrom ::
   (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
-  Config -> Index f (Equation f) -> Index f a -> Model f -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
+  Config -> Index f (Equation f) -> RuleIndex f a -> Model f -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
 groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :=: u, ..}
   | not cfg_ground_join ||
     (modelOK model && isJust (allSteps config eqns idx cp { cp_eqn = t' :=: u' })) = Left model
@@ -167,7 +168,7 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
 
       groundJoin config eqns idx ctx' cp
   where
-    normaliseIn m = normaliseWith (const True) (rewrite (reducesInModel m) idx)
+    normaliseIn m = normaliseWith (const True) (rewrite (reducesInModel m) (index_all idx))
     nt = normaliseIn model t
     nu = normaliseIn model u
     t' = result nt
@@ -182,7 +183,7 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
 {-# INLINEABLE groundJoinFromMaybe #-}
 groundJoinFromMaybe ::
   (Function f, Has a (Rule f), Has a (Proof f), Has a Id) =>
-  Config -> Index f (Equation f) -> Index f a -> Maybe (Model f) -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
+  Config -> Index f (Equation f) -> RuleIndex f a -> Maybe (Model f) -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
 groundJoinFromMaybe config eqns idx Nothing = groundJoin config eqns idx
 groundJoinFromMaybe config eqns idx (Just model) = groundJoinFrom config eqns idx model
 

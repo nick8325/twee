@@ -54,6 +54,7 @@ library
     Twee.Pretty
     Twee.Proof
     Twee.Rule
+    Twee.Rule.Index
     Twee.Term
     Twee.Term.Core
     Twee.Task
