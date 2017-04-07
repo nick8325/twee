@@ -245,12 +245,18 @@ split CriticalPair{cp_eqn = l :=: r, ..}
 
 {-# INLINEABLE makeCriticalPair #-}
 makeCriticalPair ::
-  (Has a (Rule f), Has a (Proof f), Has a Id) =>
-  a -> a -> Overlap f -> CriticalPair f
-makeCriticalPair r1 r2 overlap@Overlap{..} =
-  CriticalPair overlap_eqn
-    (Just overlap_top)
-    (overlapProof r1 r2 overlap)
+  (Has a (Rule f), Has a (Proof f), Has a Id, Function f) =>
+  a -> a -> Overlap f -> Maybe (CriticalPair f)
+makeCriticalPair r1 r2 overlap@Overlap{..}
+  | lessEq overlap_top t = Nothing
+  | lessEq overlap_top u = Nothing
+  | otherwise =
+    Just $
+      CriticalPair overlap_eqn
+        (Just overlap_top)
+        (overlapProof r1 r2 overlap)
+  where
+    t :=: u = overlap_eqn
 
 -- Return a proof for a critical pair.
 {-# INLINEABLE overlapProof #-}

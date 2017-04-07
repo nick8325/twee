@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables, GeneralizedNewtypeDeriving, PatternGuards #-}
 module Twee where
 
 import Twee.Base
@@ -213,13 +213,13 @@ dequeue config@Config{..} state@State{..} =
     deq !n queue = do
       (passive, queue) <- Heap.uncons queue
       case findPassive config state passive of
-        Just (rule1, rule2, overlap) ->
-          case simplifyOverlap (index_oriented st_rules) overlap of
-            Just Overlap{overlap_eqn = t :=: u}
-              | size t <= cfg_max_term_size,
-                size u <= cfg_max_term_size ->
-                return ((makeCriticalPair rule1 rule2 overlap, rule1, rule2), n+1, queue)
-            _ -> deq (n+1) queue
+        Just (rule1, rule2, overlap)
+          | Just Overlap{overlap_eqn = t :=: u} <-
+              simplifyOverlap (index_oriented st_rules) overlap,
+            size t <= cfg_max_term_size,
+            size u <= cfg_max_term_size,
+            Just cp <- makeCriticalPair rule1 rule2 overlap ->
+              return ((cp, rule1, rule2), n+1, queue)
         _ -> deq (n+1) queue
 
 ----------------------------------------------------------------------
