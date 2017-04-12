@@ -5,6 +5,7 @@ import Data.Char
 import Data.Either
 import Twee hiding (message)
 import Twee.Base hiding (char, lookup, (<>), vars)
+import Twee.Rule(lhs, rhs)
 import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof hiding (Config, defaultConfig)
@@ -19,12 +20,13 @@ import Data.List
 import Data.Maybe
 import Jukebox.Options
 import Jukebox.Toolbox
-import Jukebox.Name
+import Jukebox.Name hiding (lhs, rhs)
 import qualified Jukebox.Form as Jukebox
-import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom)
+import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size)
 import Jukebox.Monotonox.ToFOF
 import Jukebox.TPTP.Print
 import qualified Data.Set as Set
+import qualified Data.IntMap.Strict as IntMap
 
 parseConfig :: OptionParser Config
 parseConfig =
@@ -354,6 +356,27 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
       say "SZS output end CNFRefutation"
       return ()
 
+    line
+
+  when
+    (not (solved state) &&
+     cfg_max_term_size config == cfg_max_term_size defaultConfig &&
+     cfg_max_critical_pairs config == cfg_max_critical_pairs defaultConfig) $ do
+    let
+      state' = interreduce config state
+      score rule =
+        (size (lhs rule), lhs rule,
+         size (rhs rule), rhs rule)
+      actives =
+        sortBy (comparing (score . active_rule)) $
+        IntMap.elems (st_active_ids state')
+
+    say "Completion succeeded."
+    say "The input axioms are equivalent to the following rewrite system:"
+    forM_ actives $ \active ->
+      say ("  " ++ prettyShow (canonicalise (active_rule active)))
+    say "This means that the input axioms are satisfiable (and the conjecture"
+    say "is not true)."
     line
 
   return $

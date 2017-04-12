@@ -260,7 +260,7 @@ instance Eq (ActiveRule f) where
 
 instance Function f => Pretty (Active f) where
   pPrint Active{..} =
-    pPrint active_id <> text "." <+> pPrint active_rule
+    pPrint active_id <> text "." <+> pPrint (canonicalise active_rule)
 
 instance Has (ActiveRule f) Id where the = rule_active
 instance f ~ g => Has (ActiveRule f) (Rule g) where the = rule_rule
