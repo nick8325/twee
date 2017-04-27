@@ -332,7 +332,7 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
   line
   state <- complete output config withAxioms
 
-  when (solved state) $ do
+  when (not (quiet globals) && solved state) $ do
     let
       sol = solutions state
       pres = present (cfg_proof_presentation config) (solutions state)
@@ -360,7 +360,7 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
     line
 
   when
-    (not (solved state) &&
+    (not (quiet globals) && not (solved state) &&
      cfg_max_term_size config == cfg_max_term_size defaultConfig &&
      cfg_max_critical_pairs config == cfg_max_critical_pairs defaultConfig) $ do
     let
