@@ -31,7 +31,7 @@ import qualified Data.IntMap.Strict as IntMap
 parseConfig :: OptionParser Config
 parseConfig =
   Config <$> maxSize <*> maxCPs <*> simplify <*> improve <*>
-    (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight) <*>
+    (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
     (Proof.Config <$> fewer_lemmas <*> flat_proof <*> show_instances)
   where
@@ -61,6 +61,9 @@ parseConfig =
     varweight =
       inGroup "Critical pair weighting heuristics" $
       defaultFlag "var-weight" "Weight given to variable symbols" (CP.cfg_varweight . cfg_critical_pairs) argNum
+    depthweight =
+      inGroup "Critical pair weighting heuristics" $
+      defaultFlag "depth-weight" "Weight given to critical pair depth" (CP.cfg_depthweight . cfg_critical_pairs) argNum
     ground_join =
       inGroup "Critical pair joining heuristics" $
       not <$>

@@ -72,7 +72,8 @@ defaultConfig =
         cfg_lhsweight = 2,
         cfg_rhsweight = 1,
         cfg_funweight = 4,
-        cfg_varweight = 3 },
+        cfg_varweight = 3,
+        cfg_depthweight = 1 },
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig }
 
@@ -161,8 +162,9 @@ findPassive :: forall f. Function f => Config -> State f -> Passive f -> Maybe (
 findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
   rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
   rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
+  let !depth = 1 + max (the rule1) (the rule2)
   overlap <-
-    overlapAt (fromIntegral passive_pos)
+    overlapAt (fromIntegral passive_pos) depth
       (renameAvoiding (the rule2 :: Rule f) (the rule1)) (the rule2)
   return (rule1, rule2, overlap)
 
@@ -229,6 +231,7 @@ dequeue config@Config{..} state@State{..} =
 data Active f =
   Active {
     active_id    :: {-# UNPACK #-} !Id,
+    active_depth :: {-# UNPACK #-} !Depth,
     active_rule  :: {-# UNPACK #-} !(Rule f),
     active_top   :: !(Maybe (Term f)),
     active_proof :: {-# UNPACK #-} !(Proof f),
@@ -240,6 +243,7 @@ active_cp :: Active f -> CriticalPair f
 active_cp Active{..} =
   CriticalPair {
     cp_eqn = unorient active_rule,
+    cp_depth = active_depth,
     cp_top = active_top,
     cp_proof = derivation active_proof }
 
@@ -248,6 +252,7 @@ data ActiveRule f =
   ActiveRule {
     rule_active    :: {-# UNPACK #-} !Id,
     rule_rid       :: {-# UNPACK #-} !RuleId,
+    rule_depth     :: {-# UNPACK #-} !Depth,
     rule_rule      :: {-# UNPACK #-} !(Rule f),
     rule_proof     :: {-# UNPACK #-} !(Proof f),
     rule_positions :: !(Positions f) }
@@ -263,6 +268,7 @@ instance Function f => Pretty (Active f) where
     pPrint active_id <> text "." <+> pPrint (canonicalise active_rule)
 
 instance Has (ActiveRule f) Id where the = rule_active
+instance Has (ActiveRule f) Depth where the = rule_depth
 instance f ~ g => Has (ActiveRule f) (Rule g) where the = rule_rule
 instance f ~ g => Has (ActiveRule f) (Proof g) where the = rule_proof
 instance f ~ g => Has (ActiveRule f) (Positions g) where the = rule_positions
@@ -355,12 +361,14 @@ addCP config model state@State{..} CriticalPair{..} =
       ActiveRule {
         rule_active = n,
         rule_rid = RuleId (n*2+k),
+        rule_depth = cp_depth,
         rule_rule = r rule,
         rule_proof = p pf,
         rule_positions = positions (lhs (r rule)) }
   in
   Active {
     active_id = n,
+    active_depth = cp_depth,
     active_rule = rule,
     active_model = model,
     active_top = cp_top,
@@ -378,6 +386,7 @@ addAxiom config state axiom =
   consider config state $
     CriticalPair {
       cp_eqn = axiom_eqn axiom,
+      cp_depth = 0,
       cp_top = Nothing,
       cp_proof = Proof.axiom axiom }
 

@@ -1,5 +1,5 @@
 -- Critical pairs.
-{-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards, OverloadedStrings, TypeFamilies, DeriveGeneric #-}
+{-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards, OverloadedStrings, TypeFamilies, DeriveGeneric, GeneralizedNewtypeDeriving #-}
 module Twee.CP where
 
 import qualified Twee.Term as Term
@@ -48,6 +48,7 @@ positionsChurch posns =
 -- A critical overlap of one rule with another.
 data Overlap f =
   Overlap {
+    overlap_depth :: {-# UNPACK #-} !Depth,
     overlap_top   :: {-# UNPACK #-} !(Term f),
     overlap_inner :: {-# UNPACK #-} !(Term f),
     overlap_pos   :: {-# UNPACK #-} !Int,
@@ -55,40 +56,43 @@ data Overlap f =
   deriving Show
 type OverlapOf a = Overlap (ConstantOf a)
 
+newtype Depth = Depth Int deriving (Eq, Ord, Num, Real, Enum, Integral, Show)
+
 -- Compute all overlaps of a rule with a set of rules.
 {-# INLINEABLE overlaps #-}
 overlaps ::
-  (Function f, Has a (Rule f), Has a (Positions f)) =>
+  (Function f, Has a (Rule f), Has a (Positions f), Has a Depth) =>
   Index f a -> [a] -> a -> [(a, a, Overlap f)]
 overlaps idx rules r =
   ChurchList.toList (overlapsChurch idx rules r)
 
 {-# INLINE overlapsChurch #-}
 overlapsChurch :: forall f a.
-  (Function f, Has a (Rule f), Has a (Positions f)) =>
+  (Function f, Has a (Rule f), Has a (Positions f), Has a Depth) =>
   Index f a -> [a] -> a -> ChurchList (a, a, Overlap f)
 overlapsChurch idx rules r1 = do
   r2 <- ChurchList.fromList rules
-  do { o <- asymmetricOverlaps idx (the r1) r1' (the r2); return (r1, r2, o) } `mplus`
-    do { o <- asymmetricOverlaps idx (the r2) (the r2) r1'; return (r2, r1, o) }
+  let !depth = 1 + max (the r1) (the r2)
+  do { o <- asymmetricOverlaps idx depth (the r1) r1' (the r2); return (r1, r2, o) } `mplus`
+    do { o <- asymmetricOverlaps idx depth (the r2) (the r2) r1'; return (r2, r1, o) }
   where
     !r1' = renameAvoiding (map the rules :: [Rule f]) (the r1)
 
 {-# INLINE asymmetricOverlaps #-}
 asymmetricOverlaps ::
-  (Function f, Has a (Rule f)) =>
-  Index f a -> Positions f -> Rule f -> Rule f -> ChurchList (Overlap f)
-asymmetricOverlaps idx posns r1 r2 = do
+  (Function f, Has a (Rule f), Has a Depth) =>
+  Index f a -> Depth -> Positions f -> Rule f -> Rule f -> ChurchList (Overlap f)
+asymmetricOverlaps idx depth posns r1 r2 = do
   n <- positionsChurch posns
   ChurchList.fromMaybe $
-    overlapAt n r1 r2 >>=
+    overlapAt n depth r1 r2 >>=
     simplifyOverlap idx
 
 -- Create an overlap at a particular position in a term.
 -- Doesn't simplify or check for primeness.
 {-# INLINE overlapAt #-}
-overlapAt :: Int -> Rule f -> Rule f -> Maybe (Overlap f)
-overlapAt !n (Rule _ !outer !outer') (Rule _ !inner !inner') = do
+overlapAt :: Int -> Depth -> Rule f -> Rule f -> Maybe (Overlap f)
+overlapAt !n !depth (Rule _ !outer !outer') (Rule _ !inner !inner') = do
   let t = at n (singleton outer)
   sub <- unifyTri inner t
   let
@@ -101,6 +105,7 @@ overlapAt !n (Rule _ !outer !outer') (Rule _ !inner !inner') = do
 
   guard (lhs /= rhs)
   return Overlap {
+    overlap_depth = depth,
     overlap_top = top,
     overlap_inner = innerTerm,
     overlap_pos = n,
@@ -131,7 +136,8 @@ data Config =
     cfg_lhsweight :: !Int,
     cfg_rhsweight :: !Int,
     cfg_funweight :: !Int,
-    cfg_varweight :: !Int }
+    cfg_varweight :: !Int,
+    cfg_depthweight :: !Int }
 
 -- We compute:
 --   cfg_lhsweight * size l + cfg_rhsweight * size r
@@ -150,6 +156,7 @@ score config overlap@Overlap{overlap_eqn = t :=: u}
       true  = build (con trueCon)
       false = build (con falseCon)
 score Config{..} Overlap{..} =
+  fromIntegral overlap_depth * cfg_depthweight +
   (m + n) * cfg_rhsweight +
   intMax m n * (cfg_lhsweight - cfg_rhsweight)
   where
@@ -170,12 +177,21 @@ score Config{..} Overlap{..} =
 data CriticalPair f =
   CriticalPair {
     cp_eqn   :: {-# UNPACK #-} !(Equation f),
+    cp_depth :: {-# UNPACK #-} !Depth,
     cp_top   :: !(Maybe (Term f)),
     cp_proof :: !(Derivation f) }
   deriving Generic
 
 instance Symbolic (CriticalPair f) where
   type ConstantOf (CriticalPair f) = f
+  termsDL CriticalPair{..} =
+    termsDL cp_eqn `mplus` termsDL cp_top `mplus` termsDL cp_proof
+  subst_ sub CriticalPair{..} =
+    CriticalPair {
+      cp_eqn = subst_ sub cp_eqn,
+      cp_depth = cp_depth,
+      cp_top = subst_ sub cp_top,
+      cp_proof = subst_ sub cp_proof }
 
 instance PrettyTerm f => Pretty (CriticalPair f) where
   pPrint CriticalPair{..} =
@@ -208,16 +224,19 @@ split CriticalPair{cp_eqn = l :=: r, ..}
     -- The main rule l -> r' or r -> l' or l' = r'
     [ CriticalPair {
         cp_eqn   = l :=: r',
+        cp_depth = cp_depth,
         cp_top   = eraseExcept (vars l) cp_top,
         cp_proof = eraseExcept (vars l) cp_proof }
     | ord == Just GT ] ++
     [ CriticalPair {
         cp_eqn   = r :=: l',
+        cp_depth = cp_depth,
         cp_top   = eraseExcept (vars r) cp_top,
         cp_proof = Proof.symm (eraseExcept (vars r) cp_proof) }
     | ord == Just LT ] ++
     [ CriticalPair {
         cp_eqn   = l' :=: r',
+        cp_depth = cp_depth,
         cp_top   = eraseExcept (vars l) $ eraseExcept (vars r) cp_top,
         cp_proof = eraseExcept (vars l) $ eraseExcept (vars r) cp_proof }
     | ord == Nothing ] ++
@@ -225,11 +244,13 @@ split CriticalPair{cp_eqn = l :=: r, ..}
     -- Weak rules l -> l' or r -> r'
     [ CriticalPair {
         cp_eqn   = l :=: l',
+        cp_depth = cp_depth + 1,
         cp_top   = Nothing,
         cp_proof = cp_proof `Proof.trans` Proof.symm (erase ls cp_proof) }
     | not (null ls), ord /= Just GT ] ++
     [ CriticalPair {
         cp_eqn   = r :=: r',
+        cp_depth = cp_depth + 1,
         cp_top   = Nothing,
         cp_proof = Proof.symm cp_proof `Proof.trans` erase rs cp_proof }
     | not (null rs), ord /= Just LT ]
@@ -253,6 +274,7 @@ makeCriticalPair r1 r2 overlap@Overlap{..}
   | otherwise =
     Just $
       CriticalPair overlap_eqn
+        overlap_depth
         (Just overlap_top)
         (overlapProof r1 r2 overlap)
   where
