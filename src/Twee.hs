@@ -73,7 +73,7 @@ defaultConfig =
         cfg_rhsweight = 1,
         cfg_funweight = 4,
         cfg_varweight = 3,
-        cfg_depthweight = 1 },
+        cfg_depthweight = 8 },
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig }
 
