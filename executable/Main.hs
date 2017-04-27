@@ -43,12 +43,10 @@ parseConfig =
       flag "max-cps" ["Give up after considering this many critical pairs (unlimited by default)."] maxBound argNum
     simplify =
       inGroup "Completion heuristics" $
-      not <$>
-      bool "no-simplify" ["Don't simplify rewrite rules with respect to one another."]
+      bool "simplify" ["Simplify rewrite rules with respect to one another."]
     improve =
       inGroup "Search strategy" $
-      fmap not $
-      bool "no-improve" ["Don't try to improve critical pairs to nicer ones."]
+      bool "improve" ["Try to improve critical pairs to nicer ones."]
     lweight =
       inGroup "Critical pair weighting heuristics" $
       defaultFlag "lhs-weight" "Weight given to LHS of critical pair" (CP.cfg_lhsweight . cfg_critical_pairs) argNum
