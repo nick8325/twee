@@ -53,6 +53,7 @@ data State f =
     st_rules          :: !(RuleIndex f (ActiveRule f)),
     st_active_ids     :: !(IntMap (Active f)),
     st_rule_ids       :: !(IntMap (ActiveRule f)),
+    st_old_rule_ids   :: !(IntMap (ActiveRule f)),
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
     st_queue          :: !(Heap (Passive f)),
@@ -83,6 +84,7 @@ initialState =
     st_rules = RuleIndex.nil,
     st_active_ids = IntMap.empty,
     st_rule_ids = IntMap.empty,
+    st_old_rule_ids = IntMap.empty,
     st_joinable = Index.Nil,
     st_goals = [],
     st_queue = Heap.empty,
@@ -160,8 +162,12 @@ makePassive Config{..} State{..} rule =
 {-# INLINEABLE findPassive #-}
 findPassive :: forall f. Function f => Config -> State f -> Passive f -> Maybe (ActiveRule f, ActiveRule f, Overlap f)
 findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
-  rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
-  rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
+  let
+    lookup rule =
+      IntMap.lookup rule st_rule_ids `mplus`
+      IntMap.lookup rule st_old_rule_ids
+  rule1 <- lookup (fromIntegral passive_rule1)
+  rule2 <- lookup (fromIntegral passive_rule2)
   let !depth = 1 + max (the rule1) (the rule2)
   overlap <-
     overlapAt (fromIntegral passive_pos) depth
@@ -314,12 +320,15 @@ deleteActive state@State{..} Active{..} =
   state {
     st_rules = foldl' deleteRule st_rules active_rules,
     st_active_ids = IntMap.delete (fromIntegral active_id) st_active_ids,
-    st_rule_ids = foldl' deleteRuleId st_rule_ids active_rules }
+    st_rule_ids = foldl' deleteRuleId st_rule_ids active_rules,
+    st_old_rule_ids = foldl' addRuleId st_old_rule_ids active_rules }
   where
     deleteRule rules rule =
       RuleIndex.delete (lhs (rule_rule rule)) rule rules
     deleteRuleId rules ActiveRule{..} =
       IntMap.delete (fromIntegral rule_rid) rules
+    addRuleId rules rule@ActiveRule{..} =
+      IntMap.insert (fromIntegral rule_rid) rule rules
 
 -- Try to join a critical pair.
 {-# INLINEABLE consider #-}
