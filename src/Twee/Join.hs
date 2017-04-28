@@ -174,11 +174,15 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
     t' = result nt
     u' = result nu
 
-    modelOK m =
+    -- XXX not safe to exploit the top term if we then add the equation to
+    -- the joinable set. (It might then be used to join a CP with an entirely
+    -- different top term.)
+    modelOK _ = True
+{-    modelOK m =
       case cp_top of
         Nothing -> True
         Just top ->
-          isNothing (lessIn m top t) && isNothing (lessIn m top u)
+          isNothing (lessIn m top t) && isNothing (lessIn m top u)-}
 
 {-# INLINEABLE groundJoinFromMaybe #-}
 groundJoinFromMaybe ::
