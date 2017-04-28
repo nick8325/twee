@@ -533,7 +533,7 @@ complete :: (Function f, MonadIO m) => Output m f -> Config -> State f -> m (Sta
 complete Output{..} config@Config{..} state =
   flip StateM.execStateT state $ do
     tasks <- sequence
-      [newTask 1 0.1 $ do
+      [newTask 1 0.05 $ do
          lift $ output_message SimplifyQueue
          state <- StateM.get
          StateM.put $! simplifyQueue config state,
