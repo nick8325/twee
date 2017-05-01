@@ -1,0 +1,79 @@
+don't forget when ground-joining a CP v <- u -> t to rule out any
+model in which v >= u or t >= u.
+
+* want to find nice minimal versions of permutative laws.
+
+e.g.
+
+x+(y+z) = y+(x+z)
+
+instead of (equivalent?)
+
+x+(y+z) = z+(x+y)
+x+(y+z) = y+(x+z).
+
+as seen in plus-combinator.p
+
+=> when we get a permutative law, try all "iterations" of it and
+   consider them all in order of niceness.
+
+but we might want to try combining the permutative laws with,
+e.g., x+y=y+x (i.e. CPs with other permutative laws).
+Problem: you get exponentially many laws then.
+
+can we:
+  * reduce using skolem model to get a nice version? (maybe not)
+  * not try eagerly whacking permutative laws, but: when you consider
+    a permutative law, don't allow reducing wrt more complex permutative laws
+	(of the same equation?)
+
+Idea:
+  * When we get a permutative CP (before ground joining?),
+    first go through all matching permutative CPs, and see if
+    we could simplify away any more complex ones using this one.
+    If we can, then add it.
+
+    But this is kind of expensive to check.
+    Maybe just: NEVER use a more complex permutative CP to prune a
+    simpler one.
+
+=> we're talking about ONE law that replaces TWO laws.
+   So when we generate a law, consider all simpler CPs
+   (only those where unification doesn't expand the term?)
+   first. Do this for all unorientable laws?
+   Or maybe only makes sense for permutative laws - we are
+   interested in the case where the new law subsumes/simplifies
+   the old law.
+   BUT this is not good because we may happen to get *both*
+   crappy laws before the good one. So we need to do this more
+   aggressively.
+
+   E.g.:
+     1. x+(y+z) = y+(z+x)
+     2. x+(y+z) = z+(x+y)
+     3. x+y = y+x
+   Then we only get x+(y+z) = y+(x+z) *after* 3.
+
+Also want to do something with unoriented rules perhaps. E.g.:
+  t = C[y+x] (unoriented)
+->
+  t = C[x+y] (easier to orient/fewer case splits?)
+Does this make sense?
+
+* two kinds of simplifications: rhs, and model.
+
+rhs is less important EXCEPT when it turns an unorientable rule into
+an oriented one
+
+* after doing proof production, we could remember the set of used rules for each joinable equation? that way, we don't need to ignore the joinable equation set. do proof production first?
+
+* what simplifications to do after splitting the CP into rules? Are
+  any possible? Just do subsumption checking?
+  [from t = u we get (at most)
+   t ~> t0, u ~> u0, t0 = u0
+   How about first generating t ~> t0 and u ~> u0,
+   and then renormalising t = u?
+   N.B. t ~> t0 shouldn't be redundant, otherwise we would've reduced
+   t already.]
+  [When we split t = u into t -> u, u -> t,
+   we can perhaps do more reduction based on the fact t > u.`]

@@ -1,0 +1,9 @@
+Work out why LAT044-1.p and BOO067-1.p have regressed.
+BOO067-1 works with --no-simplify --no-ground-joining. Why?
+
+It may be that:
+  t = u is ground joinable
+but we want to apply t_sigma = u_sigma in ground joining a later rule
+and then we can't because it's not a case split on variables.
+That suggests that we should case split on not-variables by replacing
+them with uninterpreted variables temporarily.

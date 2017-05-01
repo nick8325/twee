@@ -1,0 +1,35 @@
+Idea: combine ground joinability testing with connectedness testing.
+
+We want to join a CP u <- t -> v.
+
+Two components:
+  * Model (i.e. partial order on variables)
+  * Interpretation (total assignment of Skolem constants to variables)
+
+...
+
+This is WEAKER than what we do now!
+
+Because if we fail to join under one model, we add the CP.
+But if we fail to join under one Skolem interpretation, we will currently try another.
+
+The interpretation really should not be an extension of the model. It's more useful if it isn't.
+
+It probably helps to ALLOW connectedness always during ground rewriting, but even so, we should also do proper connectedness stuff.
+
+We only use connectedness (currently) to decide on application of unoriented rules.
+
+Can we do a similar thing to the ground joining loop? Fail to apply connectedness wrt a given Skolem model, shrink to find a minimum failing case, then try a different one?
+
+Do we want to make the interpretation compatible with the shrunken model? iow we only use connectedness to decide how to rewrite stuff where no order is otherwise specified... That seems more consistent with the idea of only using connectedness on unorientable thingies.
+
+So like:
+  * lower bound for model (initiall []): what we subjoin wrt
+  * upper bound for model (initial arbitrary): used for connectedness
+Can't join wrt upper bound: pick alternative?
+Eventually get model which works: shrink. Keep connectedness test the same but shrink model.
+
+  * Pick model
+  * Check that ~(u >= t) and ~(v >= t) in model
+  * Rewrite wrt: every term is < t or <= at least one of the other terms on the path
+  
