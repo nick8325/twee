@@ -609,3 +609,20 @@ report State{..} =
   where
     orients = map (orientation . active_rule) (IntMap.elems st_active_ids)
     queuedPairs = Heap.size st_queue
+
+----------------------------------------------------------------------
+-- For code which uses twee as a library.
+----------------------------------------------------------------------
+
+{-# INLINEABLE completePure #-}
+completePure :: Function f => Config -> State f -> State f
+completePure cfg state
+  | progress = completePure cfg (clearMessages state')
+  | otherwise = state'
+  where
+    (progress, state') = complete1 cfg state
+
+{-# INLINEABLE normaliseTerm #-}
+normaliseTerm :: Function f => State f -> Term f -> Resulting f
+normaliseTerm State{..} t =
+  normaliseWith (const True) (rewrite reduces (index_all st_rules)) t
