@@ -1,5 +1,5 @@
 name:                twee
-version:             0.1
+version:             1
 synopsis:            An equational theorem prover
 homepage:            http://github.com/nick8325/twee
 license:             BSD3
