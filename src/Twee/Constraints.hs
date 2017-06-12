@@ -282,19 +282,17 @@ solve xs branch@Branch{..}
       true (t, u) = lessEqInModel model t u == Just Strict
 
 class Ord f => Ordered f where
-  (<<) :: Fun f -> Fun f -> Bool
-
-  orientTerms :: Term f -> Term f -> Maybe Ordering
-  orientTerms t u
-    | t == u = Just EQ
-    | lessEq t u = Just LT
-    | lessEq u t = Just GT
-    | otherwise = Nothing
-
   lessEq :: Term f -> Term f -> Bool
   lessIn :: Model f -> Term f -> Term f -> Maybe Strictness
+
+data Strictness = Strict | Nonstrict deriving (Eq, Show)
 
 lessThan :: Ordered f => Term f -> Term f -> Bool
 lessThan t u = lessEq t u && isNothing (unify t u)
 
-data Strictness = Strict | Nonstrict deriving (Eq, Show)
+orientTerms :: Ordered f => Term f -> Term f -> Maybe Ordering
+orientTerms t u
+  | t == u = Just EQ
+  | lessEq t u = Just LT
+  | lessEq u t = Just GT
+  | otherwise = Nothing

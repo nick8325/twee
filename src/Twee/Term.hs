@@ -534,3 +534,6 @@ pathToPosition t ns = term 0 t ns
 
 pattern F :: f -> Fun f
 pattern F x <- (fun_value -> x)
+
+(<<) :: Ord f => Fun f -> Fun f -> Bool
+f << g = fun_value f < fun_value g

@@ -130,7 +130,6 @@ instance PrettyTerm Constant where
         _ -> uncurried
 
 instance Ordered (Extended Constant) where
-  f << g = fun_value f < fun_value g
   lessEq t u = {-# SCC lessEq #-} KBO.lessEq t u
   lessIn model t u = {-# SCC lessIn #-} KBO.lessIn model t u
 

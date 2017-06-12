@@ -65,7 +65,6 @@ instance (Ord f, Typeable f, Arbitrary f, Arity f, Sized f) => Arbitrary (Pair f
     [ Pair x' y' | x' <- shrink x, y' <- shrink y ]
 
 instance Ordered Func where
-  f << g = fun_value f < fun_value g
   lessIn = Ord.lessIn
   lessEq = Ord.lessEq
 
