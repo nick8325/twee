@@ -62,16 +62,18 @@ newtype Depth = Depth Int deriving (Eq, Ord, Num, Real, Enum, Integral, Show)
 {-# INLINEABLE overlaps #-}
 overlaps ::
   (Function f, Has a (Rule f), Has a (Positions f), Has a Depth) =>
-  Index f a -> [a] -> a -> [(a, a, Overlap f)]
-overlaps idx rules r =
-  ChurchList.toList (overlapsChurch idx rules r)
+  Depth -> Index f a -> [a] -> a -> [(a, a, Overlap f)]
+overlaps max_depth idx rules r =
+  ChurchList.toList (overlapsChurch max_depth idx rules r)
 
 {-# INLINE overlapsChurch #-}
 overlapsChurch :: forall f a.
   (Function f, Has a (Rule f), Has a (Positions f), Has a Depth) =>
-  Index f a -> [a] -> a -> ChurchList (a, a, Overlap f)
-overlapsChurch idx rules r1 = do
+  Depth -> Index f a -> [a] -> a -> ChurchList (a, a, Overlap f)
+overlapsChurch max_depth idx rules r1 = do
+  guard (the r1 < max_depth)
   r2 <- ChurchList.fromList rules
+  guard (the r2 < max_depth)
   let !depth = 1 + max (the r1) (the r2)
   do { o <- asymmetricOverlaps idx depth (the r1) r1' (the r2); return (r1, r2, o) } `mplus`
     do { o <- asymmetricOverlaps idx depth (the r2) (the r2) r1'; return (r2, r1, o) }

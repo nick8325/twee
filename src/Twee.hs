@@ -42,6 +42,7 @@ data Config =
   Config {
     cfg_max_term_size          :: Int,
     cfg_max_critical_pairs     :: Int,
+    cfg_max_cp_depth           :: Int,
     cfg_simplify               :: Bool,
     cfg_improve_critical_pairs :: Bool,
     cfg_critical_pairs         :: CP.Config,
@@ -65,6 +66,7 @@ defaultConfig =
   Config {
     cfg_max_term_size = maxBound,
     cfg_max_critical_pairs = maxBound,
+    cfg_max_cp_depth = maxBound,
     cfg_simplify = True,
     cfg_improve_critical_pairs = True,
     cfg_critical_pairs =
@@ -151,7 +153,7 @@ makePassive :: Function f => Config -> State f -> ActiveRule f -> [Passive f]
 makePassive Config{..} State{..} rule =
   {-# SCC makePassive #-}
   [ Passive (fromIntegral (score cfg_critical_pairs o)) (rule_rid rule1) (rule_rid rule2) (fromIntegral (overlap_pos o))
-  | (rule1, rule2, o) <- overlaps (index_oriented st_rules) rules rule ]
+  | (rule1, rule2, o) <- overlaps (Depth cfg_max_cp_depth) (index_oriented st_rules) rules rule ]
   where
     rules = IntMap.elems st_rule_ids
 

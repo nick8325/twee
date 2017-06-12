@@ -30,7 +30,7 @@ import qualified Data.IntMap.Strict as IntMap
 
 parseConfig :: OptionParser Config
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*> simplify <*> improve <*>
+  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> improve <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
     (Proof.Config <$> fewer_lemmas <*> flat_proof <*> show_instances)
@@ -41,6 +41,9 @@ parseConfig =
     maxCPs =
       inGroup "Resource limits" $
       flag "max-cps" ["Give up after considering this many critical pairs (unlimited by default)."] maxBound argNum
+    maxCPDepth =
+      inGroup "Resource limits" $
+      flag "max-cp-depth" ["Only consider critical pairs up to this depth (unlimited by default)."] maxBound argNum
     simplify =
       inGroup "Completion heuristics" $
       bool "simplify" ["Simplify rewrite rules with respect to one another."]
