@@ -1,13 +1,14 @@
-{-# LANGUAGE TemplateHaskell, FlexibleInstances, FlexibleContexts, UndecidableInstances, StandaloneDeriving, ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell, FlexibleInstances, FlexibleContexts, UndecidableInstances, StandaloneDeriving, ScopedTypeVariables, TupleSections #-}
 import Twee.Constraints
-import Twee.Term hiding (subst, canonicalise)
+import Twee.Term hiding (subst, canonicalise, F)
 import Test.QuickCheck hiding (Function, Fun)
 import Test.QuickCheck.All
 import Twee.Pretty
 import Twee.CP
+import Twee.Proof
 import qualified Twee.KBO as Ord
 import Text.PrettyPrint
-import Twee.Base
+import Twee.Base hiding (F)
 import Twee.Rule
 import Twee.Equation
 import Control.Monad
@@ -68,9 +69,6 @@ instance Ordered Func where
   lessIn = Ord.lessIn
   lessEq = Ord.lessEq
 
-lessThan Strict t u = lessIn (modelFromOrder []) t u == Just Strict
-lessThan Nonstrict t u = isJust (lessIn (modelFromOrder []) t u)
-
 instance Function f => Arbitrary (Model f) where
   arbitrary = fmap (modelFromOrder . map Variable . nub) arbitrary
   shrink = weakenModel
@@ -80,7 +78,8 @@ prop_1 model (Pair t u) sub =
   counterexample ("Model: " ++ prettyShow model) $
   counterexample ("Subst: " ++ prettyShow sub) $
   conjoin $ do
-    (r@(Rule _ t' u'), _) <- orient (t :=: u)
+    let cp = CriticalPair (t :=: u) 0 Nothing (axiom (Axiom 0 "dummy" (t :=: u)))
+    r@(Rule _ t' u') <- map orient (map cp_eqn (split cp))
     return $
       counterexample ("LHS:   " ++ prettyShow t') $
       counterexample ("RHS:   " ++ prettyShow u') $
@@ -95,16 +94,16 @@ prop_2 model (Pair t u) =
 
 prop_3 :: Pair Func -> Bool
 prop_3 (Pair t u) =
-  not (lessThan Strict t u && lessThan Nonstrict u t)
+  not (lessThan t u && lessEq u t)
 
 prop_4 :: Pair Func -> Property
 prop_4 (Pair t u) =
   t /= u ==> 
-  not (lessThan Nonstrict t u && lessThan Nonstrict u t)
+  not (lessEq t u && lessEq u t)
 
 prop_5 :: Term Func -> Property
 prop_5 t =
-  lessThan Nonstrict t t .&&. not (lessThan Strict t t)
+  lessEq t t .&&. not (lessThan t t)
 
 prop_paths :: Term Func -> Property
 prop_paths t =
@@ -112,24 +111,19 @@ prop_paths t =
     counterexample (show (positionToPath t n)) $
     pathToPosition t (positionToPath t n) === n
 
-return []
-main = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000000 })
-
-deriving instance Eq f => Eq (Subst f)
 deriving instance Ord f => Ord (Subst f)
 
---prop_index :: [Term Func] -> Term Func -> Property
---prop_index ts0 u =
---  counterexample (show ts) $
---  counterexample (show idx) $
---  sort (catMaybes [fmap (Index.Match t) (match t u) | t <- ts]) ===
---  sort (Index.matches u (Index.freeze idx))
---  where
---    ts = map Index.indexCanonicalise ts0
---    idx = foldr Index.insert Index.Nil ts
+prop_index :: [Term Func] -> Term Func -> Property
+prop_index ts u =
+  counterexample (show ts) $
+  counterexample (show idx) $
+  sort (catMaybes [fmap (,t) (match t u) | t <- ts]) ===
+  sort (Index.matches u idx)
+  where
+    idx = foldr (\t -> Index.insert t t) Index.Nil ts
 
-
---main = quickCheckWith stdArgs { maxSuccess = 1000000 } prop_index
+return []
+main = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000000 })
 
 t :: Term Func
 t = build (app (fun (F 0)) [app (fun (F 1)) [var (V 0), var (V 1)], var (V 2)])
