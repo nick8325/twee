@@ -628,3 +628,8 @@ completePure cfg state
 normaliseTerm :: Function f => State f -> Term f -> Resulting f
 normaliseTerm State{..} t =
   normaliseWith (const True) (rewrite reduces (index_all st_rules)) t
+
+{-# INLINEABLE simplifyTerm #-}
+simplifyTerm :: Function f => State f -> Term f -> Term f
+simplifyTerm State{..} t =
+  simplify (index_oriented st_rules) t
