@@ -28,9 +28,27 @@ data Caches =
     caches_from   :: !(Map TypeRep (Cache Any)),
     caches_to     :: !(IntMap Any) }
 
-{-# NOINLINE caches #-}
-caches :: IORef Caches
-caches = unsafePerformIO (newIORef (Caches 0 Map.empty IntMap.empty))
+{-# NOINLINE cachesRef #-}
+cachesRef :: IORef Caches
+cachesRef = unsafePerformIO (newIORef (Caches 0 Map.empty IntMap.empty))
+
+atomicModifyCaches :: (Caches -> (Caches, a)) -> IO a
+atomicModifyCaches f = do
+  -- N.B. atomicModifyIORef' ref f evaluates f ref *after* doing the
+  -- compare-and-swap. This causes bad things to happen when 'label'
+  -- is used reentrantly (i.e. the Ord instance itself calls label).
+  -- This function only lets the swap happen if caches_nextId didn't
+  -- change (i.e., no new values were inserted).
+  !caches <- readIORef cachesRef
+  -- First compute the update.
+  let !(!caches', !x) = f caches
+  -- Now see if anyone else updated the cache in between
+  -- (can happen if f called 'label', or in a concurrent setting).
+  ok <- atomicModifyIORef' cachesRef $ \cachesNow ->
+    if caches_nextId caches == caches_nextId cachesNow
+    then (caches', True)
+    else (cachesNow, False)
+  if ok then return x else atomicModifyCaches f
 
 toAnyCache :: Cache a -> Cache Any
 toAnyCache = unsafeCoerce
@@ -47,25 +65,40 @@ fromAny = unsafeCoerce
 {-# NOINLINE label #-}
 label :: forall a. (Typeable a, Ord a) => a -> Label a
 label x =
-  compare x x `seq`
-  unsafeDupablePerformIO $
-    atomicModifyIORef' caches $ \caches@Caches{..} ->
-    let
-      ty = typeOf x
-      cache =
-        fromAnyCache $
-        Map.findWithDefault Map.empty ty caches_from
-    in
-      case Map.lookup x cache of
-        Just n -> (caches, Label n)
-        Nothing ->
-          let n = caches_nextId in
-          if n < 0 then error "negative label number" else
-          (Caches {
-             caches_nextId = n+1,
-             caches_to = IntMap.insert (fromIntegral n) (toAny x) caches_to,
-             caches_from = Map.insert ty (toAnyCache (Map.insert x n cache)) caches_from },
-           Label n)
+  unsafeDupablePerformIO $ do
+    -- Common case: label is already there.
+    caches <- readIORef cachesRef
+    case tryFind caches of
+      Just l -> return l
+      Nothing -> do
+        -- Rare case: label was not there.
+        x <- atomicModifyCaches $ \caches ->
+          case tryFind caches of
+            Just l -> (caches, l)
+            Nothing ->
+              insert caches
+        return x
+
+  where
+    ty = typeOf x
+
+    tryFind :: Caches -> Maybe (Label a)
+    tryFind Caches{..} =
+      Label <$> (Map.lookup ty caches_from >>= Map.lookup x . fromAnyCache)
+
+    insert :: Caches -> (Caches, Label a)
+    insert caches@Caches{..} =
+      if n < 0 then error "label overflow" else
+      (caches {
+         caches_nextId = n+1,
+         caches_from = Map.insert ty (toAnyCache (Map.insert x n cache)) caches_from,
+         caches_to = IntMap.insert (fromIntegral n) (toAny x) caches_to },
+       Label n)
+      where
+        n = caches_nextId
+        cache =
+          fromAnyCache $
+          Map.findWithDefault Map.empty ty caches_from
 
 find :: Label a -> a
 -- N.B. must force n before calling readIORef, otherwise a call of
@@ -73,5 +106,6 @@ find :: Label a -> a
 --   find (label x)
 -- doesn't work.
 find (Label !n) = unsafeDupablePerformIO $ do
-  Caches{..} <- readIORef caches
-  return (fromAny (IntMap.findWithDefault undefined (fromIntegral n) caches_to))
+  Caches{..} <- readIORef cachesRef
+  x <- return $! fromAny (IntMap.findWithDefault undefined (fromIntegral n) caches_to)
+  return x
