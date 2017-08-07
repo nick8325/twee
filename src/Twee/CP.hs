@@ -147,6 +147,17 @@ data Config =
 -- and variables have weight 1 and functions have weight cfg_funweight.
 {-# INLINEABLE score #-}
 score :: Function f => Config -> Overlap f -> Int
+score _ overlap
+  | isAC (overlap_eqn overlap) = 1
+  where
+    -- Check if equation is of the form:
+    --   f(X, f(Y, Z)) = f(Y, f(X, Z)).
+    isAC
+      (App f1 (Cons (Var x1) (Cons (App f2 (Cons (Var y1) (Cons (Var z1) Empty))) Empty)) :=:
+       App f3 (Cons (Var y2) (Cons (App f4 (Cons (Var x2) (Cons (Var z2) Empty))) Empty))) =
+      f1 == f2 && f1 == f3 && f1 == f4 &&
+      x1 == x2 && y1 == y2 && z1 == z2
+    isAC _ = False
 score config overlap@Overlap{overlap_eqn = t :=: u}
   | isInequality t u || isInequality u t =
     score config overlap{overlap_eqn = true :=: false } + 1
