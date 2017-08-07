@@ -29,6 +29,25 @@ import qualified Data.Set as Set
 import qualified Data.IntMap.Strict as IntMap
 import System.IO
 
+data MainFlags =
+  MainFlags {
+    flags_proof :: Bool,
+    flags_tstp :: Bool }
+
+parseMainFlags :: OptionParser MainFlags
+parseMainFlags =
+  MainFlags <$> proof <*> tstp
+  where
+    proof =
+      inGroup "Output options" $
+      not <$>
+      bool "no-proof" ["Don't print out the proof."]
+
+    tstp =
+      inGroup "Output options" $
+      bool "tstp"
+        ["Print proof in TSTP format."]
+
 parseConfig :: OptionParser Config
 parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> improve <*>
@@ -96,12 +115,6 @@ parsePrecedence =
   inGroup "Term order options" $
   fmap (splitOn ",")
   (flag "precedence" ["List of functions in descending order of precedence."] [] (arg "<function>" "expected a function name" Just))
-
-parseTSTP :: OptionParser Bool
-parseTSTP =
-  inGroup "Output options" $
-  bool "tstp"
-    ["Print proof in TSTP format."]
 
 data Constant =
   Constant {
@@ -280,8 +293,8 @@ identifyProblem TweeContext{..} prob =
     identify inp =
       error ("Problem contains a non-UEQ axiom:\n  " ++ show (prettyNames inp) ++ "\n")
 
-runTwee :: GlobalFlags -> Bool -> Config -> [String] -> Problem Clause -> IO Answer
-runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
+runTwee :: GlobalFlags -> MainFlags -> Config -> [String] -> Problem Clause -> IO Answer
+runTwee globals main config precedence obligs = {-# SCC runTwee #-} do
   let
     -- Encode whatever needs encoding in the problem
     ctx = makeContext obligs
@@ -311,9 +324,10 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
 
   let
     line = unless (quiet globals) (putStrLn "")
+    shout msg =
+      if flags_tstp main then message globals msg else putStr (unlines (lines msg))
     say msg =
-      unless (quiet globals) $
-        if tstp then message globals msg else putStr (unlines (lines msg))
+      unless (quiet globals) (shout msg)
     output = Output {
       output_report = \state -> do
         line
@@ -335,32 +349,30 @@ runTwee globals tstp config precedence obligs = {-# SCC runTwee #-} do
   line
   state <- complete output config withAxioms
 
-  when (not (quiet globals) && solved state) $ do
+  when (flags_proof main && solved state) $ do
     let
       sol = solutions state
       pres = present (cfg_proof_presentation config) (solutions state)
 
-    say ("Proved the following conjecture" ++ if length sol > 1 then "s:" else ":")
-    forM_ sol $ \ProvedGoal{..} ->
-      say $ "  " ++
-        describeEquation "Goal"
-          (show pg_number) (Just pg_name) (equation pg_proof)
-    say "The proof is as follows."
-    line
-    say $ show $ pPrintPresentation (cfg_proof_presentation config) pres
-
-    when tstp $ do
-      line
-      say "SZS output start CNFRefutation"
+    if flags_tstp main then do
+      shout "SZS output start CNFRefutation"
       print $ pPrintProof $
         presentToJukebox ctx
           (zip (map axiom_number axioms) (map pre_form axioms0))
           (zip (map goal_number goals) (map pre_form goals0))
           pres
-      say "SZS output end CNFRefutation"
-      return ()
+      shout "SZS output end CNFRefutation"
+    else do
+      shout ("Proved the following conjecture" ++ if length sol > 1 then "s:" else ":")
+      forM_ sol $ \ProvedGoal{..} ->
+        shout $ "  " ++
+          describeEquation "Goal"
+            (show pg_number) (Just pg_name) (equation pg_proof)
+      shout "The proof is as follows."
+      putStrLn ""
+      shout $ show $ pPrintPresentation (cfg_proof_presentation config) pres
 
-    line
+    putStrLn ""
 
   when
     (not (quiet globals) && not (solved state) &&
@@ -457,7 +469,7 @@ main = do
        (toFofIO <$> globalFlags <*> clausifyBox <*> pure (tags False)) =>>=
        clausifyBox =>>=
        allObligsBox <*>
-         (runTwee <$> globalFlags <*> parseTSTP <*> parseConfig <*> parsePrecedence))
+         (runTwee <$> globalFlags <*> parseMainFlags <*> parseConfig <*> parsePrecedence))
 
 -- addRule doesn't get automatically specialised for some reason.
 -- {-# SPECIALISE addRule :: Config -> State (Extended Constant) -> (Id -> TweeRule (Extended Constant)) -> State (Extended Constant) #-}
