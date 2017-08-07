@@ -27,6 +27,7 @@ import Jukebox.Monotonox.ToFOF
 import Jukebox.TPTP.Print
 import qualified Data.Set as Set
 import qualified Data.IntMap.Strict as IntMap
+import System.IO
 
 parseConfig :: OptionParser Config
 parseConfig =
@@ -447,6 +448,7 @@ presentToJukebox ctx axioms goals Presentation{..} =
       | Axiom{..} <- usort (usedAxioms p) ]
 
 main = do
+  hSetBuffering stdout LineBuffering
   let twee = Tool "twee" "twee - the Wonderful Equation Engine" "2.0-preview" "Reads in an equational problem and tries to prove it"
   join . parseCommandLine twee . tool twee $
     greetingBox twee =>>
