@@ -413,7 +413,7 @@ presentToJukebox ctx axioms goals Presentation{..} =
       kind = Jukebox.Axiom "axiom",
       what = false,
       source =
-        Inference "resolution" "cth"
+        Inference "resolution" "thm"
           [-- A proof of t != u
            fromJust (lookup pg_number goals),
            -- A proof of t = u
