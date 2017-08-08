@@ -17,8 +17,8 @@ import Twee.Index(Index)
 import Twee.Constraints
 import Twee.Utils
 import Twee.Task
-import qualified Data.Heap as Heap
-import Data.Heap(Heap)
+import qualified Twee.Heap as Heap
+import Twee.Heap(Heap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.IntMap(IntMap)
 import Data.Maybe
@@ -171,15 +171,12 @@ findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
   return (rule1, rule2, overlap)
 
 -- Renormalise a queued Passive.
--- Orphaned passives get a score of minBound.
 {-# INLINEABLE simplifyPassive #-}
-simplifyPassive :: Function f => Config -> State f -> Passive f -> Passive f
-simplifyPassive config@Config{..} state@State{..} passive =
-  {-# SCC simplifyPassive #-}
-  fromMaybe passive { passive_score = minBound } $ do
-    (_, _, overlap) <- findPassive config state passive
-    overlap <- simplifyOverlap (index_oriented st_rules) overlap
-    return passive { passive_score = fromIntegral (score cfg_critical_pairs overlap) }
+simplifyPassive :: Function f => Config -> State f -> Passive f -> Maybe (Passive f)
+simplifyPassive config@Config{..} state@State{..} passive = {-# SCC simplifyPassive #-} do
+  (_, _, overlap) <- findPassive config state passive
+  overlap <- simplifyOverlap (index_oriented st_rules) overlap
+  return passive { passive_score = fromIntegral (score cfg_critical_pairs overlap) }
 
 -- Renormalise the entire queue.
 {-# INLINEABLE simplifyQueue #-}
@@ -189,8 +186,7 @@ simplifyQueue config state =
   state { st_queue = simp (st_queue state) }
   where
     simp =
-      Heap.dropWhile (\passive -> passive_score passive == minBound) .
-      Heap.map (simplifyPassive config state)
+      Heap.mapMaybe (simplifyPassive config state)
 
 -- Enqueue a critical pair.
 {-# INLINEABLE enqueue #-}
@@ -217,7 +213,7 @@ dequeue config@Config{..} state@State{..} =
        state { st_queue = queue, st_considered = st_considered + n })
   where
     deq !n queue = do
-      (passive, queue) <- Heap.uncons queue
+      (passive, queue) <- Heap.removeMin queue
       case findPassive config state passive of
         Just (rule1, rule2, overlap)
           | passive_score passive >= 0,

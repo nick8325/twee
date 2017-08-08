@@ -46,6 +46,7 @@ library
     Twee.Constraints
     Twee.CP
     Twee.Equation
+    Twee.Heap
     Twee.Index
     Twee.Index.Lookup
     Twee.Join
@@ -65,10 +66,8 @@ library
     transformers,
     dlist,
     pretty,
-    heaps,
     ghc-prim,
-    primitive,
-    symbol
+    primitive
   hs-source-dirs:      src
   include-dirs:        src
   ghc-options:         -W -fno-warn-incomplete-patterns -O2 -fmax-worker-args=100
