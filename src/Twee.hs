@@ -171,12 +171,12 @@ findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
   return (rule1, rule2, overlap)
 
 -- Renormalise a queued Passive.
--- Orphaned passives get a score of 0.
+-- Orphaned passives get a score of minBound.
 {-# INLINEABLE simplifyPassive #-}
 simplifyPassive :: Function f => Config -> State f -> Passive f -> Passive f
 simplifyPassive config@Config{..} state@State{..} passive =
   {-# SCC simplifyPassive #-}
-  fromMaybe passive { passive_score = 0 } $ do
+  fromMaybe passive { passive_score = minBound } $ do
     (_, _, overlap) <- findPassive config state passive
     overlap <- simplifyOverlap (index_oriented st_rules) overlap
     return passive { passive_score = fromIntegral (score cfg_critical_pairs overlap) }
@@ -188,7 +188,9 @@ simplifyQueue config state =
   {-# SCC simplifyQueue #-}
   state { st_queue = simp (st_queue state) }
   where
-    simp = Heap.map (simplifyPassive config state)
+    simp =
+      Heap.dropWhile (\passive -> passive_score passive == minBound) .
+      Heap.map (simplifyPassive config state)
 
 -- Enqueue a critical pair.
 {-# INLINEABLE enqueue #-}
@@ -218,7 +220,8 @@ dequeue config@Config{..} state@State{..} =
       (passive, queue) <- Heap.uncons queue
       case findPassive config state passive of
         Just (rule1, rule2, overlap)
-          | Just Overlap{overlap_eqn = t :=: u} <-
+          | passive_score passive >= 0,
+            Just Overlap{overlap_eqn = t :=: u} <-
               simplifyOverlap (index_oriented st_rules) overlap,
             size t <= cfg_max_term_size,
             size u <= cfg_max_term_size,
