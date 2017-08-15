@@ -3,8 +3,8 @@
 module Twee.Heap(
   Heap, empty, insert, removeMin, mapMaybe, size) where
 
-data Heap a = Heap {-# UNPACK #-} !Int !(Heap1 a)
-data Heap1 a = Nil | Node a (Heap1 a) (Heap1 a)
+data Heap a = Heap {-# UNPACK #-} !Int !(Heap1 a) deriving Show
+data Heap1 a = Nil | Node a (Heap1 a) (Heap1 a) deriving Show
 
 {-# INLINEABLE merge #-}
 merge :: Ord a => Heap a -> Heap a -> Heap a
@@ -73,3 +73,58 @@ mapMaybe f (Heap _ h) = Heap (sz 0 h') h'
 {-# INLINE size #-}
 size :: Heap a -> Int
 size (Heap n _) = n
+
+-- Testing code:
+-- import Test.QuickCheck
+-- import qualified Data.List as List
+-- import qualified Data.Maybe as Maybe
+
+-- instance (Arbitrary a, Ord a) => Arbitrary (Heap a) where
+--   arbitrary = sized arb
+--     where
+--       arb 0 = return empty
+--       arb n =
+--         frequency
+--           [(1, unit <$> arbitrary),
+--            (n-1, merge <$> arb' <*> arb')]
+--         where
+--           arb' = arb (n `div` 2)
+
+-- toList :: Ord a => Heap a -> [a]
+-- toList = List.unfoldr removeMin
+
+-- invariant :: Ord a => Heap a -> Bool
+-- invariant h@(Heap n h1) =
+--   n == length (toList h) && ord h1
+--   where
+--     ord Nil = True
+--     ord (Node x l r) = ord1 x l && ord1 x r
+
+--     ord1 _ Nil = True
+--     ord1 x h@(Node y _ _) = x <= y && ord h
+
+-- prop_1 h = withMaxSuccess 10000 $ invariant h
+-- prop_2 x h = withMaxSuccess 10000 $ invariant (insert x h)
+-- prop_3 h =
+--   withMaxSuccess 1000 $
+--   case removeMin h of
+--     Nothing -> discard
+--     Just (_, h) -> invariant h
+-- prop_4 h = withMaxSuccess 10000 $ List.sort (toList h) == toList h
+-- prop_5 x h = withMaxSuccess 10000 $ toList (insert x h) == List.insert x (toList h)
+-- prop_6 x h =
+--   withMaxSuccess 1000 $
+--   case removeMin h of
+--     Nothing -> discard
+--     Just (x, h') -> toList h == List.insert x (toList h')
+-- prop_7 h1 h2 = withMaxSuccess 10000 $
+--   invariant (merge h1 h2)
+-- prop_8 h1 h2 = withMaxSuccess 10000 $
+--   toList (merge h1 h2) == List.sort (toList h1 ++ toList h2)
+-- prop_9 (Blind f) h = withMaxSuccess 10000 $
+--   invariant (mapMaybe f h)
+-- prop_10 (Blind f) h = withMaxSuccess 1000000 $
+--   toList (mapMaybe f h) == List.sort (Maybe.mapMaybe f (toList h))
+
+-- return []
+-- main = $quickCheckAll
