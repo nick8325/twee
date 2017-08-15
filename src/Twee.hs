@@ -176,7 +176,10 @@ simplifyPassive :: Function f => Config -> State f -> Passive f -> Maybe (Passiv
 simplifyPassive config@Config{..} state@State{..} passive = {-# SCC simplifyPassive #-} do
   (_, _, overlap) <- findPassive config state passive
   overlap <- simplifyOverlap (index_oriented st_rules) overlap
-  return passive { passive_score = fromIntegral (score cfg_critical_pairs overlap) }
+  return passive {
+    passive_score = fromIntegral $
+      fromIntegral (passive_score passive) `intMin`
+      score cfg_critical_pairs overlap }
 
 -- Renormalise the entire queue.
 {-# INLINEABLE simplifyQueue #-}

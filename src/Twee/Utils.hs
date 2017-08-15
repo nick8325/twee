@@ -102,7 +102,14 @@ fixpoint f x = fxp x
       where
         y = f x
 
--- From "Bit twiddling hacks": branchless max
+-- From "Bit twiddling hacks": branchless min and max
+{-# INLINE intMin #-}
+intMin :: Int -> Int -> Int
+intMin x y =
+  y `xor` ((x `xor` y) .&. negate (x .<. y))
+  where
+    I# x .<. I# y = I# (x <# y)
+
 {-# INLINE intMax #-}
 intMax :: Int -> Int -> Int
 intMax x y =
