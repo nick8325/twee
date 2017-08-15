@@ -28,6 +28,7 @@ import Jukebox.TPTP.Print
 import qualified Data.Set as Set
 import qualified Data.IntMap.Strict as IntMap
 import System.IO
+import System.Exit
 
 data MainFlags =
   MainFlags {
@@ -122,6 +123,7 @@ data Precedence = Precedence !Bool !(Maybe Int) !Int
 
 instance Sized Constant where
   size Constant{..} = 1
+    --if con_arity <= 1 then 1 else 0
 instance Arity Constant where
   arity Constant{..} = con_arity
 
@@ -264,9 +266,9 @@ data PreEquation =
 
 -- Split the problem into axioms and ground goals.
 identifyProblem ::
-  TweeContext -> Problem Clause -> ([PreEquation], [PreEquation])
+  TweeContext -> Problem Clause -> Either (Input Clause) ([PreEquation], [PreEquation])
 identifyProblem TweeContext{..} prob =
-  partitionEithers (map identify prob)
+  fmap partitionEithers (mapM identify prob)
 
   where
     pre inp x =
@@ -276,16 +278,15 @@ identifyProblem TweeContext{..} prob =
         pre_eqn = x }
 
     identify inp@Input{what = Clause (Bind _ [Pos (t Jukebox.:=: u)])} =
-      Left (pre inp (t, u))
+      return $ Left (pre inp (t, u))
     identify inp@Input{what = Clause (Bind _ [Neg (t Jukebox.:=: u)])}
       | ground t && ground u =
-        Right (pre inp (t, u))
+        return $ Right (pre inp (t, u))
     identify inp@Input{what = Clause (Bind _ [])} =
       -- The empty clause can appear after clausification if
       -- the conjecture was trivial
-      Left (pre inp (Jukebox.Var ctx_var, ctx_minimal :@: []))
-    identify inp =
-      error ("Problem contains a non-UEQ axiom:\n  " ++ show (prettyNames inp) ++ "\n")
+      return $ Left (pre inp (Jukebox.Var ctx_var, ctx_minimal :@: []))
+    identify inp = Left inp
 
 runTwee :: GlobalFlags -> TSTPFlags -> MainFlags -> Config -> [String] -> (IO () -> IO ()) -> Problem Clause -> IO Answer
 runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC runTwee #-} do
@@ -293,8 +294,19 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
     -- Encode whatever needs encoding in the problem
     ctx = makeContext obligs
     prob = addNarrowing ctx obligs
-    (axioms0, goals0) = identifyProblem ctx prob
 
+  (axioms0, goals0) <-
+    case identifyProblem ctx prob of
+      Left inp -> do
+        hPutStr stderr $
+          unlines $
+            ["The problem contains the following clause, which is not a unit equality:"] ++
+            ["  " ++ line | line <- lines $ show (pPrintClauses [inp])] ++
+            ["Twee only handles unit equality problems."]
+        exitWith (ExitFailure 1)
+      Right x -> return x
+
+  let
     -- Work out a precedence for function symbols
     prec c =
       Precedence
