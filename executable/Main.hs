@@ -384,6 +384,7 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
     putStrLn "Ran out of critical pairs. Here is the final rewrite system:"
     forM_ actives $ \active ->
       putStrLn ("  " ++ prettyShow (canonicalise (active_rule active)))
+    putStrLn ""
 
   return $
     if solved state then Unsat Unsatisfiable else NoAnswer GaveUp
