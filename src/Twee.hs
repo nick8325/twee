@@ -604,7 +604,7 @@ report State{..} =
     (length [ () | Permutative{} <- orients ])
     (length [ () | WeaklyOriented{} <- orients ]) ++
   printf "  %d queued critical pairs.\n" queuedPairs ++
-  printf "  %d critical pairs considered so far.\n" st_considered
+  printf "  %d critical pairs considered so far." st_considered
   where
     orients = map (orientation . active_rule) (IntMap.elems st_active_ids)
     queuedPairs = Heap.size st_queue
