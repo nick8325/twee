@@ -473,7 +473,7 @@ flattenProof =
 pPrintPresentation :: forall f. Function f => Config -> Presentation f -> Doc
 pPrintPresentation config (Presentation axioms lemmas goals) =
   vcat $ intersperse (text "") $
-    vcat [ text (describeEquation "Axiom" (show n) (Just name) eqn)
+    vcat [ describeEquation "Axiom" (show n) (Just name) eqn
          | Axiom n name eqn <- axioms ]:
     [ pp "Lemma" (num n) Nothing p
     | Lemma n p <- lemmas ] ++
@@ -482,7 +482,7 @@ pPrintPresentation config (Presentation axioms lemmas goals) =
     | (num, goal@ProvedGoal{..}) <- zip [1..] goals ]
   where
     pp kind n mname p =
-      text (describeEquation kind n mname (equation p)) $$
+      describeEquation kind n mname (equation p) $$
       text "Proof:" $$
       pPrintLemma config num p
 
@@ -510,9 +510,8 @@ pPrintPresentation config (Presentation axioms lemmas goals) =
 -- Format an equation nicely. Used both here and in the main file.
 describeEquation ::
   PrettyTerm f =>
-  String -> String -> Maybe String -> Equation f -> String
+  String -> String -> Maybe String -> Equation f -> Doc
 describeEquation kind num mname eqn =
-  prettyShow $
   text kind <+> text num <>
   (case mname of
      Nothing -> text ""

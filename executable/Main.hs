@@ -31,22 +31,16 @@ import System.IO
 
 data MainFlags =
   MainFlags {
-    flags_proof :: Bool,
-    flags_tstp :: Bool }
+    flags_proof :: Bool }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> tstp
+  MainFlags <$> proof
   where
     proof =
       inGroup "Output options" $
       not <$>
       bool "no-proof" ["Don't print out the proof."]
-
-    tstp =
-      inGroup "Output options" $
-      bool "tstp"
-        ["Print proof in TSTP format."]
 
 parseConfig :: OptionParser Config
 parseConfig =
@@ -293,8 +287,8 @@ identifyProblem TweeContext{..} prob =
     identify inp =
       error ("Problem contains a non-UEQ axiom:\n  " ++ show (prettyNames inp) ++ "\n")
 
-runTwee :: GlobalFlags -> MainFlags -> Config -> [String] -> Problem Clause -> IO Answer
-runTwee globals main config precedence obligs = {-# SCC runTwee #-} do
+runTwee :: GlobalFlags -> TSTPFlags -> MainFlags -> Config -> [String] -> (IO () -> IO ()) -> Problem Clause -> IO Answer
+runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC runTwee #-} do
   let
     -- Encode whatever needs encoding in the problem
     ctx = makeContext obligs
@@ -323,11 +317,8 @@ runTwee globals main config precedence obligs = {-# SCC runTwee #-} do
     withAxioms = foldl' (addAxiom config) withGoals axioms
 
   let
-    line = unless (quiet globals) (putStrLn "")
-    shout msg =
-      if flags_tstp main then message globals msg else putStr (unlines (lines msg))
-    say msg =
-      unless (quiet globals) (shout msg)
+    say msg = unless (quiet globals) (putStrLn msg)
+    line = say ""
     output = Output {
       output_report = \state -> do
         line
@@ -335,49 +326,40 @@ runTwee globals main config precedence obligs = {-# SCC runTwee #-} do
         line,
       output_message = say . prettyShow }
 
-  line
   say "Here is the input problem:"
   forM_ axioms $ \Axiom{..} ->
-    say $ "  " ++
+    say $ show $ nest 2 $
       describeEquation "Axiom"
         (show axiom_number) (Just axiom_name) axiom_eqn
   forM_ goals $ \Goal{..} ->
-    say $ "  " ++
+    say $ show $ nest 2 $
       describeEquation "Goal"
         (show goal_number) (Just goal_name) goal_eqn
-
   line
-  state <- complete output config withAxioms
 
-  when (flags_proof main && solved state) $ do
+  state <- complete output config withAxioms
+  line
+
+  when (solved state && flags_proof main) $ later $ do
     let
-      sol = solutions state
       pres = present (cfg_proof_presentation config) (solutions state)
 
-    if flags_tstp main then do
-      shout "SZS output start CNFRefutation"
+    when tstp $ do
+      putStrLn "% SZS output start CNFRefutation"
       print $ pPrintProof $
         presentToJukebox ctx
           (zip (map axiom_number axioms) (map pre_form axioms0))
           (zip (map goal_number goals) (map pre_form goals0))
           pres
-      shout "SZS output end CNFRefutation"
-    else do
-      shout ("Proved the following conjecture" ++ if length sol > 1 then "s:" else ":")
-      forM_ sol $ \ProvedGoal{..} ->
-        shout $ "  " ++
-          describeEquation "Goal"
-            (show pg_number) (Just pg_name) (equation pg_proof)
-      shout "The proof is as follows."
+      putStrLn "% SZS output end CNFRefutation"
       putStrLn ""
-      shout $ show $ pPrintPresentation (cfg_proof_presentation config) pres
 
+    putStrLn "The conjecture is true! Here is a proof."
+    putStrLn ""
+    print $ pPrintPresentation (cfg_proof_presentation config) pres
     putStrLn ""
 
-  when
-    (not (quiet globals) && not (solved state) &&
-     cfg_max_term_size config == cfg_max_term_size defaultConfig &&
-     cfg_max_critical_pairs config == cfg_max_critical_pairs defaultConfig) $ do
+  when (not (quiet globals) && not (solved state)) $ later $ do
     let
       state' = interreduce config state
       score rule =
@@ -387,16 +369,12 @@ runTwee globals main config precedence obligs = {-# SCC runTwee #-} do
         sortBy (comparing (score . active_rule)) $
         IntMap.elems (st_active_ids state')
 
-    say "Completion succeeded."
-    say "The input axioms are equivalent to the following rewrite system:"
+    putStrLn "Ran out of critical pairs. Here is the final rewrite system:"
     forM_ actives $ \active ->
-      say ("  " ++ prettyShow (canonicalise (active_rule active)))
-    say "This means that the input axioms are satisfiable (and the conjecture"
-    say "is not true)."
-    line
+      putStrLn ("  " ++ prettyShow (canonicalise (active_rule active)))
 
   return $
-    if solved state then Unsatisfiable else NoAnswer GaveUp
+    if solved state then Unsat Unsatisfiable else NoAnswer GaveUp
 
 -- Transform a proof presentation into a Jukebox proof.
 presentToJukebox ::
@@ -461,15 +439,11 @@ presentToJukebox ctx axioms goals Presentation{..} =
 
 main = do
   hSetBuffering stdout LineBuffering
-  let twee = Tool "twee" "twee - the Wonderful Equation Engine" "2" "Reads in an equational problem and tries to prove it"
-  join . parseCommandLine twee . tool twee $
-    greetingBox twee =>>
-    allFilesBox <*>
-      (parseProblemBox =>>=
-       (toFofIO <$> globalFlags <*> clausifyBox <*> pure (tags False)) =>>=
+  join . parseCommandLine "Twee, an equational theorem prover" .
+    version ("twee version " ++ VERSION_twee) $
+    forAllFilesBox <*>
+      (readProblemBox =>>=
+       (toFof <$> clausifyBox <*> pure (tags False)) =>>=
        clausifyBox =>>=
-       allObligsBox <*>
-         (runTwee <$> globalFlags <*> parseMainFlags <*> parseConfig <*> parsePrecedence))
-
--- addRule doesn't get automatically specialised for some reason.
--- {-# SPECIALISE addRule :: Config -> State (Extended Constant) -> (Id -> TweeRule (Extended Constant)) -> State (Extended Constant) #-}
+       forAllConjecturesBox <*>
+         (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> parseConfig <*> parsePrecedence))

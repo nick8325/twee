@@ -548,8 +548,6 @@ complete Output{..} config@Config{..} state =
         when progress loop
 
     loop
-    state <- StateM.get
-    lift $ output_report state
 
 {-# INLINEABLE complete1 #-}
 complete1 :: Function f => Config -> State f -> (Bool, State f)
