@@ -145,7 +145,7 @@ instance Ord (Passive f) where
          intMax (fromIntegral passive_rule1) (fromIntegral passive_rule2),
          passive_rule1,
          passive_rule2,
-         passive_score)
+         passive_pos)
 
 -- Compute all critical pairs from a rule and condense into a Passive.
 {-# INLINEABLE makePassive #-}
