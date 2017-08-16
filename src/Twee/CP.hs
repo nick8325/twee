@@ -113,12 +113,12 @@ overlapAt !n !depth (Rule _ !outer !outer') (Rule _ !inner !inner') = do
     overlap_pos = n,
     overlap_eqn = lhs :=: rhs }
 
--- Simplify an overlap and remove it if it's not prime.
+-- Simplify an overlap and remove it if it's trivial.
 {-# INLINE simplifyOverlap #-}
 simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap f -> Maybe (Overlap f)
 simplifyOverlap idx overlap@Overlap{overlap_eqn = lhs :=: rhs, ..}
+  | lhs == rhs'  = Nothing
   | lhs' == rhs' = Nothing
-  | App _ ts <- overlap_inner, canSimplifyList idx ts = Nothing
   | otherwise = Just overlap{overlap_eqn = lhs' :=: rhs'}
   where
     lhs' = simplify idx lhs
