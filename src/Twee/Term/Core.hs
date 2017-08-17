@@ -312,3 +312,35 @@ emitTermList (TermList lo hi array) =
     let k = sizeOf (fromSymbol __) in
     liftST (copyByteArray mbytearray (n*k) array (lo*k) ((hi-lo)*k)) `then_`
     putIndex (n + hi-lo)
+
+----------------------------------------------------------------------
+-- Efficient subterm testing.
+----------------------------------------------------------------------
+
+{-# INLINE isSubtermOfList #-}
+isSubtermOfList :: Term f -> TermList f -> Bool
+isSubtermOfList t u =
+  isSubArrayOf (singleton t) u
+
+-- N.B. this one should not be exported from Twee.Term
+-- because subarray is not the same as subterm if t is not
+-- a singleton
+isSubArrayOf :: TermList f -> TermList f -> Bool
+isSubArrayOf t u =
+  lenList t <= lenList u && (here t u || next t u)
+  where
+    here Empty _ = True
+    here (ConsSym s1 t) (UnsafeConsSym s2 u) =
+      root s1 == root s2 && here t u
+
+    -- This is safe because lenList t <= lenList u
+    -- so if u = Empty, then t = Empty and here t u = True.
+    next t (UnsafeConsSym _ u) = isSubArrayOf t u
+
+{-# INLINE isVarOf #-}
+isVarOf :: Var -> TermList f -> Bool
+isVarOf (V x) t = isSymbolOf (fromSymbol (Symbol False x 1)) t
+
+isSymbolOf :: Int64 -> TermList f -> Bool
+isSymbolOf !_ Empty = False
+isSymbolOf n (ConsSym t ts) = root t == n || isSymbolOf n ts

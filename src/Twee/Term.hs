@@ -7,6 +7,7 @@ module Twee.Term(
   module Twee.Term,
   -- Stuff from Twee.Term.Core.
   Term, TermList, at, lenList,
+  isSubtermOfList, isVarOf,
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
   Fun, fun, fun_id, fun_value, Var(..), pattern Var, pattern App, singleton, Builder) where
@@ -467,6 +468,9 @@ t `isInstanceOf` pat = isJust (match pat t)
 
 isVariantOf :: Term f -> Term f -> Bool
 t `isVariantOf` u = t `isInstanceOf` u && u `isInstanceOf` t
+
+isSubtermOf :: Term f -> Term f -> Bool
+t `isSubtermOf` u = t `isSubtermOfList` singleton u
 
 mapFun :: (Fun f -> Fun g) -> Term f -> Builder g
 mapFun f = mapFunList f . singleton

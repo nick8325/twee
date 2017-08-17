@@ -147,40 +147,64 @@ data Config =
 -- and variables have weight 1 and functions have weight cfg_funweight.
 {-# INLINEABLE score #-}
 score :: Function f => Config -> Overlap f -> Int
-score _ overlap
-  | isAC (overlap_eqn overlap) = 1
+score config overlap@Overlap{overlap_eqn = t :=: u} =
+  -- Look at the length to decide on various special cases
+  case (len t, len u) of
+    (1, 1) ->
+      -- true = false
+      fromMaybe (normalScore config overlap)
+        (trueEqualsFalse t u `mplus` trueEqualsFalse u t)
+    (1, _) ->
+      -- false = equals(t, u) where t, u unifiable
+      fromMaybe (normalScore config overlap)
+        (equalsFalse t u)
+    (_, 1) ->
+      -- equals(t, u) = false where t, u unifiable
+      fromMaybe (normalScore config overlap)
+        (equalsFalse u t)
+    (5, 5) ->
+      -- f(x, f(y, z)) = f(y, f(x, z)) gets higher priority (hack)
+      fromMaybe (normalScore config overlap)
+        (assoc t u)
+    _ -> normalScore config overlap
   where
-    -- Check if equation is of the form:
-    --   f(X, f(Y, Z)) = f(Y, f(X, Z)).
-    isAC
-      (App f1 (Cons (Var x1) (Cons (App f2 (Cons (Var y1) (Cons (Var z1) Empty))) Empty)) :=:
-       App f3 (Cons (Var y2) (Cons (App f4 (Cons (Var x2) (Cons (Var z2) Empty))) Empty))) =
-      f1 == f2 && f1 == f3 && f1 == f4 &&
-      x1 == x2 && y1 == y2 && z1 == z2
-    isAC _ = False
-score config overlap@Overlap{overlap_eqn = t :=: u}
-  | isInequality t u || isInequality u t =
-    score config overlap{overlap_eqn = true :=: false } + 1
-    where
-      isInequality (App eq (Cons t (Cons u Empty))) (App false Empty) =
-        eq == equalsCon && false == falseCon && isJust (unify t u)
-      isInequality _ _ = False
+    -- N.B. the code above puts the arguments in the right order
+    trueEqualsFalse (App true Empty) (App false Empty)
+      | true == trueCon && false == falseCon = Just 1
+    trueEqualsFalse _ _ = Nothing
 
-      true  = build (con trueCon)
-      false = build (con falseCon)
-score Config{..} Overlap{..} =
+    equalsFalse (App false Empty) (App equals (Cons t (Cons u Empty)))
+      | false == falseCon && equals == equalsCon &&
+        isJust (unify t u) = Just 2
+    equalsFalse _ _ = Nothing
+
+    assoc
+      (App f1 (Cons (Var x1) (Cons (App f2 (Cons (Var y1) (Cons (Var z1) Empty))) Empty)))
+      (App f3 (Cons (Var y2) (Cons (App f4 (Cons (Var x2) (Cons (Var z2) Empty))) Empty)))
+      | f1 == f2 && f1 == f3 && f1 == f4 &&
+        x1 == x2 && y1 == y2 && z1 == z2 =
+        Just 1
+    assoc _ _ = Nothing
+
+{-# INLINEABLE normalScore #-}
+normalScore :: Function f => Config -> Overlap f -> Int
+normalScore Config{..} Overlap{..} =
   fromIntegral overlap_depth * cfg_depthweight +
   (m + n) * cfg_rhsweight +
   intMax m n * (cfg_lhsweight - cfg_rhsweight)
   where
     l :=: r = overlap_eqn
-    m = size' l
-    n = size' r
+    m = size' 0 (singleton l)
+    n = size' 0 (singleton r)
 
-    size' t =
-      (size t + len t) * cfg_funweight -
-      (length (filter isVar (subterms t)) + length (nub (vars t))) *
-      (cfg_funweight - cfg_varweight)
+    size' !n Empty = n
+    size' n (Cons t ts)
+      | len t > 1, t `isSubtermOfList` ts =
+        size' (n+cfg_varweight) ts
+    size' n (Cons (Var _) ts) =
+      size' (n+cfg_varweight) ts
+    size' n (ConsSym (App f _) ts) =
+      size' (n+cfg_funweight*size f) ts
 
 ----------------------------------------------------------------------
 -- Higher-level handling of critical pairs.
