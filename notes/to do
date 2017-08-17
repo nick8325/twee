@@ -1,3 +1,18 @@
+simplification: add complete version
+plan: define total order on rules which is compatible with KBO
+(i.e., order on orientable rules is defined by KBO); only rewrite wrt
+lesser rules. Note: compatibility implies that we don't have to check
+this condition when applying oriented rules, only unoriented.
+
+re-add cancellative laws?
+
+goal-directed: combine two rules with forward reasoning
+(makes it easier to e.g. identify useful critical pairs)
+
+CP compression for longer runs.
+
+Look into twee with boolean preconditions. (Also twee with theories.)
+
 Work out why LAT044-1.p and BOO067-1.p have regressed.
 BOO067-1 works with --no-simplify --no-ground-joining. Why?
 
