@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, RecordWildCards, FlexibleInstances #-}
+{-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards #-}
 #include "errors.h"
 import Control.Monad
 import Data.Char
@@ -434,7 +434,7 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
     when tstp $ do
       putStrLn "% SZS output start CNFRefutation"
       print $ pPrintProof $
-        presentToJukebox ctx
+        presentToJukebox ctx (curry toEquation)
           (zip (map axiom_number axioms) (map pre_form axioms0))
           (zip (map goal_number goals) (map pre_form goals0))
           pres
@@ -467,13 +467,14 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
 -- Transform a proof presentation into a Jukebox proof.
 presentToJukebox ::
   TweeContext ->
+  (Jukebox.Term -> Jukebox.Term -> Equation (Extended Constant)) ->
   -- Axioms, indexed by axiom number.
   [(Int, Input Form)] ->
   -- N.B. the formula here proves the negated goal.
   [(Int, Input Form)] ->
   Presentation (Extended Constant) ->
   Problem Form
-presentToJukebox ctx axioms goals Presentation{..} =
+presentToJukebox ctx toEquation axioms goals Presentation{..} =
   [ Input {
       tag = pg_name,
       kind = Jukebox.Axiom "axiom",
@@ -481,7 +482,7 @@ presentToJukebox ctx axioms goals Presentation{..} =
       source =
         Inference "resolution" "thm"
           [-- A proof of t != u
-           fromJust (lookup pg_number goals),
+           existentialHack pg_goal_hint (fromJust (lookup pg_number goals)),
            -- A proof of t = u
            fromJust (Map.lookup pg_number goal_proofs)] }
   | ProvedGoal{..} <- pres_goals ]
@@ -524,6 +525,32 @@ presentToJukebox ctx axioms goals Presentation{..} =
       | Lemma{..} <- usortBy (comparing lemma_id) (usedLemmas p) ] ++
       [ fromJust (Map.lookup axiom_number axiom_proofs)
       | Axiom{..} <- usort (usedAxioms p) ]
+
+    -- An ugly hack: since Twee.Proof decodes $true = $false into a
+    -- proof of the existentially quantified goal, we need to do the
+    -- same decoding at the Jukebox level.
+    existentialHack eqn input =
+      case find input of
+        [] -> error $ "bug in TSTP output: can't fix up decoded existential"
+        (inp:_) -> inp
+        where
+          -- Check if this looks like the correct clause;
+          -- if not, try its ancestors.
+          find inp | ok inp = [inp]
+          find Input{source = Inference _ _ inps} =
+            concatMap find inps
+          find _ = []
+
+          ok inp =
+            case toClause (what inp) of
+              Nothing -> False
+              Just (Clause (Bind _ [Neg (t' Jukebox.:=: u')])) ->
+                let
+                  eqn' = toEquation t' u'
+                  ts = buildList [eqn_lhs eqn, eqn_rhs eqn]
+                  us = buildList [eqn_lhs eqn', eqn_rhs eqn']
+                in
+                  isJust (matchList ts us) && isJust (matchList us ts)
 
 main = do
   hSetBuffering stdout LineBuffering

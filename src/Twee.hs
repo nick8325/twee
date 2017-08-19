@@ -5,7 +5,7 @@ import Twee.Base
 import Twee.Rule
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Proof, Axiom(..), ProvedGoal(..), certify, derivation, symm)
+import Twee.Proof(Proof, Axiom(..), ProvedGoal(..), provedGoal, certify, derivation, symm)
 import Twee.CP hiding (Config)
 import qualified Twee.CP as CP
 import Twee.Join hiding (Config, defaultConfig)
@@ -603,11 +603,7 @@ solutions State{..} = {-# SCC solutions #-} do
         Proof.certify $
           reductionProof (reduction t) `Proof.trans`
           Proof.symm (reductionProof (reduction u))
-  return
-    ProvedGoal {
-      pg_number = goal_number,
-      pg_name = goal_name,
-      pg_proof = p }
+  return (provedGoal goal_number goal_name p)
 
 {-# INLINEABLE report #-}
 report :: Function f => State f -> String

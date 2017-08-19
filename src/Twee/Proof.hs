@@ -4,8 +4,9 @@ module Twee.Proof(
   certify, equation, derivation,
   lemma, axiom, symm, trans, cong, simplify, congPath,
   usedLemmas, usedAxioms, usedLemmasAndSubsts, usedAxiomsAndSubsts,
-  Config(..), defaultConfig, Presentation(..), ProvedGoal(..), pPrintPresentation,
-  goalWitness, present, describeEquation) where
+  Config(..), defaultConfig, Presentation(..),
+  ProvedGoal(..), provedGoal, checkProvedGoal,
+  pPrintPresentation, present, describeEquation) where
 
 import Twee.Base
 import Twee.Equation
@@ -279,12 +280,45 @@ data Presentation f =
     pres_goals  :: [ProvedGoal f] }
   deriving Show
 
+-- Note: only the pg_proof field should be trusted!
+-- The remaining fields are for information only.
 data ProvedGoal f =
   ProvedGoal {
-    pg_number :: Int,
-    pg_name   :: String,
-    pg_proof  :: Proof f }
+    pg_number  :: Int,
+    pg_name    :: String,
+    pg_proof   :: Proof f,
+
+    -- Extra fields for existentially-quantified goals, giving the original goal
+    -- and the existential witness. These fields are not verified. If you want
+    -- to check them, use checkProvedGoal.
+    --
+    -- In general, subst pg_witness_hint pg_goal_hint == equation pg_proof.
+    -- For non-existential goals, pg_goal_hint == equation pg_proof
+    -- and pg_witness_hint is the empty substitution.
+    pg_goal_hint    :: Equation f,
+    pg_witness_hint :: Subst f }
   deriving Show
+
+provedGoal :: Int -> String -> Proof f -> ProvedGoal f
+provedGoal number name proof =
+  ProvedGoal {
+    pg_number = number,
+    pg_name = name,
+    pg_proof = proof,
+    pg_goal_hint = equation proof,
+    pg_witness_hint = emptySubst }
+
+-- Check that pg_goal/pg_witness match up with pg_proof.
+checkProvedGoal :: Function f => ProvedGoal f -> ProvedGoal f
+checkProvedGoal pg@ProvedGoal{..}
+  | subst pg_witness_hint pg_goal_hint == equation pg_proof =
+    pg
+  | otherwise =
+    error $ show $
+      text "Invalid ProvedGoal!" $$
+      text "Claims to prove" <+> pPrint pg_goal_hint $$
+      text "with witness" <+> pPrint pg_witness_hint <> text "," $$
+      text "but actually proves" <+> pPrint (equation pg_proof)
 
 instance Function f => Pretty (Presentation f) where
   pPrint = pPrintPresentation defaultConfig
@@ -310,6 +344,7 @@ presentWithGoals config@Config{..} goals lemmas
   --   * It only has one step
   --   * It is subsumed by an earlier lemma
   --   * It is only used once
+  --   * It has to do with $equals (for printing of the goal proof)
   --   * The option cfg_no_lemmas is true
   -- First we compute all inlinings, then apply simplify to remove them,
   -- then repeat if any lemma was inlined
@@ -322,7 +357,7 @@ presentWithGoals config@Config{..} goals lemmas
       Presentation axioms
         [ lemma { lemma_proof = flattenProof lemma_proof }
         | lemma@Lemma{..} <- lemmas ]
-        [ goal { pg_proof = flattenProof pg_proof }
+        [ decodeGoal (goal { pg_proof = flattenProof pg_proof })
         | goal@ProvedGoal{..} <- goals ]
 
   | otherwise =
@@ -330,7 +365,7 @@ presentWithGoals config@Config{..} goals lemmas
       inline lemma = Map.lookup lemma inlinings
 
       goals' =
-        [ goal { pg_proof = certify $ simplify inline (derivation pg_proof) }
+        [ decodeGoal (goal { pg_proof = certify $ simplify inline (derivation pg_proof) })
         | goal@ProvedGoal{..} <- goals ]
       lemmas' =
         [ Lemma n (certify $ simplify inline (derivation p))
@@ -359,7 +394,11 @@ presentWithGoals config@Config{..} goals lemmas
     shouldInline n p =
       cfg_no_lemmas ||
       oneStep (derivation p) ||
-      (not cfg_all_lemmas && Map.lookup n uses == Just 1)
+      (not cfg_all_lemmas &&
+       (isJust (decodeEquality (eqn_lhs (equation p))) ||
+        isJust (decodeEquality (eqn_rhs (equation p))) ||
+        Map.lookup n uses == Just 1))
+  
     subsume p q =
       -- Rename q so its variables match p's
       subst sub q
@@ -429,8 +468,10 @@ pPrintLemma Config{..} lemmaName p =
 -- Transform a proof so that each step uses exactly one axiom
 -- or lemma. The proof will have the following form afterwards:
 --   * Trans only occurs at the outermost level and is right-associated
---   * Symm only occurs next to UseLemma or UseAxiom
---   * Each Cong contains exactly one non-Refl derivation
+--   * Each Cong has exactly one non-Refl argument (no parallel rewriting)
+--   * Symm only occurs innermost, i.e., next to UseLemma or UseAxiom
+--   * Refl only occurs as an argument to Cong, or outermost if the
+--     whole proof is a single reflexivity step
 flattenProof :: Function f => Proof f -> Proof f
 flattenProof =
   certify . flat . simplify (const Nothing) . derivation
@@ -460,19 +501,32 @@ flattenProof =
     trans p Refl{} = p
     trans p q = Trans p q
 
+-- Transform a derivation into a list of single steps.
+-- Each step has the following form:
+--   * Trans does not occur
+--   * Symm only occurs innermost, i.e., next to UseLemma or UseAxiom
+--   * Each Cong has exactly one non-Refl argument (no parallel rewriting)
+--   * Refl only occurs as an argument to Cong
+derivSteps :: Function f => Derivation f -> [Derivation f]
+derivSteps = steps . derivation . flattenProof . certify
+  where
+    steps Refl{} = []
+    steps (Trans p q) = steps p ++ steps q
+    steps p = [p]
+
 pPrintPresentation :: forall f. Function f => Config -> Presentation f -> Doc
 pPrintPresentation config (Presentation axioms lemmas goals) =
   vcat $ intersperse (text "") $
     vcat [ describeEquation "Axiom" (show n) (Just name) eqn
          | Axiom n name eqn <- axioms ]:
-    [ pp "Lemma" (num n) Nothing p
+    [ pp "Lemma" (num n) Nothing (equation p) emptySubst p
     | Lemma n p <- lemmas ] ++
-    [ pp "Goal" (show num) (Just pg_name) pg_proof $$
-      ppWitness goal
+    [ pp "Goal" (show num) (Just pg_name) pg_goal_hint pg_witness_hint pg_proof
     | (num, goal@ProvedGoal{..}) <- zip [1..] goals ]
   where
-    pp kind n mname p =
-      describeEquation kind n mname (equation p) $$
+    pp kind n mname eqn witness p =
+      describeEquation kind n mname eqn $$
+      ppWitness witness $$
       text "Proof:" $$
       pPrintLemma config num p
 
@@ -480,22 +534,19 @@ pPrintPresentation config (Presentation axioms lemmas goals) =
     nums = Map.fromList (zip (map lemma_id lemmas) [n+1 ..])
     n = maximum $ 0:map axiom_number axioms
 
-    ppWitness goal =
-      case goalWitness goal of
-        Nothing -> pPrintEmpty
-        Just (eqn, sub) ->
+    ppWitness sub
+      | sub == emptySubst = pPrintEmpty
+      | otherwise =
           vcat [
-            text "",
-            text "The conjecture",
-            nest 2 (pPrint eqn),
-            text "is true when:",
+            text "The goal is true when:",
             nest 2 $ vcat
               [ pPrint x <+> text "=" <+> pPrint t
               | (x, t) <- listSubst sub ],
-            if minimal `elem` funs (eqn, sub) then
+            if minimal `elem` funs sub then
               text "where" <+> doubleQuotes (pPrint (minimal :: Fun f)) <+>
               text "stands for an arbitrary term of your choice."
-            else pPrintEmpty]
+            else pPrintEmpty,
+            text ""]
 
 -- Format an equation nicely. Used both here and in the main file.
 describeEquation ::
@@ -508,50 +559,102 @@ describeEquation kind num mname eqn =
      Just name -> text (" (" ++ name ++ ")")) <>
   text ":" <+> pPrint eqn <> text "."
 
--- Try to find a witness for a proof of an existentially-quantified
--- formula, given the proof of $true = $false.
-goalWitness :: Function f => ProvedGoal f -> Maybe (Equation f, Subst f)
-goalWitness ProvedGoal{..}
-  -- The idea: in a proof $true = $false, the very last step
-  -- (if we also expand lemmas) must be an application of an
-  -- axiom $equals(..) = $false. (This is because these are the
-  -- only axioms which mention $false.)
-  --
-  -- All we have to do is pick out the substitution from that step.
-  --
-  -- To make this work, we first simplify the proof, in order to:
-  --   a) expand any lemma which proves ... = $false
-  --      (strictly speaking we need only do this if this lemma
-  --      is the last step of the proof);
-  --   b) make sure that the proof doesn't end in a Refl.
-  | u == false = extract deriv
+----------------------------------------------------------------------
+-- Making proofs of existential goals more readable.
+----------------------------------------------------------------------
+
+-- The idea: the only axioms which mention $equals, $true and $false
+-- are:
+--   * $equals(x,x) = $true  (reflexivity)
+--   * $equals(t,u) = $false (conjecture)
+-- This implies that a proof $true = $false must have the following
+-- structure, if we expand out all lemmas:
+--   $true = $equals(s,s) = ... = $equals(t,u) = $false.
+--
+-- The substitution in the last step $equals(t,u) = $false is in fact the
+-- witness to the existential.
+--
+-- Furthermore, we can make it so that the inner "..." doesn't use the $equals
+-- axioms. If it does, one of the "..." steps results in either $true or $false,
+-- and we can chop off everything before the $true or after the $false.
+--
+-- Once we have done that, every proof step in the "..." must be a congruence
+-- step of the shape
+--   $equals(t, u) = $equals(v, w).
+-- This is because there are no other axioms which mention $equals. Hence we can
+-- split the proof of $equals(s,s) = $equals(t,u) into separate proofs of s=t
+-- and s=u.
+--
+-- What we have got out is:
+--   * the witness to the existential
+--   * a proof that both sides of the conjecture are equal
+-- and we can present that to the user.
+
+-- Decode $equals(t,u) into an equation t=u.
+decodeEquality :: Function f => Term f -> Maybe (Equation f)
+decodeEquality (App equals (Cons t (Cons u Empty)))
+  | equals == equalsCon = Just (t :=: u)
+decodeEquality _ = Nothing
+
+-- Tries to transform a proof of $true = $false into a proof of
+-- the original existentially-quantified formula.
+decodeGoal :: Function f => ProvedGoal f -> ProvedGoal f
+decodeGoal pg =
+  case maybeDecodeGoal pg of
+    Nothing -> pg
+    Just (name, witness, goal, deriv) ->
+      checkProvedGoal $
+      pg {
+        pg_name = name,
+        pg_proof = certify deriv,
+        pg_goal_hint = goal,
+        pg_witness_hint = witness }
+
+maybeDecodeGoal :: forall f. Function f =>
+  ProvedGoal f -> Maybe (String, Subst f, Equation f, Derivation f)
+maybeDecodeGoal pg@ProvedGoal{..}
+  -- N.B. presentWithGoals takes care of expanding any lemma which mentions
+  -- $equals, and flattening the proof.
+  | u == false = extract (derivSteps deriv)
     -- Orient the equation so that $false is the RHS.
-  | t == false = extract (symm deriv)
+  | t == false = extract (derivSteps (symm deriv))
   | otherwise = Nothing
   where
-    t :=: u = equation pg_proof
-    deriv =
-      derivation $ certify $ -- double-check the proof just to be sure
-      simplify simp (derivation pg_proof)
-
-    simp Lemma{..} = do
-      guard $
-        eqn_rhs (equation lemma_proof) == false ||
-        eqn_lhs (equation lemma_proof) == false
-
-      return (derivation lemma_proof)
-
-    -- Here we can assume that the lemma ends in an axiom
-    -- $equals(..) = $false.
-    extract (Trans _ p) = extract p
-    extract (UseAxiom Axiom{axiom_eqn = t :=: u} sub) = do
-      eqn <- getEquals t
-      guard (u == false)
-      guard (substSize sub /= 0)
-      return (eqn, sub)
-    extract _ = Nothing
-
     false = build (con falseCon)
-    getEquals (App equals (Cons t (Cons u Empty)))
-      | equals == equalsCon = Just (t :=: u)
-    getEquals _ = Nothing
+    true = build (con trueCon)
+    t :=: u = equation pg_proof
+    deriv = derivation pg_proof
+
+    -- Detect $true = $equals(t, t).
+    decodeReflexivity :: Derivation f -> Maybe (Term f)
+    decodeReflexivity (Symm (UseAxiom Axiom{..} sub)) = do
+      guard (eqn_rhs axiom_eqn == true)
+      (t :=: u) <- decodeEquality (eqn_lhs axiom_eqn)
+      guard (t == u)
+      return (subst sub t)
+    decodeReflexivity _ = Nothing
+
+    -- Detect $equals(t, u) = $false.
+    decodeConjecture :: Derivation f -> Maybe (String, Equation f, Subst f)
+    decodeConjecture (UseAxiom Axiom{..} sub) = do
+      guard (eqn_rhs axiom_eqn == false)
+      eqn <- decodeEquality (eqn_lhs axiom_eqn)
+      return (axiom_name, eqn, sub)
+    decodeConjecture _ = Nothing
+
+    extract (p:ps) = do
+      -- Start by finding $true = $equals(t,u).
+      t <- decodeReflexivity p
+      cont (Refl t) (Refl t) ps
+    extract [] = Nothing
+
+    cont p1 p2 (p:ps)
+      | Just t <- decodeReflexivity p =
+        cont (Refl t) (Refl t) ps
+      | Just (name, eqn, sub) <- decodeConjecture p =
+        -- If p1: s=t and p2: s=u
+        -- then symm p1 `trans` p2: t=u.
+        return (name, sub, eqn, symm p1 `trans` p2)
+      | Cong eq [p1', p2'] <- p, eq == equalsCon =
+        cont (p1 `trans` p1') (p2 `trans` p2') ps
+    cont _ _ _ = Nothing
