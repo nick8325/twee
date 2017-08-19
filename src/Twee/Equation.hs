@@ -3,6 +3,7 @@ module Twee.Equation where
 
 import Twee.Base
 import GHC.Generics
+import Data.Maybe
 
 --------------------------------------------------------------------------------
 -- Equations.
@@ -42,3 +43,13 @@ bothSides f (t :=: u) = f t :=: f u
 -- Is an equation of the form t = t?
 trivial :: Eq f => Equation f -> Bool
 trivial (t :=: u) = t == u
+
+simplerThan :: Function f => Equation f -> Equation f -> Bool
+eq1 `simplerThan` eq2 =
+  t1 `lessEq` t2 &&
+  (isNothing (unify t1 t2) || (u1 `lessEq` u2))
+  where
+    t1 :=: u1 = skolemise eq1
+    t2 :=: u2 = skolemise eq2
+
+    skolemise = subst (con . skolem)

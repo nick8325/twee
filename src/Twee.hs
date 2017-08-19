@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables, GeneralizedNewtypeDeriving, PatternGuards #-}
+{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables, GeneralizedNewtypeDeriving, PatternGuards, TypeFamilies #-}
 module Twee where
 
 import Twee.Base
@@ -260,6 +260,19 @@ data ActiveRule f =
     rule_rule      :: {-# UNPACK #-} !(Rule f),
     rule_proof     :: {-# UNPACK #-} !(Proof f),
     rule_positions :: !(Positions f) }
+
+instance PrettyTerm f => Symbolic (ActiveRule f) where
+  type ConstantOf (ActiveRule f) = f
+  termsDL ActiveRule{..} =
+    termsDL rule_rule `mplus`
+    termsDL (derivation rule_proof)
+  subst_ sub r@ActiveRule{..} =
+    r {
+      rule_rule = rule',
+      rule_proof = certify (subst_ sub (derivation rule_proof)),
+      rule_positions = positions (lhs rule') }
+    where
+      rule' = subst_ sub rule_rule
 
 instance Eq (Active f) where
   (==) = (==) `on` active_id

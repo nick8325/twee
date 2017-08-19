@@ -158,7 +158,7 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
     (modelOK model && isJust (allSteps config eqns idx cp { cp_eqn = t' :=: u' })) = Left model
   | otherwise =
       let model1 = optimise model weakenModel (\m -> not (modelOK m) || (valid m (reduction nt) && valid m (reduction nu)))
-          model2 = optimise model1 weakenModel (\m -> not (modelOK m) || isNothing (allSteps config eqns idx cp { cp_eqn = result (normaliseIn m t) :=: result (normaliseIn m u) }))
+          model2 = optimise model1 weakenModel (\m -> not (modelOK m) || isNothing (allSteps config eqns idx cp { cp_eqn = result (normaliseIn m t u) :=: result (normaliseIn m u t) }))
 
           diag [] = Or []
           diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
@@ -168,9 +168,13 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
 
       groundJoin config eqns idx ctx' cp
   where
-    normaliseIn m = normaliseWith (const True) (rewrite (reducesInModel m) (index_all idx))
-    nt = normaliseIn model t
-    nu = normaliseIn model u
+    normaliseIn m t u = normaliseWith (const True) (rewrite (ok t u m) (index_all idx)) t
+    ok t u m rule sub =
+      reducesInModel m rule sub &&
+      unorient rule `simplerThan` (t :=: u)
+
+    nt = normaliseIn model t u
+    nu = normaliseIn model u t
     t' = result nt
     u' = result nu
 

@@ -162,10 +162,6 @@ score config overlap@Overlap{overlap_eqn = t :=: u} =
       -- equals(t, u) = false where t, u unifiable
       fromMaybe (normalScore config overlap)
         (equalsFalse u t)
-    (5, 5) ->
-      -- f(x, f(y, z)) = f(y, f(x, z)) gets higher priority (hack)
-      fromMaybe (normalScore config overlap)
-        (assoc t u)
     _ -> normalScore config overlap
   where
     -- N.B. the code above puts the arguments in the right order
@@ -177,14 +173,6 @@ score config overlap@Overlap{overlap_eqn = t :=: u} =
       | false == falseCon && equals == equalsCon &&
         isJust (unify t u) = Just 2
     equalsFalse _ _ = Nothing
-
-    assoc
-      (App f1 (Cons (Var x1) (Cons (App f2 (Cons (Var y1) (Cons (Var z1) Empty))) Empty)))
-      (App f3 (Cons (Var y2) (Cons (App f4 (Cons (Var x2) (Cons (Var z2) Empty))) Empty)))
-      | f1 == f2 && f1 == f3 && f1 == f4 &&
-        x1 == x2 && y1 == y2 && z1 == z2 =
-        Just 1
-    assoc _ _ = Nothing
 
 {-# INLINEABLE normalScore #-}
 normalScore :: Function f => Config -> Overlap f -> Int

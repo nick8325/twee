@@ -5,7 +5,7 @@ module Twee.Base(
   Id(..), Symbolic(..), subst, GSymbolic(..), Has(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding,
   Minimal(..), minimalTerm, isMinimal, erase,
-  Skolem(..), Arity(..), Sized(..), Ordered(..), orientTerms, Equals(..), Strictness(..), Function, Extended(..),
+  Skolem(..), Arity(..), Sized(..), Ordered(..), lessThan, orientTerms, Equals(..), Strictness(..), Function, Extended(..),
   module Twee.Term, module Twee.Pretty) where
 
 #include "errors.h"
