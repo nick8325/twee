@@ -260,16 +260,14 @@ congPath _ _ _ = error "bad path"
 -- Options for proof presentation.
 data Config =
   Config {
-    cfg_more_lemmas :: !Bool,
-    cfg_fewer_lemmas :: !Bool,
+    cfg_all_lemmas :: !Bool,
     cfg_no_lemmas :: !Bool,
     cfg_show_instances :: !Bool }
 
 defaultConfig :: Config
 defaultConfig =
   Config {
-    cfg_more_lemmas = False,
-    cfg_fewer_lemmas = False,
+    cfg_all_lemmas = False,
     cfg_no_lemmas = False,
     cfg_show_instances = False }
 
@@ -311,8 +309,7 @@ presentWithGoals config@Config{..} goals lemmas
   -- We inline a lemma if one of the following holds:
   --   * It only has one step
   --   * It is subsumed by an earlier lemma
-  --   * It is only used once, and either that use is at the root of
-  --     the term, or the option cfg_fewer_lemmas is true
+  --   * It is only used once
   --   * The option cfg_no_lemmas is true
   -- First we compute all inlinings, then apply simplify to remove them,
   -- then repeat if any lemma was inlined
@@ -362,8 +359,7 @@ presentWithGoals config@Config{..} goals lemmas
     shouldInline n p =
       cfg_no_lemmas ||
       oneStep (derivation p) ||
-      (not cfg_more_lemmas && Map.lookup n uses == Just 1 &&
-       (cfg_fewer_lemmas || Map.lookup n usesAtRoot == Just 1))
+      (not cfg_all_lemmas && Map.lookup n uses == Just 1)
     subsume p q =
       -- Rename q so its variables match p's
       subst sub q
@@ -378,22 +374,14 @@ presentWithGoals config@Config{..} goals lemmas
         [ (canonicalise (equation lemma_proof), lemma)
         | lemma@Lemma{..} <- lemmas]
 
-    -- Count how many times each lemma is used at the root
-    uses = usesWith usedLemmas
-    usesAtRoot = usesWith rootLemmas
-    usesWith lem =
+    -- Count how many times each lemma is used
+    uses =
       Map.fromListWith (+)
         [ (lemma_id, 1)
         | Lemma{..} <-
-            concatMap lem
+            concatMap usedLemmas
               (map (derivation . pg_proof) goals ++
                map (derivation . lemma_proof) lemmas) ]
-
-    -- Find all lemmas that occur at the root
-    rootLemmas (UseLemma lemma _) = [lemma]
-    rootLemmas (Symm p) = rootLemmas p
-    rootLemmas (Trans p q) = rootLemmas p ++ rootLemmas q
-    rootLemmas _ = []
 
     -- Check if a proof only has one step.
     -- Trans only occurs at the top level by this point.
