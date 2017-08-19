@@ -260,6 +260,7 @@ congPath _ _ _ = error "bad path"
 -- Options for proof presentation.
 data Config =
   Config {
+    cfg_more_lemmas :: !Bool,
     cfg_fewer_lemmas :: !Bool,
     cfg_no_lemmas :: !Bool,
     cfg_show_instances :: !Bool }
@@ -267,6 +268,7 @@ data Config =
 defaultConfig :: Config
 defaultConfig =
   Config {
+    cfg_more_lemmas = False,
     cfg_fewer_lemmas = False,
     cfg_no_lemmas = False,
     cfg_show_instances = False }
@@ -360,7 +362,7 @@ presentWithGoals config@Config{..} goals lemmas
     shouldInline n p =
       cfg_no_lemmas ||
       oneStep (derivation p) ||
-      (Map.lookup n uses == Just 1 &&
+      (not cfg_more_lemmas && Map.lookup n uses == Just 1 &&
        (cfg_fewer_lemmas || Map.lookup n usesAtRoot == Just 1))
     subsume p q =
       -- Rename q so its variables match p's

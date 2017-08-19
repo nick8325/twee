@@ -48,7 +48,7 @@ parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> improve <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
-    (Proof.Config <$> fewer_lemmas <*> flat_proof <*> show_instances)
+    (Proof.Config <$> more_lemmas <*> fewer_lemmas <*> flat_proof <*> show_instances)
   where
     maxSize =
       inGroup "Resource limits" $
@@ -91,6 +91,9 @@ parseConfig =
     set_join =
       inGroup "Critical pair joining heuristics" $
       bool "set-join" ["Compute all normal forms when joining critical pairs."]
+    more_lemmas =
+      inGroup "Proof presentation" $
+      bool "more-lemmas" ["Produce a proof with more lemmas (one for each critical pair)."]
     fewer_lemmas =
       inGroup "Proof presentation" $
       bool "fewer-lemmas" ["Produce a proof with fewer lemmas."]
