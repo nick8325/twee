@@ -1,3 +1,8 @@
+add extra rules:
+if a rule is simplified away, keep it as an extra rule, in case of
+case-split-on-not-vars note below (?)
+maybe do that only if a rule is ground joined?
+
 simplification: add complete version
 plan: define total order on rules which is compatible with KBO
 (i.e., order on orientable rules is defined by KBO); only rewrite wrt
