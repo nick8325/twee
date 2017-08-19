@@ -4,8 +4,8 @@ import Control.Monad
 import Data.Char
 import Data.Either
 import Twee hiding (message)
-import Twee.Base hiding (char, lookup, (<>), vars)
-import Twee.Rule(lhs, rhs)
+import Twee.Base hiding (char, lookup, vars)
+import Twee.Rule(lhs, rhs, unorient)
 import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof hiding (Config, defaultConfig)
@@ -32,16 +32,21 @@ import System.Exit
 
 data MainFlags =
   MainFlags {
-    flags_proof :: Bool }
+    flags_proof :: Bool,
+    flags_trace :: Maybe String }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof
+  MainFlags <$> proof <*> trace
   where
     proof =
       inGroup "Output options" $
       not <$>
       bool "no-proof" ["Don't print out the proof."]
+    trace =
+      inGroup "Output options" $
+      flag "trace" ["Print a Prolog-format execution trace to this file (for debugging twee)."]
+        Nothing (Just <$> argFile)
 
 parseConfig :: OptionParser Config
 parseConfig =
@@ -331,6 +336,16 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
     withGoals = foldl' (addGoal config) initialState goals
     withAxioms = foldl' (addAxiom config) withGoals axioms
 
+  -- Set up tracing.
+  sayTrace <-
+    case flags_trace main of
+      Nothing -> return $ \_ -> return ()
+      Just file -> do
+        h <- openFile file WriteMode
+        hSetBuffering h LineBuffering
+        return $ \msg -> hPutStrLn h msg
+  sayTrace ":- style_check(-singleton)."
+  
   let
     say msg = unless (quiet globals) (putStrLn msg)
     line = say ""
@@ -339,7 +354,30 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
         line
         say (report state)
         line,
-      output_message = say . prettyShow }
+      output_message = \msg -> do
+        say (prettyShow msg)
+        sayTrace (show (traceMsg msg)) }
+
+    traceMsg (NewActive Active{..}) =
+      step "new"
+        [pPrint active_id, traceEqn (unorient active_rule)]
+    traceMsg (NewEquation eqn) =
+      step "hard" [traceEqn eqn]
+    traceMsg (DeleteActive Active{..}) =
+      step "delete"
+        [pPrint active_id, traceEqn (unorient active_rule)]
+    traceMsg SimplifyQueue =
+      step "simplify_queue" []
+    traceMsg Interreduce =
+      step "interreduce" []
+
+    traceEqn (t :=: u) =
+      pPrintPrec prettyNormal 6 t <+> text "=" <+> pPrintPrec prettyNormal 6 u
+    traceApp f xs =
+      pPrintTerm uncurried prettyNormal 0 (text f) xs
+
+    step :: String -> [Doc] -> Doc
+    step f xs = traceApp "step" [traceApp f xs] <> text "."
 
   say "Here is the input problem:"
   forM_ axioms $ \Axiom{..} ->
@@ -358,6 +396,11 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
   when (solved state && flags_proof main) $ later $ do
     let
       pres = present (cfg_proof_presentation config) (solutions state)
+
+    sayTrace ""
+    forM_ (pres_lemmas pres) $ \Lemma{..} ->
+      sayTrace $ show $
+        traceApp "lemma" [traceEqn (equation lemma_proof)] <> text "."
 
     when tstp $ do
       putStrLn "% SZS output start CNFRefutation"
