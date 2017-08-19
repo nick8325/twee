@@ -400,7 +400,7 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
       step "interreduce" []
 
     traceActive Active{..} =
-      step "rule" [pPrint active_id, traceEqn (unorient active_rule)]
+      traceApp "rule" [pPrint active_id, traceEqn (unorient active_rule)]
     traceEqn (t :=: u) =
       pPrintPrec prettyNormal 6 t <+> text "=" <+> pPrintPrec prettyNormal 6 u
     traceApp f xs =
