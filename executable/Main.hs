@@ -33,7 +33,7 @@ import System.Exit
 data MainFlags =
   MainFlags {
     flags_proof :: Bool,
-    flags_trace :: Maybe String }
+    flags_trace :: Maybe (String, String) }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
@@ -46,8 +46,10 @@ parseMainFlags =
     trace =
       expert $
       inGroup "Output options" $
-      flag "trace" ["Write a Prolog-format execution trace to this file (off by default)."]
-        Nothing (Just <$> argFile)
+      flag "trace"
+        ["Write a Prolog-format execution trace to this file (off by default)."]
+        Nothing ((\x y -> Just (x, y)) <$> argFile <*> argModule)
+    argModule = arg "<module>" "expected a Prolog module name" Just
 
 parseConfig :: OptionParser Config
 parseConfig =
@@ -100,14 +102,12 @@ parseConfig =
     ground_join =
       expert $
       inGroup "Critical pair joining heuristics" $
-      not <$>
       bool "ground-joining"
         ["Test terms for ground joinability (on by default)."]
         True
     connectedness =
       expert $
       inGroup "Critical pair joining heuristics" $
-      not <$>
       bool "connectedness"
         ["Test terms for subconnectedness (on by default)."]
         True
@@ -369,11 +369,15 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
   sayTrace <-
     case flags_trace main of
       Nothing -> return $ \_ -> return ()
-      Just file -> do
+      Just (file, mod) -> do
         h <- openFile file WriteMode
         hSetBuffering h LineBuffering
+        let put msg = hPutStrLn h msg
+        put $ ":- module(" ++ mod ++ ", [step/1, lemma/1])."
+        put ":- discontiguous(step/1)."
+        put ":- discontiguous(lemma/1)."
+        put ":- style_check(-singleton)."
         return $ \msg -> hPutStrLn h msg
-  sayTrace ":- style_check(-singleton)."
   
   let
     say msg = unless (quiet globals) (putStrLn msg)
@@ -384,19 +388,19 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
         say (prettyShow msg)
         sayTrace (show (traceMsg msg)) }
 
-    traceMsg (NewActive Active{..}) =
-      step "new"
-        [pPrint active_id, traceEqn (unorient active_rule)]
+    traceMsg (NewActive active) =
+      step "add" [traceActive active]
     traceMsg (NewEquation eqn) =
       step "hard" [traceEqn eqn]
-    traceMsg (DeleteActive Active{..}) =
-      step "delete"
-        [pPrint active_id, traceEqn (unorient active_rule)]
+    traceMsg (DeleteActive active) =
+      step "delete" [traceActive active]
     traceMsg SimplifyQueue =
       step "simplify_queue" []
     traceMsg Interreduce =
       step "interreduce" []
 
+    traceActive Active{..} =
+      step "rule" [pPrint active_id, traceEqn (unorient active_rule)]
     traceEqn (t :=: u) =
       pPrintPrec prettyNormal 6 t <+> text "=" <+> pPrintPrec prettyNormal 6 u
     traceApp f xs =
