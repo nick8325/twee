@@ -41,11 +41,12 @@ parseMainFlags =
   where
     proof =
       inGroup "Output options" $
-      not <$>
-      bool "no-proof" ["Don't print out the proof."]
+      bool "proof" ["Produce proofs (on by default)."]
+      True
     trace =
+      expert $
       inGroup "Output options" $
-      flag "trace" ["Print a Prolog-format execution trace to this file (for debugging twee)."]
+      flag "trace" ["Write a Prolog-format execution trace to this file (off by default)."]
         Nothing (Just <$> argFile)
 
 parseConfig :: OptionParser Config
@@ -57,7 +58,7 @@ parseConfig =
   where
     maxSize =
       inGroup "Resource limits" $
-      flag "max-term-size" ["Only generate rewrite rules up to this size (unlimited by default)."] maxBound argNum
+      flag "max-term-size" ["Discard rewrite rules whose left-hand side is bigger than this limit (unlimited by default)."] maxBound argNum
     maxCPs =
       inGroup "Resource limits" $
       flag "max-cps" ["Give up after considering this many critical pairs (unlimited by default)."] maxBound argNum
@@ -65,56 +66,90 @@ parseConfig =
       inGroup "Resource limits" $
       flag "max-cp-depth" ["Only consider critical pairs up to this depth (unlimited by default)."] maxBound argNum
     simplify =
+      expert $
       inGroup "Completion heuristics" $
-      bool "simplify" ["Simplify rewrite rules with respect to one another."]
+      bool "simplify"
+        ["Simplify rewrite rules with respect to one another (on by default)."]
+        True
     improve =
+      expert $
       inGroup "Search strategy" $
-      bool "improve" ["Try to improve critical pairs to nicer ones."]
+      bool "improve"
+        ["Try to improve critical pairs to nicer ones (off by default)."]
+        False
     lweight =
+      expert $
       inGroup "Critical pair weighting heuristics" $
       defaultFlag "lhs-weight" "Weight given to LHS of critical pair" (CP.cfg_lhsweight . cfg_critical_pairs) argNum
     rweight =
+      expert $
       inGroup "Critical pair weighting heuristics" $
       defaultFlag "rhs-weight" "Weight given to RHS of critical pair" (CP.cfg_rhsweight . cfg_critical_pairs) argNum
     funweight =
+      expert $
       inGroup "Critical pair weighting heuristics" $
       defaultFlag "fun-weight" "Weight given to function symbols" (CP.cfg_funweight . cfg_critical_pairs) argNum
     varweight =
+      expert $
       inGroup "Critical pair weighting heuristics" $
       defaultFlag "var-weight" "Weight given to variable symbols" (CP.cfg_varweight . cfg_critical_pairs) argNum
     depthweight =
+      expert $
       inGroup "Critical pair weighting heuristics" $
       defaultFlag "depth-weight" "Weight given to critical pair depth" (CP.cfg_depthweight . cfg_critical_pairs) argNum
     ground_join =
+      expert $
       inGroup "Critical pair joining heuristics" $
       not <$>
-      bool "no-ground-joining" ["Disable ground joinability testing."]
+      bool "ground-joining"
+        ["Test terms for ground joinability (on by default)."]
+        True
     connectedness =
+      expert $
       inGroup "Critical pair joining heuristics" $
       not <$>
-      bool "no-connectedness" ["Disable subconnectedness testing."]
+      bool "connectedness"
+        ["Test terms for subconnectedness (on by default)."]
+        True
     set_join =
+      expert $
       inGroup "Critical pair joining heuristics" $
-      bool "set-join" ["Compute all normal forms when joining critical pairs."]
+      bool "set-join"
+        ["Compute all normal forms when joining critical pairs (off by default)."]
+        False
     more_lemmas =
+      expert $
       inGroup "Proof presentation" $
-      bool "more-lemmas" ["Produce a proof with more lemmas (one for each critical pair)."]
+      bool "more-lemmas"
+        ["Produce a proof with more lemmas (off by default)."]
+        False
     fewer_lemmas =
+      expert $
       inGroup "Proof presentation" $
-      bool "fewer-lemmas" ["Produce a proof with fewer lemmas."]
+      bool "fewer-lemmas"
+        ["Produce a proof with fewer lemmas (off by default)."]
+        False
     flat_proof =
+      expert $
       inGroup "Proof presentation" $
-      bool "no-lemmas" ["Produce a proof with no lemmas (may lead to exponentially large proofs)."]
+      bool "no-lemmas"
+        ["Produce a proof with no lemmas (off by default).",
+         "May lead to exponentially large proofs."]
+        False
     show_instances =
+      expert $
       inGroup "Proof presentation" $
-      bool "show-instances" ["Show which instances of each axiom and lemma were used."]
+      bool "show-instances"
+        ["Show which instances of each axiom and lemma were used (off by default)."]
+        False
     defaultFlag name desc field parser =
-      flag name [desc ++ " (defaults to " ++ show def ++ ")."] def parser
+      flag name [desc ++ " (" ++ show def ++ " by default)."] def parser
       where
         def = field defaultConfig
 
 parsePrecedence :: OptionParser [String]
 parsePrecedence =
+  expert $
   inGroup "Term order options" $
   fmap (splitOn ",")
   (flag "precedence" ["List of functions in descending order of precedence."] [] (arg "<function>" "expected a function name" Just))
@@ -500,9 +535,11 @@ main = do
   hSetBuffering stdout LineBuffering
   join . parseCommandLine "Twee, an equational theorem prover" .
     version ("twee version " ++ VERSION_twee) $
+    globalFlags *> parseMainFlags *>
+      -- hack: get --quiet and --no-proof options to appear before --tstp
     forAllFilesBox <*>
       (readProblemBox =>>=
-       (toFof <$> clausifyBox <*> pure (tags False)) =>>=
-       clausifyBox =>>=
+       expert (toFof <$> clausifyBox <*> pure (tags False)) =>>=
+       expert clausifyBox =>>=
        forAllConjecturesBox <*>
          (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> parseConfig <*> parsePrecedence))
