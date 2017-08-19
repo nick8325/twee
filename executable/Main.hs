@@ -379,10 +379,7 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
     say msg = unless (quiet globals) (putStrLn msg)
     line = say ""
     output = Output {
-      output_report = \state -> do
-        line
-        say (report state)
-        line,
+      output_report = \_ -> return (),
       output_message = \msg -> do
         say (prettyShow msg)
         sayTrace (show (traceMsg msg)) }
