@@ -522,7 +522,7 @@ pPrintPresentation config (Presentation axioms lemmas goals) =
     [ pp "Lemma" (num n) Nothing (equation p) emptySubst p
     | Lemma n p <- lemmas ] ++
     [ pp "Goal" (show num) (Just pg_name) pg_goal_hint pg_witness_hint pg_proof
-    | (num, goal@ProvedGoal{..}) <- zip [1..] goals ]
+    | (num, ProvedGoal{..}) <- zip [1..] goals ]
   where
     pp kind n mname eqn witness p =
       describeEquation kind n mname eqn $$
@@ -612,7 +612,7 @@ decodeGoal pg =
 
 maybeDecodeGoal :: forall f. Function f =>
   ProvedGoal f -> Maybe (String, Subst f, Equation f, Derivation f)
-maybeDecodeGoal pg@ProvedGoal{..}
+maybeDecodeGoal ProvedGoal{..}
   -- N.B. presentWithGoals takes care of expanding any lemma which mentions
   -- $equals, and flattening the proof.
   | u == false = extract (derivSteps deriv)
