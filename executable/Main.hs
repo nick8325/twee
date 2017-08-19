@@ -533,7 +533,7 @@ main = do
       -- hack: get --quiet and --no-proof options to appear before --tstp
     forAllFilesBox <*>
       (readProblemBox =>>=
-       expert (toFof <$> clausifyBox <*> pure (tags False)) =>>=
+       expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
        expert clausifyBox =>>=
        forAllConjecturesBox <*>
          (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> parseConfig <*> parsePrecedence))
