@@ -170,8 +170,9 @@ score config overlap@Overlap{overlap_eqn = t :=: u} =
     trueEqualsFalse _ _ = Nothing
 
     equalsFalse (App false Empty) (App equals (Cons t (Cons u Empty)))
-      | false == falseCon && equals == equalsCon &&
-        isJust (unify t u) = Just 2
+      | false == falseCon && equals == equalsCon =
+        if isJust (unify t u) then Just 2
+        else Just (normalScore config overlap{overlap_eqn = t :=: u})
     equalsFalse _ _ = Nothing
 
 {-# INLINEABLE normalScore #-}
