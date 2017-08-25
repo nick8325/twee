@@ -46,7 +46,6 @@ data Config =
     cfg_max_critical_pairs     :: Int,
     cfg_max_cp_depth           :: Int,
     cfg_simplify               :: Bool,
-    cfg_improve_critical_pairs :: Bool,
     cfg_critical_pairs         :: CP.Config,
     cfg_join                   :: Join.Config,
     cfg_proof_presentation     :: Proof.Config }
@@ -70,7 +69,6 @@ defaultConfig =
     cfg_max_critical_pairs = maxBound,
     cfg_max_cp_depth = maxBound,
     cfg_simplify = True,
-    cfg_improve_critical_pairs = True,
     cfg_critical_pairs =
       CP.Config {
         cfg_lhsweight = 2,
@@ -384,7 +382,7 @@ consider config state cp =
   considerUsing (st_rules state) config state cp
 
 -- Try to join a critical pair, but using a different set of critical
--- pairs for normalisation. Used for CP improvement.
+-- pairs for normalisation.
 {-# INLINEABLE considerUsing #-}
 considerUsing ::
   Function f =>
@@ -456,20 +454,6 @@ addJoinable state eqn@(t :=: u) =
       Index.insert t (t :=: u) $
       Index.insert u (u :=: t) (st_joinable state) }
 
-{-# INLINEABLE improves #-}
-improves :: Function f => Config -> CriticalPair f -> CriticalPair f -> Bool
-improves Config{..} _ _ | not cfg_improve_critical_pairs = False
-improves _ old new =
-  lhs oldRule `isVariantOf` lhs newRule &&
-  inversions (vars oldRule) > inversions (vars newRule)
-  where
-    oldRule = orient (cp_eqn old)
-    newRule = orient (cp_eqn new)
-
-    inversions [] = 0
-    inversions (x:xs) =
-      length (filter (< x) xs) + inversions xs
-
 -- For goal terms we store the set of all their normal forms.
 -- Name and number are for information only.
 data Goal f =
@@ -532,18 +516,10 @@ interreduce1 :: Function f => Config -> State f -> Active f -> State f
 interreduce1 config@Config{..} state active =
   -- Exclude the active from the rewrite rules when testing
   -- joinability, otherwise it will be trivially joinable.
-  -- Also exclude rules which are improved by this one.
-  let
-    improved =
-      [ active'
-      | active' <- IntMap.elems (st_active_ids state),
-        improves config (active_cp active') (active_cp active) ]
-  in case
+  case
     joinCriticalPair cfg_join
       (st_joinable state)
-      (st_rules
-        (foldl' deleteActive state
-         (usortBy (comparing active_id) (active:improved))))
+      (st_rules (deleteActive state active))
       (Just (active_model active)) (active_cp active)
   of
     Right (_, cps) ->
@@ -613,17 +589,8 @@ complete1 config@Config{..} state
   | otherwise =
     case dequeue config state of
       (Nothing, state) -> (False, state)
-      (Just (overlap, rule1, rule2), state) ->
-        let
-          improved =
-            usortBy (comparing active_id)
-            [ active
-            | ActiveRule{..} <- [rule1, rule2],
-              Just active <- [IntMap.lookup (fromIntegral rule_active) (st_active_ids state)],
-              or [ improves config (active_cp active) cp | cp <- split overlap ] ]
-          state' = foldl' deleteActive state improved
-        in
-          (True, considerUsing (st_rules state') config state overlap)
+      (Just (overlap, _, _), state) ->
+        (True, consider config state overlap)
 
 {-# INLINEABLE solved #-}
 solved :: Function f => State f -> Bool

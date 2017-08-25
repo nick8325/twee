@@ -53,7 +53,7 @@ parseMainFlags =
 
 parseConfig :: OptionParser Config
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> improve <*>
+  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> show_instances)
@@ -73,12 +73,6 @@ parseConfig =
       bool "simplify"
         ["Simplify rewrite rules with respect to one another (on by default)."]
         True
-    improve =
-      expert $
-      inGroup "Search strategy" $
-      bool "improve"
-        ["Try to improve critical pairs to nicer ones (off by default)."]
-        False
     lweight =
       expert $
       inGroup "Critical pair weighting heuristics" $
