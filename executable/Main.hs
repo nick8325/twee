@@ -296,7 +296,7 @@ addNarrowing TweeContext{..} prob =
           input tag form =
             Input {
               tag = tag,
-              kind = Conjecture,
+              kind = Conjecture "conjecture",
               what = clause [form],
               source =
                 Inference "split_conjunct" "thm" [justification] }
