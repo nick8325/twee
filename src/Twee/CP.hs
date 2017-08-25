@@ -139,7 +139,9 @@ data Config =
     cfg_rhsweight :: !Int,
     cfg_funweight :: !Int,
     cfg_varweight :: !Int,
-    cfg_depthweight :: !Int }
+    cfg_depthweight :: !Int,
+    cfg_dupcost :: !Int,
+    cfg_dupfactor :: !Int }
 
 -- We compute:
 --   cfg_lhsweight * size l + cfg_rhsweight * size r
@@ -189,7 +191,7 @@ normalScore Config{..} Overlap{..} =
     size' !n Empty = n
     size' n (Cons t ts)
       | len t > 1, t `isSubtermOfList` ts =
-        size' (n+cfg_varweight) ts
+        size' (n+cfg_dupcost+cfg_dupfactor*size t) ts
     size' n (Cons (Var _) ts) =
       size' (n+cfg_varweight) ts
     size' n (ConsSym (App f _) ts) =

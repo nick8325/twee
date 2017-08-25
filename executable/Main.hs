@@ -54,7 +54,7 @@ parseMainFlags =
 parseConfig :: OptionParser Config
 parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> improve <*>
-    (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight) <*>
+    (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> show_instances)
   where
@@ -99,6 +99,14 @@ parseConfig =
       expert $
       inGroup "Critical pair weighting heuristics" $
       defaultFlag "depth-weight" "Weight given to critical pair depth" (CP.cfg_depthweight . cfg_critical_pairs) argNum
+    dupcost =
+      expert $
+      inGroup "Critical pair weighting heuristics" $
+      defaultFlag "dup-cost" "Cost of duplicate subterms" (CP.cfg_dupcost . cfg_critical_pairs) argNum
+    dupfactor =
+      expert $
+      inGroup "Critical pair weighting heuristics" $
+      defaultFlag "dup-factor" "Size factor of duplicate subterms" (CP.cfg_dupfactor . cfg_critical_pairs) argNum
     ground_join =
       expert $
       inGroup "Critical pair joining heuristics" $
