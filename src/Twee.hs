@@ -33,6 +33,8 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import qualified Control.Monad.Trans.State.Strict as StateM
+import Data.Word
+import Data.Bits
 
 ----------------------------------------------------------------------
 -- Configuration and prover state.
@@ -56,7 +58,7 @@ data State f =
     st_rule_ids       :: !(IntMap (ActiveRule f)),
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
-    st_queue          :: !(Heap (Passive f)),
+    st_queue          :: !(Heap (PackedPassive f)),
     st_next_active    :: {-# UNPACK #-} !Id,
     st_considered     :: {-# UNPACK #-} !Int,
     st_messages_rev   :: ![Message f] }
@@ -149,6 +151,40 @@ instance Ord (Passive f) where
          passive_rule2,
          passive_pos)
 
+data PackedPassive f =
+  PackedPassive {-# UNPACK #-} !Word64 {-# UNPACK #-} !Word64
+  deriving (Eq, Ord, Show)
+
+packPassive :: Passive f -> PackedPassive f
+packPassive (Passive score rule1 rule2 pos) =
+  -- Do this so that Ord instance matches with Passive
+  if rule1 > rule2 then
+    PackedPassive
+      (pack score (fromIntegral rule1))
+      (pack (fromIntegral rule2) (pos `shiftL` 1))
+  else
+    PackedPassive
+      (pack score (fromIntegral rule2))
+      (pack (fromIntegral rule1) (pos `shiftL` 1 + 1))
+  where
+    pack :: Int32 -> Int32 -> Word64
+    pack x y =
+      fromIntegral x `shiftL` 32 + fromIntegral y
+
+unpackPassive :: PackedPassive f -> Passive f
+unpackPassive (PackedPassive x y) =
+  if testBit pos1 0 then
+    Passive score (fromIntegral rule2) (fromIntegral rule1) pos
+  else
+    Passive score (fromIntegral rule1) (fromIntegral rule2) pos
+  where
+    (score, rule1) = unpack x
+    (rule2, pos1) = unpack y
+    pos = pos1 `shiftR` 1
+
+    unpack :: Word64 -> (Int32, Int32)
+    unpack x = (fromIntegral (x `shiftR` 32), fromIntegral x)
+
 -- Compute all critical pairs from a rule and condense into a Passive.
 {-# INLINEABLE makePassive #-}
 makePassive :: Function f => Config -> State f -> ActiveRule f -> [Passive f]
@@ -191,14 +227,14 @@ simplifyQueue config state =
   state { st_queue = simp (st_queue state) }
   where
     simp =
-      Heap.mapMaybe (simplifyPassive config state)
+      Heap.mapMaybe (fmap packPassive . simplifyPassive config state . unpackPassive)
 
 -- Enqueue a critical pair.
 {-# INLINEABLE enqueue #-}
 enqueue :: Function f => State f -> Passive f -> State f
 enqueue state passive =
   {-# SCC enqueue #-}
-  state { st_queue = Heap.insert passive (st_queue state) }
+  state { st_queue = Heap.insert (packPassive passive) (st_queue state) }
 
 -- Dequeue a critical pair.
 -- Also takes care of:
@@ -218,7 +254,8 @@ dequeue config@Config{..} state@State{..} =
        state { st_queue = queue, st_considered = st_considered + n })
   where
     deq !n queue = do
-      (passive, queue) <- Heap.removeMin queue
+      (packedPassive, queue) <- Heap.removeMin queue
+      let passive = unpackPassive packedPassive
       case findPassive config state passive of
         Just (rule1, rule2, overlap)
           | passive_score passive >= 0,
