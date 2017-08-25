@@ -1,3 +1,8 @@
+N.B. if we introduce goal-directness, we must NOT rewrite
+terms t(..., X, ...) backwards with e.g. $equals(t,t)->$true,
+letting X=$true. This is a type error really.
+  * Maybe add narrowing before encoding types?
+
 add extra rules:
 if a rule is simplified away, keep it as an extra rule, in case of
 case-split-on-not-vars note below (?)
