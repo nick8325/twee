@@ -1,3 +1,14 @@
+* adjust CP depth so that simplifications of rules get the same depth
+  (maybe this is already the case)
+* make sure that connectedness respects simplerThan
+* use extra rules again [should be ok to rewrite one ground joinable
+  term to a smaller one: instance of subconnectedness, or
+  alternatively, if we have t -> v <- u and replace t with u then we
+  could rewrite t to v before, and now we can rewrite t to u to v]
+* check that details of simplerThan are correct
+  (e.g., is it enough to check the rule in the orientation we are
+  currently using it?) Why is it complete?
+
 N.B. if we introduce goal-directness, we must NOT rewrite
 terms t(..., X, ...) backwards with e.g. $equals(t,t)->$true,
 letting X=$true. This is a type error really.
@@ -20,6 +31,10 @@ goal-directed: combine two rules with forward reasoning
 (makes it easier to e.g. identify useful critical pairs)
 
 CP compression for longer runs.
+  * N.B. many rules get one of their CPs selected, so need compression
+    of intervals. This may be because when a rule is created, it was
+    head of the queue, and e.g. any CP with commutativity will have
+    a similar weight.
 
 Look into twee with boolean preconditions. (Also twee with theories.)
 
