@@ -73,8 +73,8 @@ allSteps config eqns idx cp =
   step1 config eqns idx cp >>=
   step2 config eqns idx >>=
   step3 config eqns idx
-step1 _ eqns idx = joinWith eqns idx (normaliseWith (const True) (rewrite reducesOriented (index_oriented idx)))
-step2 _ eqns idx = joinWith eqns idx (normaliseWith (const True) (rewrite reduces (index_all idx)))
+step1 _ eqns idx = joinWith eqns idx (\t _ -> normaliseWith (const True) (rewrite reducesOriented (index_oriented idx)) t)
+step2 _ eqns idx = joinWith eqns idx (\t _ -> normaliseWith (const True) (rewrite reduces (index_all idx)) t)
 step3 Config{..} eqns idx cp
   | not cfg_use_connectedness = Just cp
   | otherwise =
@@ -86,7 +86,11 @@ step3 Config{..} eqns idx cp
       _ -> Just cp
   where
     join (cp, top) =
-      joinWith eqns idx (normaliseWith (`lessThan` top) (rewrite reducesSkolem (index_all idx))) cp
+      joinWith eqns idx (\t u -> normaliseWith (`lessThan` top) (rewrite (ok t u) (index_all idx)) t) cp
+
+    ok t u rule sub =
+      unorient rule `simplerThan` (t :=: u) &&
+      reducesSkolem rule sub
 
     flipCP :: Symbolic a => a -> a
     flipCP t = subst sub t
@@ -98,7 +102,7 @@ step3 Config{..} eqns idx cp
 {-# INLINEABLE joinWith #-}
 joinWith ::
   (Has a (Rule f), Has a (Proof f), Has a Id) =>
-  Index f (Equation f) -> RuleIndex f a -> (Term f -> Resulting f) -> CriticalPair f -> Maybe (CriticalPair f)
+  Index f (Equation f) -> RuleIndex f a -> (Term f -> Term f -> Resulting f) -> CriticalPair f -> Maybe (CriticalPair f)
 joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
   | subsumed eqns idx eqn = Nothing
   | otherwise =
@@ -109,8 +113,8 @@ joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
         cp_proof `Proof.trans`
         reductionProof (reduction rred) }
   where
-    lred = reduce lhs
-    rred = reduce rhs
+    lred = reduce lhs rhs
+    rred = reduce rhs lhs
     eqn = result lred :=: result rred
 
 {-# INLINEABLE subsumed #-}
