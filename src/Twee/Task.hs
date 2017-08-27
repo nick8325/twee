@@ -48,4 +48,5 @@ taskDue now Task{..} =
   -- Don't run more than the frequency says.
   fromInteger (now - task_last) >= task_frequency * 10^12 &&
   -- Run if we spent less than task_budget proportion of the total time so far.
-  fromInteger (now - task_start) * task_budget >= fromInteger task_spent
+  -- Use > rather than >= so that tasks with zero budget never get run.
+  fromInteger (now - task_start) * task_budget > fromInteger task_spent
