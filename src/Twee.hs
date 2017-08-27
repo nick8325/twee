@@ -46,6 +46,7 @@ data Config =
     cfg_max_critical_pairs     :: Int,
     cfg_max_cp_depth           :: Int,
     cfg_simplify               :: Bool,
+    cfg_renormalise_percent    :: Int,
     cfg_critical_pairs         :: CP.Config,
     cfg_join                   :: Join.Config,
     cfg_proof_presentation     :: Proof.Config }
@@ -69,6 +70,7 @@ defaultConfig =
     cfg_max_critical_pairs = maxBound,
     cfg_max_cp_depth = maxBound,
     cfg_simplify = True,
+    cfg_renormalise_percent = 5,
     cfg_critical_pairs =
       CP.Config {
         cfg_lhsweight = 2,
@@ -556,7 +558,7 @@ complete :: (Function f, MonadIO m) => Output m f -> Config -> State f -> m (Sta
 complete Output{..} config@Config{..} state =
   flip StateM.execStateT state $ do
     tasks <- sequence
-      [newTask 1 0.05 $ do
+      [newTask 1 (fromIntegral cfg_renormalise_percent / 100) $ do
          lift $ output_message SimplifyQueue
          state <- StateM.get
          StateM.put $! simplifyQueue config state,

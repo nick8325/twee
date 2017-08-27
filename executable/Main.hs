@@ -53,7 +53,7 @@ parseMainFlags =
 
 parseConfig :: OptionParser Config
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*>
+  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> show_instances)
@@ -73,6 +73,10 @@ parseConfig =
       bool "simplify"
         ["Simplify rewrite rules with respect to one another (on by default)."]
         True
+    normPercent =
+      expert $
+      inGroup "Completion heuristics" $
+      defaultFlag "normalise-queue-percent" "Percent of time spent renormalising queued critical pairs" (cfg_renormalise_percent) argNum
     lweight =
       expert $
       inGroup "Critical pair weighting heuristics" $
