@@ -73,12 +73,12 @@ defaultConfig =
     cfg_renormalise_percent = 5,
     cfg_critical_pairs =
       CP.Config {
-        cfg_lhsweight = 2,
+        cfg_lhsweight = 3,
         cfg_rhsweight = 1,
-        cfg_funweight = 4,
-        cfg_varweight = 3,
-        cfg_depthweight = 8,
-        cfg_dupcost = 3,
+        cfg_funweight = 7,
+        cfg_varweight = 6,
+        cfg_depthweight = 16,
+        cfg_dupcost = 7,
         cfg_dupfactor = 0 },
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig }
