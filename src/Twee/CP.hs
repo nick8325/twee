@@ -15,7 +15,7 @@ import Twee.ChurchList (ChurchList(..))
 import Twee.Utils
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Proof, Derivation, congPath)
+import Twee.Proof(Derivation, Lemma, congPath)
 import GHC.Generics
 
 -- The set of positions at which a term can have critical overlaps.
@@ -294,7 +294,7 @@ split CriticalPair{cp_eqn = l :=: r, ..}
 
 {-# INLINEABLE makeCriticalPair #-}
 makeCriticalPair ::
-  (Has a (Rule f), Has a (Proof f), Has a Id, Function f) =>
+  (Has a (Rule f), Has a (Lemma f), Has a Id, Function f) =>
   a -> a -> Overlap f -> Maybe (CriticalPair f)
 makeCriticalPair r1 r2 overlap@Overlap{..}
   | lessEq overlap_top t = Nothing
@@ -312,7 +312,7 @@ makeCriticalPair r1 r2 overlap@Overlap{..}
 {-# INLINEABLE overlapProof #-}
 overlapProof ::
   forall a f.
-  (Has a (Rule f), Has a (Proof f), Has a Id) =>
+  (Has a (Rule f), Has a (Lemma f), Has a Id) =>
   a -> a -> Overlap f -> Derivation f
 overlapProof left right Overlap{..} =
   Proof.symm (reductionProof (step left leftSub))
