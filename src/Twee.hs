@@ -60,6 +60,7 @@ data State f =
     st_goals          :: ![Goal f],
     st_queue          :: !(Heap (PackedPassive f)),
     st_next_active    :: {-# UNPACK #-} !Id,
+    st_next_rule      :: {-# UNPACK #-} !RuleId,
     st_considered     :: {-# UNPACK #-} !Int,
     st_messages_rev   :: ![Message f] }
 
@@ -93,6 +94,7 @@ initialState =
     st_goals = [],
     st_queue = Heap.empty,
     st_next_active = 1,
+    st_next_rule = 0,
     st_considered = 0,
     st_messages_rev = [] }
 
@@ -333,14 +335,14 @@ newtype RuleId = RuleId Id deriving (Eq, Ord, Show, Num, Real, Integral, Enum)
 
 -- Add a new active.
 {-# INLINEABLE addActive #-}
-addActive :: Function f => Config -> State f -> (Id -> Active f) -> State f
+addActive :: Function f => Config -> State f -> (Id -> RuleId -> RuleId -> Active f) -> State f
 addActive config state@State{..} active0 =
   {-# SCC addActive #-}
   let
-    active@Active{..} = active0 st_next_active
+    active@Active{..} = active0 st_next_active st_next_rule (succ st_next_rule)
     state' =
       message (NewActive active) $
-      addActiveOnly state{st_next_active = st_next_active+1} active
+      addActiveOnly state{st_next_active = st_next_active+1, st_next_rule = st_next_rule+2} active
     passives =
       concatMap (makePassive config state') active_rules
   in if subsumed st_joinable st_rules (unorient active_rule) then
@@ -408,7 +410,7 @@ considerUsing rules config@Config{..} state@State{..} cp0 =
 {-# INLINEABLE addCP #-}
 addCP :: Function f => Config -> Model f -> State f -> CriticalPair f -> State f
 addCP config model state@State{..} CriticalPair{..} =
-  addActive config state $ \n ->
+  addActive config state $ \n k1 k2 ->
   let
     pf = certify cp_proof
     rule = orient cp_eqn
@@ -416,7 +418,7 @@ addCP config model state@State{..} CriticalPair{..} =
     makeRule k r p =
       ActiveRule {
         rule_active = n,
-        rule_rid = RuleId (n*2+k),
+        rule_rid = k,
         rule_depth = cp_depth,
         rule_rule = r rule,
         rule_proof = p pf,
@@ -431,8 +433,8 @@ addCP config model state@State{..} CriticalPair{..} =
     active_proof = pf,
     active_rules =
       usortBy (comparing (canonicalise . rule_rule)) $
-        makeRule 0 id id:
-        [ makeRule 1 backwards (certify . symm . derivation)
+        makeRule k1 id id:
+        [ makeRule k2 backwards (certify . symm . derivation)
         | not (oriented (orientation rule)) ] }
 
 -- Add a new equation.
