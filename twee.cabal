@@ -67,7 +67,7 @@ library
     dlist,
     pretty,
     ghc-prim,
-    primitive
+    primitive >= 0.6.2.0
   hs-source-dirs:      src
   include-dirs:        src
   ghc-options:         -W -fno-warn-incomplete-patterns -O2 -fmax-worker-args=100

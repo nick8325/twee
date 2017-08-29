@@ -58,7 +58,7 @@ update :: Default a => Int -> a -> Array a -> Array a
 update n x arr = runST $ do
   let size = arraySize arr `max` (n+1)
   marr <- P.newSmallArray size def
-  P.copySmallArray (arrayContents arr) 0 marr 0 (arraySize arr)
+  P.copySmallArray marr 0 (arrayContents arr) 0 (arraySize arr)
   P.writeSmallArray marr n $! x
   arr' <- P.unsafeFreezeSmallArray marr
   return (Array size arr')
