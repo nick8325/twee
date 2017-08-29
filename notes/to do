@@ -1,3 +1,18 @@
+work out why boo067-1 only sometimes works
+
+proof simplification: if we have a chain of axioms/lemmas
+  t = u = ... = v,
+check to see if the lemma used to prove t = u also works for t = v.
+(This helps with repeated terms in laws, as well as weak laws.)
+Inline weak laws to help with this? Or maybe take the lemma
+  t -> t'
+and turn it into
+  t -> t' -> rename(t)
+and then fix up all uses of the lemma - the transformation above
+should then clean up everything.
+
+look at gt6 - ground joinability testing goes really slow
+
 * adjust CP depth so that simplifications of rules get the same depth
   (maybe this is already the case)
 * make sure that connectedness respects simplerThan
