@@ -7,7 +7,12 @@
 module Twee.Term.Core where
 
 #include "errors.h"
-import Data.Primitive
+import Data.Primitive(sizeOf)
+#ifdef BOUNDS_CHECKS
+import Data.Primitive.ByteArray.Checked
+#else
+import Data.Primitive.ByteArray
+#endif
 import Control.Monad.ST.Strict
 import Data.Bits
 import Data.Int

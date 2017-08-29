@@ -36,9 +36,12 @@ flag llvm
   description: Build using LLVM backend for faster code.
   default: False
 
+flag bounds-checks
+  description: Use bounds checks for all array operations.
+  default: False
+
 library
   exposed-modules:
-    Data.Primitive.SmallArray
     Twee
     Twee.Array
     Twee.Base
@@ -75,6 +78,12 @@ library
 
   if flag(llvm)
     ghc-options: -fllvm
+  if flag(bounds-checks)
+    cpp-options: -DBOUNDS_CHECKS
+    exposed-modules:
+      Data.Primitive.SmallArray.Checked
+      Data.Primitive.ByteArray.Checked
+      Data.Primitive.Checked
 
 executable twee
   main-is:             executable/Main.hs

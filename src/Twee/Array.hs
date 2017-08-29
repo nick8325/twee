@@ -4,7 +4,11 @@
 module Twee.Array where
 
 #include "errors.h"
+#ifdef BOUNDS_CHECKS
+import qualified Data.Primitive.SmallArray.Checked as P
+#else
 import qualified Data.Primitive.SmallArray as P
+#endif
 import Control.Monad.ST
 import Data.List
 
