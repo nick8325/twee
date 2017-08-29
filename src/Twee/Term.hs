@@ -2,7 +2,7 @@
 -- This module implements the usual term manipulation stuff
 -- (matching, unification, etc.) on top of the primitives
 -- in Twee.Term.Core.
-{-# LANGUAGE BangPatterns, CPP, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables #-}
 module Twee.Term(
   module Twee.Term,
   -- Stuff from Twee.Term.Core.
@@ -12,7 +12,6 @@ module Twee.Term(
   pattern UnsafeCons, pattern UnsafeConsSym,
   Fun, fun, fun_id, fun_value, Var(..), pattern Var, pattern App, singleton, Builder) where
 
-#include "errors.h"
 import Prelude hiding (lookup)
 import Twee.Term.Core
 import Data.List hiding (lookup, find)
@@ -218,7 +217,7 @@ canonicalise (t:ts) = loop emptySubst vars t ts
       buildTermList $
         mconcat [emitVar x | x <- [V 0..n]]
 
-    loop !_ !_ !_ !_ | False = __
+    loop !_ !_ !_ !_ | False = undefined
     loop sub _ Empty [] = sub
     loop sub vs Empty (t:ts) = loop sub vs t ts
     loop sub vs (ConsSym App{} t) ts = loop sub vs t ts
@@ -258,9 +257,9 @@ matchListIn :: Subst f -> TermList f -> TermList f -> Maybe (Subst f)
 matchListIn !sub !pat !t
   | lenList t < lenList pat = Nothing
   | otherwise =
-    let loop !_ !_ !_ | False = __
+    let loop !_ !_ !_ | False = undefined
         loop sub Empty _ = Just sub
-        loop _ _ Empty = __
+        loop _ _ Empty = undefined -- implies lenList t < lenList pat
         loop sub (ConsSym (App f _) pat) (ConsSym (App g _) t)
           | f == g = loop sub pat t
         loop sub (Cons (Var x) pat) (Cons t u) = do
@@ -312,9 +311,11 @@ unifyTri t u = unifyListTri (singleton t) (singleton u)
 unifyListTri :: TermList f -> TermList f -> Maybe (TriangleSubst f)
 unifyListTri !t !u = fmap Triangle ({-# SCC unify #-} loop emptySubst t u)
   where
-    loop !_ !_ !_ | False = __
+    loop !_ !_ !_ | False = undefined
     loop sub Empty _ = Just sub
-    loop _ _ Empty = __
+    loop _ _ Empty = error "funny term in unification"
+      -- could happen if input lists have different lengths,
+      -- or a function is used with inconsistent arities
     loop sub (ConsSym (App f _) t) (ConsSym (App g _) u)
       | f == g = loop sub t u
     loop sub (Cons (Var x) t) (Cons u v) = do
@@ -486,7 +487,7 @@ mapFunList f ts = aux ts
 replacePosition :: (Build a, BuildFun a ~ f) => Int -> a -> TermList f -> Builder f
 replacePosition n !x = aux n
   where
-    aux !_ !_ | False = __
+    aux !_ !_ | False = undefined
     aux _ Empty = mempty
     aux 0 (Cons _ t) = builder x `mappend` builder t
     aux n (Cons (Var x) t) = var x `mappend` aux (n-1) t
@@ -500,7 +501,7 @@ replacePosition n !x = aux n
 replacePositionSub :: (Substitution sub, SubstFun sub ~ f) => sub -> Int -> TermList f -> TermList f -> Builder f
 replacePositionSub sub n !x = aux n
   where
-    aux !_ !_ | False = __
+    aux !_ !_ | False = undefined
     aux _ Empty = mempty
     aux n (Cons t u)
       | n < len t = inside n t `mappend` outside u
@@ -508,7 +509,7 @@ replacePositionSub sub n !x = aux n
 
     inside 0 _ = outside x
     inside n (App f ts) = app f (aux (n-1) ts)
-    inside _ _ = __
+    inside _ _ = undefined -- implies n >= len t
 
     outside t = substList sub t
 

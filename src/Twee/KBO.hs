@@ -1,7 +1,6 @@
-{-# LANGUAGE CPP, PatternGuards #-}
+{-# LANGUAGE PatternGuards #-}
 module Twee.KBO where
 
-#include "errors.h"
 import Twee.Base hiding (lessEq, lessIn)
 import Data.List
 import Twee.Constraints hiding (lessEq, lessIn)
@@ -29,9 +28,9 @@ lessEq t@(App f ts) u@(App g us) =
         case unify t u of
           Nothing -> True
           Just sub
-            | not (allSubst (\_ (Cons t Empty) -> isMinimal t) sub) -> ERROR("weird term inequality")
+            | not (allSubst (\_ (Cons t Empty) -> isMinimal t) sub) -> error "weird term inequality"
             | otherwise -> lexLess (subst sub ts) (subst sub us)
-    lexLess _ _ = ERROR("incorrect function arity")
+    lexLess _ _ = error "incorrect function arity"
     xs = sort (vars t)
     ys = sort (vars u)
     st = size t
@@ -110,6 +109,6 @@ lexLessIn cond (App f ts) (App g us)
           Just Nonstrict ->
             let Just sub = unify t u in
             loop (subst sub ts) (subst sub us)
-    loop _ _ = ERROR("incorrect function arity")
+    loop _ _ = error "incorrect function arity"
 lexLessIn _ t _ | isMinimal t = Just Nonstrict
 lexLessIn _ _ _ = Nothing

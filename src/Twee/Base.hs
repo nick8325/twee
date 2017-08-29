@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, FlexibleInstances, CPP, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, DeriveGeneric, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ConstraintKinds, RecordWildCards #-}
+{-# LANGUAGE TypeFamilies, FlexibleInstances, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, DeriveGeneric, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ConstraintKinds, RecordWildCards #-}
 -- To suppress a warning about hiding Arity
 {-# OPTIONS_GHC -fno-warn-dodgy-imports #-}
 module Twee.Base(
@@ -8,7 +8,6 @@ module Twee.Base(
   Skolem(..), Arity(..), Sized(..), Ordered(..), lessThan, orientTerms, Equals(..), Strictness(..), Function, Extended(..),
   module Twee.Term, module Twee.Pretty) where
 
-#include "errors.h"
 import Prelude hiding (lookup)
 import Control.Monad
 import qualified Data.DList as DList
@@ -46,7 +45,7 @@ class GSymbolic k f where
   gsubst :: (Var -> Builder k) -> f a -> f a
 
 instance GSymbolic k V1 where
-  gtermsDL _ = __
+  gtermsDL _ = undefined
   gsubst _ x = x
 instance GSymbolic k U1 where
   gtermsDL _ = mzero
@@ -158,7 +157,7 @@ erase :: (Symbolic a, ConstantOf a ~ f, Minimal f) => [Var] -> a -> a
 erase [] t = t
 erase xs t = subst sub t
   where
-    sub = fromMaybe __ $ flattenSubst [(x, minimalTerm) | x <- xs]
+    sub = fromMaybe undefined $ flattenSubst [(x, minimalTerm) | x <- xs]
 
 class Skolem f where
   skolem  :: Var -> Fun f

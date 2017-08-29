@@ -3,7 +3,6 @@
 {-# LANGUAGE CPP #-}
 module Twee.Array where
 
-#include "errors.h"
 #ifdef BOUNDS_CHECKS
 import qualified Data.Primitive.SmallArray.Checked as P
 #else

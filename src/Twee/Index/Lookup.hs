@@ -3,11 +3,10 @@
 -- We put lookup in a separate module because it needs to be compiled
 -- with inlining switched up to max, and compiling the rest of the module
 -- like that is too slow.
-{-# LANGUAGE BangPatterns, RecordWildCards, CPP #-}
+{-# LANGUAGE BangPatterns, RecordWildCards #-}
 {-# OPTIONS_GHC -funfolding-creation-threshold=10000 -funfolding-use-threshold=10000 #-}
 module Twee.Index.Lookup where
 
-#include "errors.h"
 import Twee.Base hiding (var, fun, empty, size, singleton, prefix, funs)
 import qualified Twee.Term as Term
 import Twee.Term.Core(TermList(..))
@@ -81,16 +80,16 @@ data Stack f a =
     yield_rest  :: !(Stack f a) }
   | Stop
 
-step !_ !_ _ _ | False = __
+step !_ !_ _ _ | False = undefined
 step _ _ Nil rest = rest
 step _ t Index{size = size, prefix = prefix} rest
   | lenList t < size + lenList prefix = rest
 step sub t Index{..} rest = pref sub t prefix here fun var rest
 
-pref !_ !_ !_ _ !_ !_ _ | False = __
+pref !_ !_ !_ _ !_ !_ _ | False = undefined
 pref _ Empty Empty [] _ _ rest = rest
 pref _ Empty Empty here _ _ rest = Yield here rest
-pref _ Empty _ _ _ _ _ = __
+pref _ Empty _ _ _ _ _ = undefined -- implies lenList t < size + lenList prefix above
 pref sub (Cons t ts) (Cons (Var x) us) here fun var rest =
   case extend2 x (Term.singleton t) sub of
     Nothing  -> rest

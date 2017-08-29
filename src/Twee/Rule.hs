@@ -1,7 +1,6 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, CPP, BangPatterns, OverloadedStrings, DeriveGeneric, MultiParamTypeClasses, ScopedTypeVariables, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, BangPatterns, OverloadedStrings, DeriveGeneric, MultiParamTypeClasses, ScopedTypeVariables, GeneralizedNewtypeDeriving #-}
 module Twee.Rule where
 
-#include "errors.h"
 import Twee.Base
 import Twee.Constraints
 import qualified Twee.Index as Index
@@ -103,9 +102,9 @@ orient (t :=: u) = Rule o t u
             | allSubst (\_ (Cons t Empty) -> isMinimal t) sub ->
               WeaklyOriented minimal (map (build . var . fst) (listSubst sub))
             | otherwise -> Unoriented
-      | lessEq t u = ERROR("wrongly-oriented rule")
+      | lessEq t u = error "wrongly-oriented rule"
       | not (null (usort (vars u) \\ usort (vars t))) =
-        ERROR("unbound variables in rule")
+        error "unbound variables in rule"
       | Just ts <- evalStateT (makePermutative t u) [],
         permutativeOK t u ts =
         Permutative ts
@@ -310,8 +309,8 @@ normaliseWith ok strat t = {-# SCC normaliseWith #-} res
   where
     res = aux 0 (Refl t) t
     aux 1000 p _ =
-      ERROR("Possibly nonterminating rewrite:\n" ++
-            prettyShow p)
+      error $
+        "Possibly nonterminating rewrite:\n" ++ prettyShow p
     aux n p t =
       case parallel strat t of
         (q:_) | u <- result (reduce q), ok u ->

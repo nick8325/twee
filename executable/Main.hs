@@ -1,5 +1,4 @@
 {-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards #-}
-#include "errors.h"
 import Control.Monad
 import Data.Char
 import Data.Either

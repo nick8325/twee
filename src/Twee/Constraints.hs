@@ -1,7 +1,6 @@
-{-# LANGUAGE CPP, FlexibleContexts, UndecidableInstances, RecordWildCards #-}
+{-# LANGUAGE FlexibleContexts, UndecidableInstances, RecordWildCards #-}
 module Twee.Constraints where
 
-#include "errors.h"
 --import Twee.Base hiding (equals, Term, pattern Fun, pattern Var, lookup, funs)
 import qualified Twee.Term as Flat
 import qualified Data.Map.Strict as Map
@@ -55,13 +54,13 @@ instance PrettyTerm f => Pretty (Formula f) where
       (fsep (punctuate (text " &") (nest_ (map (pPrintPrec l 11) xs))))
     where
       nest_ (x:xs) = x:map (nest 2) xs
-      nest_ [] = __
+      nest_ [] = undefined
   pPrintPrec l p (Or xs) =
     pPrintParen (p > 10)
       (fsep (punctuate (text " |") (nest_ (map (pPrintPrec l 11) xs))))
     where
       nest_ (x:xs) = x:map (nest 2) xs
-      nest_ [] = __
+      nest_ [] = undefined
 
 negateFormula :: Formula f -> Formula f
 negateFormula (Less t u) = LessEq u t
@@ -267,11 +266,11 @@ lessEqInModel (Model m) x y
 solve :: (Minimal f, Ordered f, PrettyTerm f) => [Atom f] -> Branch f -> Either (Model f) (Subst f)
 solve xs branch@Branch{..}
   | null equals && not (all true less) =
-    ERROR("Model " ++ prettyShow model ++ " is not a model of " ++ prettyShow branch ++ " (edges = " ++ prettyShow edges ++ ", vs = " ++ prettyShow vs ++ ")")
+    error $ "Model " ++ prettyShow model ++ " is not a model of " ++ prettyShow branch ++ " (edges = " ++ prettyShow edges ++ ", vs = " ++ prettyShow vs ++ ")"
   | null equals = Left model
   | otherwise = Right sub
     where
-      sub = fromMaybe __ . flattenSubst $
+      sub = fromMaybe undefined . flattenSubst $
         [(x, toTerm y) | (Variable x, y) <- equals] ++
         [(y, toTerm x) | (x@Constant{}, Variable y) <- equals]
       vs = Constant minimal:reverse (flattenSCCs (stronglyConnComp edges))

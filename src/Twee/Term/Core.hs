@@ -6,7 +6,6 @@
     RankNTypes, RecordWildCards, GeneralizedNewtypeDeriving #-}
 module Twee.Term.Core where
 
-#include "errors.h"
 import Data.Primitive(sizeOf)
 #ifdef BOUNDS_CHECKS
 import Data.Primitive.ByteArray.Checked
@@ -73,7 +72,7 @@ data TermList f =
 
 at :: Int -> TermList f -> Term f
 at n (TermList lo hi arr)
-  | n < 0 || lo+n >= hi = ERROR("term index out of bounds")
+  | n < 0 || lo+n >= hi = error "term index out of bounds"
   | otherwise =
     case TermList (lo+n) hi arr of
       UnsafeCons t _ -> t
@@ -234,7 +233,7 @@ buildTermList builder = runST $ do
     Builder m = builder
     loop n@(I# n#) = do
       MutableByteArray mbytearray# <-
-        newByteArray (n * sizeOf (fromSymbol __))
+        newByteArray (n * sizeOf (fromSymbol undefined))
       n' <-
         ST $ \s ->
           case m s mbytearray# n# 0# of
@@ -314,7 +313,7 @@ emitTermList (TermList lo hi array) =
   Builder $ checked (hi-lo) $
     getByteArray $ \mbytearray ->
     getIndex $ \n ->
-    let k = sizeOf (fromSymbol __) in
+    let k = sizeOf (fromSymbol undefined) in
     liftST (copyByteArray mbytearray (n*k) array (lo*k) ((hi-lo)*k)) `then_`
     putIndex (n + hi-lo)
 
