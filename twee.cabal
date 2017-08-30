@@ -32,6 +32,10 @@ flag static
   description: Build a static binary.
   default: False
 
+flag static-cxx
+  description: Build a binary which statically links against libstdc++.
+  default: False
+
 flag llvm
   description: Build using LLVM backend for faster code.
   default: False
@@ -100,3 +104,6 @@ executable twee
 
   if flag(static)
     ghc-options: -optl -static
+
+  if flag(static-cxx)
+    ghc-options: -pgml misc/static-libstdc++
