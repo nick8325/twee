@@ -36,7 +36,14 @@ pPrintSet :: [Doc] -> Doc
 pPrintSet = braces . fsep . punctuate comma
 
 instance Pretty Var where
-  pPrint x = text "X" <> pPrint (var_id x+1)
+  pPrint (V n) =
+    text $
+      vars !! (n `mod` length vars):
+      case n `div` length vars of
+        0 -> ""
+        m -> show (m+1)
+    where
+      vars = "XYZWVUTS"
 
 instance (Pretty k, Pretty v) => Pretty (Map k v) where
   pPrint = pPrintSet . map binding . Map.toList
