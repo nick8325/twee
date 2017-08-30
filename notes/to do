@@ -12,6 +12,7 @@ and then fix up all uses of the lemma - the transformation above
 should then clean up everything.
 
 look at gt6 - ground joinability testing goes really slow
+rob006-1 too
 
 * adjust CP depth so that simplifications of rules get the same depth
   (maybe this is already the case)
