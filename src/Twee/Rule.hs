@@ -317,13 +317,24 @@ normaliseWith ok strat t = {-# SCC normaliseWith #-} res
           aux (n+1) (p `trans` q) u
         _ -> Resulting t p
 
--- Compute all normal forms of a term wrt a particular strategy.
-{-# INLINEABLE normalForms #-}
+-- Compute all normal forms of a set of terms wrt a particular strategy.
 normalForms :: Function f => Strategy f -> [Resulting f] -> Set (Resulting f)
-normalForms strat ps =
-  {-# SCC normalForms #-} go Set.empty Set.empty ps
+normalForms strat ps = snd (successorsAndNormalForms strat ps)
+
+-- Compute all successors of a set of terms (a successor of a term t
+-- is a term u such that t ->* u).
+successors :: Function f => Strategy f -> [Resulting f] -> Set (Resulting f)
+successors strat ps = Set.union qs rs
   where
-    go _ norm [] = norm
+    (qs, rs) = successorsAndNormalForms strat ps
+
+{-# INLINEABLE successorsAndNormalForms #-}
+successorsAndNormalForms :: Function f => Strategy f -> [Resulting f] ->
+  (Set (Resulting f), Set (Resulting f))
+successorsAndNormalForms strat ps =
+  {-# SCC successorsAndNormalForms #-} go Set.empty Set.empty ps
+  where
+    go dead norm [] = (dead, norm)
     go dead norm (p:ps)
       | p `Set.member` dead = go dead norm ps
       | p `Set.member` norm = go dead norm ps

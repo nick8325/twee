@@ -482,7 +482,7 @@ normaliseGoals state@State{..} =
   {-# SCC normaliseGoals #-}
   state {
     st_goals =
-      map (goalMap (normalForms (rewrite reduces (index_all st_rules)) . Set.toList)) st_goals }
+      map (goalMap (successors (rewrite reduces (index_all st_rules)) . Set.toList)) st_goals }
   where
     goalMap f goal@Goal{..} =
       goal { goal_lhs = f goal_lhs, goal_rhs = f goal_rhs }
