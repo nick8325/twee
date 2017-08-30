@@ -43,7 +43,7 @@ import Data.Bits
 data Config =
   Config {
     cfg_max_term_size          :: Int,
-    cfg_max_critical_pairs     :: Int,
+    cfg_max_critical_pairs     :: Int64,
     cfg_max_cp_depth           :: Int,
     cfg_simplify               :: Bool,
     cfg_renormalise_percent    :: Int,
@@ -61,7 +61,7 @@ data State f =
     st_queue          :: !(Heap (PackedPassive f)),
     st_next_active    :: {-# UNPACK #-} !Id,
     st_next_rule      :: {-# UNPACK #-} !RuleId,
-    st_considered     :: {-# UNPACK #-} !Int,
+    st_considered     :: {-# UNPACK #-} !Int64,
     st_messages_rev   :: ![Message f] }
 
 defaultConfig :: Config
