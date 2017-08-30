@@ -462,13 +462,31 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
         sortBy (comparing (score . active_rule)) $
         IntMap.elems (st_active_ids state')
 
-    putStrLn "Ran out of critical pairs. Here is the final rewrite system:"
+    when (tstp && configIsComplete config) $ do
+      putStrLn "% SZS output start Saturation"
+      print $ pPrintProof $
+        map pre_form axioms0 ++
+        map pre_form goals0 ++
+        [ Input "rule" (Jukebox.Axiom "plain") Unknown $
+            toForm $ clause
+              [Pos (jukeboxTerm ctx (lhs rule) Jukebox.:=: jukeboxTerm ctx (rhs rule))]
+        | rule <- rules state ]
+      putStrLn "% SZS output end Saturation"
+      putStrLn ""
+
+    if configIsComplete config then do
+      putStrLn "Ran out of critical pairs. This means the conjecture is not true."
+    else do
+      putStrLn "Gave up on reaching the given resource limit."
+    putStrLn "Here is the final rewrite system:"
     forM_ actives $ \active ->
       putStrLn ("  " ++ prettyShow (canonicalise (active_rule active)))
     putStrLn ""
 
   return $
-    if solved state then Unsat Unsatisfiable else NoAnswer GaveUp
+    if solved state then Unsat Unsatisfiable
+    else if configIsComplete config then Sat Satisfiable
+    else NoAnswer GaveUp
 
 -- Transform a proof presentation into a Jukebox proof.
 presentToJukebox ::

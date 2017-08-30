@@ -84,6 +84,12 @@ defaultConfig =
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig }
 
+configIsComplete :: Config -> Bool
+configIsComplete Config{..} =
+  cfg_max_term_size == maxBound &&
+  cfg_max_critical_pairs == maxBound &&
+  cfg_max_cp_depth == maxBound
+
 initialState :: State f
 initialState =
   State {
@@ -615,6 +621,11 @@ solutions State{..} = {-# SCC solutions #-} do
           reductionProof (reduction t) `Proof.trans`
           Proof.symm (reductionProof (reduction u))
   return (provedGoal goal_number goal_name p)
+
+-- Return all current rewrite rules.
+{-# INLINEABLE rules #-}
+rules :: Function f => State f -> [Rule f]
+rules = map active_rule . IntMap.elems . st_active_ids
 
 {-# INLINEABLE report #-}
 report :: Function f => State f -> String
