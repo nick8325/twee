@@ -1,3 +1,5 @@
+print out saturation even when --quiet is passed in
+
 proof of grp196-1 has duplicate lemma numbers
 
 proof simplification: if we have a chain of axioms/lemmas
