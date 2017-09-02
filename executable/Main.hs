@@ -591,4 +591,8 @@ main = do
        expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
        expert clausifyBox =>>=
        forAllConjecturesBox <*>
-         (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> parseConfig <*> parsePrecedence))
+         (combine <$> expert hornToUnitBox <*>
+           (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> parseConfig <*> parsePrecedence)))
+  where
+    combine horn prove later prob =
+      horn prob >>= prove later
