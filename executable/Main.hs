@@ -589,10 +589,14 @@ main = do
       -- hack: get --quiet and --no-proof options to appear before --tstp
     forAllFilesBox <*>
       (readProblemBox =>>=
-       expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
        expert clausifyBox =>>=
        forAllConjecturesBox <*>
-         (combine <$> pure (hornToUnitIO (HornFlags False)) <*>
+         (combine <$>
+           (pure (hornToUnitIO (HornFlags False)) =>>=
+            toFormulasBox =>>=
+            expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
+            clausifyBox =>>=
+            oneConjectureBox) <*>
            (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> parseConfig <*> parsePrecedence)))
   where
     combine horn prove later prob =
