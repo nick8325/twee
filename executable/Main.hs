@@ -578,6 +578,10 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
                   isJust (matchList ts us) && isJust (matchList us ts)
 
 main = do
+  let
+    -- Always use splitting
+    clausifyBox =
+      pure (\prob -> return $! clausify (ClausifyFlags True) prob)
   hSetBuffering stdout LineBuffering
   join . parseCommandLine "Twee, an equational theorem prover" .
     version ("twee version " ++ VERSION_twee) $
