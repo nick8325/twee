@@ -21,9 +21,10 @@ import Jukebox.Options
 import Jukebox.Toolbox
 import Jukebox.Name hiding (lhs, rhs)
 import qualified Jukebox.Form as Jukebox
-import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size)
-import Jukebox.Monotonox.ToFOF
+import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size, Lemma)
+import Jukebox.Tools.EncodeTypes
 import Jukebox.TPTP.Print
+import Jukebox.Tools.Clausify(ClausifyFlags(..), clausify)
 import qualified Data.Set as Set
 import qualified Data.IntMap.Strict as IntMap
 import System.IO
@@ -282,7 +283,7 @@ addNarrowing TweeContext{..} prob =
           justification =
             Input {
               tag  = "new_negated_conjecture",
-              kind = Jukebox.Axiom "negated_conjecture",
+              kind = Jukebox.Ax NegatedConjecture,
               what =
                 let form = And (map (Literal . snd) equalityLiterals) in
                 ForAll (Bind (Set.fromList (vars form)) form),
@@ -293,7 +294,7 @@ addNarrowing TweeContext{..} prob =
           input tag form =
             Input {
               tag = tag,
-              kind = Conjecture "conjecture",
+              kind = Conj Conjecture,
               what = clause [form],
               source =
                 Inference "split_conjunct" "thm" [justification] }
@@ -467,7 +468,7 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
       print $ pPrintProof $
         map pre_form axioms0 ++
         map pre_form goals0 ++
-        [ Input "rule" (Jukebox.Axiom "plain") Unknown $
+        [ Input "rule" (Jukebox.Ax Jukebox.Axiom) Unknown $
             toForm $ clause
               [Pos (jukeboxTerm ctx (lhs rule) Jukebox.:=: jukeboxTerm ctx (rhs rule))]
         | rule <- rules state ]
@@ -501,7 +502,7 @@ presentToJukebox ::
 presentToJukebox ctx toEquation axioms goals Presentation{..} =
   [ Input {
       tag = pg_name,
-      kind = Jukebox.Axiom "axiom",
+      kind = Jukebox.Ax Jukebox.Axiom,
       what = false,
       source =
         Inference "resolution" "thm"
@@ -534,7 +535,7 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
     derivFrom sources p =
       Input {
         tag = "step",
-        kind = Jukebox.Axiom "axiom",
+        kind = Jukebox.Ax Jukebox.Axiom,
         what = jukeboxEquation (equation (certify p)),
         source =
           Inference "rw" "thm" sources }
