@@ -23,6 +23,7 @@ import Jukebox.Name hiding (lhs, rhs)
 import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size, Lemma)
 import Jukebox.Tools.EncodeTypes
+import Jukebox.Tools.HornToUnit
 import Jukebox.TPTP.Print
 import Jukebox.Tools.Clausify(ClausifyFlags(..), clausify)
 import qualified Data.Set as Set
@@ -578,9 +579,9 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
 
 main = do
   let
-    -- Always use splitting
+    -- Never use splitting
     clausifyBox =
-      pure (\prob -> return $! clausify (ClausifyFlags True) prob)
+      pure (\prob -> return $! clausify (ClausifyFlags False) prob)
   hSetBuffering stdout LineBuffering
   join . parseCommandLine "Twee, an equational theorem prover" .
     version ("twee version " ++ VERSION_twee) $
@@ -591,7 +592,7 @@ main = do
        expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
        expert clausifyBox =>>=
        forAllConjecturesBox <*>
-         (combine <$> expert hornToUnitBox <*>
+         (combine <$> pure (hornToUnitIO (HornFlags False)) <*>
            (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> parseConfig <*> parsePrecedence)))
   where
     combine horn prove later prob =
