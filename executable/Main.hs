@@ -234,7 +234,7 @@ makeContext prob = run prob $ \prob -> do
   let
     ty =
       case types' prob of
-        []   -> Type (name "$i") Infinite Infinite
+        []   -> indType
         [ty] -> ty
 
   var     <- newSymbol "X" ty
@@ -341,11 +341,10 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
   (axioms0, goals0) <-
     case identifyProblem ctx prob of
       Left inp -> do
-        hPutStr stderr $
-          unlines $
-            ["The problem contains the following clause, which is not a unit equality:"] ++
-            ["  " ++ line | line <- lines $ show (pPrintClauses [inp])] ++
-            ["Twee only handles unit equality problems."]
+        mapM_ (hPutStrLn stderr) [
+          "The problem contains the following clause, which is not a unit equality:",
+          indent (show (pPrintClauses [inp])),
+          "Twee only handles unit equality problems."]
         exitWith (ExitFailure 1)
       Right x -> return x
 
