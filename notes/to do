@@ -1,3 +1,31 @@
+horn: try two different encodings
+  1) ifeq(X,X,Y,Z) = Y
+     a = b => c = d becomes
+       ifeq(a,b,c,d) = d
+  2) ifeq(X,X,Y) = Y
+     a = b => c = d becomes
+       ifeq(a,b,c) = ifeq(a,b,d)
+When we have a goal t=u, we can always generate
+  ifeq(t,u,Y,Z) = Z
+(since we have an axiom t!=u). Although this isn't actually any use
+since it only allows us to deduce d=d.
+
+Think about how to encode choice functions natively. Is there a better
+encoding with only one-sided choice?
+
+Adapt weights, argument sizes etc. for new heuristics.
+
+Make a list of appropriate problems for Horn-twee.
+
+Think about if we need to add types when we have predicates.
+
+Can we make the type encodings work better automatically, based on the
+fact that unit equality is monotone above size 1? (Model of size 2 =>
+model of all sizes) - maybe not, one type may have X=Y while another
+doesn't. But always fine for $equals to piggy-back on existing type.
+Not OK for predicates since X=Y => p(a)=true. OTOH could restart if
+X=Y (problem becomes an instance of HORNSAT).
+
 print out saturation even when --quiet is passed in
 
 proof of grp196-1 has duplicate lemma numbers
@@ -55,9 +83,6 @@ CP compression for longer runs.
     a similar weight.
 
 Look into twee with boolean preconditions. (Also twee with theories.)
-
-Work out why LAT044-1.p and BOO067-1.p have regressed.
-BOO067-1 works with --no-simplify --no-ground-joining. Why?
 
 It may be that:
   t = u is ground joinable
