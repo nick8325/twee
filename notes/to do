@@ -1,3 +1,8 @@
+benchmark what happens if we ignore types in horn clause encoding.
+(Unsound because: if we prove x=y (for all terms x, y), we immediately
+get p = true (for all predicates p). But we could restart instead with
+the (presumably much easier) EPR problem.)
+
 Transform proofs into form:
 
    Lemma: p => q
