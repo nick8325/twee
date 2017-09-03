@@ -159,15 +159,16 @@ data Constant =
   Constant {
     con_prec  :: {-# UNPACK #-} !Precedence,
     con_id    :: {-# UNPACK #-} !Jukebox.Function,
-    con_arity :: {-# UNPACK #-} !Int }
+    con_arity :: {-# UNPACK #-} !Int,
+    con_size  :: {-# UNPACK #-} !Int,
+    con_ifeq  :: !Bool }
   deriving (Eq, Ord)
 
-data Precedence = Precedence !Bool !(Maybe Int) !Int
+data Precedence = Precedence !Bool !Bool !(Maybe Int) !Int
   deriving (Eq, Ord)
 
 instance Sized Constant where
-  size Constant{..} = 1
-    --if con_arity <= 1 then 1 else 0
+  size Constant{..} = con_size
 instance Arity Constant where
   arity Constant{..} = con_arity
 
@@ -187,29 +188,29 @@ instance Ordered (Extended Constant) where
   lessEq t u = {-# SCC lessEq #-} KBO.lessEq t u
   lessIn model t u = {-# SCC lessIn #-} KBO.lessIn model t u
 
+instance Ifeq Constant where
+  isIfeq = con_ifeq
+
 data TweeContext =
   TweeContext {
     ctx_var     :: Jukebox.Variable,
     ctx_minimal :: Jukebox.Function,
-    ctx_true    :: Jukebox.Function,
-    ctx_false   :: Jukebox.Function,
-    ctx_equals  :: Jukebox.Function,
     ctx_type    :: Type }
 
 -- Convert back and forth between Twee and Jukebox.
 tweeConstant :: TweeContext -> Precedence -> Jukebox.Function -> Extended Constant
 tweeConstant TweeContext{..} prec fun
   | fun == ctx_minimal = Minimal
-  | fun == ctx_true = TrueCon
-  | fun == ctx_false = FalseCon
-  | fun == ctx_equals = EqualsCon
-  | otherwise = Function (Constant prec fun (Jukebox.arity fun))
+  | otherwise = Function (Constant prec fun (Jukebox.arity fun) (sz fun) (isIfeq fun))
+  where
+    isIfeq fun = "$ifeq" `isPrefixOf` base (name fun)
+    sz fun = if isType fun then 0 else 1
+
+isType :: Jukebox.Function -> Bool
+isType fun = "$to_" `isPrefixOf` base (name fun)
 
 jukeboxFunction :: TweeContext -> Extended Constant -> Jukebox.Function
 jukeboxFunction _ (Function Constant{..}) = con_id
-jukeboxFunction TweeContext{..} EqualsCon = ctx_equals
-jukeboxFunction TweeContext{..} TrueCon = ctx_true
-jukeboxFunction TweeContext{..} FalseCon = ctx_false
 jukeboxFunction TweeContext{..} Minimal = ctx_minimal
 jukeboxFunction TweeContext{..} (Skolem _) =
   error "Skolem variable leaked into rule"
@@ -240,67 +241,62 @@ makeContext prob = run prob $ \prob -> do
 
   var     <- newSymbol "X" ty
   minimal <- newFunction "$constant" [] ty
-  equals  <- newFunction "$equals" [ty, ty] ty
-  false   <- newFunction "$false_term" [] ty
-  true    <- newFunction "$true_term" [] ty
 
   return TweeContext {
     ctx_var = var,
     ctx_minimal = minimal,
-    ctx_equals = equals,
-    ctx_false = false,
-    ctx_true = true,
     ctx_type = ty }
 
--- Encode existentials so that all goals are ground.
+-- -- Encode existentials so that all goals are ground.
 addNarrowing :: TweeContext -> Problem Clause -> Problem Clause
-addNarrowing TweeContext{..} prob =
-  unchanged ++ equalityClauses
-  where
-    (unchanged, nonGroundGoals) = partitionEithers (map f prob)
-      where
-        f inp@Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])}
-          | not (ground x) || not (ground y) =
-            Right (inp, (x, y))
-        f inp = Left inp
+addNarrowing _ prob = prob
+-- addNarrowing TweeContext{..} prob =
+--   unchanged ++ equalityClauses
+--   where
+--     (unchanged, nonGroundGoals) = partitionEithers (map f prob)
+--       where
+--         f inp@Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])}
+--           | not (ground x) || not (ground y) =
+--             Right (inp, (x, y))
+--         f inp = Left inp
 
-    equalityClauses
-      | null nonGroundGoals = []
-      | otherwise =
-        -- Turn a != b & c != d & ...
-        -- into eq(a,b)=false & eq(c,d)=false & eq(X,X)=true & true!=false (esa)
-        -- and then extract the individual components (thm)
-        let
-          equalityLiterals =
-            -- true != false
-            ("true_equals_false", Neg ((ctx_true :@:) [] Jukebox.:=: (ctx_false :@: []))):
-            -- eq(X,X)=true
-            ("reflexivity", Pos (ctx_equals :@: [Jukebox.Var ctx_var, Jukebox.Var ctx_var] Jukebox.:=: (ctx_true :@: []))):
-            -- [eq(a,b)=false, eq(c,d)=false, ...]
-            [ (tag, Pos (ctx_equals :@: [x, y] Jukebox.:=: (ctx_false :@: [])))
-            | (Input{tag = tag}, (x, y)) <- nonGroundGoals ]
+--     equalityClauses
+--       | null nonGroundGoals = []
+--       | otherwise =
+--         -- Turn a != b & c != d & ...
+--         -- into eq(a,b)=false & eq(c,d)=false & eq(X,X)=true & true!=false (esa)
+--         -- and then extract the individual components (thm)
+--         let
+--           equalityLiterals =
+--             -- true != false
+--             ("true_equals_false", Neg ((ctx_true :@:) [] Jukebox.:=: (ctx_false :@: []))):
+--             -- eq(X,X)=true
+--             ("reflexivity", Pos (ctx_equals :@: [Jukebox.Var ctx_var, Jukebox.Var ctx_var] Jukebox.:=: (ctx_true :@: []))):
+--             -- [eq(a,b)=false, eq(c,d)=false, ...]
+--             [ (tag, Pos (ctx_equals :@: [x, y] Jukebox.:=: (ctx_false :@: [])))
+--             | (Input{tag = tag}, (x, y)) <- nonGroundGoals ]
 
-          -- Equisatisfiable to the input clauses
-          justification =
-            Input {
-              tag  = "new_negated_conjecture",
-              kind = Jukebox.Ax NegatedConjecture,
-              what =
-                let form = And (map (Literal . snd) equalityLiterals) in
-                ForAll (Bind (Set.fromList (vars form)) form),
-              source =
-                Inference "encode_existential" "esa"
-                  (map (fmap toForm . fst) nonGroundGoals) }
+--           -- Equisatisfiable to the input clauses
+--           justification =
+--             Input {
+--               tag  = "new_negated_conjecture",
+--               kind = Jukebox.Ax NegatedConjecture,
+--               what =
+--                 let form = And (map (Literal . snd) equalityLiterals) in
+--                 ForAll (Bind (Set.fromList (vars form)) form),
+--               source =
+--                 Inference "encode_existential" "esa"
+--                   (map (fmap toForm . fst) nonGroundGoals) }
 
-          input tag form =
-            Input {
-              tag = tag,
-              kind = Conj Conjecture,
-              what = clause [form],
-              source =
-                Inference "split_conjunct" "thm" [justification] }
+--           input tag form =
+--             Input {
+--               tag = tag,
+--               kind = Conj Conjecture,
+--               what = clause [form],
+--               source =
+--                 Inference "split_conjunct" "thm" [justification] }
 
-        in [input tag form | (tag, form) <- equalityLiterals]
+--         in [input tag form | (tag, form) <- equalityLiterals]
 
 data PreEquation =
   PreEquation {
@@ -353,6 +349,7 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
     -- Work out a precedence for function symbols
     prec c =
       Precedence
+        (isType c)
         (isNothing (elemIndex (base c) precedence))
         (fmap negate (elemIndex (base c) precedence))
         (negate (funOcc c prob))
@@ -592,7 +589,7 @@ main = do
        expert clausifyBox =>>=
        forAllConjecturesBox <*>
          (combine <$>
-           (pure (hornToUnitIO (HornFlags False)) =>>=
+           (hornToUnitBox =>>=
             toFormulasBox =>>=
             expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
             clausifyBox =>>=

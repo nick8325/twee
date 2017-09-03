@@ -507,12 +507,12 @@ flattenProof =
 --   * Symm only occurs innermost, i.e., next to UseLemma or UseAxiom
 --   * Each Cong has exactly one non-Refl argument (no parallel rewriting)
 --   * Refl only occurs as an argument to Cong
-derivSteps :: Function f => Derivation f -> [Derivation f]
-derivSteps = steps . derivation . flattenProof . certify
-  where
-    steps Refl{} = []
-    steps (Trans p q) = steps p ++ steps q
-    steps p = [p]
+-- derivSteps :: Function f => Derivation f -> [Derivation f]
+-- derivSteps = steps . derivation . flattenProof . certify
+--   where
+--     steps Refl{} = []
+--     steps (Trans p q) = steps p ++ steps q
+--     steps p = [p]
 
 pPrintPresentation :: forall f. Function f => Config -> Presentation f -> Doc
 pPrintPresentation config (Presentation axioms lemmas goals) =
@@ -590,71 +590,71 @@ describeEquation kind num mname eqn =
 --   * a proof that both sides of the conjecture are equal
 -- and we can present that to the user.
 
--- Decode $equals(t,u) into an equation t=u.
+-- -- Decode $equals(t,u) into an equation t=u.
 decodeEquality :: Function f => Term f -> Maybe (Equation f)
-decodeEquality (App equals (Cons t (Cons u Empty)))
-  | equals == equalsCon = Just (t :=: u)
+-- decodeEquality (App equals (Cons t (Cons u Empty)))
+--   | equals == equalsCon = Just (t :=: u)
 decodeEquality _ = Nothing
 
 -- Tries to transform a proof of $true = $false into a proof of
 -- the original existentially-quantified formula.
 decodeGoal :: Function f => ProvedGoal f -> ProvedGoal f
-decodeGoal pg =
-  case maybeDecodeGoal pg of
-    Nothing -> pg
-    Just (name, witness, goal, deriv) ->
-      checkProvedGoal $
-      pg {
-        pg_name = name,
-        pg_proof = certify deriv,
-        pg_goal_hint = goal,
-        pg_witness_hint = witness }
+decodeGoal pg = pg
+--   case maybeDecodeGoal pg of
+--     Nothing -> pg
+--     Just (name, witness, goal, deriv) ->
+--       checkProvedGoal $
+--       pg {
+--         pg_name = name,
+--         pg_proof = certify deriv,
+--         pg_goal_hint = goal,
+--         pg_witness_hint = witness }
 
-maybeDecodeGoal :: forall f. Function f =>
-  ProvedGoal f -> Maybe (String, Subst f, Equation f, Derivation f)
-maybeDecodeGoal ProvedGoal{..}
-  -- N.B. presentWithGoals takes care of expanding any lemma which mentions
-  -- $equals, and flattening the proof.
-  | u == false = extract (derivSteps deriv)
-    -- Orient the equation so that $false is the RHS.
-  | t == false = extract (derivSteps (symm deriv))
-  | otherwise = Nothing
-  where
-    false = build (con falseCon)
-    true = build (con trueCon)
-    t :=: u = equation pg_proof
-    deriv = derivation pg_proof
+-- maybeDecodeGoal :: forall f. Function f =>
+--   ProvedGoal f -> Maybe (String, Subst f, Equation f, Derivation f)
+-- maybeDecodeGoal ProvedGoal{..}
+--   -- N.B. presentWithGoals takes care of expanding any lemma which mentions
+--   -- $equals, and flattening the proof.
+--   | u == false = extract (derivSteps deriv)
+--     -- Orient the equation so that $false is the RHS.
+--   | t == false = extract (derivSteps (symm deriv))
+--   | otherwise = Nothing
+--   where
+--     false = build (con falseCon)
+--     true = build (con trueCon)
+--     t :=: u = equation pg_proof
+--     deriv = derivation pg_proof
 
-    -- Detect $true = $equals(t, t).
-    decodeReflexivity :: Derivation f -> Maybe (Term f)
-    decodeReflexivity (Symm (UseAxiom Axiom{..} sub)) = do
-      guard (eqn_rhs axiom_eqn == true)
-      (t :=: u) <- decodeEquality (eqn_lhs axiom_eqn)
-      guard (t == u)
-      return (subst sub t)
-    decodeReflexivity _ = Nothing
+--     -- Detect $true = $equals(t, t).
+--     decodeReflexivity :: Derivation f -> Maybe (Term f)
+--     decodeReflexivity (Symm (UseAxiom Axiom{..} sub)) = do
+--       guard (eqn_rhs axiom_eqn == true)
+--       (t :=: u) <- decodeEquality (eqn_lhs axiom_eqn)
+--       guard (t == u)
+--       return (subst sub t)
+--     decodeReflexivity _ = Nothing
 
-    -- Detect $equals(t, u) = $false.
-    decodeConjecture :: Derivation f -> Maybe (String, Equation f, Subst f)
-    decodeConjecture (UseAxiom Axiom{..} sub) = do
-      guard (eqn_rhs axiom_eqn == false)
-      eqn <- decodeEquality (eqn_lhs axiom_eqn)
-      return (axiom_name, eqn, sub)
-    decodeConjecture _ = Nothing
+--     -- Detect $equals(t, u) = $false.
+--     decodeConjecture :: Derivation f -> Maybe (String, Equation f, Subst f)
+--     decodeConjecture (UseAxiom Axiom{..} sub) = do
+--       guard (eqn_rhs axiom_eqn == false)
+--       eqn <- decodeEquality (eqn_lhs axiom_eqn)
+--       return (axiom_name, eqn, sub)
+--     decodeConjecture _ = Nothing
 
-    extract (p:ps) = do
-      -- Start by finding $true = $equals(t,u).
-      t <- decodeReflexivity p
-      cont (Refl t) (Refl t) ps
-    extract [] = Nothing
+--     extract (p:ps) = do
+--       -- Start by finding $true = $equals(t,u).
+--       t <- decodeReflexivity p
+--       cont (Refl t) (Refl t) ps
+--     extract [] = Nothing
 
-    cont p1 p2 (p:ps)
-      | Just t <- decodeReflexivity p =
-        cont (Refl t) (Refl t) ps
-      | Just (name, eqn, sub) <- decodeConjecture p =
-        -- If p1: s=t and p2: s=u
-        -- then symm p1 `trans` p2: t=u.
-        return (name, sub, eqn, symm p1 `trans` p2)
-      | Cong eq [p1', p2'] <- p, eq == equalsCon =
-        cont (p1 `trans` p1') (p2 `trans` p2') ps
-    cont _ _ _ = Nothing
+--     cont p1 p2 (p:ps)
+--       | Just t <- decodeReflexivity p =
+--         cont (Refl t) (Refl t) ps
+--       | Just (name, eqn, sub) <- decodeConjecture p =
+--         -- If p1: s=t and p2: s=u
+--         -- then symm p1 `trans` p2: t=u.
+--         return (name, sub, eqn, symm p1 `trans` p2)
+--       | Cong eq [p1', p2'] <- p, eq == equalsCon =
+--         cont (p1 `trans` p1') (p2 `trans` p2') ps
+--     cont _ _ _ = Nothing

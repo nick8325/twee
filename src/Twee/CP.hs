@@ -149,37 +149,7 @@ data Config =
 -- and variables have weight 1 and functions have weight cfg_funweight.
 {-# INLINEABLE score #-}
 score :: Function f => Config -> Overlap f -> Int
-score config overlap@Overlap{overlap_eqn = t :=: u} =
-  -- Look at the length to decide on various special cases
-  case (len t, len u) of
-    (1, 1) ->
-      -- true = false
-      fromMaybe (normalScore config overlap)
-        (trueEqualsFalse t u `mplus` trueEqualsFalse u t)
-    (1, _) ->
-      -- false = equals(t, u) where t, u unifiable
-      fromMaybe (normalScore config overlap)
-        (equalsFalse t u)
-    (_, 1) ->
-      -- equals(t, u) = false where t, u unifiable
-      fromMaybe (normalScore config overlap)
-        (equalsFalse u t)
-    _ -> normalScore config overlap
-  where
-    -- N.B. the code above puts the arguments in the right order
-    trueEqualsFalse (App true Empty) (App false Empty)
-      | true == trueCon && false == falseCon = Just 1
-    trueEqualsFalse _ _ = Nothing
-
-    equalsFalse (App false Empty) (App equals (Cons t (Cons u Empty)))
-      | false == falseCon && equals == equalsCon =
-        if isJust (unify t u) then Just 2
-        else Just (normalScore config overlap{overlap_eqn = t :=: u})
-    equalsFalse _ _ = Nothing
-
-{-# INLINEABLE normalScore #-}
-normalScore :: Function f => Config -> Overlap f -> Int
-normalScore Config{..} Overlap{..} =
+score Config{..} Overlap{..} =
   fromIntegral overlap_depth * cfg_depthweight +
   (m + n) * cfg_rhsweight +
   intMax m n * (cfg_lhsweight - cfg_rhsweight)
@@ -192,6 +162,9 @@ normalScore Config{..} Overlap{..} =
     size' n (Cons t ts)
       | len t > 1, t `isSubtermOfList` ts =
         size' (n+cfg_dupcost+cfg_dupfactor*size t) ts
+    size' n (Cons (App f (Cons a (Cons b ts))) us)
+      | isIfeq (fun_value f), isJust (unify a b) =
+        size' (size' (n+1) ts) us
     size' n (Cons (Var _) ts) =
       size' (n+cfg_varweight) ts
     size' n (ConsSym (App f _) ts) =

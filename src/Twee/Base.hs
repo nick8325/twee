@@ -5,7 +5,7 @@ module Twee.Base(
   Id(..), Symbolic(..), subst, GSymbolic(..), Has(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding,
   Minimal(..), minimalTerm, isMinimal, erase,
-  Skolem(..), Arity(..), Sized(..), Ordered(..), lessThan, orientTerms, Equals(..), Strictness(..), Function, Extended(..),
+  Skolem(..), Arity(..), Sized(..), Ordered(..), lessThan, orientTerms, Ifeq(..), Strictness(..), Function, Extended(..),
   module Twee.Term, module Twee.Pretty) where
 
 import Prelude hiding (lookup)
@@ -184,25 +184,22 @@ instance Sized f => Sized (TermList f) where
 instance Sized f => Sized (Term f) where
   size = size . singleton
 
-type Function f = (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f, Equals f)
+type Function f = (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f, Ifeq f)
 
-class Equals f where
-  equalsCon, trueCon, falseCon :: Fun f
+class Ifeq f where
+  isIfeq :: f -> Bool
+  isIfeq _ = False
 
 data Extended f =
     Minimal
   | Skolem Var
   | Function f
-  | EqualsCon | TrueCon | FalseCon
   deriving (Eq, Ord, Show, Functor)
 
 instance Pretty f => Pretty (Extended f) where
   pPrintPrec _ _ Minimal = text "?"
   pPrintPrec _ _ (Skolem (V n)) = text "sk" <> pPrint n
   pPrintPrec l p (Function f) = pPrintPrec l p f
-  pPrintPrec _ _ EqualsCon = text "$equals"
-  pPrintPrec _ _ TrueCon   = text "$true"
-  pPrintPrec _ _ FalseCon  = text "$false"
 
 instance PrettyTerm f => PrettyTerm (Extended f) where
   termStyle (Function f) = termStyle f
@@ -210,14 +207,10 @@ instance PrettyTerm f => PrettyTerm (Extended f) where
 
 instance Sized f => Sized (Extended f) where
   size (Function f) = size f
-  size EqualsCon = 0
-  size TrueCon = 0
-  size FalseCon = 0
   size _ = 1
 
 instance Arity f => Arity (Extended f) where
   arity (Function f) = arity f
-  arity EqualsCon = 2
   arity _ = 0
 
 instance (Typeable f, Ord f) => Minimal (Extended f) where
@@ -226,7 +219,6 @@ instance (Typeable f, Ord f) => Minimal (Extended f) where
 instance (Typeable f, Ord f) => Skolem (Extended f) where
   skolem x = fun (Skolem x)
 
-instance (Typeable f, Ord f) => Equals (Extended f) where
-  equalsCon = fun EqualsCon
-  trueCon   = fun TrueCon
-  falseCon  = fun FalseCon
+instance Ifeq f => Ifeq (Extended f) where
+  isIfeq (Function f) = isIfeq f
+  isIfeq _ = False
