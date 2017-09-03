@@ -1,3 +1,26 @@
+Transform proofs into form:
+
+   Lemma: p => q
+   Proof:
+     p
+   => ...
+   = ...
+   => q
+
+When evaluating CPs, try Skolemising first+unorientable rules.
+
+Make duplicate bonus apply to duplicates which appear on different
+sides of the equation (e.g. a,b in ifeq(a,b,c)=ifeq(a,b,d)).
+
+Use $equals strategy for ifeq - score for ifeq(a,b,c) is reduced if a
+and b are unifiable. (This may work better when CPs are Skolemised
+first.)
+
+Remove $equals handling and use ifeq instead.
+
+Keep non-unit goals (have Twee handle them in main loop) but turn
+non-ground goals into $ifeq.
+
 horn: try two different encodings
   1) ifeq(X,X,Y,Z) = Y
      a = b => c = d becomes
