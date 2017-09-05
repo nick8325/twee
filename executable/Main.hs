@@ -23,10 +23,8 @@ import Jukebox.Name hiding (lhs, rhs)
 import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size, Lemma)
 import Jukebox.Tools.EncodeTypes
-import Jukebox.Tools.HornToUnit
 import Jukebox.TPTP.Print
 import Jukebox.Tools.Clausify(ClausifyFlags(..), clausify)
-import qualified Data.Set as Set
 import qualified Data.IntMap.Strict as IntMap
 import System.IO
 import System.Exit
