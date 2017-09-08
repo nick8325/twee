@@ -80,7 +80,8 @@ defaultConfig =
         cfg_varweight = 6,
         cfg_depthweight = 16,
         cfg_dupcost = 7,
-        cfg_dupfactor = 0 },
+        cfg_dupfactor = 0,
+        cfg_ifeq_bonus = False },
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig }
 

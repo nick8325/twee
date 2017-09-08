@@ -141,7 +141,8 @@ data Config =
     cfg_varweight :: !Int,
     cfg_depthweight :: !Int,
     cfg_dupcost :: !Int,
-    cfg_dupfactor :: !Int }
+    cfg_dupfactor :: !Int,
+    cfg_ifeq_bonus :: !Bool }
 
 -- We compute:
 --   cfg_lhsweight * size l + cfg_rhsweight * size r
@@ -162,9 +163,11 @@ score Config{..} Overlap{..} =
     size' n (Cons t ts)
       | len t > 1, t `isSubtermOfList` ts =
         size' (n+cfg_dupcost+cfg_dupfactor*size t) ts
-    size' n (Cons (App f (Cons a (Cons b ts))) us)
-      | isIfeq (fun_value f), isJust (unify a b) =
-        size' (size' (n+1) ts) us
+    size' n ts
+      | cfg_ifeq_bonus,
+        Cons (App f (Cons a (Cons b us))) vs <- ts,
+        isIfeq (fun_value f), isJust (unify a b) =
+        size' (size' (n+1) us) vs
     size' n (Cons (Var _) ts) =
       size' (n+cfg_varweight) ts
     size' n (ConsSym (App f _) ts) =

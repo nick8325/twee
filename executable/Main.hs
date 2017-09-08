@@ -25,6 +25,7 @@ import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size, Lemma)
 import Jukebox.Tools.EncodeTypes
 import Jukebox.TPTP.Print
 import Jukebox.Tools.Clausify(ClausifyFlags(..), clausify)
+import Jukebox.Tools.HornToUnit
 import qualified Data.IntMap.Strict as IntMap
 import System.IO
 import System.Exit
@@ -53,7 +54,7 @@ parseMainFlags =
 parseConfig :: OptionParser Config
 parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*>
-    (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
+    (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor <*> ifeqBonus) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> show_instances)
   where
@@ -145,6 +146,13 @@ parseConfig =
       flag name [desc ++ " (" ++ show def ++ " by default)."] def parser
       where
         def = field defaultConfig
+    ifeqBonus = p <$> hornFlags
+      where
+        p flags =
+          case encoding flags of
+            Symmetric -> True
+            Asymmetric1 -> True
+            Asymmetric2 -> False
 
 parsePrecedence :: OptionParser [String]
 parsePrecedence =
