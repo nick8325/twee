@@ -1,3 +1,15 @@
+When we have vars in a=b not in c=d, erase them!
+Wait, this is incomplete.
+But can we do something to reduce number of vars?
+
+when we have a=b&c=d=>e=f, we'll get CPs both against a=b and c=d, and
+the total number of CPs will be the cartesian product (we try them
+independently). Can we fix this? Possible idea:
+  a=b=>foo=bar (fresh constants, or fresh function symbols with
+  variables in free(a)+free(b))
+  foo=bar&c=d=>e=f
+in any case, split into several equations
+
 benchmark what happens if we ignore types in horn clause encoding.
 (Unsound because: if we prove x=y (for all terms x, y), we immediately
 get p = true (for all predicates p). But we could restart instead with
