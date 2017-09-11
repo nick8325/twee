@@ -170,7 +170,7 @@ data Constant =
     con_ifeq  :: !Bool }
   deriving (Eq, Ord)
 
-data Precedence = Precedence !Bool !Bool !(Maybe Int) !Int
+data Precedence = Precedence !Bool !Bool !Bool !(Maybe Int) !Int
   deriving (Eq, Ord)
 
 instance Sized Constant where
@@ -207,13 +207,15 @@ data TweeContext =
 tweeConstant :: TweeContext -> Precedence -> Jukebox.Function -> Extended Constant
 tweeConstant TweeContext{..} prec fun
   | fun == ctx_minimal = Minimal
-  | otherwise = Function (Constant prec fun (Jukebox.arity fun) (sz fun) (isIfeq fun))
+  | otherwise = Function (Constant prec fun (Jukebox.arity fun) (sz fun) (Main.isIfeq fun))
   where
-    isIfeq fun = "$ifeq" `isPrefixOf` base (name fun)
     sz fun = if isType fun then 0 else 1
 
 isType :: Jukebox.Function -> Bool
 isType fun = "$to_" `isPrefixOf` base (name fun)
+
+isIfeq :: Jukebox.Function -> Bool
+isIfeq fun = "$ifeq" `isPrefixOf` base (name fun)
 
 jukeboxFunction :: TweeContext -> Extended Constant -> Jukebox.Function
 jukeboxFunction _ (Function Constant{..}) = con_id
@@ -356,6 +358,7 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
     prec c =
       Precedence
         (isType c)
+        (not (Main.isIfeq c))
         (isNothing (elemIndex (base c) precedence))
         (fmap negate (elemIndex (base c) precedence))
         (negate (funOcc c prob))
