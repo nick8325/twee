@@ -72,8 +72,6 @@ p {
 ul, ol, li > p {
   margin-top: 0;
 }
-ul > li     { color: #aaa; }
-ul > li > * { color: black; }
 
 .monospaced, code, pre {
   font-family: monospace;
@@ -81,6 +79,12 @@ ul > li > * { color: black; }
   color: navy;
   padding: 0;
   margin: 0;
+}
+
+pre {
+	margin-top: 1em;
+	margin-bottom: 1em;
+	margin-left: 2em;
 }
 
 #footer {

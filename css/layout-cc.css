@@ -43,7 +43,7 @@ body {
   line-height: 200%;
 }
 
-#menu a:before {
+#menu li:before {
     content: "\00bb";
     margin-right: 0.5em;
 }
@@ -74,7 +74,7 @@ h1 {
 }
 
 #content {
-  padding-top: 0em;
+  padding: 1em;
 }
 
 @media print {

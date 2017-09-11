@@ -1,7 +1,7 @@
 ---
 title: Installing twee
-menutitle: Installing
-order: 2
+menutitle: Installation
+order: 3
 ---
 
 # Installing twee
@@ -31,7 +31,7 @@ However, you will still need to use `cabal` to install it; just type
 ## Installing from binary
 
 If you use Linux on amd64 you can download a
-<a href="https://github.com/nick8325/twee/releases/download/2.0/twee-2.0-linux-amd64">binary</a> release.
+<a href="https://github.com/nick8325/twee/releases/download/twee-2.0/twee-2.0-linux-amd64">binary</a> release.
 
 ## System on TPTP
 
