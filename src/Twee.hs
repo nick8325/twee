@@ -17,8 +17,8 @@ import Twee.Index(Index)
 import Twee.Constraints
 import Twee.Utils
 import Twee.Task
-import qualified Twee.Heap as Heap
-import Twee.Heap(Heap)
+import qualified Twee.PassiveQueue as Queue
+import Twee.PassiveQueue(Queue, Passive(..))
 import qualified Data.IntMap.Strict as IntMap
 import Data.IntMap(IntMap)
 import Data.Maybe
@@ -58,7 +58,7 @@ data State f =
     st_rule_ids       :: !(IntMap (ActiveRule f)),
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
-    st_queue          :: !(Heap (PackedPassive f)),
+    st_queue          :: !(Queue (Params f)),
     st_next_active    :: {-# UNPACK #-} !Id,
     st_next_rule      :: {-# UNPACK #-} !RuleId,
     st_considered     :: {-# UNPACK #-} !Int64,
@@ -99,7 +99,7 @@ initialState =
     st_rule_ids = IntMap.empty,
     st_joinable = Index.Nil,
     st_goals = [],
-    st_queue = Heap.empty,
+    st_queue = Queue.empty,
     st_next_active = 1,
     st_next_rule = 0,
     st_considered = 0,
@@ -142,62 +142,22 @@ messages state = reverse (st_messages_rev state)
 -- The CP queue.
 ----------------------------------------------------------------------
 
-data Passive f =
-  Passive {
-    passive_score :: {-# UNPACK #-} !Int32,
-    passive_rule1 :: {-# UNPACK #-} !RuleId,
-    passive_rule2 :: {-# UNPACK #-} !RuleId,
-    passive_pos   :: {-# UNPACK #-} !Int32 }
-  deriving (Eq, Show)
+data Params f
+instance Queue.Params (Params f) where
+  type Score (Params f) = Int
+  type Id (Params f) = RuleId
+  type Function (Params f) = f
+  type PackedId (Params f) = Int32
+  type PackedScore (Params f) = Int32
+  packScore _ = fromIntegral
+  unpackScore _ = fromIntegral
+  packId _ = fromIntegral
+  unpackId _ = fromIntegral
 
-instance Ord (Passive f) where
-  compare = comparing f
-    where
-      f Passive{..} =
-        (passive_score,
-         intMax (fromIntegral passive_rule1) (fromIntegral passive_rule2),
-         passive_rule1,
-         passive_rule2,
-         passive_pos)
-
-data PackedPassive f =
-  PackedPassive {-# UNPACK #-} !Word64 {-# UNPACK #-} !Word64
-  deriving (Eq, Ord, Show)
-
-packPassive :: Passive f -> PackedPassive f
-packPassive (Passive score rule1 rule2 pos) =
-  -- Do this so that Ord instance matches with Passive
-  if rule1 > rule2 then
-    PackedPassive
-      (pack score (fromIntegral rule1))
-      (pack (fromIntegral rule2) (pos `shiftL` 1))
-  else
-    PackedPassive
-      (pack score (fromIntegral rule2))
-      (pack (fromIntegral rule1) (pos `shiftL` 1 + 1))
-  where
-    pack :: Int32 -> Int32 -> Word64
-    pack x y =
-      fromIntegral x `shiftL` 32 + fromIntegral y
-
-unpackPassive :: PackedPassive f -> Passive f
-unpackPassive (PackedPassive x y) =
-  if testBit pos1 0 then
-    Passive score (fromIntegral rule2) (fromIntegral rule1) pos
-  else
-    Passive score (fromIntegral rule1) (fromIntegral rule2) pos
-  where
-    (score, rule1) = unpack x
-    (rule2, pos1) = unpack y
-    pos = pos1 `shiftR` 1
-
-    unpack :: Word64 -> (Int32, Int32)
-    unpack x = (fromIntegral (x `shiftR` 32), fromIntegral x)
-
--- Compute all critical pairs from a rule and condense into a Passive.
-{-# INLINEABLE makePassive #-}
-makePassive :: Function f => Config -> State f -> ActiveRule f -> [Passive f]
-makePassive Config{..} State{..} rule =
+-- Compute all critical pairs from a rule.
+{-# INLINEABLE makePassives #-}
+makePassives :: Function f => Config -> State f -> ActiveRule f -> [Passive (Params f)]
+makePassives Config{..} State{..} rule =
   {-# SCC makePassive #-}
   [ Passive (fromIntegral (score cfg_critical_pairs o)) (rule_rid rule1) (rule_rid rule2) (fromIntegral (overlap_pos o))
   | (rule1, rule2, o) <- overlaps (Depth cfg_max_cp_depth) (index_oriented st_rules) rules rule ]
@@ -207,7 +167,7 @@ makePassive Config{..} State{..} rule =
 -- Turn a Passive back into an overlap.
 -- Doesn't try to simplify it.
 {-# INLINEABLE findPassive #-}
-findPassive :: forall f. Function f => Config -> State f -> Passive f -> Maybe (ActiveRule f, ActiveRule f, Overlap f)
+findPassive :: forall f. Function f => Config -> State f -> Passive (Params f) -> Maybe (ActiveRule f, ActiveRule f, Overlap f)
 findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
   rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
   rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
@@ -219,7 +179,7 @@ findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
 
 -- Renormalise a queued Passive.
 {-# INLINEABLE simplifyPassive #-}
-simplifyPassive :: Function f => Config -> State f -> Passive f -> Maybe (Passive f)
+simplifyPassive :: Function f => Config -> State f -> Passive (Params f) -> Maybe (Passive (Params f))
 simplifyPassive config@Config{..} state@State{..} passive = {-# SCC simplifyPassive #-} do
   (_, _, overlap) <- findPassive config state passive
   overlap <- simplifyOverlap (index_oriented st_rules) overlap
@@ -236,19 +196,18 @@ simplifyQueue config state =
   state { st_queue = simp (st_queue state) }
   where
     simp =
-      Heap.mapMaybe (fmap packPassive . simplifyPassive config state . unpackPassive)
+      Queue.mapMaybe (simplifyPassive config state)
 
--- Enqueue a critical pair.
+-- Enqueue a set of critical pairs.
 {-# INLINEABLE enqueue #-}
-enqueue :: Function f => State f -> Passive f -> State f
-enqueue state passive =
+enqueue :: Function f => State f -> RuleId -> [Passive (Params f)] -> State f
+enqueue state rule passives =
   {-# SCC enqueue #-}
-  state { st_queue = Heap.insert (packPassive passive) (st_queue state) }
+  state { st_queue = Queue.insert rule passives (st_queue state) }
 
 -- Dequeue a critical pair.
 -- Also takes care of:
 --   * removing any orphans from the head of the queue
---   * splitting ManyCPs up as necessary
 --   * ignoring CPs that are too big
 {-# INLINEABLE dequeue #-}
 dequeue :: Function f => Config -> State f -> (Maybe (CriticalPair f, ActiveRule f, ActiveRule f), State f)
@@ -257,14 +216,13 @@ dequeue config@Config{..} state@State{..} =
   case deq 0 st_queue of
     -- Explicitly make the queue empty, in case it e.g. contained a
     -- lot of orphans
-    Nothing -> (Nothing, state { st_queue = Heap.empty })
+    Nothing -> (Nothing, state { st_queue = Queue.empty })
     Just (overlap, n, queue) ->
       (Just overlap,
        state { st_queue = queue, st_considered = st_considered + n })
   where
     deq !n queue = do
-      (packedPassive, queue) <- Heap.removeMin queue
-      let passive = unpackPassive packedPassive
+      (passive, queue) <- Queue.removeMin queue
       case findPassive config state passive of
         Just (rule1, rule2, overlap)
           | passive_score passive >= 0,
@@ -333,6 +291,7 @@ instance Function f => Pretty (Active f) where
     pPrint active_id <> text "." <+> pPrint (canonicalise active_rule)
 
 instance Has (ActiveRule f) Id where the = rule_active
+instance Has (ActiveRule f) RuleId where the = rule_rid
 instance Has (ActiveRule f) Depth where the = rule_depth
 instance f ~ g => Has (ActiveRule f) (Rule g) where the = rule_rule
 instance f ~ g => Has (ActiveRule f) (Proof g) where the = rule_proof
@@ -351,13 +310,13 @@ addActive config state@State{..} active0 =
     state' =
       message (NewActive active) $
       addActiveOnly state{st_next_active = st_next_active+1, st_next_rule = st_next_rule+2} active
-    passives =
-      concatMap (makePassive config state') active_rules
   in if subsumed st_joinable st_rules (unorient active_rule) then
     state
   else
     normaliseGoals $
-    foldl' enqueue state' passives
+    foldl' (uncurry . enqueue) state'
+      [ (the rule, makePassives config state' rule)
+      | rule <- active_rules ]
 
 -- Add an active without generating critical pairs. Used in interreduction.
 {-# INLINEABLE addActiveOnly #-}
@@ -560,7 +519,6 @@ interreduce1 config@Config{..} state active =
 
 data Output m f =
   Output {
-    output_report  :: State f -> m (),
     output_message :: Message f -> m () }
 
 {-# INLINE complete #-}
@@ -576,10 +534,7 @@ complete Output{..} config@Config{..} state =
          when cfg_simplify $ do
            lift $ output_message Interreduce
            state <- StateM.get
-           StateM.put $! interreduce config state,
-       newTask 10 1 $ do
-         state <- StateM.get
-         lift $ output_report state]
+           StateM.put $! interreduce config state]
 
     let
       loop = do
@@ -627,22 +582,6 @@ solutions State{..} = {-# SCC solutions #-} do
 {-# INLINEABLE rules #-}
 rules :: Function f => State f -> [Rule f]
 rules = map active_rule . IntMap.elems . st_active_ids
-
-{-# INLINEABLE report #-}
-report :: Function f => State f -> String
-report State{..} =
-  printf "Statistics:\n" ++
-  printf "  %d rules, of which %d oriented, %d unoriented, %d permutative, %d weakly oriented.\n"
-    (length orients)
-    (length [ () | Oriented <- orients ])
-    (length [ () | Unoriented <- orients ])
-    (length [ () | Permutative{} <- orients ])
-    (length [ () | WeaklyOriented{} <- orients ]) ++
-  printf "  %d queued critical pairs.\n" queuedPairs ++
-  printf "  %d critical pairs considered so far." st_considered
-  where
-    orients = map (orientation . active_rule) (IntMap.elems st_active_ids)
-    queuedPairs = Heap.size st_queue
 
 ----------------------------------------------------------------------
 -- For code which uses twee as a library.

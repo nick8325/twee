@@ -59,6 +59,7 @@ library
     Twee.Join
     Twee.KBO
     Twee.Label
+    Twee.PassiveQueue
     Twee.Pretty
     Twee.Proof
     Twee.Rule
@@ -74,7 +75,8 @@ library
     dlist,
     pretty,
     ghc-prim,
-    primitive >= 0.6.2.0
+    primitive >= 0.6.2.0,
+    vector
   hs-source-dirs:      src
   ghc-options:         -W -fno-warn-incomplete-patterns -O2 -fmax-worker-args=100
   default-language:    Haskell2010
