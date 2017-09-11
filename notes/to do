@@ -1,3 +1,17 @@
+Try one-sided choice encoding:
+e.g. t = u | v = w becomes:
+q(x) => t=u
+~q(x) => v=w
+(q(x) => p) & (~q(x) => p) => p
+Is this complete? Maybe not. Looks a bit fishy with nested =>.
+Clausifies to:
+  (q(x) & ~p) | (~q(x) & ~p) | p
+= q(x) | ~q(x) | p
+= true. Oh right OK. And if we replace ~q(x) with r(x), it's not Horn.
+
+
+Make $ifeq quite small, so that it ends up on outside.
+
 When we have vars in a=b not in c=d, erase them!
 Wait, this is incomplete.
 But can we do something to reduce number of vars?
