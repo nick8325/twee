@@ -26,15 +26,12 @@ import Data.List
 import Data.Function
 import qualified Data.Set as Set
 import Data.Set(Set)
-import Text.Printf
 import Data.Int
 import Data.Ord
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import qualified Control.Monad.Trans.State.Strict as StateM
-import Data.Word
-import Data.Bits
 
 ----------------------------------------------------------------------
 -- Configuration and prover state.
