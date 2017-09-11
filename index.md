@@ -9,7 +9,7 @@ order: 1
 Twee is a theorem prover for equational logic. It takes as input two sets of
 equations, the _axioms_ and the _conjectures_, and tries to prove the
 conjectures from the axioms. See the [installation](installation) page for how
-to get a copy.
+to get a copy; you may also want to look at the short [manual](manual).
 
 The input problems should be written in [TPTP](http://tptp.org) format.
 Here is an example problem from group theory. We state that there is an
@@ -32,7 +32,8 @@ fof(left_inverse, conjecture,
 ```
 
 We can put this problem into a file, say `group.p`, and run `twee group.p`. Twee
-spits out the following proof; the final result is always printed at the bottom.
+spits out the following proof; at the bottom it says `Theorem` which tells us
+the conjecture is true.
 
 ```
 Goal 1 (left_inverse): f(i(X), X) = e.
@@ -55,5 +56,3 @@ Proof:
 
 RESULT: Theorem (the conjecture is true).
 ```
-
-See the [manual](manual) for more detailed usage information.

@@ -10,10 +10,12 @@ The basic way to run twee is as follows:
 
     twee name_of_problem.p
 
-The problem must be in [TPTP](http://tptp.org) FOF or CNF or TFF format. Twee
-accepts any problem which after clausification consists only of unit equalities.
-In practice this means that the input problem can freely use quantification,
-both universal and existential, in any combination.
+The problem must be in [TPTP](http://tptp.org) FOF or CNF or TFF format; you can
+find a worked example on the [main page](.) and lots of test problems
+[here](https://github.com/nick8325/twee/tree/master/tests). Twee accepts any
+problem which after clausification consists only of unit equalities. In practice
+this means that the input problem can freely use quantification, both universal
+and existential, in any combination.
 
 The input file can have any number of conjectures. Twee will then solve each of
 them one at a time and report the final result. If the conjecture has an
