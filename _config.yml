@@ -1,0 +1,19 @@
+title: twee - an equational theorem prover
+url: "https://nick8325.github.io/twee"
+author:
+  name: "Nick Smallbone"
+  email: "nick@smallbone.se"
+  url: "http://www.cse.chalmers.se/~nicsma"
+
+baseurl: /
+markdown: kramdown
+source: .
+destination: ./_site
+permalink: /:title
+
+defaults:
+    -
+        scope:
+            path: ""
+        values:
+            layout: "default"
