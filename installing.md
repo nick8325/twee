@@ -1,5 +1,6 @@
 ---
-title: Installing
+title: Installing twee
+menutitle: Installing
 order: 2
 ---
 
