@@ -26,6 +26,7 @@ import Jukebox.Tools.EncodeTypes
 import Jukebox.TPTP.Print
 import Jukebox.Tools.Clausify(ClausifyFlags(..), clausify)
 import Jukebox.Tools.HornToUnit
+import qualified Jukebox.Sat as Sat
 import qualified Data.IntMap.Strict as IntMap
 import System.IO
 import System.Exit
@@ -597,12 +598,41 @@ main = do
        expert clausifyBox =>>=
        forAllConjecturesBox <*>
          (combine <$>
-           (hornToUnitBox =>>=
-            toFormulasBox =>>=
+           hornToUnitBox <*>
+           (toFormulasBox =>>=
             expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
-            clausifyBox =>>=
-            oneConjectureBox) <*>
+            clausifyBox =>>= oneConjectureBox) <*>
            (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> parseConfig <*> parsePrecedence)))
   where
-    combine horn prove later prob =
-      horn prob >>= prove later
+    combine horn encode prove later prob
+      | isFof prob = do
+        prob <- horn prob
+        sat <- hasSizeOneModel prob
+        if sat then do
+          later $ do
+            putStrLn "The problem has a model of size 1."
+            putStrLn "In this model, all terms are equal to each other."
+            putStrLn ""
+          return (Sat Satisfiable)
+        else prove later prob
+      | otherwise =
+        horn prob >>= encode >>= prove later
+
+-- Check if a problem has a model of size 1.
+-- Done by erasing all terms from the problem.
+hasSizeOneModel :: Problem Clause -> IO Bool
+hasSizeOneModel p = do
+  s <- Sat.newSolver
+  let funs = Jukebox.functions p
+  lits <- replicateM (length funs) (Sat.newLit s)
+  let
+    funMap = Map.fromList (zip funs lits)
+    transClause (Clause (Bind _ ls)) =
+      map transLit ls
+    transLit (Pos a) = transAtom a
+    transLit (Neg a) = Sat.neg (transAtom a)
+    transAtom (Tru (p :@: _)) =
+      Map.findWithDefault undefined p funMap
+    transAtom (_ Jukebox.:=: _) = Sat.true
+  mapM_ (Sat.addClause s . transClause) (map what p)
+  Sat.solve s [] <* Sat.deleteSolver s
