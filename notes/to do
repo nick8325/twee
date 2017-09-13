@@ -144,3 +144,34 @@ but we want to apply t_sigma = u_sigma in ground joining a later rule
 and then we can't because it's not a case split on variables.
 That suggests that we should case split on not-variables by replacing
 them with uninterpreted variables temporarily.
+
+Do we really need to eagerly generate critical pairs from recently
+generated laws? Maybe gradually notch up maximum age of considered
+critical pairs. E.g.: only consider CPs from rules up to label l/2,
+where l is the current label. Perhaps print out the maximum CP age
+actually used in a proof.
+
+Suppose we have the rule
+  x*x*x*x*x*x -> x
+Then we should give the term
+  x*x*x*x*y
+a relatively small weight, because the instance [y->x*x] rewrites to x.
+Somehow, terms that are "close to" being reduced to small terms should
+get a smaller weight.
+
+Prioritise CPs with BIG top terms? As this indicates a large
+simplification step.
+
+Look at size of overlap when weighting CPs (big overlap - better?)
+Look at repeated variables (more repeated variables - better because
+harder to form a small critical pair?)
+
+For QuickSpec-style "only generate laws up to this size": when a
+critical pair is this size, join it under the constraint X <= c for
+all variables X where c is a maximal constant of size 1. This effectively
+forces all variables to have size one.
+
+When we discover the crucial lemma, it causes bajillions of existing
+rules to be discarded. Can we somehow use this as a similar/boringness
+metric on these existing rules? (The fact that there is a single rule
+which will generalise them all.)
