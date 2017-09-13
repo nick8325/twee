@@ -18,7 +18,6 @@ import Twee.Utils
 class (Eq (Id params), Integral (Id params), Ord (Score params), Vector.Unbox (PackedScore params), Vector.Unbox (PackedId params)) => Params params where
   type Score params
   type Id params
-  type Function params
   type PackedScore params
   type PackedId params
   packScore :: proxy params -> Score params -> PackedScore params

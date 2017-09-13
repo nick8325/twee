@@ -55,7 +55,7 @@ data State f =
     st_rule_ids       :: !(IntMap (ActiveRule f)),
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
-    st_queue          :: !(Queue (Params f)),
+    st_queue          :: !(Queue Params),
     st_next_active    :: {-# UNPACK #-} !Id,
     st_next_rule      :: {-# UNPACK #-} !RuleId,
     st_considered     :: {-# UNPACK #-} !Int64,
@@ -139,13 +139,12 @@ messages state = reverse (st_messages_rev state)
 -- The CP queue.
 ----------------------------------------------------------------------
 
-data Params f
-instance Queue.Params (Params f) where
-  type Score (Params f) = Int
-  type Id (Params f) = RuleId
-  type Function (Params f) = f
-  type PackedId (Params f) = Int32
-  type PackedScore (Params f) = Int32
+data Params
+instance Queue.Params Params where
+  type Score Params = Int
+  type Id Params = RuleId
+  type PackedId Params = Int32
+  type PackedScore Params = Int32
   packScore _ = fromIntegral
   unpackScore _ = fromIntegral
   packId _ = fromIntegral
@@ -153,7 +152,7 @@ instance Queue.Params (Params f) where
 
 -- Compute all critical pairs from a rule.
 {-# INLINEABLE makePassives #-}
-makePassives :: Function f => Config -> State f -> ActiveRule f -> [Passive (Params f)]
+makePassives :: Function f => Config -> State f -> ActiveRule f -> [Passive Params]
 makePassives Config{..} State{..} rule =
   {-# SCC makePassive #-}
   [ Passive (fromIntegral (score cfg_critical_pairs o)) (rule_rid rule1) (rule_rid rule2) (fromIntegral (overlap_pos o))
@@ -164,7 +163,7 @@ makePassives Config{..} State{..} rule =
 -- Turn a Passive back into an overlap.
 -- Doesn't try to simplify it.
 {-# INLINEABLE findPassive #-}
-findPassive :: forall f. Function f => Config -> State f -> Passive (Params f) -> Maybe (ActiveRule f, ActiveRule f, Overlap f)
+findPassive :: forall f. Function f => Config -> State f -> Passive Params -> Maybe (ActiveRule f, ActiveRule f, Overlap f)
 findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
   rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
   rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
@@ -176,7 +175,7 @@ findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
 
 -- Renormalise a queued Passive.
 {-# INLINEABLE simplifyPassive #-}
-simplifyPassive :: Function f => Config -> State f -> Passive (Params f) -> Maybe (Passive (Params f))
+simplifyPassive :: Function f => Config -> State f -> Passive Params -> Maybe (Passive Params)
 simplifyPassive config@Config{..} state@State{..} passive = {-# SCC simplifyPassive #-} do
   (_, _, overlap) <- findPassive config state passive
   overlap <- simplifyOverlap (index_oriented st_rules) overlap
@@ -197,7 +196,7 @@ simplifyQueue config state =
 
 -- Enqueue a set of critical pairs.
 {-# INLINEABLE enqueue #-}
-enqueue :: Function f => State f -> RuleId -> [Passive (Params f)] -> State f
+enqueue :: Function f => State f -> RuleId -> [Passive Params] -> State f
 enqueue state rule passives =
   {-# SCC enqueue #-}
   state { st_queue = Queue.insert rule passives (st_queue state) }
