@@ -303,7 +303,8 @@ unify t u = unifyList (singleton t) (singleton u)
 unifyList :: TermList f -> TermList f -> Maybe (Subst f)
 unifyList t u = do
   sub <- unifyListTri t u
-  return $! close sub
+  -- Not strict so that isJust (unify t u) doesn't force the substitution
+  return (close sub)
 
 unifyTri :: Term f -> Term f -> Maybe (TriangleSubst f)
 unifyTri t u = unifyListTri (singleton t) (singleton u)
