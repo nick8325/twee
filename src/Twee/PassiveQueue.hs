@@ -85,10 +85,12 @@ unpack proxy rule isLeft (score, id, pos) =
 {-# INLINEABLE makePassiveSet #-}
 makePassiveSet :: forall params. Params params => Id params -> [Passive params] -> Maybe (PassiveSet params)
 makePassiveSet _ [] = Nothing
-makePassiveSet rule ps =
-  mkPassiveSet proxy rule
-    (Vector.fromList (map (pack True) (sort left)))
-    (Vector.fromList (map (pack False) (sort right)))
+makePassiveSet rule ps
+  | and [passive_rule2 p == rule | p <- right] =
+    mkPassiveSet proxy rule
+      (Vector.fromList (map (pack True) (sort left)))
+      (Vector.fromList (map (pack False) (sort right)))
+  | otherwise = error "rule id does not occur in passive"
   where
     proxy :: Proxy params
     proxy = Proxy
