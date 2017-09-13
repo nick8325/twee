@@ -171,7 +171,7 @@ data Constant =
     con_ifeq  :: !Bool }
   deriving (Eq, Ord)
 
-data Precedence = Precedence !Bool !Bool !Bool !(Maybe Int) !Int
+data Precedence = Precedence !Bool !Bool !(Maybe Int) !Int
   deriving (Eq, Ord)
 
 instance Sized Constant where
@@ -359,7 +359,6 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
     prec c =
       Precedence
         (isType c)
-        (not (Main.isIfeq c))
         (isNothing (elemIndex (base c) precedence))
         (fmap negate (elemIndex (base c) precedence))
         (negate (funOcc c prob))
