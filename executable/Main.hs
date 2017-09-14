@@ -30,6 +30,7 @@ import qualified Jukebox.Sat as Sat
 import qualified Data.IntMap.Strict as IntMap
 import System.IO
 import System.Exit
+import qualified Data.Set as Set
 
 data MainFlags =
   MainFlags {
@@ -202,6 +203,9 @@ data TweeContext =
   TweeContext {
     ctx_var     :: Jukebox.Variable,
     ctx_minimal :: Jukebox.Function,
+    ctx_true    :: Jukebox.Function,
+    ctx_false   :: Jukebox.Function,
+    ctx_equals  :: Jukebox.Function,
     ctx_type    :: Type }
 
 -- Convert back and forth between Twee and Jukebox.
@@ -216,7 +220,7 @@ isType :: Jukebox.Function -> Bool
 isType fun = "$to_" `isPrefixOf` base (name fun)
 
 isIfeq :: Jukebox.Function -> Bool
-isIfeq fun = "$ifeq" `isPrefixOf` base (name fun)
+isIfeq fun = "$ifeq" `isPrefixOf` base (name fun) || "$equals" `isPrefixOf` base (name fun)
 
 jukeboxFunction :: TweeContext -> Extended Constant -> Jukebox.Function
 jukeboxFunction _ (Function Constant{..}) = con_id
@@ -250,62 +254,67 @@ makeContext prob = run prob $ \prob -> do
 
   var     <- newSymbol "X" ty
   minimal <- newFunction "$constant" [] ty
+  true    <- newFunction "$true" [] ty
+  false   <- newFunction "$false" [] ty
+  equals  <- newFunction "$equals" [ty, ty] ty
 
   return TweeContext {
     ctx_var = var,
     ctx_minimal = minimal,
+    ctx_true = true,
+    ctx_false = false,
+    ctx_equals = equals,
     ctx_type = ty }
 
--- -- Encode existentials so that all goals are ground.
+-- Encode existentials so that all goals are ground.
 addNarrowing :: TweeContext -> Problem Clause -> Problem Clause
-addNarrowing _ prob = prob
--- addNarrowing TweeContext{..} prob =
---   unchanged ++ equalityClauses
---   where
---     (unchanged, nonGroundGoals) = partitionEithers (map f prob)
---       where
---         f inp@Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])}
---           | not (ground x) || not (ground y) =
---             Right (inp, (x, y))
---         f inp = Left inp
+addNarrowing TweeContext{..} prob =
+  unchanged ++ equalityClauses
+  where
+    (unchanged, nonGroundGoals) = partitionEithers (map f prob)
+      where
+        f inp@Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])}
+          | not (ground x) || not (ground y) =
+            Right (inp, (x, y))
+        f inp = Left inp
 
---     equalityClauses
---       | null nonGroundGoals = []
---       | otherwise =
---         -- Turn a != b & c != d & ...
---         -- into eq(a,b)=false & eq(c,d)=false & eq(X,X)=true & true!=false (esa)
---         -- and then extract the individual components (thm)
---         let
---           equalityLiterals =
---             -- true != false
---             ("true_equals_false", Neg ((ctx_true :@:) [] Jukebox.:=: (ctx_false :@: []))):
---             -- eq(X,X)=true
---             ("reflexivity", Pos (ctx_equals :@: [Jukebox.Var ctx_var, Jukebox.Var ctx_var] Jukebox.:=: (ctx_true :@: []))):
---             -- [eq(a,b)=false, eq(c,d)=false, ...]
---             [ (tag, Pos (ctx_equals :@: [x, y] Jukebox.:=: (ctx_false :@: [])))
---             | (Input{tag = tag}, (x, y)) <- nonGroundGoals ]
+    equalityClauses
+      | null nonGroundGoals = []
+      | otherwise =
+        -- Turn a != b & c != d & ...
+        -- into eq(a,b)=false & eq(c,d)=false & eq(X,X)=true & true!=false (esa)
+        -- and then extract the individual components (thm)
+        let
+          equalityLiterals =
+            -- true != false
+            ("true_equals_false", Neg ((ctx_true :@:) [] Jukebox.:=: (ctx_false :@: []))):
+            -- eq(X,X)=true
+            ("reflexivity", Pos (ctx_equals :@: [Jukebox.Var ctx_var, Jukebox.Var ctx_var] Jukebox.:=: (ctx_true :@: []))):
+            -- [eq(a,b)=false, eq(c,d)=false, ...]
+            [ (tag, Pos (ctx_equals :@: [x, y] Jukebox.:=: (ctx_false :@: [])))
+            | (Input{tag = tag}, (x, y)) <- nonGroundGoals ]
 
---           -- Equisatisfiable to the input clauses
---           justification =
---             Input {
---               tag  = "new_negated_conjecture",
---               kind = Jukebox.Ax NegatedConjecture,
---               what =
---                 let form = And (map (Literal . snd) equalityLiterals) in
---                 ForAll (Bind (Set.fromList (vars form)) form),
---               source =
---                 Inference "encode_existential" "esa"
---                   (map (fmap toForm . fst) nonGroundGoals) }
+          -- Equisatisfiable to the input clauses
+          justification =
+            Input {
+              tag  = "new_negated_conjecture",
+              kind = Jukebox.Ax NegatedConjecture,
+              what =
+                let form = And (map (Literal . snd) equalityLiterals) in
+                ForAll (Bind (Set.fromList (vars form)) form),
+              source =
+                Inference "encode_existential" "esa"
+                  (map (fmap toForm . fst) nonGroundGoals) }
 
---           input tag form =
---             Input {
---               tag = tag,
---               kind = Conj Conjecture,
---               what = clause [form],
---               source =
---                 Inference "split_conjunct" "thm" [justification] }
+          input tag form =
+            Input {
+              tag = tag,
+              kind = Conj Conjecture,
+              what = clause [form],
+              source =
+                Inference "split_conjunct" "thm" [justification] }
 
---         in [input tag form | (tag, form) <- equalityLiterals]
+        in [input tag form | (tag, form) <- equalityLiterals]
 
 data PreEquation =
   PreEquation {
