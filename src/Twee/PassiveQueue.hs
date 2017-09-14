@@ -155,6 +155,7 @@ mapMaybe f = Heap.mapMaybe g
   where
     g PassiveSet{..} =
       makePassiveSet passiveset_rule $ Data.Maybe.mapMaybe f $
+        passiveset_best:
         map (unpack proxy passiveset_rule True) (Vector.toList passiveset_left) ++
         map (unpack proxy passiveset_rule False) (Vector.toList passiveset_right)
     proxy :: Proxy params
