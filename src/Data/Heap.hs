@@ -93,7 +93,7 @@ mapMaybe f (Heap _ h) = Heap (sz 0 h') h'
         (Node y $! down x l r) Nil
     down x l r = Node x l r
 
--- | The number of elements in the heap.
+-- | Return the number of elements in the heap.
 {-# INLINE size #-}
 size :: Heap a -> Int
 size (Heap n _) = n

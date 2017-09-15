@@ -1,26 +1,43 @@
--- | A term index for pattern matching. The index maps terms to arbitrary values.
+-- | A term index to accelerate matching.
+-- An index is a multimap from terms to arbitrary values.
 --
--- The type of query supported is: given a search term, is there a term in the
--- index which the search term is an instance of?
+-- The type of query supported is: given a search term, find all keys such that
+-- the search term is an instance of the key, and return the corresponding
+-- values.
 
 {-# LANGUAGE BangPatterns, RecordWildCards, OverloadedStrings, FlexibleContexts #-}
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
-module Twee.Index(module Twee.Index, module Twee.Index.Lookup) where
+module Twee.Index(
+  Index,
+  empty,
+  null,
+  singleton,
+  insert,
+  delete,
+  lookup,
+  matches,
+  approxMatches,
+  elems) where
 
 import qualified Prelude
-import Prelude hiding (filter, map, null)
+import Prelude hiding (filter, map, null, lookup)
 import Data.Maybe
-import Twee.Base hiding (var, fun, empty, size, singleton, prefix, funs, lookupList)
+import Twee.Base hiding (var, fun, empty, size, singleton, prefix, funs, lookupList, lookup)
 import qualified Twee.Term as Term
 import Data.DynamicArray
 import qualified Data.List as List
 import Twee.Utils
 import Twee.Index.Lookup
 
--- Implementation note: the type definition and (performance-critical) lookup
--- function are defined in Twee.Index.Lookup. This module defines the remaining
--- part of the API, which is not as performance-sensitive.
+-- Implementation note: the type definition and (performance-critical) core of
+-- the lookup function are defined in Twee.Index.Lookup. This module defines the
+-- remaining part of the API, which is not as performance-sensitive.
+
+-- | An empty index.
+{-# INLINE empty #-}
+empty :: Index f a
+empty = Nil
 
 -- | Is the index empty?
 {-# INLINE null #-}
@@ -33,17 +50,12 @@ null _ = False
 singleton :: Term f -> a -> Index f a
 singleton !t x = singletonEntry (key t) x
 
+-- An index with one entry, giving the raw key.
 {-# INLINE singletonEntry #-}
 singletonEntry :: TermList f -> a -> Index f a
 singletonEntry t x = Index 0 t [x] newArray newVarIndex
 
-{-# INLINE withPrefix #-}
-withPrefix :: TermList f -> Index f a -> Index f a
-withPrefix Empty idx = idx
-withPrefix _ Nil = Nil
-withPrefix t idx@Index{..} =
-  idx{prefix = buildList (builder t `mappend` builder prefix)}
-
+-- | Insert an entry into the index.
 insert :: Term f -> a -> Index f a -> Index f a
 insert !t x !idx = {-# SCC insert #-} aux (key t) idx
   where
@@ -67,17 +79,39 @@ insert !t x !idx = {-# SCC insert #-} aux (key t) idx
       where
         idx' = aux u (lookupVarIndex v (var idx))
 
+-- Add a prefix to an index.
+{-# INLINE withPrefix #-}
+withPrefix :: TermList f -> Index f a -> Index f a
+withPrefix Empty idx = idx
+withPrefix _ Nil = Nil
+withPrefix t idx@Index{..} =
+  idx{size = size+1,
+      prefix = buildList (builder t `mappend` builder prefix)}
+
+-- Take an index with a prefix and pull out the first symbol of the prefix,
+-- giving an index which doesn't start with a prefix.
 {-# INLINE expand #-}
 expand :: Index f a -> Index f a
-expand idx@Index{prefix = ConsSym t ts} =
+expand idx@Index{size = size, prefix = ConsSym t ts} =
   case t of
     Var v ->
-      Index (size idx + 1 + lenList ts) emptyTermList [] newArray
-        (updateVarIndex v idx { prefix = ts } newVarIndex)
+      Index {
+        size = size,
+        prefix = emptyTermList,
+        here = [],
+        fun = newArray,
+        var = updateVarIndex v idx { prefix = ts, size = size - 1 } newVarIndex }
     App f _ ->
-      Index (size idx + 1 + lenList ts) emptyTermList []
-        (update (fun_id f) idx { prefix = ts } newArray) newVarIndex
+      Index {
+        size = size,
+        prefix = emptyTermList,
+        here = [],
+        fun = update (fun_id f) idx { prefix = ts, size = size - 1 } newArray,
+        var = newVarIndex }
 
+-- Compute the best key for a given term.
+-- Maps the two most-repeated variables in the term to V 0 and V 1,
+-- and all other variables to V 2.
 key :: Term f -> TermList f
 key t = buildList . aux . Term.singleton $ t
   where
@@ -89,9 +123,10 @@ key t = buildList . aux . Term.singleton $ t
     aux (ConsSym (Var x) t) =
       Term.var (
       case List.elemIndex x (take varIndexCapacity repeatedVars) of
-         Nothing -> V 2
+         Nothing -> V varIndexCapacity
          Just n  -> V n) `mappend` aux t
 
+-- | Delete an entry from the index.
 {-# INLINEABLE delete #-}
 delete :: Eq a => Term f -> a -> Index f a -> Index f a
 delete !t x !idx = {-# SCC delete #-} aux (key t) idx
@@ -111,40 +146,12 @@ delete !t x !idx = {-# SCC delete #-} aux (key t) idx
     aux (ConsSym (Var v) t) idx =
       idx { var = updateVarIndex v (aux t (lookupVarIndex v (var idx))) (var idx) }
 
-{-# INLINEABLE elem #-}
-elem :: Eq a => Term f -> a -> Index f a -> Bool
-elem !t x !idx = aux (key t) idx
-  where
-    aux _ Nil = False
-    aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
-      aux ts idx{prefix = us}
-    aux _ Index{prefix = Cons{}} = False
-
-    aux Empty idx = List.elem x (here idx)
-    aux (ConsSym (App f _) t) idx =
-      aux t (fun idx ! fun_id f)
-    aux (ConsSym (Var v) t) idx =
-      aux t (lookupVarIndex v (var idx))
-
-approxMatchesList :: TermList f -> Index f a -> [a]
-approxMatchesList t idx =
-  {-# SCC approxMatchesList #-}
-  run (Frame emptySubst2 t idx Stop)
-
-{-# INLINE approxMatches #-}
-approxMatches :: Term f -> Index f a -> [a]
-approxMatches t idx = approxMatchesList (Term.singleton t) idx
-
-{-# INLINEABLE matchesList #-}
-matchesList :: Has a (Term f) => TermList f -> Index f a -> [(Subst f, a)]
-matchesList t idx =
-  [ (sub, x)
-  | x <- approxMatchesList t idx,
-    sub <- maybeToList (matchList (Term.singleton (the x)) t)]
-
-{-# INLINE matches #-}
-matches :: Has a (Term f) => Term f -> Index f a -> [(Subst f, a)]
-matches t idx = matchesList (Term.singleton t) idx
+-- | Look up a term in the index. Finds all key-value such that the search term
+-- is an instance of the key, and returns an instance of the the value which
+-- makes the search term exactly equal to the key.
+{-# INLINE lookup #-}
+lookup :: (Has a b, Symbolic b, Has b (TermOf b)) => TermOf b -> Index (ConstantOf b) a -> [b]
+lookup t idx = lookupList (Term.singleton t) idx
 
 {-# INLINEABLE lookupList #-}
 lookupList :: (Has a b, Symbolic b, Has b (TermOf b)) => TermListOf b -> Index (ConstantOf b) a -> [b]
@@ -153,16 +160,31 @@ lookupList t idx =
   | x <- List.map the (approxMatchesList t idx),
     sub <- maybeToList (matchList (Term.singleton (the x)) t)]
 
-{-# INLINE lookup #-}
-lookup :: (Has a b, Symbolic b, Has b (TermOf b)) => TermOf b -> Index (ConstantOf b) a -> [b]
-lookup t idx = lookupList (Term.singleton t) idx
+-- | Look up a term in the index. Like 'lookup', but returns the exact value
+-- that was inserted into the index, not an instance. Also returns a substitution
+-- which when applied to the value gives you the matching instance.
+{-# INLINE matches #-}
+matches :: Has a (Term f) => Term f -> Index f a -> [(Subst f, a)]
+matches t idx = matchesList (Term.singleton t) idx
 
-{-# NOINLINE run #-}
-run :: Stack f a -> [a]
-run Stop = []
-run Frame{..} = run ({-# SCC run_inner #-} step frame_subst frame_term frame_index frame_rest)
-run Yield{..} = {-# SCC run_found #-} yield_found ++ run yield_rest
+{-# INLINEABLE matchesList #-}
+matchesList :: Has a (Term f) => TermList f -> Index f a -> [(Subst f, a)]
+matchesList t idx =
+  [ (sub, x)
+  | x <- approxMatchesList t idx,
+    sub <- maybeToList (matchList (Term.singleton (the x)) t)]
 
+-- | Look up a term in the index, possibly returning spurious extra results.
+{-# INLINE approxMatches #-}
+approxMatches :: Term f -> Index f a -> [a]
+approxMatches t idx = approxMatchesList (Term.singleton t) idx
+
+approxMatchesList :: TermList f -> Index f a -> [a]
+approxMatchesList t idx =
+  {-# SCC approxMatchesList #-}
+  run (Frame emptySubst2 t idx Stop)
+
+-- | Return all elements of the index.
 elems :: Index f a -> [a]
 elems Nil = []
 elems idx =

@@ -1,13 +1,13 @@
 {-# LANGUAGE RecordWildCards, ScopedTypeVariables, FlexibleContexts #-}
 module Twee.Rule.Index(
   RuleIndex(..),
-  nil, insert, delete,
+  empty, insert, delete,
   approxMatches, matches, lookup) where
 
 import Prelude hiding (lookup)
-import Twee.Base hiding (lookup)
+import Twee.Base hiding (lookup, empty)
 import Twee.Rule
-import Twee.Index hiding (insert, delete)
+import Twee.Index hiding (insert, delete, empty)
 import qualified Twee.Index as Index
 
 data RuleIndex f a =
@@ -17,8 +17,8 @@ data RuleIndex f a =
     index_all      :: !(Index f a) }
   deriving Show
 
-nil :: RuleIndex f a
-nil = RuleIndex Nil Nil Nil
+empty :: RuleIndex f a
+empty = RuleIndex Index.empty Index.empty Index.empty
 
 insert :: forall f a. Has a (Rule f) => Term f -> a -> RuleIndex f a -> RuleIndex f a
 insert t x RuleIndex{..} =

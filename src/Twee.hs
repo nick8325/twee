@@ -90,10 +90,10 @@ configIsComplete Config{..} =
 initialState :: State f
 initialState =
   State {
-    st_rules = RuleIndex.nil,
+    st_rules = RuleIndex.empty,
     st_active_ids = IntMap.empty,
     st_rule_ids = IntMap.empty,
-    st_joinable = Index.Nil,
+    st_joinable = Index.empty,
     st_goals = [],
     st_queue = Queue.empty,
     st_next_active = 1,
@@ -473,7 +473,7 @@ interreduce config@Config{..} state =
       foldl' (interreduce1 config)
         -- Clear out st_joinable, since we don't know which
         -- equations have made use of each active.
-        state { st_joinable = Index.Nil }
+        state { st_joinable = Index.empty }
         (IntMap.elems (st_active_ids state))
     in state' { st_joinable = st_joinable state }
 
