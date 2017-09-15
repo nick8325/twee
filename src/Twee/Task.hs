@@ -1,13 +1,13 @@
--- A module which can run housekeeping tasks every so often.
+-- | A module which can run housekeeping tasks every so often.
 {-# LANGUAGE RecordWildCards #-}
-module Twee.Task where
+module Twee.Task(Task, newTask, checkTask) where
 
 import System.CPUTime
 import Data.IORef
 import Control.Monad.IO.Class
 
 data TaskData m a =
-  Task {
+  TaskData {
     -- When was the task created?
     task_start :: !Integer,
     -- When was the task last run?
@@ -20,19 +20,23 @@ data TaskData m a =
     task_budget :: !Double,
     -- The task itself
     task_what :: m a }
-type Task m a = IORef (TaskData m a)
 
--- Create a new task that should be run a certain proportion
--- of the time.
+-- | A task which runs in the monad @m@ and produces a value of type @a@.
+newtype Task m a = Task (IORef (TaskData m a))
+
+-- | Create a new task that should be run a certain proportion
+-- of the time. The first argument is how often in seconds the
+-- task should run, at most. The second argument is the maximum
+-- percentage of time that should be spent on the task.
 newTask :: MonadIO m => Double -> Double -> m a -> m (Task m a)
 newTask freq budget what = liftIO $ do
   now <- getCPUTime
-  newIORef (Task now now 0 freq budget what)
+  Task <$> newIORef (TaskData now now 0 freq budget what)
 
--- Run a task if it's time to run it.
+-- | Run a task if it's time to run it.
 checkTask :: MonadIO m => Task m a -> m (Maybe a)
-checkTask ref = do
-  task@Task{..} <- liftIO $ readIORef ref
+checkTask (Task ref) = do
+  task@TaskData{..} <- liftIO $ readIORef ref
   now <- liftIO getCPUTime
   if not (taskDue now task) then return Nothing else do
     res <- task_what
@@ -44,7 +48,7 @@ checkTask ref = do
 
 -- Check if a task should be run now.
 taskDue :: Integer -> TaskData m a -> Bool
-taskDue now Task{..} =
+taskDue now TaskData{..} =
   -- Don't run more than the frequency says.
   fromInteger (now - task_last) >= task_frequency * 10^12 &&
   -- Run if we spent less than task_budget proportion of the total time so far.

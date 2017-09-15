@@ -72,10 +72,10 @@ instance PrettyTerm f => PrettyTerm (Fun f) where
 instance PrettyTerm f => Pretty (Term f) where
   pPrintPrec l p (Var x) = pPrintPrec l p x
   pPrintPrec l p (App f xs) =
-    pPrintTerm (termStyle f) l p (pPrint f) (termListToList xs)
+    pPrintTerm (termStyle f) l p (pPrint f) (unpack xs)
 
 instance PrettyTerm f => Pretty (TermList f) where
-  pPrintPrec _ _ = pPrint . termListToList
+  pPrintPrec _ _ = pPrint . unpack
 
 instance PrettyTerm f => Pretty (Subst f) where
   pPrint sub = text "{" <> fsep (punctuate (text ",") docs) <> text "}"

@@ -1,4 +1,4 @@
--- A queue of passive critical pairs.
+-- | A queue of passive critical pairs, using a memory-efficient representation.
 {-# LANGUAGE TypeFamilies, RecordWildCards, FlexibleContexts, ScopedTypeVariables, StandaloneDeriving #-}
 module Twee.PassiveQueue(
   Params(..),
@@ -15,18 +15,30 @@ import Data.Ord
 import Data.Proxy
 import Twee.Utils
 
+-- | A datatype representing all the type parameters of the queue.
 class (Eq (Id params), Integral (Id params), Ord (Score params), Vector.Unbox (PackedScore params), Vector.Unbox (PackedId params)) => Params params where
+  -- | The score assigned to critical pairs. Smaller scores are better.
   type Score params
+  -- | The type of ID numbers used to name rules.
   type Id params
+
+  -- | A 'Score' packed for storage into a 'Vector.Vector'. Must be an instance of 'Vector.Unbox'.
   type PackedScore params
+  -- | An 'Id' packed for storage into a 'Vector.Vector'. Must be an instance of 'Vector.Unbox'.
   type PackedId params
+
+  -- | Pack a 'Score'.
   packScore :: proxy params -> Score params -> PackedScore params
+  -- | Unpack a 'PackedScore'.
   unpackScore :: proxy params -> PackedScore params -> Score params
+  -- | Pack an 'Id'.
   packId :: proxy params -> Id params -> PackedId params
+  -- | Unpack a 'PackedId'.
   unpackId :: proxy params -> PackedId params -> Id params
 
-type Queue params =
-  Heap.Heap (PassiveSet params)
+-- | A critical pair queue.
+newtype Queue params =
+  Queue (Heap.Heap (PassiveSet params))
 
 -- All passive CPs generated from one given rule.
 data PassiveSet params =
@@ -71,6 +83,7 @@ mkPassiveSet proxy rule left right
     l = unpack proxy rule True (Vector.head left)
     r = unpack proxy rule False (Vector.head right)
 
+-- Unpack a triple into a Passive.
 {-# INLINEABLE unpack #-}
 unpack :: Params params => Proxy params -> Id params -> Bool -> (PackedScore params, PackedId params, Int32) -> Passive params
 unpack proxy rule isLeft (score, id, pos) =
@@ -82,6 +95,7 @@ unpack proxy rule isLeft (score, id, pos) =
   where
     rule' = unpackId proxy id
 
+-- Make a PassiveSet from a list of Passives.
 {-# INLINEABLE makePassiveSet #-}
 makePassiveSet :: forall params. Params params => Id params -> [Passive params] -> Maybe (PassiveSet params)
 makePassiveSet _ [] = Nothing
@@ -101,16 +115,22 @@ makePassiveSet rule ps
        packId proxy (if isLeft then passive_rule2 else passive_rule1),
        fromIntegral passive_pos)
 
+-- Find and remove the best element from a PassiveSet.
 {-# INLINEABLE unconsPassiveSet #-}
 unconsPassiveSet :: forall params. Params params => PassiveSet params -> (Passive params, Maybe (PassiveSet params))
 unconsPassiveSet PassiveSet{..} =
   (passiveset_best, mkPassiveSet (Proxy :: Proxy params) passiveset_rule passiveset_left passiveset_right)
 
+-- | A queued critical pair.
 data Passive params =
   Passive {
+    -- | The score of this critical pair.
     passive_score :: !(Score params),
+    -- | The rule which does the outermost rewrite in this critical pair.
     passive_rule1 :: !(Id params),
+    -- | The rule which does the innermost rewrite in this critical pair.
     passive_rule2 :: !(Id params),
+    -- | The position of the overlap. See 'Twee.CP.overlap_pos'.
     passive_pos   :: {-# UNPACK #-} !Int }
 
 instance Params params => Eq (Passive params) where
@@ -125,33 +145,34 @@ instance Params params => Ord (Passive params) where
          intMin (fromIntegral passive_rule1) (fromIntegral passive_rule2),
          passive_pos)
 
--- The empty queue.
+-- | The empty queue.
 empty :: Queue params
-empty = Heap.empty
+empty = Queue Heap.empty
 
--- Add a set of passives to the queue.
+-- | Add a set of 'Passive's to the queue.
 {-# INLINEABLE insert #-}
 insert :: Params params => Id params -> [Passive params] -> Queue params -> Queue params
-insert rule passives q =
+insert rule passives (Queue q) =
+  Queue $
   case makePassiveSet rule passives of
     Nothing -> q
     Just p -> Heap.insert p q
 
--- Remove the minimum passive from the queue.
+-- | Remove the minimum 'Passive' from the queue.
 {-# INLINEABLE removeMin #-}
 removeMin :: Params params => Queue params -> Maybe (Passive params, Queue params)
-removeMin q = do
+removeMin (Queue q) = do
   (passiveset, q) <- Heap.removeMin q
   case unconsPassiveSet passiveset of
     (passive, Just passiveset') ->
-      Just (passive, Heap.insert passiveset' q)
+      Just (passive, Queue (Heap.insert passiveset' q))
     (passive, Nothing) ->
-      Just (passive, q)
+      Just (passive, Queue q)
 
--- Map a function over all passives.
+-- | Map a function over all 'Passive's.
 {-# INLINEABLE mapMaybe #-}
 mapMaybe :: Params params => (Passive params -> Maybe (Passive params)) -> Queue params -> Queue params
-mapMaybe f = Heap.mapMaybe g
+mapMaybe f (Queue q) = Queue (Heap.mapMaybe g q)
   where
     g PassiveSet{..} =
       makePassiveSet passiveset_rule $ Data.Maybe.mapMaybe f $

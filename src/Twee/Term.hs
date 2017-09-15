@@ -1,4 +1,5 @@
--- Terms and substitutions, implemented using flatterms.
+-- | Terms and substitutions, implemented using flatterms.
+
 -- This module implements the usual term manipulation stuff
 -- (matching, unification, etc.) on top of the primitives
 -- in Twee.Term.Core.
@@ -7,7 +8,7 @@ module Twee.Term(
   module Twee.Term,
   -- Stuff from Twee.Term.Core.
   Term, TermList, at, lenList,
-  isSubtermOfList, isVarOf,
+  isSubtermOfList,
   pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
   Fun, fun, fun_id, fun_value, Var(..), pattern Var, pattern App, singleton, Builder) where
@@ -21,11 +22,17 @@ import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
 
 --------------------------------------------------------------------------------
--- A type class for builders.
+-- * A type class for builders
 --------------------------------------------------------------------------------
 
+-- | A type that can be turned into a 'Builder' of termlists.
+--
+-- Has instances for most reasonable things, including lists. The main
+-- missing instance is for 'Var'; you will need to use 'var' instead.
 class Build a where
+  -- | The underlying type of function symbols.
   type BuildFun a
+  -- | Turn the thing into a 'Builder'.
   builder :: a -> Builder (BuildFun a)
 
 instance Build (Builder f) where
@@ -34,7 +41,7 @@ instance Build (Builder f) where
 
 instance Build (Term f) where
   type BuildFun (Term f) = f
-  builder = emitTerm
+  builder = emitTermList . singleton
 
 instance Build (TermList f) where
   type BuildFun (TermList f) = f
@@ -45,24 +52,29 @@ instance Build a => Build [a] where
   {-# INLINE builder #-}
   builder = mconcat . map builder
 
+-- | Build a term. The given builder must produce exactly one term.
 {-# INLINE build #-}
 build :: Build a => a -> Term (BuildFun a)
 build x =
   case buildList x of
     Cons t Empty -> t
 
+-- | Build a termlist.
 {-# INLINE buildList #-}
 buildList :: Build a => a -> TermList (BuildFun a)
 buildList x = {-# SCC buildList #-} buildTermList (builder x)
 
+-- | Build a constant (a function with no arguments).
 {-# INLINE con #-}
 con :: Fun f -> Builder f
 con x = emitApp x mempty
 
+-- | Build a function application.
 {-# INLINE app #-}
 app :: Build a => Fun (BuildFun a) -> a -> Builder (BuildFun a)
 app f ts = emitApp f (builder ts)
 
+-- | Build a variable.
 var :: Var -> Builder f
 var = emitVar
 
@@ -134,18 +146,19 @@ newtype Subst f =
     unSubst :: IntMap (TermList f) }
   deriving Eq
 
+-- | Return the highest-number variable in a substitution plus 1.
 {-# INLINE substSize #-}
 substSize :: Subst f -> Int
 substSize (Subst sub)
   | IntMap.null sub = 0
   | otherwise = fst (IntMap.findMax sub) + 1
 
--- Look up a variable.
+-- | Look up a variable in a substitution, returning a termlist.
 {-# INLINE lookupList #-}
 lookupList :: Var -> Subst f -> Maybe (TermList f)
 lookupList x (Subst sub) = IntMap.lookup (var_id x) sub
 
--- Add a new binding to a substitution.
+-- | Add a new binding to a substitution, giving a termlist.
 {-# INLINE extendList #-}
 extendList :: Var -> TermList f -> Subst f -> Maybe (Subst f)
 extendList x !t (Subst sub) =
@@ -155,23 +168,23 @@ extendList x !t (Subst sub) =
       | t == u    -> Just (Subst sub)
       | otherwise -> Nothing
 
--- Remove a binding from a substitution.
+-- | Remove a binding from a substitution.
 {-# INLINE retract #-}
 retract :: Var -> Subst f -> Subst f
 retract x (Subst sub) = Subst (IntMap.delete (var_id x) sub)
 
--- Add a new binding to a substitution.
+-- | Add a new binding to a substitution.
 -- Overwrites any existing binding.
 {-# INLINE unsafeExtendList #-}
 unsafeExtendList :: Var -> TermList f -> Subst f -> Subst f
 unsafeExtendList x !t (Subst sub) = Subst (IntMap.insert (var_id x) t sub)
 
--- Composition of substitutions.
+-- | Compose two substitutions.
 substCompose :: Substitution s => Subst (SubstFun s) -> s -> Subst (SubstFun s)
 substCompose (Subst !sub1) !sub2 =
   Subst (IntMap.map (buildList . substList sub2) sub1)
 
--- Are two substitutions compatible?
+-- | Check if two substitutions are compatible.
 substCompatible :: Subst f -> Subst f -> Bool
 substCompatible (Subst !sub1) (Subst !sub2) =
   IntMap.null (IntMap.mergeWithKey f g h sub1 sub2)
@@ -182,17 +195,18 @@ substCompatible (Subst !sub1) (Subst !sub2) =
     g _ = IntMap.empty
     h _ = IntMap.empty
 
--- Take the union of two substitutions, which must be compatible.
+-- | Take the union of two substitutions.
+-- The substitutions must be compatible, which is not checked.
 substUnion :: Subst f -> Subst f -> Subst f
 substUnion (Subst !sub1) (Subst !sub2) =
   Subst (IntMap.union sub1 sub2)
 
--- Is a substitution idempotent?
+-- | Check if a substitution is idempotent.
 {-# INLINE idempotent #-}
 idempotent :: Subst f -> Bool
 idempotent !sub = allSubst (\_ t -> sub `idempotentOn` t) sub
 
--- Does a substitution affect a term?
+-- | Check if a substitution has no effect on a given term.
 {-# INLINE idempotentOn #-}
 idempotentOn :: Subst f -> TermList f -> Bool
 idempotentOn !sub = aux
@@ -201,13 +215,13 @@ idempotentOn !sub = aux
     aux (ConsSym App{} t) = aux t
     aux (Cons (Var x) t) = isNothing (lookupList x sub) && aux t
 
--- Iterate a substitution to make it idempotent.
+-- | Iterate a substitution to make it idempotent.
 close :: TriangleSubst f -> Subst f
 close (Triangle sub)
   | idempotent sub = sub
   | otherwise      = close (Triangle (substCompose sub sub))
 
--- Return a substitution for canonicalising a list of terms.
+-- | Return a substitution for canonicalising a list of terms.
 canonicalise :: [TermList f] -> Subst f
 canonicalise [] = emptySubst
 canonicalise (t:ts) = loop emptySubst vars t ts
@@ -226,11 +240,11 @@ canonicalise (t:ts) = loop emptySubst vars t ts
         Just sub -> loop sub vs  t ts
         Nothing  -> loop sub vs0 t ts
 
--- The empty substitution.
+-- | The empty substitution.
 {-# NOINLINE emptySubst #-}
 emptySubst = Subst IntMap.empty
 
--- Turn a substitution list into a substitution.
+-- | Construct a substitution from a list.
 flattenSubst :: [(Var, Term f)] -> Maybe (Subst f)
 flattenSubst sub = matchList pat t
   where
@@ -241,25 +255,29 @@ flattenSubst sub = matchList pat t
 -- Matching.
 --------------------------------------------------------------------------------
 
+-- | @'match' pat t@ matches the term @t@ against the pattern @pat@.
 {-# INLINE match #-}
 match :: Term f -> Term f -> Maybe (Subst f)
 match pat t = matchList (singleton pat) (singleton t)
 
+-- | A variant of 'match' which extends an existing substitution.
 {-# INLINE matchIn #-}
 matchIn :: Subst f -> Term f -> Term f -> Maybe (Subst f)
 matchIn sub pat t = matchListIn sub (singleton pat) (singleton t)
 
+-- | A variant of 'match' which works on termlists.
 {-# INLINE matchList #-}
 matchList :: TermList f -> TermList f -> Maybe (Subst f)
 matchList pat t = matchListIn emptySubst pat t
 
+-- | A variant of 'match' which works on termlists
+-- and extends an existing substitution.
 matchListIn :: Subst f -> TermList f -> TermList f -> Maybe (Subst f)
 matchListIn !sub !pat !t
   | lenList t < lenList pat = Nothing
   | otherwise =
     let loop !_ !_ !_ | False = undefined
-        loop sub Empty _ = Just sub
-        loop _ _ Empty = undefined -- implies lenList t < lenList pat
+        loop sub Empty Empty = Just sub
         loop sub (ConsSym (App f _) pat) (ConsSym (App g _) t)
           | f == g = loop sub pat t
         loop sub (Cons (Var x) pat) (Cons t u) = do
@@ -272,6 +290,12 @@ matchListIn !sub !pat !t
 -- Unification.
 --------------------------------------------------------------------------------
 
+-- | A triangle substitution is one in which variables can be defined in terms
+-- of each other, though not in a circular way.
+--
+-- The main use of triangle substitutions is in unification; 'unifyTri' returns
+-- one. A triangle substitution can be converted to an ordinary substitution
+-- with 'close', or used directly using its 'Substitution' instance.
 newtype TriangleSubst f = Triangle { unTriangle :: Subst f }
   deriving Show
 
@@ -297,26 +321,27 @@ instance Substitution (TriangleSubst f) where
           Nothing -> var x
           Just ts -> aux ts
 
+-- | Unify two terms.
 unify :: Term f -> Term f -> Maybe (Subst f)
 unify t u = unifyList (singleton t) (singleton u)
 
+-- | Unify two termlists.
 unifyList :: TermList f -> TermList f -> Maybe (Subst f)
 unifyList t u = do
   sub <- unifyListTri t u
   -- Not strict so that isJust (unify t u) doesn't force the substitution
   return (close sub)
 
+-- | Unify two terms, returning a triangle substitution.
 unifyTri :: Term f -> Term f -> Maybe (TriangleSubst f)
 unifyTri t u = unifyListTri (singleton t) (singleton u)
 
+-- | Unify two termlists, returning a triangle substitution.
 unifyListTri :: TermList f -> TermList f -> Maybe (TriangleSubst f)
 unifyListTri !t !u = fmap Triangle ({-# SCC unify #-} loop emptySubst t u)
   where
     loop !_ !_ !_ | False = undefined
-    loop sub Empty _ = Just sub
-    loop _ _ Empty = error "funny term in unification"
-      -- could happen if input lists have different lengths,
-      -- or a function is used with inconsistent arities
+    loop sub Empty Empty = Just sub
     loop sub (ConsSym (App f _) t) (ConsSym (App g _) u)
       | f == g = loop sub t u
     loop sub (Cons (Var x) t) (Cons u v) = do
@@ -357,14 +382,18 @@ unifyListTri !t !u = fmap Triangle ({-# SCC unify #-} loop emptySubst t u)
 -- Miscellaneous stuff.
 --------------------------------------------------------------------------------
 
+-- | The empty termlist.
+{-# NOINLINE empty #-}
 empty :: forall f. TermList f
 empty = buildList (mempty :: Builder f)
 
+-- | Get the children (direct subterms) of a term.
 children :: Term f -> TermList f
 children t =
   case singleton t of
     UnsafeConsSym _ ts -> ts
 
+-- | Convert a termlist into an ordinary list of terms.
 unpack :: TermList f -> [Term f]
 unpack t = unfoldr op t
   where
@@ -386,29 +415,29 @@ instance Show (Subst f) where
       | i <- [0..substSize subst-1],
         Just t <- [lookup (V i) subst] ]
 
+-- | Look up a variable in a substitution.
 {-# INLINE lookup #-}
 lookup :: Var -> Subst f -> Maybe (Term f)
 lookup x s = do
   Cons t Empty <- lookupList x s
   return t
 
+-- | Add a new binding to a substitution.
 {-# INLINE extend #-}
 extend :: Var -> Term f -> Subst f -> Maybe (Subst f)
 extend x t sub = extendList x (singleton t) sub
 
+-- | Find the length of a term.
 {-# INLINE len #-}
 len :: Term f -> Int
 len = lenList . singleton
 
-{-# INLINE emitTerm #-}
-emitTerm :: Term f -> Builder f
-emitTerm t = emitTermList (singleton t)
-
--- Find the lowest-numbered variable that doesn't appear in a term.
+-- | Return the highest-numbered variable in a term plus 1.
 {-# INLINE bound #-}
 bound :: Term f -> Var
 bound t = boundList (singleton t)
 
+-- | Return the highest-numbered variable in a termlist plus 1.
 {-# INLINE boundList #-}
 boundList :: TermList f -> Var
 boundList t = aux (V 0) t
@@ -419,29 +448,12 @@ boundList t = aux (V 0) t
       | x >= n = aux (succ x) t
       | otherwise = aux n t
 
--- Check if a variable occurs in a term.
+-- | Check if a variable occurs in a term.
 {-# INLINE occurs #-}
 occurs :: Var -> Term f -> Bool
 occurs x t = occursList x (singleton t)
 
-{-# INLINE occursList #-}
-occursList :: Var -> TermList f -> Bool
-occursList !x = aux
-  where
-    aux Empty = False
-    aux (ConsSym App{} t) = aux t
-    aux (ConsSym (Var y) t) = x == y || aux t
-
-{-# INLINE termListToList #-}
-termListToList :: TermList f -> [Term f]
-termListToList Empty = []
-termListToList (Cons t ts) = t:termListToList ts
-
--- The empty term list.
-{-# NOINLINE emptyTermList #-}
-emptyTermList :: TermList f
-emptyTermList = buildList (mempty :: Builder f)
-
+-- | Find all subterms of a termlist.
 {-# INLINE subtermsList #-}
 subtermsList :: TermList f -> [Term f]
 subtermsList t = unfoldr op t
@@ -449,34 +461,43 @@ subtermsList t = unfoldr op t
     op Empty = Nothing
     op (ConsSym t u) = Just (t, u)
 
+-- | Find all subterms of a term.
 {-# INLINE subterms #-}
 subterms :: Term f -> [Term f]
 subterms = subtermsList . singleton
 
+-- | Find all proper subterms of a term.
 {-# INLINE properSubterms #-}
 properSubterms :: Term f -> [Term f]
 properSubterms = subtermsList . children
 
+-- | Check if a term is a function application.
 isApp :: Term f -> Bool
 isApp App{} = True
 isApp _     = False
 
+-- | Check if a term is a variable
 isVar :: Term f -> Bool
 isVar Var{} = True
 isVar _     = False
 
+-- | @t \`'isInstanceOf'\` pat@ checks if @t@ is an instance of @pat@.
 isInstanceOf :: Term f -> Term f -> Bool
 t `isInstanceOf` pat = isJust (match pat t)
 
+-- | Check if two terms are renamings of one another.
 isVariantOf :: Term f -> Term f -> Bool
 t `isVariantOf` u = t `isInstanceOf` u && u `isInstanceOf` t
 
+-- | Is a term a subterm of another one?
 isSubtermOf :: Term f -> Term f -> Bool
 t `isSubtermOf` u = t `isSubtermOfList` singleton u
 
+-- | Map a function over the function symbols in a term.
 mapFun :: (Fun f -> Fun g) -> Term f -> Builder g
 mapFun f = mapFunList f . singleton
 
+-- | Map a function over the function symbols in a termlist.
 mapFunList :: (Fun f -> Fun g) -> TermList f -> Builder g
 mapFunList f ts = aux ts
   where
@@ -484,6 +505,7 @@ mapFunList f ts = aux ts
     aux (Cons (Var x) ts) = var x `mappend` aux ts
     aux (Cons (App ff ts) us) = app (f ff) (aux ts) `mappend` aux us
 
+-- | Replace the term at a given position in a term with a different term.
 {-# INLINE replacePosition #-}
 replacePosition :: (Build a, BuildFun a ~ f) => Int -> a -> TermList f -> Builder f
 replacePosition n !x = aux n
@@ -498,6 +520,8 @@ replacePosition n !x = aux n
       | otherwise =
         builder t `mappend` aux (n-len t) u
 
+-- | Replace the term at a given position in a term with a different term, while
+-- simultaneously applying a substitution. Useful for building critical pairs.
 {-# INLINE replacePositionSub #-}
 replacePositionSub :: (Substitution sub, SubstFun sub ~ f) => sub -> Int -> TermList f -> TermList f -> Builder f
 replacePositionSub sub n !x = aux n
@@ -514,7 +538,7 @@ replacePositionSub sub n !x = aux n
 
     outside t = substList sub t
 
--- Convert a position in a term into a path.
+-- | Convert a position in a term, expressed as a single number, into a path.
 positionToPath :: Term f -> Int -> [Int]
 positionToPath t n = term t n
   where
@@ -526,7 +550,7 @@ positionToPath t n = term t n
       | n < len t = k:term t n
       | otherwise = list (k+1) u (n-len t)
 
--- Convert a path in a term into a position.
+-- | Convert a path in a term into a position.
 pathToPosition :: Term f -> [Int] -> Int
 pathToPosition t ns = term 0 t ns
   where
@@ -538,8 +562,10 @@ pathToPosition t ns = term 0 t ns
     list k (Cons t u) n ns =
       list (k+len t) u (n-1) ns
 
+-- | A pattern which extracts the 'fun_value' from a 'Fun'.
 pattern F :: f -> Fun f
 pattern F x <- (fun_value -> x)
 
+-- | Compare the 'fun_value's of two 'Fun's.
 (<<) :: Ord f => Fun f -> Fun f -> Bool
 f << g = fun_value f < fun_value g

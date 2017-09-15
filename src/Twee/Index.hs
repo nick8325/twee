@@ -97,14 +97,14 @@ expand idx@Index{size = size, prefix = ConsSym t ts} =
     Var v ->
       Index {
         size = size,
-        prefix = emptyTermList,
+        prefix = Term.empty,
         here = [],
         fun = newArray,
         var = updateVarIndex v idx { prefix = ts, size = size - 1 } newVarIndex }
     App f _ ->
       Index {
         size = size,
-        prefix = emptyTermList,
+        prefix = Term.empty,
         here = [],
         fun = update (fun_id f) idx { prefix = ts, size = size - 1 } newArray,
         var = newVarIndex }

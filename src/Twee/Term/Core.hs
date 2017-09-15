@@ -127,8 +127,8 @@ pattern UnsafeCons :: Term f -> TermList f -> TermList f
 pattern UnsafeCons t ts <- (unsafePatHead -> Just (t, _, ts))
 
 -- | Unpacks a non-empty termlist into its head and the tail _with the head's
--- direct subterms prepended_, in other words, the termlist with the very first
--- symbol removed.
+-- children prepended_, in other words, the termlist with the very first symbol
+-- removed.
 --
 -- Useful for iterating through terms one symbol at a time.
 pattern ConsSym :: Term f -> TermList f -> TermList f
@@ -407,11 +407,11 @@ isSubArrayOf t u =
     -- so if u = Empty, then t = Empty and here t u = True.
     next t (UnsafeConsSym _ u) = isSubArrayOf t u
 
--- | Is a variable contained as a subterm in a given termlist?
-{-# INLINE isVarOf #-}
-isVarOf :: Var -> TermList f -> Bool
-isVarOf (V x) t = isSymbolOf (fromSymbol (Symbol False x 1)) t
+-- | Check if a variable occurs in a termlist.
+{-# INLINE occursList #-}
+occursList :: Var -> TermList f -> Bool
+occursList (V x) t = symbolOccursList (fromSymbol (Symbol False x 1)) t
 
-isSymbolOf :: Int64 -> TermList f -> Bool
-isSymbolOf !_ Empty = False
-isSymbolOf n (ConsSym t ts) = root t == n || isSymbolOf n ts
+symbolOccursList :: Int64 -> TermList f -> Bool
+symbolOccursList !_ Empty = False
+symbolOccursList n (ConsSym t ts) = root t == n || symbolOccursList n ts

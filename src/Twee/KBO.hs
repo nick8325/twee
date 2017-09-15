@@ -1,5 +1,7 @@
+-- | An implementation of Knuth-Bendix ordering.
+
 {-# LANGUAGE PatternGuards #-}
-module Twee.KBO where
+module Twee.KBO(lessEq, lessIn) where
 
 import Twee.Base hiding (lessEq, lessIn)
 import Data.List
@@ -9,6 +11,7 @@ import Data.Map.Strict(Map)
 import Data.Maybe
 import Control.Monad
 
+-- | Check if one term is less than another in KBO.
 lessEq :: Function f => Term f -> Term f -> Bool
 lessEq (App f Empty) _ | f == minimal = True
 lessEq (Var x) (Var y) | x == y = True
@@ -35,6 +38,10 @@ lessEq t@(App f ts) u@(App g us) =
     ys = sort (vars u)
     st = size t
     su = size u
+
+-- | Check if one term is less than another in a given model.
+
+-- See "notes/kbo under assumptions" for how this works.
 
 lessIn :: Function f => Model f -> Term f -> Term f -> Maybe Strictness
 lessIn model t u =

@@ -15,22 +15,33 @@ import GHC.Exts
 import Unsafe.Coerce
 import Data.Int
 
-newtype Label a = Label { labelNum :: Int32 }
+-- | A value of type @a@ which has been given a unique ID.
+newtype Label a =
+  Label {
+    -- | The unique ID of a label.
+    labelNum :: Int32 }
   deriving (Eq, Ord, Show)
+
+-- | Construct a @'Label' a@ from its unique ID, which must be the 'labelNum' of
+-- an already existing 'Label'. Extremely unsafe!
 unsafeMkLabel :: Int32 -> Label a
 unsafeMkLabel = Label
 
-type Cache a = Map a Int32
-
-data Caches =
-  Caches {
-    caches_nextId :: {-# UNPACK #-} !Int32,
-    caches_from   :: !(Map TypeRep (Cache Any)),
-    caches_to     :: !(IntMap Any) }
-
+-- The global cache of labels.
 {-# NOINLINE cachesRef #-}
 cachesRef :: IORef Caches
 cachesRef = unsafePerformIO (newIORef (Caches 0 Map.empty IntMap.empty))
+
+data Caches =
+  Caches {
+    -- The next id number to assign.
+    caches_nextId :: {-# UNPACK #-} !Int32,
+    -- A map from values to labels.
+    caches_from   :: !(Map TypeRep (Cache Any)),
+    -- The reverse map from labels to values.
+    caches_to     :: !(IntMap Any) }
+
+type Cache a = Map a Int32
 
 atomicModifyCaches :: (Caches -> (Caches, a)) -> IO a
 atomicModifyCaches f = do
@@ -50,6 +61,7 @@ atomicModifyCaches f = do
     else (cachesNow, False)
   if ok then return x else atomicModifyCaches f
 
+-- Versions of unsafeCoerce with slightly more type checking
 toAnyCache :: Cache a -> Cache Any
 toAnyCache = unsafeCoerce
 
@@ -62,6 +74,7 @@ toAny = unsafeCoerce
 fromAny :: Any -> a
 fromAny = unsafeCoerce
 
+-- | Assign a label to a value.
 {-# NOINLINE label #-}
 label :: forall a. (Typeable a, Ord a) => a -> Label a
 label x =
@@ -100,6 +113,7 @@ label x =
           fromAnyCache $
           Map.findWithDefault Map.empty ty caches_from
 
+-- | Recover the underlying value from a label.
 find :: Label a -> a
 -- N.B. must force n before calling readIORef, otherwise a call of
 -- the form
