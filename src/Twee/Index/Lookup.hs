@@ -197,44 +197,53 @@ step sub t idx rest =
 -- The main work of 'step' goes on here.
 pref :: Subst2 f -> TermList f -> TermList f -> [a] -> Array (Index f a) -> VarIndex f a -> Stack f a -> Stack f a
 pref !_ !_ !_ _ !_ !_ _ | False = undefined
-pref sub ts us here fun var rest =
-  -- ts = search term
-  -- us = prefix
-  case (ts, us) of
-    -- We've reached the end of the search term.
-    (Empty, Empty) ->
-      case here of
-        [] -> rest
-        _ -> Yield here rest
-    -- Prefix contains a variable, bind it.
-    (Cons t ts, Cons (Var x) us) ->
-      case extend2 x (Term.singleton t) sub of
-        Nothing  -> rest
-        Just sub -> pref sub ts us here fun var rest
-    -- Term and prefix start with same symbol, chop them off.
-    (ConsSym (App f _) ts, ConsSym (App g _) us)
-      | f == g ->
-        pref sub ts us here fun var rest
-    -- Term doesn't match prefix.
-    (_, Cons _ _) ->
-      rest
-    -- At this point, we know ts /= Empty and us = Empty.
-    -- We've exhausted the prefix, so let's descend into the tree.
-    _ ->
-      tryFun sub ts fun (tryVar sub ts var rest)
-      where
-        {-# INLINE tryFun #-}
-        tryFun sub (UnsafeConsSym (App f _) ts) fun rest =
-          case fun ! fun_id f of
-            Nil -> rest
-            idx -> Frame sub ts idx rest
-        tryFun _ _ _ rest = rest
-
-        {-# INLINE tryVar #-}
-        tryVar sub (UnsafeCons t ts) var rest =
-          foldr op rest (varIndexToList var)
+pref sub search prefix here fun var rest =
+  case search of
+    Empty ->
+      case prefix of
+        -- The search term matches this node.
+        Empty ->
+          case here of
+            [] -> rest
+            _ -> Yield here rest
+        -- We've run out of search term - it doesn't match this node.
+        Cons _ _ ->
+          rest
+    UnsafeCons t ts ->
+      case prefix of
+        -- Check the search term against the prefix.
+        Cons u us ->
+          case (t, u) of
+            -- Prefix contains a variable, bind it.
+            (_, Var x) ->
+              case extend2 x (Term.singleton t) sub of
+                Nothing  -> rest
+                Just sub -> pref sub ts us here fun var rest
+            -- Term and prefix start with same symbol, chop them off.
+            (App f _, App g _) | f == g ->
+               let
+                 UnsafeConsSym _ ts' = search
+                 UnsafeConsSym _ us' = prefix
+               in pref sub ts' us' here fun var rest
+            -- Term and prefix don't match.
+            _ ->
+              rest
+        -- We've exhausted the prefix, so let's descend into the tree.
+        _ ->
+          tryFun sub search fun (tryVar sub search var rest)
           where
-            op (x, idx@Index{}) rest
-              | Just sub <- extend2 (V x) (Term.singleton t) sub =
-                  Frame sub ts idx rest
-            op _ rest = rest
+            {-# INLINE tryFun #-}
+            tryFun sub (UnsafeConsSym (App f _) ts) fun rest =
+              case fun ! fun_id f of
+                Nil -> rest
+                idx -> Frame sub ts idx rest
+            tryFun _ _ _ rest = rest
+
+            {-# INLINE tryVar #-}
+            tryVar sub (UnsafeCons t ts) var rest =
+              foldr op rest (varIndexToList var)
+              where
+                op (x, idx@Index{}) rest
+                  | Just sub <- extend2 (V x) (Term.singleton t) sub =
+                      Frame sub ts idx rest
+                op _ rest = rest
