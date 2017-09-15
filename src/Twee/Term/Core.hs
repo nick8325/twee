@@ -63,6 +63,10 @@ fromSymbol Symbol{..} =
 -- Flatterms, or rather lists of terms.
 --------------------------------------------------------------------------------
 
+-- | A list of terms, represented as a flat term.
+--
+-- @f@ is the type of function symbols.
+
 -- A TermList is a slice of an unboxed array of symbols.
 data TermList f =
   TermList {
@@ -70,6 +74,7 @@ data TermList f =
     high  :: {-# UNPACK #-} !Int,
     array :: {-# UNPACK #-} !ByteArray }
 
+-- | Index into a termlist.
 at :: Int -> TermList f -> Term f
 at n (TermList lo hi arr)
   | n < 0 || lo+n >= hi = error "term index out of bounds"
@@ -78,9 +83,11 @@ at n (TermList lo hi arr)
       UnsafeCons t _ -> t
 
 {-# INLINE lenList #-}
--- The length (number of symbols in) a flatterm.
+-- | The length of (number of symbols in) a termlist.
 lenList :: TermList f -> Int
 lenList (TermList low high _) = high - low
+
+-- | A single term.
 
 -- A term is a special case of a termlist.
 -- We store it as the termlist together with the root symbol.
@@ -105,12 +112,34 @@ instance Ord (Term f) where
 --   (operationally, ts seeks one term to the right in the termlist).
 -- * UnsafeCons/UnsafeConsSym: like Cons and ConsSym but don't check
 --   that the termlist is non-empty.
+
+-- | Matches the empty termlist.
+pattern Empty :: TermList f
 pattern Empty <- (patHead -> Nothing)
+
+-- | Unpacks a non-empty termlist into its head and tail.
+pattern Cons :: Term f -> TermList f -> TermList f
 pattern Cons t ts <- (patHead -> Just (t, _, ts))
-pattern ConsSym t ts <- (patHead -> Just (t, ts, _))
+
+-- | Like 'Cons', but does not check that the termlist is non-empty. Use only if
+-- you are sure the termlist is non-empty.
+pattern UnsafeCons :: Term f -> TermList f -> TermList f
 pattern UnsafeCons t ts <- (unsafePatHead -> Just (t, _, ts))
+
+-- | Unpacks a non-empty termlist into its head and the tail _with the head's
+-- direct subterms prepended_, in other words, the termlist with the very first
+-- symbol removed.
+--
+-- Useful for iterating through terms one symbol at a time.
+pattern ConsSym :: Term f -> TermList f -> TermList f
+pattern ConsSym t ts <- (patHead -> Just (t, ts, _))
+
+-- | Like 'ConsSym', but does not check that the termlist is non-empty. Use only
+-- if you are sure the termlist is non-empty.
+pattern UnsafeConsSym :: Term f -> TermList f -> TermList f
 pattern UnsafeConsSym t ts <- (unsafePatHead -> Just (t, ts, _))
 
+-- A helper for UnsafeCons/UnsafeConsSym.
 {-# INLINE unsafePatHead #-}
 unsafePatHead :: TermList f -> Maybe (Term f, TermList f, TermList f)
 unsafePatHead TermList{..} =
@@ -121,6 +150,7 @@ unsafePatHead TermList{..} =
     !x = indexByteArray array low
     Symbol{..} = toSymbol x
 
+-- A helper for Cons/ConsSym.
 {-# INLINE patHead #-}
 patHead :: TermList f -> Maybe (Term f, TermList f, TermList f)
 patHead t@TermList{..}
@@ -131,25 +161,43 @@ patHead t@TermList{..}
 -- * Var :: Var -> Term f
 -- * App :: Fun f -> TermList f -> Term f
 
-newtype Fun f = F { fun_id :: Int }
+-- | A function symbol. @f@ is the underlying type of function symbols defined
+-- by the user; @'Fun' f@ is an @f@ together with a unique number.
+newtype Fun f =
+  F {
+    -- | The unique number of the function.
+    fun_id :: Int }
 instance Eq (Fun f) where
   f == g = fun_id f == fun_id g
 instance Ord (Fun f) where
   compare = comparing fun_id
 
+-- | Turn a function symbol into a 'Fun'.
 fun :: (Ord f, Typeable f) => f -> Fun f
 fun f = F (fromIntegral (labelNum (label f)))
 
+-- | The underlying function symbol of a 'Fun'.
 fun_value :: Fun f -> f
 fun_value f = find (unsafeMkLabel (fromIntegral (fun_id f)))
 
-newtype Var = V { var_id :: Int } deriving (Eq, Ord, Enum)
+-- | A variable.
+newtype Var =
+  V {
+    -- | The variable's number.
+    -- Must be non-negative; this is not currently checked!
+    var_id :: Int } deriving (Eq, Ord, Enum)
 instance Show (Fun f) where show f = "f" ++ show (fun_id f)
 instance Show Var     where show x = "x" ++ show (var_id x)
 
+-- | Matches a variable.
+pattern Var :: Var -> Term f
 pattern Var x <- (patTerm -> Left x)
+
+-- | Matches a function application.
+pattern App :: Fun f -> TermList f -> Term f
 pattern App f ts <- (patTerm -> Right (f, ts))
 
+-- A helper function for Var and App.
 {-# INLINE patTerm #-}
 patTerm :: Term f -> Either Var (Fun f, TermList f)
 patTerm t@Term{..}
@@ -159,7 +207,7 @@ patTerm t@Term{..}
     Symbol{..} = toSymbol root
     !(UnsafeConsSym _ ts) = singleton t
 
--- Convert a term to a termlist.
+-- | Convert a term to a termlist.
 {-# INLINE singleton #-}
 singleton :: Term f -> TermList f
 singleton Term{..} = termlist
@@ -178,6 +226,7 @@ eqTermList
   (TermList (I# low2) (I# high2) (ByteArray array2)) =
     weqTermList low1 high1 array1 low2 high2 array2
 
+-- Manually worker-wrapper transform the thing, ugh...
 {-# NOINLINE weqTermList #-}
 weqTermList ::
   Int# -> Int# -> ByteArray# ->
@@ -207,10 +256,12 @@ compareContents (ConsSym s1 t) (UnsafeConsSym s2 u) =
     x  -> x
 
 --------------------------------------------------------------------------------
--- Building terms imperatively.
+-- Building terms.
 --------------------------------------------------------------------------------
 
--- A monad for building terms.
+-- | A monoid for building terms.
+-- 'mempty' represents the empty term list, while 'mappend' represents
+-- concatenation of terms.
 newtype Builder f =
   Builder {
     unBuilder ::
@@ -226,6 +277,8 @@ instance Monoid (Builder f) where
   {-# INLINE mappend #-}
   Builder m1 `mappend` Builder m2 = Builder (m1 `then_` m2)
 
+-- Build a termlist from a Builder.
+-- Works by guessing an appropriate size, and retrying if that was too small.
 {-# INLINE buildTermList #-}
 buildTermList :: Builder f -> TermList f
 buildTermList builder = runST $ do
@@ -244,22 +297,27 @@ buildTermList builder = runST $ do
        else loop (n'*2)
   loop 32
 
+-- Get at the term array.
 {-# INLINE getByteArray #-}
 getByteArray :: (MutableByteArray s -> Builder1 s f) -> Builder1 s f
 getByteArray k = \s bytearray n i -> k (MutableByteArray bytearray) s bytearray n i
 
+-- Get at the array size.
 {-# INLINE getSize #-}
 getSize :: (Int -> Builder1 s f) -> Builder1 s f
 getSize k = \s bytearray n i -> k (I# n) s bytearray n i
 
+-- Get at the current array index.
 {-# INLINE getIndex #-}
 getIndex :: (Int -> Builder1 s f) -> Builder1 s f
 getIndex k = \s bytearray n i -> k (I# i) s bytearray n i
 
+-- Change the current array index.
 {-# INLINE putIndex #-}
 putIndex :: Int -> Builder1 s f
 putIndex (I# i) = \s _ _ _ -> (# s, i #)
 
+-- Lift an ST computation into a builder.
 {-# INLINE liftST #-}
 liftST :: ST s () -> Builder1 s f
 liftST (ST m) =
@@ -267,10 +325,12 @@ liftST (ST m) =
   case m s of
     (# s, () #) -> (# s, i #)
 
+-- Finish building.
 {-# INLINE built #-}
 built :: Builder1 s f
 built = \s _ _ i -> (# s, i #)
 
+-- Sequence two builder operations.
 {-# INLINE then_ #-}
 then_ :: Builder1 s f -> Builder1 s f -> Builder1 s f
 then_ m1 m2 =
@@ -278,6 +338,7 @@ then_ m1 m2 =
     case m1 s bytearray n i of
       (# s, i #) -> m2 s bytearray n i
 
+-- checked j m executes m only if the array has room for j more symbols.
 {-# INLINE checked #-}
 checked :: Int -> Builder1 s f -> Builder1 s f
 checked j m =
@@ -285,14 +346,18 @@ checked j m =
   getIndex $ \i ->
   if i + j <= n then m else putIndex (i + j)
 
+-- Emit an arbitrary symbol, with given arguments.
 {-# INLINE emitSymbolBuilder #-}
 emitSymbolBuilder :: Symbol -> Builder f -> Builder f
 emitSymbolBuilder x inner =
   Builder $ checked 1 $
     getByteArray $ \bytearray ->
+    -- Skip the symbol itself, then fill it in at the end, when we know the size
+    -- of the symbol's arguments.
     getIndex $ \n ->
     putIndex (n+1) `then_`
     unBuilder inner `then_`
+    -- Fill in the symbol.
     getIndex (\m ->
       liftST $ writeByteArray bytearray n (fromSymbol x { size = m - n }))
 
@@ -321,6 +386,7 @@ emitTermList (TermList lo hi array) =
 -- Efficient subterm testing.
 ----------------------------------------------------------------------
 
+-- | Is a term contained as a subterm in a given termlist?
 {-# INLINE isSubtermOfList #-}
 isSubtermOfList :: Term f -> TermList f -> Bool
 isSubtermOfList t u =
@@ -341,6 +407,7 @@ isSubArrayOf t u =
     -- so if u = Empty, then t = Empty and here t u = True.
     next t (UnsafeConsSym _ u) = isSubArrayOf t u
 
+-- | Is a variable contained as a subterm in a given termlist?
 {-# INLINE isVarOf #-}
 isVarOf :: Var -> TermList f -> Bool
 isVarOf (V x) t = isSymbolOf (fromSymbol (Symbol False x 1)) t
