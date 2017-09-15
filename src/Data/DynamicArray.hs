@@ -1,7 +1,7 @@
 -- | Zero-indexed dynamic arrays, optimised for lookup.
 -- Modification is slow. Uninitialised indices have a default value.
 {-# LANGUAGE CPP #-}
-module Twee.Array where
+module Data.DynamicArray where
 
 #ifdef BOUNDS_CHECKS
 import qualified Data.Primitive.SmallArray.Checked as P

@@ -6,7 +6,7 @@ module Twee.PassiveQueue(
   Passive(..),
   empty, insert, removeMin, mapMaybe) where
 
-import qualified Twee.Heap as Heap
+import qualified Data.Heap as Heap
 import qualified Data.Vector.Unboxed as Vector
 import Data.Int
 import Data.List hiding (insert)

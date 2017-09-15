@@ -10,7 +10,7 @@ module Twee.Index.Lookup where
 import Twee.Base hiding (var, fun, empty, size, singleton, prefix, funs)
 import qualified Twee.Term as Term
 import Twee.Term.Core(TermList(..))
-import Twee.Array
+import Data.DynamicArray
 
 data Index f a =
   Index {

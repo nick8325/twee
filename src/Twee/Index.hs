@@ -13,7 +13,7 @@ import Prelude hiding (filter, map, null)
 import Data.Maybe
 import Twee.Base hiding (var, fun, empty, size, singleton, prefix, funs, lookupList)
 import qualified Twee.Term as Term
-import Twee.Array
+import Data.DynamicArray
 import qualified Data.List as List
 import Twee.Utils
 import Twee.Index.Lookup

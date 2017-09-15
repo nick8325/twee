@@ -10,8 +10,8 @@ import qualified Data.Set as Set
 import Control.Monad
 import Data.Maybe
 import Data.List
-import qualified Twee.ChurchList as ChurchList
-import Twee.ChurchList (ChurchList(..))
+import qualified Data.ChurchList as ChurchList
+import Data.ChurchList (ChurchList(..))
 import Twee.Utils
 import Twee.Equation
 import qualified Twee.Proof as Proof

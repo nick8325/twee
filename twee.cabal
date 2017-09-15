@@ -47,15 +47,11 @@ flag bounds-checks
 library
   exposed-modules:
     Twee
-    Twee.Array
     Twee.Base
-    Twee.ChurchList
     Twee.Constraints
     Twee.CP
     Twee.Equation
-    Twee.Heap
     Twee.Index
-    Twee.Index.Lookup
     Twee.Join
     Twee.KBO
     Twee.Label
@@ -65,9 +61,15 @@ library
     Twee.Rule
     Twee.Rule.Index
     Twee.Term
-    Twee.Term.Core
     Twee.Task
     Twee.Utils
+  other-modules:
+    Data.ChurchList
+    Data.DynamicArray
+    Data.Heap
+    Twee.Index.Lookup
+    Twee.Term.Core
+
   build-depends:
     base >= 4 && < 5,
     containers,

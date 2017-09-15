@@ -1,6 +1,6 @@
 -- Church-encoded lists. Used in Twee.CP to make sure that fusion happens.
 {-# LANGUAGE Rank2Types, BangPatterns #-}
-module Twee.ChurchList where
+module Data.ChurchList where
 
 import Prelude(Functor(..), Applicative(..), Monad(..), Bool(..), Maybe(..), (.), ($), id)
 import qualified Prelude
