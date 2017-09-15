@@ -1,4 +1,8 @@
--- Term indexing (perfect-ish discrimination trees).
+-- | A term index for pattern matching. The index maps terms to arbitrary values.
+--
+-- The type of query supported is: given a search term, is there a term in the
+-- index which the search term is an instance of?
+
 {-# LANGUAGE BangPatterns, RecordWildCards, OverloadedStrings, FlexibleContexts #-}
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
@@ -14,11 +18,17 @@ import qualified Data.List as List
 import Twee.Utils
 import Twee.Index.Lookup
 
+-- Implementation note: the type definition and (performance-critical) lookup
+-- function are defined in Twee.Index.Lookup. This module defines the remaining
+-- part of the API, which is not as performance-sensitive.
+
+-- | Is the index empty?
 {-# INLINE null #-}
 null :: Index f a -> Bool
 null Nil = True
 null _ = False
 
+-- | An index with one entry.
 {-# INLINEABLE singleton #-}
 singleton :: Term f -> a -> Index f a
 singleton !t x = singletonEntry (key t) x

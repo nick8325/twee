@@ -1,3 +1,6 @@
+-- | A bounds-checked version of 'Data.Primitive.SmallArray'.
+-- See that module for documentation.
+
 module Data.Primitive.SmallArray.Checked(
   module Data.Primitive.SmallArray,
   module Data.Primitive.SmallArray.Checked) where
