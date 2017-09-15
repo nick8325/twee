@@ -80,13 +80,13 @@ insert !t x !idx = {-# SCC insert #-} aux (key t) idx
         idx' = aux u (lookupVarIndex v (var idx))
 
 -- Add a prefix to an index.
+-- Does not update the size field.
 {-# INLINE withPrefix #-}
 withPrefix :: TermList f -> Index f a -> Index f a
 withPrefix Empty idx = idx
 withPrefix _ Nil = Nil
 withPrefix t idx@Index{..} =
-  idx{size = size+1,
-      prefix = buildList (builder t `mappend` builder prefix)}
+  idx{prefix = buildList (builder t `mappend` builder prefix)}
 
 -- Take an index with a prefix and pull out the first symbol of the prefix,
 -- giving an index which doesn't start with a prefix.
