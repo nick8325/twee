@@ -55,7 +55,7 @@ parseMainFlags =
 parseConfig :: OptionParser Config
 parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*>
-    (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor <*> ifeqBonus) <*>
+    (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> show_instances)
   where
@@ -147,13 +147,6 @@ parseConfig =
       flag name [desc ++ " (" ++ show def ++ " by default)."] def parser
       where
         def = field defaultConfig
-    ifeqBonus = p <$> hornFlags
-      where
-        p flags =
-          case encoding flags of
-            Symmetric -> True
-            Asymmetric1 -> True
-            Asymmetric2 -> False
 
 parsePrecedence :: OptionParser [String]
 parsePrecedence =
@@ -168,7 +161,7 @@ data Constant =
     con_id    :: {-# UNPACK #-} !Jukebox.Function,
     con_arity :: {-# UNPACK #-} !Int,
     con_size  :: {-# UNPACK #-} !Int,
-    con_ifeq  :: !Bool }
+    con_bonus :: !Bool }
   deriving (Eq, Ord)
 
 data Precedence = Precedence !Bool !Bool !(Maybe Int) !Int
@@ -195,8 +188,8 @@ instance Ordered (Extended Constant) where
   lessEq t u = {-# SCC lessEq #-} KBO.lessEq t u
   lessIn model t u = {-# SCC lessIn #-} KBO.lessIn model t u
 
-instance Ifeq Constant where
-  isIfeq = con_ifeq
+instance EqualsBonus Constant where
+  hasEqualsBonus = con_bonus
 
 data TweeContext =
   TweeContext {
@@ -208,18 +201,24 @@ data TweeContext =
     ctx_type    :: Type }
 
 -- Convert back and forth between Twee and Jukebox.
-tweeConstant :: TweeContext -> Precedence -> Jukebox.Function -> Extended Constant
-tweeConstant TweeContext{..} prec fun
+tweeConstant :: HornFlags -> TweeContext -> Precedence -> Jukebox.Function -> Extended Constant
+tweeConstant flags TweeContext{..} prec fun
   | fun == ctx_minimal = Minimal
-  | otherwise = Function (Constant prec fun (Jukebox.arity fun) (sz fun) (Main.isIfeq fun))
+  | otherwise = Function (Constant prec fun (Jukebox.arity fun) (sz fun) (bonus fun))
   where
     sz fun = if isType fun then 0 else 1
+    bonus fun =
+      (isIfeq fun && encoding flags /= Asymmetric2) ||
+      isEquals fun
 
 isType :: Jukebox.Function -> Bool
 isType fun = "$to_" `isPrefixOf` base (name fun)
 
 isIfeq :: Jukebox.Function -> Bool
-isIfeq fun = "$ifeq" `isPrefixOf` base (name fun) || "$equals" `isPrefixOf` base (name fun)
+isIfeq fun = "$ifeq" `isPrefixOf` base (name fun)
+
+isEquals :: Jukebox.Function -> Bool
+isEquals fun = "$equals" `isPrefixOf` base (name fun)
 
 jukeboxFunction :: TweeContext -> Extended Constant -> Jukebox.Function
 jukeboxFunction _ (Function Constant{..}) = con_id
@@ -227,13 +226,13 @@ jukeboxFunction TweeContext{..} Minimal = ctx_minimal
 jukeboxFunction TweeContext{..} (Skolem _) =
   error "Skolem variable leaked into rule"
 
-tweeTerm :: TweeContext -> (Jukebox.Function -> Precedence) -> Jukebox.Term -> Term (Extended Constant)
-tweeTerm ctx prec t = build (tm t)
+tweeTerm :: HornFlags -> TweeContext -> (Jukebox.Function -> Precedence) -> Jukebox.Term -> Term (Extended Constant)
+tweeTerm flags ctx prec t = build (tm t)
   where
     tm (Jukebox.Var (Unique x _ _ ::: _)) =
       var (V (fromIntegral x))
     tm (f :@: ts) =
-      app (fun (tweeConstant ctx (prec f) f)) (map tm ts)
+      app (fun (tweeConstant flags ctx (prec f) f)) (map tm ts)
 
 jukeboxTerm :: TweeContext -> Term (Extended Constant) -> Jukebox.Term
 jukeboxTerm TweeContext{..} (Var (V x)) =
@@ -345,8 +344,8 @@ identifyProblem TweeContext{..} prob =
       return $ Left (pre inp (Jukebox.Var ctx_var, ctx_minimal :@: []))
     identify inp = Left inp
 
-runTwee :: GlobalFlags -> TSTPFlags -> MainFlags -> Config -> [String] -> (IO () -> IO ()) -> Problem Clause -> IO Answer
-runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC runTwee #-} do
+runTwee :: GlobalFlags -> TSTPFlags -> MainFlags -> HornFlags -> Config -> [String] -> (IO () -> IO ()) -> Problem Clause -> IO Answer
+runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# SCC runTwee #-} do
   let
     -- Encode whatever needs encoding in the problem
     ctx = makeContext obligs
@@ -373,7 +372,7 @@ runTwee globals (TSTPFlags tstp) main config precedence later obligs = {-# SCC r
 
     -- Translate everything to Twee.
     toEquation (t, u) =
-      canonicalise (tweeTerm ctx prec t :=: tweeTerm ctx prec u)
+      canonicalise (tweeTerm horn ctx prec t :=: tweeTerm horn ctx prec u)
 
     goals =
       [ goal n pre_name (toEquation pre_eqn)
@@ -609,7 +608,7 @@ main = do
            (toFormulasBox =>>=
             expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
             clausifyBox =>>= oneConjectureBox) <*>
-           (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> parseConfig <*> parsePrecedence)))
+           (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> hornFlags <*> parseConfig <*> parsePrecedence)))
   where
     combine horn encode prove later prob = do
       res <- horn prob

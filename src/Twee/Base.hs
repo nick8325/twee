@@ -5,7 +5,7 @@ module Twee.Base(
   Id(..), Symbolic(..), subst, GSymbolic(..), Has(..), terms, TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding,
   Minimal(..), minimalTerm, isMinimal, erase,
-  Skolem(..), Arity(..), Sized(..), Ordered(..), lessThan, orientTerms, Ifeq(..), Strictness(..), Function, Extended(..),
+  Skolem(..), Arity(..), Sized(..), Ordered(..), lessThan, orientTerms, EqualsBonus(..), Strictness(..), Function, Extended(..),
   module Twee.Term, module Twee.Pretty) where
 
 import Prelude hiding (lookup)
@@ -184,11 +184,11 @@ instance Sized f => Sized (TermList f) where
 instance Sized f => Sized (Term f) where
   size = size . singleton
 
-type Function f = (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f, Ifeq f)
+type Function f = (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f, EqualsBonus f)
 
-class Ifeq f where
-  isIfeq :: f -> Bool
-  isIfeq _ = False
+class EqualsBonus f where
+  hasEqualsBonus :: f -> Bool
+  hasEqualsBonus _ = False
 
 data Extended f =
     Minimal
@@ -219,6 +219,6 @@ instance (Typeable f, Ord f) => Minimal (Extended f) where
 instance (Typeable f, Ord f) => Skolem (Extended f) where
   skolem x = fun (Skolem x)
 
-instance Ifeq f => Ifeq (Extended f) where
-  isIfeq (Function f) = isIfeq f
-  isIfeq _ = False
+instance EqualsBonus f => EqualsBonus (Extended f) where
+  hasEqualsBonus (Function f) = hasEqualsBonus f
+  hasEqualsBonus _ = False
