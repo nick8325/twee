@@ -1,3 +1,7 @@
+Horn: try encoding all preconditions at once (a=b&c=d=>e=f).
+Work out what we can erase.
+Encode predicates more efficiently.
+
 Try one-sided choice encoding:
 e.g. t = u | v = w becomes:
 q(x) => t=u
