@@ -96,6 +96,8 @@ and then fix up all uses of the lemma - the transformation above
 should then clean up everything.
 
 look at gt6 - ground joinability testing goes really slow
+also, after a while "a" becomes redundant - but we still keep deriving
+stuff from it
 rob006-1 too
 
 * adjust CP depth so that simplifications of rules get the same depth
