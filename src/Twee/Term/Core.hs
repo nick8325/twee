@@ -16,6 +16,7 @@ import Control.Monad.ST.Strict
 import Data.Bits
 import Data.Int
 import GHC.Types(Int(..))
+import GHC.Int(Int64(..))
 import GHC.Prim
 import GHC.ST hiding (liftST)
 import Data.Ord
@@ -153,9 +154,12 @@ unsafePatHead TermList{..} =
 -- A helper for Cons/ConsSym.
 {-# INLINE patHead #-}
 patHead :: TermList f -> Maybe (Term f, TermList f, TermList f)
-patHead t@TermList{..}
-  | low == high = Nothing
-  | otherwise = unsafePatHead t
+patHead t@TermList{..} =
+  case equals low high of
+    1 -> Nothing
+    0 -> unsafePatHead t
+  where
+    equals (I# x) (I# y) = I# (x ==# y)
 
 -- Pattern synonyms for single terms.
 -- * Var :: Var -> Term f
@@ -224,22 +228,28 @@ eqTermList :: TermList f -> TermList f -> Bool
 eqTermList
   (TermList (I# low1) (I# high1) (ByteArray array1))
   (TermList (I# low2) (I# high2) (ByteArray array2)) =
-    weqTermList low1 high1 array1 low2 high2 array2
+    tagToEnum# (weqTermList low1 high1 array1 low2 high2 array2)
 
 -- Manually worker-wrapper transform the thing, ugh...
 {-# NOINLINE weqTermList #-}
 weqTermList ::
   Int# -> Int# -> ByteArray# ->
   Int# -> Int# -> ByteArray# ->
-  Bool
+  Int#
 weqTermList low1 high1 array1 low2 high2 array2 =
-  lenList t == lenList u && eqSameLength t u
+  case equals (lenList t) (lenList u) of
+    0 -> 0#
+    1 -> eqSameLength t u
   where
+    equals (I# x) (I# y) = I# (x ==# y)
+    equals64 (I64# x) (I64# y) = I# (x ==# y)
     t = TermList (I# low1) (I# high1) (ByteArray array1)
     u = TermList (I# low2) (I# high2) (ByteArray array2)
-    eqSameLength Empty !_ = True
+    eqSameLength Empty !_ = 1#
     eqSameLength (ConsSym s1 t) (UnsafeConsSym s2 u) =
-      root s1 == root s2 && eqSameLength t u
+      case equals64 (root s1) (root s2) of
+        0 -> 0#
+        1 -> eqSameLength t u
 
 instance Ord (TermList f) where
   {-# INLINE compare #-}

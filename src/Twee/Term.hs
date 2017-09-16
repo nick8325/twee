@@ -5,16 +5,45 @@
 -- in Twee.Term.Core.
 {-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables #-}
 module Twee.Term(
-  module Twee.Term,
-  -- Stuff from Twee.Term.Core.
-  Term, TermList, at, lenList,
-  isSubtermOfList,
-  pattern Empty, pattern Cons, pattern ConsSym,
+  -- * Terms
+  Term, pattern Var, pattern App,
+  TermList, pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
-  Fun, fun, fun_id, fun_value, Var(..), pattern Var, pattern App, singleton, Builder) where
+  Fun, fun, fun_id, fun_value, Var(..), 
+  singleton,
+
+  -- * Building terms
+  Build(..),
+  Builder,
+  build, buildList,
+  con, app, var,
+
+  -- * Substitutions
+  listSubstList, listSubst, foldSubst, allSubst, forMSubst_, substDomain,
+  Substitution(..),
+  subst, substSize, Subst(..),
+  lookupList, extendList, retract, unsafeExtendList,
+  substCompose, substCompatible, substUnion, idempotent, idempotentOn,
+  close, canonicalise, emptySubst, flattenSubst,
+  -- * Matching
+  match, matchIn, matchList, matchListIn,
+  TriangleSubst(..),
+  -- * Unification
+  unify, unifyList, unifyTri, unifyListTri,
+  -- * Misc
+  empty, children, unpack, lookup, extend, len,
+  bound, boundList, occurs, subtermsList, subterms,
+  properSubterms, isApp, isVar, isInstanceOf, isVariantOf,
+  isSubtermOf, mapFun, mapFunList, replacePosition,
+  replacePositionSub,
+  positionToPath, pathToPosition,
+  pattern F,
+  (<<),
+  at, lenList,
+  isSubtermOfList) where
 
 import Prelude hiding (lookup)
-import Twee.Term.Core
+import Twee.Term.Core hiding (F)
 import Data.List hiding (lookup, find)
 import Data.Maybe
 import Data.Monoid

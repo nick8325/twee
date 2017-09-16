@@ -67,7 +67,6 @@ library
     Data.ChurchList
     Data.DynamicArray
     Data.Heap
-    Twee.Index.Lookup
     Twee.Term.Core
 
   build-depends:
