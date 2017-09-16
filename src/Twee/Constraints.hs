@@ -281,20 +281,28 @@ solve xs branch@Branch{..}
       true (t, u) = lessEqInModel model t u == Just Strict
 
 class Ord f => Ordered f where
+  -- | Return 'True' if the first term is less than or equal to the second,
+  -- in the term ordering.
   lessEq :: Term f -> Term f -> Bool
+  -- | Check if the first term is less than or equal to the second in the given model,
+  -- and decide whether the inequality is strict or nonstrict.
   lessIn :: Model f -> Term f -> Term f -> Maybe Strictness
 
-data Strictness = Strict | Nonstrict deriving (Eq, Show)
+-- | Describes whether an inequality is strict or nonstrict.
+data Strictness =
+    -- | The first term is strictly less than the second.
+    Strict
+    -- | The first term is less than or equal to the second.
+  | Nonstrict deriving (Eq, Show)
 
 -- | Return 'True' if the first argument is strictly less than the second,
 -- in the term ordering.
 lessThan :: Ordered f => Term f -> Term f -> Bool
 lessThan t u = lessEq t u && isNothing (unify t u)
 
--- | Return the direction in which the terms are oriented,
--- or 'Nothing' if they cannot be oriented.
--- A result of @'Just' 'LT'@ means that the first term is
--- less than /or equal to/ the second.
+-- | Return the direction in which the terms are oriented according to the term
+-- ordering, or 'Nothing' if they cannot be oriented. A result of @'Just' 'LT'@
+-- means that the first term is less than /or equal to/ the second.
 orientTerms :: Ordered f => Term f -> Term f -> Maybe Ordering
 orientTerms t u
   | t == u = Just EQ
