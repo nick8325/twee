@@ -1,5 +1,5 @@
 -- Critical pairs.
-{-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards, OverloadedStrings, TypeFamilies, DeriveGeneric, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards, OverloadedStrings, TypeFamilies, GeneralizedNewtypeDeriving #-}
 module Twee.CP where
 
 import qualified Twee.Term as Term
@@ -16,7 +16,6 @@ import Twee.Utils
 import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof(Derivation, Lemma, congPath)
-import GHC.Generics
 
 -- The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
@@ -182,7 +181,6 @@ data CriticalPair f =
     cp_depth :: {-# UNPACK #-} !Depth,
     cp_top   :: !(Maybe (Term f)),
     cp_proof :: !(Derivation f) }
-  deriving Generic
 
 instance Symbolic (CriticalPair f) where
   type ConstantOf (CriticalPair f) = f

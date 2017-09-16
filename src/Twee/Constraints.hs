@@ -50,13 +50,13 @@ instance PrettyTerm f => Pretty (Formula f) where
   pPrintPrec _ _ (And []) = text "true"
   pPrintPrec _ _ (Or []) = text "false"
   pPrintPrec l p (And xs) =
-    pPrintParen (p > 10)
+    maybeParens (p > 10)
       (fsep (punctuate (text " &") (nest_ (map (pPrintPrec l 11) xs))))
     where
       nest_ (x:xs) = x:map (nest 2) xs
       nest_ [] = undefined
   pPrintPrec l p (Or xs) =
-    pPrintParen (p > 10)
+    maybeParens (p > 10)
       (fsep (punctuate (text " |") (nest_ (map (pPrintPrec l 11) xs))))
     where
       nest_ (x:xs) = x:map (nest 2) xs
@@ -286,9 +286,15 @@ class Ord f => Ordered f where
 
 data Strictness = Strict | Nonstrict deriving (Eq, Show)
 
+-- | Return 'True' if the first argument is strictly less than the second,
+-- in the term ordering.
 lessThan :: Ordered f => Term f -> Term f -> Bool
 lessThan t u = lessEq t u && isNothing (unify t u)
 
+-- | Return the direction in which the terms are oriented,
+-- or 'Nothing' if they cannot be oriented.
+-- A result of @'Just' 'LT'@ means that the first term is
+-- less than /or equal to/ the second.
 orientTerms :: Ordered f => Term f -> Term f -> Maybe Ordering
 orientTerms t u
   | t == u = Just EQ

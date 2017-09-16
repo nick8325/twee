@@ -1,9 +1,9 @@
-{-# LANGUAGE DeriveGeneric, TypeFamilies #-}
+{-# LANGUAGE TypeFamilies #-}
 module Twee.Equation where
 
 import Twee.Base
-import GHC.Generics
 import Data.Maybe
+import Control.Monad
 
 --------------------------------------------------------------------------------
 -- Equations.
@@ -13,11 +13,13 @@ data Equation f =
   (:=:) {
     eqn_lhs :: {-# UNPACK #-} !(Term f),
     eqn_rhs :: {-# UNPACK #-} !(Term f) }
-  deriving (Eq, Ord, Show, Generic)
+  deriving (Eq, Ord, Show)
 type EquationOf a = Equation (ConstantOf a)
 
 instance Symbolic (Equation f) where
   type ConstantOf (Equation f) = f
+  termsDL (t :=: u) = termsDL t `mplus` termsDL u
+  subst_ sub (t :=: u) = subst_ sub t :=: subst_ sub u
 
 instance PrettyTerm f => Pretty (Equation f) where
   pPrint (x :=: y) = pPrint x <+> text "=" <+> pPrint y

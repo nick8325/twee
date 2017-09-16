@@ -14,24 +14,24 @@ import Twee.Term
 
 -- * Miscellaneous 'Pretty' instances and utilities.
 
+-- | Print a value to the console.
 prettyPrint :: Pretty a => a -> IO ()
 prettyPrint x = putStrLn (prettyShow x)
 
-pPrintParen :: Bool -> Doc -> Doc
-pPrintParen True  d = parens d
-pPrintParen False d = d
-
+-- | The empty document. Used to avoid name clashes with 'Twee.Term.empty'.
 pPrintEmpty :: Doc
 pPrintEmpty = PP.empty
 
 instance Pretty Doc where pPrint = id
 
+-- | Print a tuple of values.
 pPrintTuple :: [Doc] -> Doc
 pPrintTuple = parens . fsep . punctuate comma
 
 instance Pretty a => Pretty (Set a) where
   pPrint = pPrintSet . map pPrint . Set.toList
 
+-- | Print a set of vlaues.
 pPrintSet :: [Doc] -> Doc
 pPrintSet = braces . fsep . punctuate comma
 
@@ -86,14 +86,17 @@ instance PrettyTerm f => Pretty (Subst f) where
 
 -- | A class for customising the printing of function symbols.
 class Pretty f => PrettyTerm f where
+  -- | The style of the function symbol. Defaults to 'curried'.
   termStyle :: f -> TermStyle
   termStyle _ = curried
 
 -- | Defines how to print out a function symbol.
 newtype TermStyle =
   TermStyle {
-    -- | Takes the pretty-printing level, precedence,
-    -- pretty-printed function symbol and list of arguments and prints the term.
+    -- | Renders a function application.
+    -- Takes the following arguments in this order:
+    -- Pretty-printing level, current precedence,
+    -- pretty-printed function symbol and list of arguments to the function.
     pPrintTerm :: forall a. Pretty a => PrettyLevel -> Rational -> Doc -> [a] -> Doc }
 
 invisible, curried, uncurried, prefix, postfix :: TermStyle
@@ -105,7 +108,7 @@ invisible =
       f [] = d
       f [t] = pPrintPrec l p t
       f (t:ts) =
-        pPrintParen (p > 10) $
+        maybeParens (p > 10) $
           pPrint t <+>
             (hsep (map (pPrintPrec l 11) ts))
     in f
@@ -116,7 +119,7 @@ curried =
     let
       f [] = d
       f xs =
-        pPrintParen (p > 10) $
+        maybeParens (p > 10) $
           d <+>
             (hsep (map (pPrintPrec l 11) xs))
     in f
@@ -138,7 +141,7 @@ fixedArity arity style =
       f xs
         | length xs < arity = pPrintTerm curried l p (parens d) xs
         | length xs > arity =
-            pPrintParen (p > 10) $
+            maybeParens (p > 10) $
               hsep (pPrintTerm style l 11 d ys:
                     map (pPrintPrec l 11) zs)
         | otherwise = pPrintTerm style l p d xs
@@ -168,7 +171,7 @@ infixStyle :: Int -> TermStyle
 infixStyle pOp =
   fixedArity 2 $
   TermStyle $ \l p d [x, y] ->
-    pPrintParen (p > fromIntegral pOp) $
+    maybeParens (p > fromIntegral pOp) $
       pPrintPrec l (fromIntegral pOp+1) x <+> d <+>
       pPrintPrec l (fromIntegral pOp+1) y
 

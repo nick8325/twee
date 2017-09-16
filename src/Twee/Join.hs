@@ -1,5 +1,5 @@
 -- Tactics for joining critical pairs.
-{-# LANGUAGE FlexibleContexts, BangPatterns, RecordWildCards, TypeFamilies, DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts, BangPatterns, RecordWildCards, TypeFamilies #-}
 module Twee.Join where
 
 import Twee.Base

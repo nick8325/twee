@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, BangPatterns, OverloadedStrings, DeriveGeneric, MultiParamTypeClasses, ScopedTypeVariables, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, BangPatterns, OverloadedStrings, MultiParamTypeClasses, ScopedTypeVariables, GeneralizedNewtypeDeriving #-}
 module Twee.Rule where
 
 import Twee.Base
@@ -14,7 +14,6 @@ import Twee.Utils
 import qualified Data.Set as Set
 import Data.Set(Set)
 import qualified Twee.Term as Term
-import GHC.Generics
 import Data.Ord
 import Twee.Equation
 import qualified Twee.Proof as Proof
@@ -33,7 +32,7 @@ data Rule f =
     -- For unoriented rules: vars lhs == vars rhs
     lhs :: {-# UNPACK #-} !(Term f),
     rhs :: {-# UNPACK #-} !(Term f) }
-  deriving (Eq, Ord, Show, Generic)
+  deriving (Eq, Ord, Show)
 type RuleOf a = Rule (ConstantOf a)
 
 data Orientation f =
@@ -59,6 +58,8 @@ weaklyOriented _ = False
 
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
+  termsDL (Rule or t u) = termsDL or `mplus` termsDL t `mplus` termsDL u
+  subst_ sub (Rule or t u) = Rule (subst_ sub or) (subst_ sub t) (subst_ sub u)
 
 instance f ~ g => Has (Rule f) (Term g) where
   the = lhs
@@ -274,13 +275,17 @@ data Resulting f =
   Resulting {
     result :: {-# UNPACK #-} !(Term f),
     reduction :: !(Reduction f) }
-  deriving (Show, Generic)
+  deriving Show
 
 instance Eq (Resulting f) where x == y = compare x y == EQ
 instance Ord (Resulting f) where compare = comparing result
 
 instance Symbolic (Resulting f) where
   type ConstantOf (Resulting f) = f
+  termsDL (Resulting t red) =
+    termsDL t `mplus` termsDL red
+  subst_ sub (Resulting t red) =
+    Resulting (subst_ sub t) (subst_ sub red)
 
 instance Function f => Pretty (Resulting f) where
   pPrint = pPrint . reduction
