@@ -1,185 +1,82 @@
-See if we can check that vars are non-negative without hurting performance.
+## Horn clauses
 
-Horn: try encoding all preconditions at once (a=b&c=d=>e=f).
-Work out what we can erase.
-Encode predicates more efficiently.
+* See if we can erase more variables in asymmetric2.
+* Try encoding a=b&c=d=>e=f in one go rather than several.
+    - Problem: may create more critical pairs.
+* Try introducing extra function symbols to reduce number of critical pairs.
+    - Possible approach: a=b=>c=d becomes something like a=b=>equals_a_b; equals_a_b=>c=d. So each rule only contains one original equation.
+* Encode predicates less wastefully.
+* Work out how to print conditional proofs nicely. Possibly transform proofs into form:
 
-Try one-sided choice encoding:
-e.g. t = u | v = w becomes:
-q(x) => t=u
-~q(x) => v=w
-(q(x) => p) & (~q(x) => p) => p
-Is this complete? Maybe not. Looks a bit fishy with nested =>.
-Clausifies to:
-  (q(x) & ~p) | (~q(x) & ~p) | p
-= q(x) | ~q(x) | p
-= true. Oh right OK. And if we replace ~q(x) with r(x), it's not Horn.
+    Lemma: p => q
 
+    Proof: p => ... = ... => q
 
-Make $ifeq quite small, so that it ends up on outside.
+* Work out how to print conditional proofs _at all_. Possible idea: transform axioms into proofs, e.g. $ifeq(x,x,y,z) might become (x=x=>y=z)<=>(y=z), then somehow lift transitivity to this setting. Alternatively interpret $ifeq as if-then-else and then simplify the proof.
 
-When we have vars in a=b not in c=d, erase them!
-Wait, this is incomplete.
-But can we do something to reduce number of vars?
+## More extensions
 
-when we have a=b&c=d=>e=f, we'll get CPs both against a=b and c=d, and
-the total number of CPs will be the cartesian product (we try them
-independently). Can we fix this? Possible idea:
-  a=b=>foo=bar (fresh constants, or fresh function symbols with
-  variables in free(a)+free(b))
-  foo=bar&c=d=>e=f
-in any case, split into several equations
+* One-sided choice functions for classical reasoning.
+* Theory reasoning.
+* SAT-driven loop.
+* Goal direction from paper. Look for redundancy criterion for when forward chaining is unnecessary.
+* Restarts/dynamic ordering.
+    - When we discover the crucial lemma, it causes bajillions of existing
+      rules to be discarded. Can we somehow use this as a similar/boringness
+      metric on these existing rules? (The fact that there is a single rule
+      which will generalise them all.)
 
-benchmark what happens if we ignore types in horn clause encoding.
-(Unsound because: if we prove x=y (for all terms x, y), we immediately
-get p = true (for all predicates p). But we could restart instead with
-the (presumably much easier) EPR problem.)
+## Smaller improvements
 
-Transform proofs into form:
-
-   Lemma: p => q
-   Proof:
-     p
-   => ...
-   = ...
-   => q
-
-When evaluating CPs, try Skolemising first+unorientable rules.
-
-Make duplicate bonus apply to duplicates which appear on different
-sides of the equation (e.g. a,b in ifeq(a,b,c)=ifeq(a,b,d)).
-
-Use $equals strategy for ifeq - score for ifeq(a,b,c) is reduced if a
-and b are unifiable. (This may work better when CPs are Skolemised
-first.)
-
-Remove $equals handling and use ifeq instead.
-
-Keep non-unit goals (have Twee handle them in main loop) but turn
-non-ground goals into $ifeq.
-
-horn: try two different encodings
-  1) ifeq(X,X,Y,Z) = Y
-     a = b => c = d becomes
-       ifeq(a,b,c,d) = d
-  2) ifeq(X,X,Y) = Y
-     a = b => c = d becomes
-       ifeq(a,b,c) = ifeq(a,b,d)
-When we have a goal t=u, we can always generate
-  ifeq(t,u,Y,Z) = Z
-(since we have an axiom t!=u). Although this isn't actually any use
-since it only allows us to deduce d=d.
-
-Think about how to encode choice functions natively. Is there a better
-encoding with only one-sided choice?
-
-Adapt weights, argument sizes etc. for new heuristics.
-
-Make a list of appropriate problems for Horn-twee.
-
-Think about if we need to add types when we have predicates.
-
-Can we make the type encodings work better automatically, based on the
-fact that unit equality is monotone above size 1? (Model of size 2 =>
-model of all sizes) - maybe not, one type may have X=Y while another
-doesn't. But always fine for $equals to piggy-back on existing type.
-Not OK for predicates since X=Y => p(a)=true. OTOH could restart if
-X=Y (problem becomes an instance of HORNSAT).
-
-print out saturation even when --quiet is passed in
-
-proof of grp196-1 has duplicate lemma numbers
-
-proof simplification: if we have a chain of axioms/lemmas
-  t = u = ... = v,
-check to see if the lemma used to prove t = u also works for t = v.
-(This helps with repeated terms in laws, as well as weak laws.)
-Inline weak laws to help with this? Or maybe take the lemma
-  t -> t'
-and turn it into
-  t -> t' -> rename(t)
-and then fix up all uses of the lemma - the transformation above
-should then clean up everything.
-
-look at gt6 - ground joinability testing goes really slow
-also, after a while "a" becomes redundant - but we still keep deriving
-stuff from it
-rob006-1 too
-
-* adjust CP depth so that simplifications of rules get the same depth
-  (maybe this is already the case)
-* make sure that connectedness respects simplerThan
-* use extra rules again [should be ok to rewrite one ground joinable
+* When evaluating CPs, try Skolemising first + apply unorientable rules.
+* Keep non-unit goals (have Twee handle them in main loop).
+* Proof simplification: if we have a chain of axioms/lemmas t = u = ... = v,
+  check to see if the lemma used to prove t = u also works for t = v.
+  (This helps with repeated terms in laws, as well as weak laws.)
+  Inline weak laws to help with this? Or maybe take the lemma
+    t -> t'
+  and turn it into
+    t -> t' -> rename(t)
+  and then fix up all uses of the lemma - the transformation above
+  should then clean up everything.
+* Use extra rules again [should be OK to rewrite one ground joinable
   term to a smaller one: instance of subconnectedness, or
   alternatively, if we have t -> v <- u and replace t with u then we
-  could rewrite t to v before, and now we can rewrite t to u to v]
-* check that details of simplerThan are correct
-  (e.g., is it enough to check the rule in the orientation we are
-  currently using it?) Why is it complete?
+  could rewrite t to v before, and now we can rewrite t to u to v].
+  Add extra rule when a rule is simplified by ground joining.
+* Finish off simplerThan stuff. Make sure it is always use, incl. during connectedness, and define in a more principled way.
+* Cancellative laws instead of ifeq hack.
+* Case split: try abstracting bigger terms to variables so that we can case split on compound terms.
 
-N.B. if we introduce goal-directness, we must NOT rewrite
-terms t(..., X, ...) backwards with e.g. $equals(t,t)->$true,
-letting X=$true. This is a type error really.
-  * Maybe add narrowing before encoding types?
+## Miscellaneous
 
-add extra rules:
-if a rule is simplified away, keep it as an extra rule, in case of
-case-split-on-not-vars note below (?)
-maybe do that only if a rule is ground joined?
+* Twee assumes that variable numbers are non-negative but the term constructors don't check this. See if we can without hurting performance (possibly: export only a smart constructor for Var, possibly as a pattern synonym).
 
-simplification: add complete version
-plan: define total order on rules which is compatible with KBO
-(i.e., order on orientable rules is defined by KBO); only rewrite wrt
-lesser rules. Note: compatibility implies that we don't have to check
-this condition when applying oriented rules, only unoriented.
+* Proof of grp196-1 has duplicate lemma numbers
 
-re-add cancellative laws?
+* Look at gt6 - ground joinability testing goes really slow (ROB006-1 too).
+  Also, after a while "a" becomes redundant - but we still keep deriving
+  stuff from it.
 
-goal-directed: combine two rules with forward reasoning
-(makes it easier to e.g. identify useful critical pairs)
+* N.B. if we introduce goal-directness, we must NOT rewrite
+  terms t(..., X, ...) backwards with e.g. $equals(t,t)->$true,
+  letting X=$true. This is a type error really. Maybe add narrowing before encoding types?
 
-CP compression for longer runs.
-  * N.B. many rules get one of their CPs selected, so need compression
-    of intervals. This may be because when a rule is created, it was
-    head of the queue, and e.g. any CP with commutativity will have
-    a similar weight.
+* Do we really need to eagerly generate critical pairs from recently
+  generated laws? Maybe gradually notch up maximum age of considered
+  critical pairs. E.g.: only consider CPs from rules up to label l/2,
+  where l is the current label. Perhaps print out the maximum CP age
+  actually used in a proof.
 
-Look into twee with boolean preconditions. (Also twee with theories.)
+* Suppose we have the rule
+    x*x*x*x*x*x -> x
+  Then we should give the term
+    x*x*x*x*y
+  a relatively small weight, because the instance [y->x*x] rewrites to x.
+  Somehow, terms that are "close to" being reduced to small terms should
+  get a smaller weight.
 
-It may be that:
-  t = u is ground joinable
-but we want to apply t_sigma = u_sigma in ground joining a later rule
-and then we can't because it's not a case split on variables.
-That suggests that we should case split on not-variables by replacing
-them with uninterpreted variables temporarily.
-
-Do we really need to eagerly generate critical pairs from recently
-generated laws? Maybe gradually notch up maximum age of considered
-critical pairs. E.g.: only consider CPs from rules up to label l/2,
-where l is the current label. Perhaps print out the maximum CP age
-actually used in a proof.
-
-Suppose we have the rule
-  x*x*x*x*x*x -> x
-Then we should give the term
-  x*x*x*x*y
-a relatively small weight, because the instance [y->x*x] rewrites to x.
-Somehow, terms that are "close to" being reduced to small terms should
-get a smaller weight.
-
-Prioritise CPs with BIG top terms? As this indicates a large
-simplification step.
-
-Look at size of overlap when weighting CPs (big overlap - better?)
-Look at repeated variables (more repeated variables - better because
-harder to form a small critical pair?)
-
-For QuickSpec-style "only generate laws up to this size": when a
-critical pair is this size, join it under the constraint X <= c for
-all variables X where c is a maximal constant of size 1. This effectively
-forces all variables to have size one.
-
-When we discover the crucial lemma, it causes bajillions of existing
-rules to be discarded. Can we somehow use this as a similar/boringness
-metric on these existing rules? (The fact that there is a single rule
-which will generalise them all.)
+* For QuickSpec-style "only generate laws up to this size": when a
+  critical pair is this size, join it under the constraint X <= c for
+  all variables X where c is a maximal constant of size 1. This effectively
+  forces all variables to have size one.
