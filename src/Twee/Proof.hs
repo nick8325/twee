@@ -1,9 +1,16 @@
+-- | Equational proofs which are checked for correctedness.
 {-# LANGUAGE TypeFamilies, PatternGuards, RecordWildCards, ScopedTypeVariables #-}
 module Twee.Proof(
+  -- * Constructing proofs
   Proof, Derivation(..), Lemma(..), Axiom(..),
   certify, equation, derivation,
-  lemma, axiom, symm, trans, cong, simplify, congPath,
-  usedLemmas, usedAxioms, usedLemmasAndSubsts, usedAxiomsAndSubsts,
+  -- ** Smart constructors for derivations
+  lemma, axiom, symm, trans, cong, congPath,
+
+  -- * Analysing proofs
+  simplify, usedLemmas, usedAxioms, usedLemmasAndSubsts, usedAxiomsAndSubsts,
+
+  -- * Pretty-printing proofs
   Config(..), defaultConfig, Presentation(..),
   ProvedGoal(..), provedGoal, checkProvedGoal,
   pPrintPresentation, present, describeEquation) where
@@ -22,48 +29,64 @@ import qualified Data.Map.Strict as Map
 -- Equational proofs. Only valid proofs can be constructed.
 ----------------------------------------------------------------------
 
--- A checked proof. If you have a value of type Proof f,
+-- | A checked proof. If you have a value of type @Proof f@,
 -- it should jolly well represent a valid proof!
+--
+-- The only way to construct a @Proof f@ is by using 'certify'.
 data Proof f =
   Proof {
     equation   :: !(Equation f),
     derivation :: !(Derivation f) }
   deriving (Eq, Show)
 
--- A derivation is an unchecked proof. It might be wrong!
--- The way to check it is to call "certify" to turn it into a Proof.
+-- | A derivation is an unchecked proof. It might be wrong!
+-- The way to check it is to call 'certify' to turn it into a 'Proof'.
 data Derivation f =
-    -- Apply an existing rule (with proof!) to the root of a term
+    -- | Apply an existing rule (with proof!) to the root of a term
     UseLemma {-# UNPACK #-} !(Lemma f) !(Subst f)
-    -- Apply an axiom to the root of a term
+    -- | Apply an axiom to the root of a term
   | UseAxiom {-# UNPACK #-} !(Axiom f) !(Subst f)
-    -- Reflexivity
+    -- | Reflexivity. @'Refl' t@ proves @t = t@.
   | Refl !(Term f)
-    -- Symmetry
+    -- | Symmetry
   | Symm !(Derivation f)
-    -- Transivitity
+    -- | Transivitity
   | Trans !(Derivation f) !(Derivation f)
-    -- Congruence
+    -- | Congruence.
+    -- Parallel, i.e., takes a function symbol and one derivation for each
+    -- argument of that function.
   | Cong {-# UNPACK #-} !(Fun f) ![Derivation f]
   deriving (Eq, Show)
 
--- A lemma, which includes a proof.
+-- | A lemma, which includes a proof.
 data Lemma f =
   Lemma {
+    -- | The id number of the lemma.
+    -- Has no semantic meaning; for convenience only.
     lemma_id :: {-# UNPACK #-} !Id,
+    -- | A proof of the lemma.
     lemma_proof :: !(Proof f) }
   deriving Show
 
--- An axiom, which comes without proof.
+--  | An axiom, which comes without proof.
 data Axiom f =
   Axiom {
+    -- | The number of the axiom.
+    -- Has no semantic meaning; for convenience only.
     axiom_number :: {-# UNPACK #-} !Int,
+    -- | A description of the axiom.
+    -- Has no semantic meaning; for convenience only.
     axiom_name :: !String,
+    -- | The equation which the axiom asserts.
     axiom_eqn :: !(Equation f) }
   deriving (Eq, Ord, Show)
 
--- The trusted core of the module.
--- Turns a derivation into a proof, while checking the derivation.
+-- | Checks a 'Derivation' and, if it is correct, returns a
+-- certified 'Proof'.
+--
+-- If the 'Derivation' is incorrect, throws an exception.
+
+-- This is the trusted core of the module.
 {-# INLINEABLE certify #-}
 certify :: PrettyTerm f => Derivation f -> Proof f
 certify p =
@@ -149,11 +172,13 @@ instance PrettyTerm f => Pretty (Lemma f) where
     text "lemma" <>
     pPrintTuple [pPrint lemma_id, pPrint (equation lemma_proof)]
 
--- Simplify a derivation.
+-- | Simplify a derivation.
+--
 -- After simplification, a derivation has the following properties:
---   * Symm is pushed down next to Step
---   * Refl only occurs inside Cong or at the top level
---   * Trans is right-associated and is pushed inside Cong if possible
+--
+--   * 'Symm' is pushed down next to 'Lemma' and 'Axiom'
+--   * 'Refl' only occurs inside 'Cong' or at the top level
+--   * 'Trans' is right-associated and is pushed inside 'Cong' if possible
 simplify :: Minimal f => (Lemma f -> Maybe (Derivation f)) -> Derivation f -> Derivation f
 simplify lem p = simp p
   where
@@ -171,7 +196,6 @@ simplify lem p = simp p
     simp (Cong f ps) = cong f (map simp ps)
     simp p = p
 
--- Smart constructors for derivations.
 lemma :: Lemma f -> Subst f -> Derivation f
 lemma lem@Lemma{..} sub = UseLemma lem sub
 
@@ -216,10 +240,12 @@ cong f ps =
     unRefl (Refl t) = Just t
     unRefl _ = Nothing
 
--- Find all lemmas which are used in a derivation.
+-- | Find all lemmas which are used in a derivation.
 usedLemmas :: Derivation f -> [Lemma f]
 usedLemmas p = map fst (usedLemmasAndSubsts p)
 
+-- | Find all lemmas which are used in a derivation,
+-- together with the substitutions used.
 usedLemmasAndSubsts :: Derivation f -> [(Lemma f, Subst f)]
 usedLemmasAndSubsts p = lem p []
   where
@@ -229,10 +255,12 @@ usedLemmasAndSubsts p = lem p []
     lem (Cong _ ps) = foldr (.) id (map lem ps)
     lem _ = id
 
--- Find all axioms which are used in a derivation.
+-- | Find all axioms which are used in a derivation.
 usedAxioms :: Derivation f -> [Axiom f]
 usedAxioms p = map fst (usedAxiomsAndSubsts p)
 
+-- | Find all axioms which are used in a derivation,
+-- together with the substitutions used.
 usedAxiomsAndSubsts :: Derivation f -> [(Axiom f, Subst f)]
 usedAxiomsAndSubsts p = ax p []
   where
@@ -242,7 +270,7 @@ usedAxiomsAndSubsts p = ax p []
     ax (Cong _ ps) = foldr (.) id (map ax ps)
     ax _ = id
 
--- Applies a derivation at a particular path in a term.
+-- | Applies a derivation at a particular path in a term.
 congPath :: [Int] -> Term f -> Derivation f -> Derivation f
 congPath [] _ p = p
 congPath (n:ns) (App f t) p | n <= length ts =
@@ -258,13 +286,17 @@ congPath _ _ _ = error "bad path"
 -- Pretty-printing of proofs.
 ----------------------------------------------------------------------
 
--- Options for proof presentation.
+-- | Options for proof presentation.
 data Config =
   Config {
+    -- | Never inline lemmas.
     cfg_all_lemmas :: !Bool,
+    -- | Inline all lemmas.
     cfg_no_lemmas :: !Bool,
+    -- | Print out explicit substitutions.
     cfg_show_instances :: !Bool }
 
+-- | The default configuration.
 defaultConfig :: Config
 defaultConfig =
   Config {
@@ -272,11 +304,14 @@ defaultConfig =
     cfg_no_lemmas = False,
     cfg_show_instances = False }
 
--- A proof, with all axioms and lemmas explicitly listed.
+-- | A proof, with all axioms and lemmas explicitly listed.
 data Presentation f =
   Presentation {
+    -- | The used axioms.
     pres_axioms :: [Axiom f],
+    -- | The used lemmas.
     pres_lemmas :: [Lemma f],
+    -- | The goals proved.
     pres_goals  :: [ProvedGoal f] }
   deriving Show
 
@@ -299,6 +334,7 @@ data ProvedGoal f =
     pg_witness_hint :: Subst f }
   deriving Show
 
+-- | Construct a @ProvedGoal@.
 provedGoal :: Int -> String -> Proof f -> ProvedGoal f
 provedGoal number name proof =
   ProvedGoal {
@@ -308,7 +344,7 @@ provedGoal number name proof =
     pg_goal_hint = equation proof,
     pg_witness_hint = emptySubst }
 
--- Check that pg_goal/pg_witness match up with pg_proof.
+-- | Check that pg_goal/pg_witness match up with pg_proof.
 checkProvedGoal :: Function f => ProvedGoal f -> ProvedGoal f
 checkProvedGoal pg@ProvedGoal{..}
   | subst pg_witness_hint pg_goal_hint == equation pg_proof =
@@ -323,6 +359,7 @@ checkProvedGoal pg@ProvedGoal{..}
 instance Function f => Pretty (Presentation f) where
   pPrint = pPrintPresentation defaultConfig
 
+-- | Simplify and present a proof.
 present :: Function f => Config -> [ProvedGoal f] -> Presentation f
 present config goals =
   -- First find all the used lemmas, then hand off to presentWithGoals
@@ -514,6 +551,7 @@ flattenProof =
 --     steps (Trans p q) = steps p ++ steps q
 --     steps p = [p]
 
+-- | Print a presented proof.
 pPrintPresentation :: forall f. Function f => Config -> Presentation f -> Doc
 pPrintPresentation config (Presentation axioms lemmas goals) =
   vcat $ intersperse (text "") $
@@ -548,7 +586,9 @@ pPrintPresentation config (Presentation axioms lemmas goals) =
             else pPrintEmpty,
             text ""]
 
--- Format an equation nicely. Used both here and in the main file.
+-- | Format an equation nicely.
+--
+-- Used both here and in the main file.
 describeEquation ::
   PrettyTerm f =>
   String -> String -> Maybe String -> Equation f -> Doc
@@ -590,7 +630,7 @@ describeEquation kind num mname eqn =
 --   * a proof that both sides of the conjecture are equal
 -- and we can present that to the user.
 
--- -- Decode $equals(t,u) into an equation t=u.
+-- Decode $equals(t,u) into an equation t=u.
 decodeEquality :: Function f => Term f -> Maybe (Equation f)
 -- decodeEquality (App equals (Cons t (Cons u Empty)))
 --   | equals == equalsCon = Just (t :=: u)
