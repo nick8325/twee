@@ -1,3 +1,4 @@
+-- | Term rewriting.
 {-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, BangPatterns, OverloadedStrings, MultiParamTypeClasses, ScopedTypeVariables, GeneralizedNewtypeDeriving #-}
 module Twee.Rule where
 
@@ -21,37 +22,58 @@ import Twee.Proof(Derivation, Lemma(..))
 import Data.Tuple
 
 --------------------------------------------------------------------------------
--- Rewrite rules.
+-- * Rewrite rules.
 --------------------------------------------------------------------------------
 
+-- | A rewrite rule.
 data Rule f =
   Rule {
+    -- | Information about whether and how the rule is oriented.
     orientation :: !(Orientation f),
     -- Invariant:
     -- For oriented rules: vars rhs `isSubsetOf` vars lhs
     -- For unoriented rules: vars lhs == vars rhs
+
+    -- | The left-hand side of the rule.
     lhs :: {-# UNPACK #-} !(Term f),
+    -- | The right-hand side of the rule.
     rhs :: {-# UNPACK #-} !(Term f) }
   deriving (Eq, Ord, Show)
 type RuleOf a = Rule (ConstantOf a)
 
+-- | A rule's orientation.
+--
+-- 'Oriented' and 'WeaklyOriented' rules are used only left-to-right.
+-- 'Permutative' and 'Unoriented' rules are used bidirectionally.
 data Orientation f =
-    -- Oriented rules: used only left-to-right
+    -- | An oriented rule.
     Oriented
+    -- | A weakly oriented rule.
+    -- The first argument is the minimal constant, the second argument is a list
+    -- of terms which are weakly oriented in the rule.
+    -- 
+    -- A rule with orientation @'WeaklyOriented' k ts@ can be used unless
+    -- all terms in @ts@ are equal to @k@.
   | WeaklyOriented {-# UNPACK #-} !(Fun f) [Term f]
-    -- Unoriented rules: used bidirectionally
+    -- | A permutative rule.
+    --
+    -- A rule with orientation @'Permutative' ts@ can be used if
+    -- @map fst ts@ is lexicographically greater than @map snd ts@.
   | Permutative [(Term f, Term f)]
+    -- | An unoriented rule.
   | Unoriented
   deriving Show
 
 instance Eq (Orientation f) where _ == _ = True
 instance Ord (Orientation f) where compare _ _ = EQ
 
+-- | Is a rule oriented or weakly oriented?
 oriented :: Orientation f -> Bool
 oriented Oriented{} = True
 oriented WeaklyOriented{} = True
 oriented _ = False
 
+-- | Is a rule weakly oriented?
 weaklyOriented :: Orientation f -> Bool
 weaklyOriented WeaklyOriented{} = True
 weaklyOriented _ = False
@@ -86,13 +108,16 @@ instance PrettyTerm f => Pretty (Rule f) where
       showOrientation Permutative{} = "<->"
       showOrientation Unoriented = "="
 
--- Turn a rule into an equation.
+-- | Turn a rule into an equation.
 unorient :: Rule f -> Equation f
 unorient (Rule _ l r) = l :=: r
 
--- Turn an equation t :=: u into a rule t -> u by computing the
+-- | Turn an equation t :=: u into a rule t -> u by computing the
 -- orientation info (e.g. oriented, permutative or unoriented).
--- Crashes if t -> u is not a valid rule.
+--
+-- Crashes if t -> u is not a valid rule, for example if there is
+-- a variable in @u@ which is not in @t@. To prevent this happening,
+-- combine with 'Twee.CP.split'.
 orient :: Function f => Equation f -> Rule f
 orient (t :=: u) = Rule o t u
   where
@@ -138,7 +163,7 @@ orient (t :=: u) = Rule o t u
 
           aux _ _ = mzero
 
--- Flip an unoriented rule so that it goes right-to-left.
+-- | Flip an unoriented rule so that it goes right-to-left.
 backwards :: Rule f -> Rule f
 backwards (Rule or t u) = Rule (back or) u t
   where
@@ -147,10 +172,10 @@ backwards (Rule or t u) = Rule (back or) u t
     back _ = error "Can't turn oriented rule backwards"
 
 --------------------------------------------------------------------------------
--- Extra-fast rewriting, without proof output or unorientable rules.
+-- * Extra-fast rewriting, without proof output or unorientable rules.
 --------------------------------------------------------------------------------
 
--- Compute the normal form of a term wrt only oriented rules.
+-- | Compute the normal form of a term wrt only oriented rules.
 {-# INLINEABLE simplify #-}
 simplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
 simplify !idx !t = {-# SCC simplify #-} simplify1 idx t
@@ -171,7 +196,7 @@ simplify1 idx t
     simp (Cons (App f ts) us) =
       app f (simp ts) `mappend` simp us
 
--- Check if a term can be simplified.
+-- | Check if a term can be simplified.
 {-# INLINEABLE canSimplify #-}
 canSimplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Bool
 canSimplify idx t = canSimplifyList idx (singleton t)
@@ -182,7 +207,7 @@ canSimplifyList idx t =
   {-# SCC canSimplifyList #-}
   any (isJust . simpleRewrite idx) (filter isApp (subtermsList t))
 
--- Find a simplification step that applies to a term.
+-- | Find a simplification step that applies to a term.
 {-# INLINEABLE simpleRewrite #-}
 simpleRewrite :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Maybe (Rule f, Subst f)
 simpleRewrite idx t =
@@ -195,20 +220,21 @@ simpleRewrite idx t =
     return (rule, sub)
 
 --------------------------------------------------------------------------------
--- Rewriting, with proof output.
+-- * Rewriting, with proof output.
 --------------------------------------------------------------------------------
 
+-- | A strategy gives a set of possible reductions for a term.
 type Strategy f = Term f -> [Reduction f]
 
--- A multi-step rewrite proof t ->* u
+-- | A multi-step rewrite proof @t ->* u@
 data Reduction f =
-    -- Apply a single rewrite rule to the root of a term
+    -- | Apply a single rewrite rule to the root of a term
     Step {-# UNPACK #-} !(Lemma f) !(Rule f) !(Subst f)
-    -- Reflexivity
+    -- | Reflexivity
   | Refl {-# UNPACK #-} !(Term f)
-    -- Transivitity
+    -- | Transivitity
   | Trans !(Reduction f) !(Reduction f)
-    -- Congruence
+    -- | Congruence
   | Cong {-# UNPACK #-} !(Fun f) ![Reduction f]
   deriving Show
 
@@ -227,7 +253,7 @@ instance Symbolic (Reduction f) where
 instance Function f => Pretty (Reduction f) where
   pPrint = pPrint . reductionProof
 
--- Smart constructors for Trans and Cong which simplify Refl.
+-- | A smart constructor for Trans which simplifies Refl.
 trans :: Reduction f -> Reduction f -> Reduction f
 trans Refl{} p = p
 trans p Refl{} = p
@@ -235,6 +261,7 @@ trans p Refl{} = p
 trans p (Trans q r) = Trans (Trans p q) r
 trans p q = Trans p q
 
+-- | A smart constructor for Cong which simplifies Refl.
 cong :: Fun f -> [Reduction f] -> Reduction f
 cong f ps
   | all isRefl ps = Refl (result (reduce (Cong f ps)))
@@ -243,7 +270,7 @@ cong f ps
     isRefl Refl{} = True
     isRefl _ = False
 
--- The list of all rewrite rules used in a rewrite proof
+-- | The list of all rewrite rules used in a rewrite proof.
 steps :: Reduction f -> [Reduction f]
 steps r = aux r []
   where
@@ -252,7 +279,7 @@ steps r = aux r []
     aux (Trans p q) = aux p . aux q
     aux (Cong _ ps) = foldr (.) id (map aux ps)
 
--- Turn a reduction into a proof.
+-- | Turn a reduction into a proof.
 reductionProof :: Reduction f -> Derivation f
 reductionProof (Step lemma _ sub) =
   Proof.lemma lemma sub
@@ -261,14 +288,14 @@ reductionProof (Trans p q) =
   Proof.trans (reductionProof p) (reductionProof q)
 reductionProof (Cong f ps) = Proof.cong f (map reductionProof ps)
 
--- Construct a basic rewrite step.
+-- | Construct a basic rewrite step.
 {-# INLINE step #-}
 step :: (Has a (Rule f), Has a (Lemma f)) => a -> Subst f -> Reduction f
 step x sub = Step (the x) (the x) sub
 
 ----------------------------------------------------------------------
--- A rewrite proof with the final term attached.
--- Has an Ord instance which compares the final term.
+-- | A rewrite proof with the final term attached.
+-- Has an @Ord@ instance which compares the final term.
 ----------------------------------------------------------------------
 
 data Resulting f =
@@ -290,6 +317,7 @@ instance Symbolic (Resulting f) where
 instance Function f => Pretty (Resulting f) where
   pPrint = pPrint . reduction
 
+-- | Construct a 'Resulting' from a 'Reduction'.
 reduce :: Reduction f -> Resulting f
 reduce p =
   Resulting (res p) p
@@ -304,10 +332,10 @@ reduce p =
     emitResult (Cong f ps) = app f (map emitResult ps)
 
 --------------------------------------------------------------------------------
--- Strategy combinators.
+-- * Strategy combinators.
 --------------------------------------------------------------------------------
 
--- Normalise a term wrt a particular strategy.
+-- | Normalise a term wrt a particular strategy.
 {-# INLINE normaliseWith #-}
 normaliseWith :: Function f => (Term f -> Bool) -> Strategy f -> Term f -> Resulting f
 normaliseWith ok strat t = {-# SCC normaliseWith #-} res
@@ -322,12 +350,12 @@ normaliseWith ok strat t = {-# SCC normaliseWith #-} res
           aux (n+1) (p `trans` q) u
         _ -> Resulting t p
 
--- Compute all normal forms of a set of terms wrt a particular strategy.
+-- | Compute all normal forms of a set of terms wrt a particular strategy.
 normalForms :: Function f => Strategy f -> [Resulting f] -> Set (Resulting f)
 normalForms strat ps = snd (successorsAndNormalForms strat ps)
 
--- Compute all successors of a set of terms (a successor of a term t
--- is a term u such that t ->* u).
+-- | Compute all successors of a set of terms (a successor of a term @t@
+-- is a term @u@ such that @t ->* u@).
 successors :: Function f => Strategy f -> [Resulting f] -> Set (Resulting f)
 successors strat ps = Set.union qs rs
   where
@@ -351,11 +379,11 @@ successorsAndNormalForms strat ps =
           [ reduce (reduction p `Trans` q)
           | q <- anywhere strat (result p) ]
 
--- Apply a strategy anywhere in a term.
+-- | Apply a strategy anywhere in a term.
 anywhere :: Strategy f -> Strategy f
 anywhere strat t = strat t ++ nested (anywhere strat) t
 
--- Apply a strategy to some child of the root function.
+-- | Apply a strategy to some child of the root function.
 nested :: Strategy f -> Strategy f
 nested _ Var{} = []
 nested strat (App f ts) =
@@ -367,7 +395,7 @@ nested strat (App f ts) =
       | p <- strat t ] ++
       inner (Refl t:before) u
 
--- Apply a strategy in parallel in as many places as possible.
+-- | Apply a strategy in parallel in as many places as possible.
 -- Takes only the first rewrite of each strategy.
 {-# INLINE parallel #-}
 parallel :: PrettyTerm f => Strategy f -> Strategy f
@@ -384,17 +412,17 @@ parallel strat t =
     inner before (Cons t u) = inner (par t:before) u
 
 --------------------------------------------------------------------------------
--- Basic strategies. These only apply at the root of the term.
+-- * Basic strategies. These only apply at the root of the term.
 --------------------------------------------------------------------------------
 
--- A strategy which rewrites using an index.
+-- | A strategy which rewrites using an index.
 {-# INLINE rewrite #-}
 rewrite :: (Function f, Has a (Rule f), Has a (Lemma f)) => (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
 rewrite p rules t = do
   rule <- Index.approxMatches t rules
   tryRule p rule t
 
--- A strategy which applies one rule only.
+-- | A strategy which applies one rule only.
 {-# INLINEABLE tryRule #-}
 tryRule :: (Function f, Has a (Rule f), Has a (Lemma f)) => (Rule f -> Subst f -> Bool) -> a -> Strategy f
 tryRule p rule t = do
@@ -402,7 +430,7 @@ tryRule p rule t = do
   guard (p (the rule) sub)
   return (step rule sub)
 
--- Check if a rule can be applied, given an ordering <= on terms.
+-- | Check if a rule can be applied, given an ordering <= on terms.
 {-# INLINEABLE reducesWith #-}
 reducesWith :: Function f => (Term f -> Term f -> Bool) -> Rule f -> Subst f -> Bool
 reducesWith _ (Rule Oriented _ _) _ = True
@@ -434,23 +462,24 @@ reducesWith p (Rule Unoriented t u) sub =
     t' = subst sub t
     u' = subst sub u
 
--- Check if a rule can be applied normally.
+-- | Check if a rule can be applied normally.
 {-# INLINEABLE reduces #-}
 reduces :: Function f => Rule f -> Subst f -> Bool
 reduces rule sub = reducesWith lessEq rule sub
 
--- Check if a rule can be applied and is oriented.
+-- | Check if a rule can be applied and is oriented.
 {-# INLINEABLE reducesOriented #-}
 reducesOriented :: Function f => Rule f -> Subst f -> Bool
 reducesOriented rule sub =
   oriented (orientation rule) && reducesWith undefined rule sub
 
--- Check if a rule can be applied in various circumstances.
+-- | Check if a rule can be applied in a particular model.
 {-# INLINEABLE reducesInModel #-}
 reducesInModel :: Function f => Model f -> Rule f -> Subst f -> Bool
 reducesInModel cond rule sub =
   reducesWith (\t u -> isJust (lessIn cond t u)) rule sub
 
+-- | Check if a rule can be applied to the Skolemised version of a term.
 {-# INLINEABLE reducesSkolem #-}
 reducesSkolem :: Function f => Rule f -> Subst f -> Bool
 reducesSkolem rule sub =

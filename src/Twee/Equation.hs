@@ -1,3 +1,4 @@
+-- | Equations.
 {-# LANGUAGE TypeFamilies #-}
 module Twee.Equation where
 
@@ -6,7 +7,7 @@ import Data.Maybe
 import Control.Monad
 
 --------------------------------------------------------------------------------
--- Equations.
+-- * Equations.
 --------------------------------------------------------------------------------
 
 data Equation f =
@@ -27,7 +28,7 @@ instance PrettyTerm f => Pretty (Equation f) where
 instance Sized f => Sized (Equation f) where
   size (x :=: y) = size x + size y
 
--- Order an equation roughly left-to-right.
+-- | Order an equation roughly left-to-right.
 -- However, there is no guarantee that the result is oriented.
 order :: Function f => Equation f -> Equation f
 order (l :=: r)
@@ -38,11 +39,11 @@ order (l :=: r)
       GT -> l :=: r
       EQ -> if lessEq l r then r :=: l else l :=: r
 
--- Apply a function to both sides of an equation.
+-- | Apply a function to both sides of an equation.
 bothSides :: (Term f -> Term f') -> Equation f -> Equation f'
 bothSides f (t :=: u) = f t :=: f u
 
--- Is an equation of the form t = t?
+-- | Is an equation of the form t = t?
 trivial :: Eq f => Equation f -> Bool
 trivial (t :=: u) = t == u
 

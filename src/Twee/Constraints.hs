@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts, UndecidableInstances, RecordWildCards #-}
+-- | Solving constraints on variable ordering.
 module Twee.Constraints where
 
 --import Twee.Base hiding (equals, Term, pattern Fun, pattern Var, lookup, funs)

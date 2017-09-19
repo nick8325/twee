@@ -1,3 +1,4 @@
+-- | The main prover loop.
 {-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables, GeneralizedNewtypeDeriving, PatternGuards, TypeFamilies #-}
 module Twee where
 
@@ -34,9 +35,10 @@ import Control.Monad.Trans.Class
 import qualified Control.Monad.Trans.State.Strict as StateM
 
 ----------------------------------------------------------------------
--- Configuration and prover state.
+-- * Configuration and prover state.
 ----------------------------------------------------------------------
 
+-- | The prover configuration.
 data Config =
   Config {
     cfg_max_term_size          :: Int,
@@ -48,6 +50,7 @@ data Config =
     cfg_join                   :: Join.Config,
     cfg_proof_presentation     :: Proof.Config }
 
+-- | The prover state.
 data State f =
   State {
     st_rules          :: !(RuleIndex f (ActiveRule f)),
@@ -61,6 +64,7 @@ data State f =
     st_considered     :: {-# UNPACK #-} !Int64,
     st_messages_rev   :: ![Message f] }
 
+-- | The default prover configuration.
 defaultConfig :: Config
 defaultConfig =
   Config {
@@ -69,24 +73,18 @@ defaultConfig =
     cfg_max_cp_depth = maxBound,
     cfg_simplify = True,
     cfg_renormalise_percent = 5,
-    cfg_critical_pairs =
-      CP.Config {
-        cfg_lhsweight = 3,
-        cfg_rhsweight = 1,
-        cfg_funweight = 7,
-        cfg_varweight = 6,
-        cfg_depthweight = 16,
-        cfg_dupcost = 7,
-        cfg_dupfactor = 0 },
+    cfg_critical_pairs = CP.defaultConfig,
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig }
 
+-- | Does this configuration run the prover in a complete mode?
 configIsComplete :: Config -> Bool
 configIsComplete Config{..} =
   cfg_max_term_size == maxBound &&
   cfg_max_critical_pairs == maxBound &&
   cfg_max_cp_depth == maxBound
 
+-- | The initial state.
 initialState :: State f
 initialState =
   State {
@@ -102,14 +100,20 @@ initialState =
     st_messages_rev = [] }
 
 ----------------------------------------------------------------------
--- Messages.
+-- * Messages.
 ----------------------------------------------------------------------
 
+-- | A message which is produced by the prover when something interesting happens.
 data Message f =
+    -- | A new rule.
     NewActive !(Active f)
+    -- | A new joinable equation.
   | NewEquation !(Equation f)
+    -- | A rule was deleted.
   | DeleteActive !(Active f)
+    -- | The CP queue was simplified.
   | SimplifyQueue
+    -- | The rules were reduced wrt each other.
   | Interreduce
 
 instance Function f => Pretty (Message f) where
@@ -123,19 +127,22 @@ instance Function f => Pretty (Message f) where
   pPrint Interreduce =
     text "  (simplifying rules with respect to one another...)"
 
+-- | Emit a message.
 message :: PrettyTerm f => Message f -> State f -> State f
 message !msg state@State{..} =
   state { st_messages_rev = msg:st_messages_rev }
 
+-- | Forget about all emitted messages.
 clearMessages :: State f -> State f
 clearMessages state@State{..} =
   state { st_messages_rev = [] }
 
+-- | Get all emitted messages.
 messages :: State f -> [Message f]
 messages state = reverse (st_messages_rev state)
 
 ----------------------------------------------------------------------
--- The CP queue.
+-- * The CP queue.
 ----------------------------------------------------------------------
 
 data Params
@@ -149,7 +156,7 @@ instance Queue.Params Params where
   packId _ = fromIntegral
   unpackId _ = fromIntegral
 
--- Compute all critical pairs from a rule.
+-- | Compute all critical pairs from a rule.
 {-# INLINEABLE makePassives #-}
 makePassives :: Function f => Config -> State f -> ActiveRule f -> [Passive Params]
 makePassives Config{..} State{..} rule =
@@ -159,7 +166,7 @@ makePassives Config{..} State{..} rule =
   where
     rules = IntMap.elems st_rule_ids
 
--- Turn a Passive back into an overlap.
+-- | Turn a Passive back into an overlap.
 -- Doesn't try to simplify it.
 {-# INLINEABLE findPassive #-}
 findPassive :: forall f. Function f => Config -> State f -> Passive Params -> Maybe (ActiveRule f, ActiveRule f, Overlap f)
@@ -172,7 +179,7 @@ findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
       (renameAvoiding (the rule2 :: Rule f) (the rule1)) (the rule2)
   return (rule1, rule2, overlap)
 
--- Renormalise a queued Passive.
+-- | Renormalise a queued Passive.
 {-# INLINEABLE simplifyPassive #-}
 simplifyPassive :: Function f => Config -> State f -> Passive Params -> Maybe (Passive Params)
 simplifyPassive config@Config{..} state@State{..} passive = {-# SCC simplifyPassive #-} do
@@ -183,7 +190,7 @@ simplifyPassive config@Config{..} state@State{..} passive = {-# SCC simplifyPass
       fromIntegral (passive_score passive) `intMin`
       score cfg_critical_pairs overlap }
 
--- Renormalise the entire queue.
+-- | Renormalise the entire queue.
 {-# INLINEABLE simplifyQueue #-}
 simplifyQueue :: Function f => Config -> State f -> State f
 simplifyQueue config state =
@@ -193,15 +200,17 @@ simplifyQueue config state =
     simp =
       Queue.mapMaybe (simplifyPassive config state)
 
--- Enqueue a set of critical pairs.
+-- | Enqueue a set of critical pairs.
 {-# INLINEABLE enqueue #-}
 enqueue :: Function f => State f -> RuleId -> [Passive Params] -> State f
 enqueue state rule passives =
   {-# SCC enqueue #-}
   state { st_queue = Queue.insert rule passives (st_queue state) }
 
--- Dequeue a critical pair.
+-- | Dequeue a critical pair.
+--
 -- Also takes care of:
+--
 --   * removing any orphans from the head of the queue
 --   * ignoring CPs that are too big
 {-# INLINEABLE dequeue #-}
@@ -230,7 +239,7 @@ dequeue config@Config{..} state@State{..} =
         _ -> deq (n+1) queue
 
 ----------------------------------------------------------------------
--- Active rewrite rules.
+-- * Active rewrite rules.
 ----------------------------------------------------------------------
 
 data Active f =

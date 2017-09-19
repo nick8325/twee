@@ -1,4 +1,4 @@
--- Tactics for joining critical pairs.
+-- | Tactics for joining critical pairs.
 {-# LANGUAGE FlexibleContexts, BangPatterns, RecordWildCards, TypeFamilies #-}
 module Twee.Join where
 

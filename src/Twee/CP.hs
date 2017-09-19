@@ -1,4 +1,4 @@
--- Critical pairs.
+-- | Critical pair generation.
 {-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards, OverloadedStrings, TypeFamilies, GeneralizedNewtypeDeriving #-}
 module Twee.CP where
 
@@ -17,13 +17,14 @@ import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof(Derivation, Lemma, congPath)
 
--- The set of positions at which a term can have critical overlaps.
+-- | The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
 type PositionsOf a = Positions (ConstantOf a)
 
 instance Show (Positions f) where
   show = show . ChurchList.toList . positionsChurch
 
+-- | Calculate the set of positions for a term.
 positions :: Term f -> Positions f
 positions t = aux 0 Set.empty (singleton t)
   where
@@ -44,20 +45,26 @@ positionsChurch posns =
     in
       pos posns
 
--- A critical overlap of one rule with another.
+-- | A critical overlap of one rule with another.
 data Overlap f =
   Overlap {
+    -- | The depth (1 for CPs of axioms, 2 for CPs whose rules have depth 1, etc.)
     overlap_depth :: {-# UNPACK #-} !Depth,
+    -- | The critical term.
     overlap_top   :: {-# UNPACK #-} !(Term f),
+    -- | The part of the critical term which the inner rule rewrites.
     overlap_inner :: {-# UNPACK #-} !(Term f),
+    -- | The position in the critical term which is rewritten.
     overlap_pos   :: {-# UNPACK #-} !Int,
+    -- | The critical pair itself.
     overlap_eqn   :: {-# UNPACK #-} !(Equation f) }
   deriving Show
 type OverlapOf a = Overlap (ConstantOf a)
 
+-- | Represents the depth of a critical pair.
 newtype Depth = Depth Int deriving (Eq, Ord, Num, Real, Enum, Integral, Show)
 
--- Compute all overlaps of a rule with a set of rules.
+-- | Compute all overlaps of a rule with a set of rules.
 {-# INLINEABLE overlaps #-}
 overlaps ::
   (Function f, Has a (Rule f), Has a (Positions f), Has a Depth) =>
@@ -89,8 +96,8 @@ asymmetricOverlaps idx depth posns r1 r2 = do
     overlapAt n depth r1 r2 >>=
     simplifyOverlap idx
 
--- Create an overlap at a particular position in a term.
--- Doesn't simplify or check for primeness.
+-- | Create an overlap at a particular position in a term.
+-- Doesn't simplify the overlap.
 {-# INLINE overlapAt #-}
 overlapAt :: Int -> Depth -> Rule f -> Rule f -> Maybe (Overlap f)
 overlapAt !n !depth (Rule _ !outer !outer') (Rule _ !inner !inner') = do
@@ -112,7 +119,7 @@ overlapAt !n !depth (Rule _ !outer !outer') (Rule _ !inner !inner') = do
     overlap_pos = n,
     overlap_eqn = lhs :=: rhs }
 
--- Simplify an overlap and remove it if it's trivial.
+-- | Simplify an overlap and remove it if it's trivial.
 {-# INLINE simplifyOverlap #-}
 simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap f -> Maybe (Overlap f)
 simplifyOverlap idx overlap@Overlap{overlap_eqn = lhs :=: rhs, ..}
@@ -131,7 +138,7 @@ buildReplacePositionSub !sub !n !inner' !outer =
 termSubst :: TriangleSubst f -> Term f -> Term f
 termSubst sub t = build (Term.subst sub t)
 
--- The critical pair ordering heuristic.
+-- | The configuration for the critical pair weighting heuristic.
 data Config =
   Config {
     cfg_lhsweight :: !Int,
@@ -141,6 +148,20 @@ data Config =
     cfg_depthweight :: !Int,
     cfg_dupcost :: !Int,
     cfg_dupfactor :: !Int }
+
+-- | The default heuristic configuration.
+defaultConfig :: Config
+defaultConfig =
+  Config {
+    cfg_lhsweight = 3,
+    cfg_rhsweight = 1,
+    cfg_funweight = 7,
+    cfg_varweight = 6,
+    cfg_depthweight = 16,
+    cfg_dupcost = 7,
+    cfg_dupfactor = 0 }
+
+-- | Compute a score for a critical pair.
 
 -- We compute:
 --   cfg_lhsweight * size l + cfg_rhsweight * size r
@@ -171,15 +192,20 @@ score Config{..} Overlap{..} =
       size' (n+cfg_funweight*size f) ts
 
 ----------------------------------------------------------------------
--- Higher-level handling of critical pairs.
+-- * Higher-level handling of critical pairs.
 ----------------------------------------------------------------------
 
--- A critical pair together with information about how it was derived
+-- | A critical pair together with information about how it was derived
 data CriticalPair f =
   CriticalPair {
+    -- | The critical pair itself.
     cp_eqn   :: {-# UNPACK #-} !(Equation f),
+    -- | The depth of the critical pair.
     cp_depth :: {-# UNPACK #-} !Depth,
+    -- | The critical term, if there is one.
+    -- (Axioms do not have a critical term.)
     cp_top   :: !(Maybe (Term f)),
+    -- | A derivation of the critical pair from the axioms.
     cp_proof :: !(Derivation f) }
 
 instance Symbolic (CriticalPair f) where
@@ -199,7 +225,11 @@ instance PrettyTerm f => Pretty (CriticalPair f) where
       pPrint cp_eqn,
       nest 2 (text "top:" <+> pPrint cp_top) ]
 
--- Split a critical pair so that it can be turned into rules.
+-- | Split a critical pair so that it can be turned into rules.
+--
+-- The resulting critical pairs have the property that no variable appears on
+-- the right that is not on the left.
+
 -- See the comment below.
 split :: Function f => CriticalPair f -> [CriticalPair f]
 split CriticalPair{cp_eqn = l :=: r, ..}
@@ -264,6 +294,7 @@ split CriticalPair{cp_eqn = l :=: r, ..}
       eraseExcept vs t =
         erase (usort (vars t) \\ usort vs) t
 
+-- | Make a critical pair from two rules and an overlap.
 {-# INLINEABLE makeCriticalPair #-}
 makeCriticalPair ::
   (Has a (Rule f), Has a (Lemma f), Has a Id, Function f) =>
@@ -280,7 +311,7 @@ makeCriticalPair r1 r2 overlap@Overlap{..}
   where
     t :=: u = overlap_eqn
 
--- Return a proof for a critical pair.
+-- | Return a proof for a critical pair.
 {-# INLINEABLE overlapProof #-}
 overlapProof ::
   forall a f.
