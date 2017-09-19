@@ -63,9 +63,9 @@ fromSymbol Symbol{..} =
 -- Flatterms, or rather lists of terms.
 --------------------------------------------------------------------------------
 
--- | A list of terms, represented as a flat term.
---
--- @f@ is the type of function symbols.
+-- | @'TermList' f@ is a list of terms whose function symbols have type @f@.
+-- It is either a 'Cons' or an 'Empty'. You can turn it into a @['Term' f]@
+-- with 'Twee.Term.unpack'.
 
 -- A TermList is a slice of an unboxed array of symbols.
 data TermList f =
@@ -87,7 +87,8 @@ at n (TermList lo hi arr)
 lenList :: TermList f -> Int
 lenList (TermList low high _) = high - low
 
--- | A single term.
+-- | @'Term' f@ is a term whose function symbols have type @f@.
+-- It is either a 'Var' or an 'App'.
 
 -- A term is a special case of a termlist.
 -- We store it as the termlist together with the root symbol.
@@ -117,7 +118,7 @@ instance Ord (Term f) where
 pattern Empty :: TermList f
 pattern Empty <- (patHead -> Nothing)
 
--- | Unpacks a non-empty termlist into its head and tail.
+-- | Matches a non-empty termlist, unpacking it into head and tail.
 pattern Cons :: Term f -> TermList f -> TermList f
 pattern Cons t ts <- (patHead -> Just (t, _, ts))
 
@@ -126,11 +127,15 @@ pattern Cons t ts <- (patHead -> Just (t, _, ts))
 pattern UnsafeCons :: Term f -> TermList f -> TermList f
 pattern UnsafeCons t ts <- (unsafePatHead -> Just (t, _, ts))
 
--- | Unpacks a non-empty termlist into its head and the tail _with the head's
--- children prepended_, in other words, the termlist with the very first symbol
--- removed.
---
+-- | Matches a non-empty termlist, unpacking it into head and
+-- /everything except the root symbol of the head/.
 -- Useful for iterating through terms one symbol at a time.
+--
+-- For example, if @ts@ is the termlist @[f(x,y), g(z)]@,
+-- then @let ConsSym u us = ts@ results in the following bindings:
+--
+-- > u  = f(x,y)
+-- > us = [x, y, g(z)]
 pattern ConsSym :: Term f -> TermList f -> TermList f
 pattern ConsSym t ts <- (patHead -> Just (t, ts, _))
 
@@ -162,17 +167,17 @@ patHead t@TermList{..}
 -- * App :: Fun f -> TermList f -> Term f
 
 -- | A function symbol. @f@ is the underlying type of function symbols defined
--- by the user; @'Fun' f@ is an @f@ together with a unique number.
+-- by the user; @'Fun' f@ is an @f@ together with an automatically-generated unique number.
 newtype Fun f =
   F {
-    -- | The unique number of the function.
+    -- | The unique number of a 'Fun'.
     fun_id :: Int }
 instance Eq (Fun f) where
   f == g = fun_id f == fun_id g
 instance Ord (Fun f) where
   compare = comparing fun_id
 
--- | Turn a function symbol into a 'Fun'.
+-- | Construct a 'Fun' from a function symbol.
 fun :: (Ord f, Typeable f) => f -> Fun f
 fun f = F (fromIntegral (labelNum (label f)))
 
@@ -260,8 +265,7 @@ compareContents (ConsSym s1 t) (UnsafeConsSym s2 u) =
 --------------------------------------------------------------------------------
 
 -- | A monoid for building terms.
--- 'mempty' represents the empty term list, while 'mappend' represents
--- concatenation of terms.
+-- 'mempty' represents the empty termlist, while 'mappend' appends two termlists.
 newtype Builder f =
   Builder {
     unBuilder ::

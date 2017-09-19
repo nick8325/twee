@@ -1,46 +1,62 @@
--- | Terms and substitutions, implemented using flatterms.
-
--- This module implements the usual term manipulation stuff
--- (matching, unification, etc.) on top of the primitives
--- in Twee.Term.Core.
+-- | Terms and substitutions.
+--
+-- Terms in twee are represented as arrays rather than as an algebraic data
+-- type. This module defines pattern synonyms ('App', 'Var', 'Cons', 'Empty')
+-- which means that pattern matching on terms works just as normal.
+-- The pattern synonyms can not be used to create new terms; for that you
+-- have to use a builder interface ('Build').
+--
+-- This module also provides:
+--
+--   * pattern synonyms for iterating through a term one symbol at a time
+--     ('ConsSym');
+--   * substitutions ('Substitution', 'Subst', 'subst');
+--   * unification ('unify') and matching ('match');
+--   * miscellaneous useful functions on terms.
 {-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables #-}
 module Twee.Term(
   -- * Terms
-  Term, pattern Var, pattern App,
+  Term, pattern Var, pattern App, isApp, isVar, singleton, len,
+  -- * Termlists
   TermList, pattern Empty, pattern Cons, pattern ConsSym,
   pattern UnsafeCons, pattern UnsafeConsSym,
-  Fun, fun, fun_id, fun_value, Var(..), 
-  singleton,
-
+  empty, unpack, lenList,
+  -- * Function symbols and variables
+  Fun, fun, fun_id, fun_value, pattern F, Var(..), 
   -- * Building terms
   Build(..),
   Builder,
   build, buildList,
   con, app, var,
-
+  -- * Access to subterms
+  children, properSubterms, subtermsList, subterms, occurs, isSubtermOf, isSubtermOfList, at,
   -- * Substitutions
-  listSubstList, listSubst, foldSubst, allSubst, forMSubst_, substDomain,
   Substitution(..),
-  subst, substSize, Subst(..),
-  lookupList, extendList, retract, unsafeExtendList,
+  subst,
+  Subst(..),
+  -- ** Constructing and querying substitutions
+  emptySubst, listToSubst, substToList,
+  lookup, lookupList,
+  extend, extendList, unsafeExtendList,
+  retract,
+  -- ** Other operations on substitutions
+  foldSubst, allSubst, substDomain,
+  substSize,
   substCompose, substCompatible, substUnion, idempotent, idempotentOn,
-  close, canonicalise, emptySubst, flattenSubst,
+  canonicalise,
   -- * Matching
-  match, matchIn, matchList, matchListIn,
-  TriangleSubst(..),
+  match, matchIn, matchList, matchListIn, isInstanceOf, isVariantOf,
   -- * Unification
-  unify, unifyList, unifyTri, unifyListTri,
-  -- * Misc
-  empty, children, unpack, lookup, extend, len,
-  bound, boundList, occurs, subtermsList, subterms,
-  properSubterms, isApp, isVar, isInstanceOf, isVariantOf,
-  isSubtermOf, mapFun, mapFunList, replacePosition,
-  replacePositionSub,
+  unify, unifyList,
+  unifyTri, unifyListTri,
+  TriangleSubst(..),
+  close,
+  -- * Positions in terms
   positionToPath, pathToPosition,
-  pattern F,
-  (<<),
-  at, lenList,
-  isSubtermOfList) where
+  replacePosition,
+  replacePositionSub,
+  -- * Miscellaneous functions
+  bound, boundList, mapFun, mapFunList, (<<)) where
 
 import Prelude hiding (lookup)
 import Twee.Term.Core hiding (F)
@@ -54,14 +70,13 @@ import qualified Data.IntMap.Strict as IntMap
 -- * A type class for builders
 --------------------------------------------------------------------------------
 
--- | A type that can be turned into a 'Builder' of termlists.
---
--- Has instances for most reasonable things, including lists. The main
--- missing instance is for 'Var'; you will need to use 'var' instead.
+-- | Instances of 'Build' can be turned into terms using 'build' or 'buildList',
+-- and turned into term builders using 'builder'. Has instances for terms,
+-- termlists, builders, and Haskell lists.
 class Build a where
   -- | The underlying type of function symbols.
   type BuildFun a
-  -- | Turn the thing into a 'Builder'.
+  -- | Convert a value into a 'Builder'.
   builder :: a -> Builder (BuildFun a)
 
 instance Build (Builder f) where
@@ -111,26 +126,27 @@ var = emitVar
 -- Functions for substitutions.
 --------------------------------------------------------------------------------
 
-{-# INLINE listSubstList #-}
-listSubstList :: Subst f -> [(Var, TermList f)]
-listSubstList (Subst sub) = [(V x, t) | (x, t) <- IntMap.toList sub]
+{-# INLINE substToList' #-}
+substToList' :: Subst f -> [(Var, TermList f)]
+substToList' (Subst sub) = [(V x, t) | (x, t) <- IntMap.toList sub]
 
-{-# INLINE listSubst #-}
-listSubst :: Subst f -> [(Var, Term f)]
-listSubst sub = [(x, t) | (x, Cons t Empty) <- listSubstList sub]
+-- | Convert a substitution to a list of bindings.
+{-# INLINE substToList #-}
+substToList :: Subst f -> [(Var, Term f)]
+substToList sub =
+  [(x, t) | (x, Cons t Empty) <- substToList' sub]
 
+-- | Fold a function over a substitution.
 {-# INLINE foldSubst #-}
 foldSubst :: (Var -> TermList f -> b -> b) -> b -> Subst f -> b
-foldSubst op e !sub = foldr (uncurry op) e (listSubstList sub)
+foldSubst op e !sub = foldr (uncurry op) e (substToList' sub)
 
+-- | Check if all bindings of a substitution satisfy a given property.
 {-# INLINE allSubst #-}
 allSubst :: (Var -> TermList f -> Bool) -> Subst f -> Bool
 allSubst p = foldSubst (\x t y -> p x t && y) True
 
-{-# INLINE forMSubst_ #-}
-forMSubst_ :: Monad m => Subst f -> (Var -> TermList f -> m ()) -> m ()
-forMSubst_ sub f = foldSubst (\x t m -> do { f x t; m }) (return ()) sub
-
+-- | Compute the set of variables bound by a substitution.
 {-# INLINE substDomain #-}
 substDomain :: Subst f -> [Var]
 substDomain (Subst sub) = map V (IntMap.keys sub)
@@ -139,10 +155,17 @@ substDomain (Subst sub) = map V (IntMap.keys sub)
 -- Substitution.
 --------------------------------------------------------------------------------
 
+-- | A class for values which act as substitutions.
+--
+-- Instances include 'Subst' as well as functions from variables to terms.
 class Substitution s where
+  -- | The underlying type of function symbols.
   type SubstFun s
+
+  -- | Apply the substitution to a variable.
   evalSubst :: s -> Var -> Builder (SubstFun s)
 
+  -- | Apply the substitution to a termlist.
   {-# INLINE substList #-}
   substList :: s -> TermList (SubstFun s) -> Builder (SubstFun s)
   substList sub ts = aux ts
@@ -166,10 +189,12 @@ instance Substitution (Subst f) where
       Nothing -> var x
       Just ts -> builder ts
 
+-- | Apply a substitution to a term.
 {-# INLINE subst #-}
 subst :: Substitution s => s -> Term (SubstFun s) -> Builder (SubstFun s)
 subst sub t = substList sub (singleton t)
 
+-- | A substitution which maps variables to terms of type @'Term' f@.
 newtype Subst f =
   Subst {
     unSubst :: IntMap (TermList f) }
@@ -213,7 +238,8 @@ substCompose :: Substitution s => Subst (SubstFun s) -> s -> Subst (SubstFun s)
 substCompose (Subst !sub1) !sub2 =
   Subst (IntMap.map (buildList . substList sub2) sub1)
 
--- | Check if two substitutions are compatible.
+-- | Check if two substitutions are compatible (they do not send the same
+-- variable to different terms).
 substCompatible :: Subst f -> Subst f -> Bool
 substCompatible (Subst !sub1) (Subst !sub2) =
   IntMap.null (IntMap.mergeWithKey f g h sub1 sub2)
@@ -230,7 +256,8 @@ substUnion :: Subst f -> Subst f -> Subst f
 substUnion (Subst !sub1) (Subst !sub2) =
   Subst (IntMap.union sub1 sub2)
 
--- | Check if a substitution is idempotent.
+-- | Check if a substitution is idempotent (applying it twice has the same
+-- effect as applying it once).
 {-# INLINE idempotent #-}
 idempotent :: Subst f -> Bool
 idempotent !sub = allSubst (\_ t -> sub `idempotentOn` t) sub
@@ -244,13 +271,14 @@ idempotentOn !sub = aux
     aux (ConsSym App{} t) = aux t
     aux (Cons (Var x) t) = isNothing (lookupList x sub) && aux t
 
--- | Iterate a substitution to make it idempotent.
+-- | Iterate a triangle substitution to make it idempotent.
 close :: TriangleSubst f -> Subst f
 close (Triangle sub)
   | idempotent sub = sub
   | otherwise      = close (Triangle (substCompose sub sub))
 
--- | Return a substitution for canonicalising a list of terms.
+-- | Return a substitution which renames the variables of a list of terms to put
+-- them in a canonical order.
 canonicalise :: [TermList f] -> Subst f
 canonicalise [] = emptySubst
 canonicalise (t:ts) = loop emptySubst vars t ts
@@ -274,8 +302,9 @@ canonicalise (t:ts) = loop emptySubst vars t ts
 emptySubst = Subst IntMap.empty
 
 -- | Construct a substitution from a list.
-flattenSubst :: [(Var, Term f)] -> Maybe (Subst f)
-flattenSubst sub = matchList pat t
+-- Returns @Nothing@ if a variable is bound to several different terms.
+listToSubst :: [(Var, Term f)] -> Maybe (Subst f)
+listToSubst sub = matchList pat t
   where
     pat = buildList (map (var . fst) sub)
     t   = buildList (map snd sub)
@@ -362,10 +391,12 @@ unifyList t u = do
   return (close sub)
 
 -- | Unify two terms, returning a triangle substitution.
+-- This is slightly faster than 'unify'.
 unifyTri :: Term f -> Term f -> Maybe (TriangleSubst f)
 unifyTri t u = unifyListTri (singleton t) (singleton u)
 
 -- | Unify two termlists, returning a triangle substitution.
+-- This is slightly faster than 'unify'.
 unifyListTri :: TermList f -> TermList f -> Maybe (TriangleSubst f)
 unifyListTri !t !u = fmap Triangle ({-# SCC unify #-} loop emptySubst t u)
   where

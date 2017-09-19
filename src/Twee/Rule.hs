@@ -101,7 +101,7 @@ orient (t :=: u) = Rule o t u
           Nothing -> Oriented
           Just sub
             | allSubst (\_ (Cons t Empty) -> isMinimal t) sub ->
-              WeaklyOriented minimal (map (build . var . fst) (listSubst sub))
+              WeaklyOriented minimal (map (build . var . fst) (substToList sub))
             | otherwise -> Unoriented
       | lessEq t u = error "wrongly-oriented rule"
       | not (null (usort (vars u) \\ usort (vars t))) =
@@ -122,7 +122,7 @@ orient (t :=: u) = Rule o t u
         u' = subst sub u
 
     makePermutative t u = do
-      msub <- gets flattenSubst
+      msub <- gets listToSubst
       sub  <- lift msub
       aux (subst sub t) (subst sub u)
         where

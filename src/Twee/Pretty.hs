@@ -82,7 +82,7 @@ instance PrettyTerm f => Pretty (Subst f) where
     where
       docs =
         [ hang (pPrint x <+> text "->") 2 (pPrint t)
-        | (x, t) <- listSubst sub ]
+        | (x, t) <- substToList sub ]
 
 -- | A class for customising the printing of function symbols.
 class Pretty f => PrettyTerm f where

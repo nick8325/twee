@@ -180,7 +180,7 @@ erase :: (Symbolic a, ConstantOf a ~ f, Minimal f) => [Var] -> a -> a
 erase [] t = t
 erase xs t = subst sub t
   where
-    sub = fromMaybe undefined $ flattenSubst [(x, minimalTerm) | x <- xs]
+    sub = fromMaybe undefined $ listToSubst [(x, minimalTerm) | x <- xs]
 
 -- | Construction of Skolem constants.
 class Skolem f where

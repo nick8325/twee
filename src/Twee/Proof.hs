@@ -179,7 +179,7 @@ axiom :: Axiom f -> Derivation f
 axiom ax@Axiom{..} =
   UseAxiom ax $
     fromJust $
-    flattenSubst [(x, build (var x)) | x <- vars axiom_eqn]
+    listToSubst [(x, build (var x)) | x <- vars axiom_eqn]
 
 symm :: Derivation f -> Derivation f
 symm (Refl t) = Refl t
@@ -458,11 +458,11 @@ pPrintLemma Config{..} lemmaName p =
       text "axiom" <+> pPrint axiom_number <+> parens (text axiom_name) <> showSubst sub
 
     showSubst sub
-      | cfg_show_instances && not (null (listSubst sub)) =
+      | cfg_show_instances && not (null (substToList sub)) =
         text " with " <>
         fsep (punctuate comma
           [ pPrint x <+> text "->" <+> pPrint t
-          | (x, t) <- listSubst sub ])
+          | (x, t) <- substToList sub ])
       | otherwise = pPrintEmpty
 
 -- Transform a proof so that each step uses exactly one axiom
@@ -541,7 +541,7 @@ pPrintPresentation config (Presentation axioms lemmas goals) =
             text "The goal is true when:",
             nest 2 $ vcat
               [ pPrint x <+> text "=" <+> pPrint t
-              | (x, t) <- listSubst sub ],
+              | (x, t) <- substToList sub ],
             if minimal `elem` funs sub then
               text "where" <+> doubleQuotes (pPrint (minimal :: Fun f)) <+>
               text "stands for an arbitrary term of your choice."

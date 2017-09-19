@@ -270,7 +270,7 @@ solve xs branch@Branch{..}
   | null equals = Left model
   | otherwise = Right sub
     where
-      sub = fromMaybe undefined . flattenSubst $
+      sub = fromMaybe undefined . listToSubst $
         [(x, toTerm y) | (Variable x, y) <- equals] ++
         [(y, toTerm x) | (x@Constant{}, Variable y) <- equals]
       vs = Constant minimal:reverse (flattenSCCs (stronglyConnComp edges))
