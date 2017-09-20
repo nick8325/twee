@@ -368,7 +368,8 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
         (isType c)
         (isNothing (elemIndex (base c) precedence))
         (fmap negate (elemIndex (base c) precedence))
-        (negate (funOcc c prob))
+        (negate (Map.findWithDefault 0 c occs))
+    occs = funsOcc prob
 
     -- Translate everything to Twee.
     toEquation (t, u) =
