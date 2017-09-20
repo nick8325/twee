@@ -165,7 +165,7 @@ pref search prefix here fun var rest =
                 App f _ ->
                   case fun ! fun_id f of
                     Nil -> tryVar
-                    idx -> Frame ts idx $! tryVar
+                    idx -> Frame ts idx tryVar
                 _ ->
                   tryVar
               where
