@@ -116,8 +116,8 @@ parseConfig =
       expert $
       inGroup "Critical pair joining heuristics" $
       bool "connectedness"
-        ["Test terms for subconnectedness (off by default)."]
-        False
+        ["Test terms for subconnectedness (on by default)."]
+        True
     set_join =
       expert $
       inGroup "Critical pair joining heuristics" $

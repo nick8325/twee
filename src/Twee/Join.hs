@@ -28,7 +28,7 @@ defaultConfig :: Config
 defaultConfig =
   Config {
     cfg_ground_join = True,
-    cfg_use_connectedness = False,
+    cfg_use_connectedness = True,
     cfg_set_join = False }
 
 {-# INLINEABLE joinCriticalPair #-}
