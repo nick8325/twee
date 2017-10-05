@@ -1,6 +1,7 @@
-{-# LANGUAGE TemplateHaskell, FlexibleInstances, FlexibleContexts, UndecidableInstances, StandaloneDeriving, ScopedTypeVariables, TupleSections #-}
+{-# LANGUAGE TemplateHaskell, FlexibleInstances, FlexibleContexts, UndecidableInstances, StandaloneDeriving, ScopedTypeVariables, TupleSections, DeriveGeneric #-}
 import Twee.Constraints
 import Twee.Term hiding (subst, canonicalise, F)
+import Twee.Term.Core hiding (F)
 import Test.QuickCheck hiding (Function, Fun)
 import Test.QuickCheck.All
 import Twee.Pretty
@@ -18,13 +19,15 @@ import Data.Ord
 import Data.List
 import Data.Typeable
 import qualified Twee.Index as Index
+import Data.Int
+import GHC.Generics
 
 newtype Func = F Int deriving (Eq, Ord, Show)
 
 instance Pretty Func where pPrint (F f) = text "f" <> int f
 instance PrettyTerm Func
 instance Arbitrary (Subst Func) where
-  arbitrary = fmap fromJust (fmap flattenSubst (liftM2 zip (fmap nub arbitrary) (infiniteListOf arbitrary)))
+  arbitrary = fmap fromJust (fmap listToSubst (liftM2 zip (fmap nub arbitrary) (infiniteListOf arbitrary)))
 instance Arbitrary Func where
   arbitrary = F <$> choose (1, 1)
 instance Minimal Func where
@@ -34,7 +37,7 @@ instance Arity Func where
   arity (F 0) = 0
   arity (F 1) = 2
 instance Skolem Func
-instance Equals Func
+instance EqualsBonus Func
 
 instance Arbitrary Var where arbitrary = fmap V (choose (0, 3))
 instance (Ord f, Typeable f, Arbitrary f) => Arbitrary (Fun f) where
@@ -120,7 +123,36 @@ prop_index ts u =
   sort (catMaybes [fmap (,t) (match t u) | t <- ts]) ===
   sort (Index.matches u idx)
   where
-    idx = foldr (\t -> Index.insert t t) Index.Nil ts
+    idx = foldr (\t -> Index.insert t t) Index.empty ts
+
+deriving instance Eq Symbol
+deriving instance Generic Symbol
+
+instance Arbitrary Symbol where
+  arbitrary =
+    Symbol <$>
+      arbitrary <*>
+      fmap getLarge arbitrary <*>
+      (fmap (fromIntegral . getLarge) (arbitrary :: Gen (Large Int32)) `suchThat` (> 0) `suchThat` (< 2^31))
+  shrink s =
+    filter ok (genericShrink s)
+    where
+      ok s = Twee.Term.Core.size s > 0
+
+prop_symbol_1 :: Symbol -> Property
+prop_symbol_1 s =
+  withMaxSuccess 100000 $
+  counterexample ("fun/index/size = " ++ show (isFun s, index s, Twee.Term.Core.size s)) $
+  counterexample ("n = " ++ show (fromSymbol s)) $
+  toSymbol (fromSymbol s) === twiddle s
+  where
+    twiddle s =
+      s { index = fromIntegral (fromIntegral (index s) :: Int32) }
+
+prop_symbol_2 :: Int64 -> Property
+prop_symbol_2 n =
+  withMaxSuccess 100000 $
+  fromSymbol (toSymbol n) === n
 
 return []
 main = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000000 })
