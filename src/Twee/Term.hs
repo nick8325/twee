@@ -56,7 +56,7 @@ module Twee.Term(
   replacePosition,
   replacePositionSub,
   -- * Miscellaneous functions
-  bound, boundList, mapFun, mapFunList, (<<)) where
+  bound, boundList, boundLists, mapFun, mapFunList, (<<)) where
 
 import Prelude hiding (lookup)
 import Twee.Term.Core hiding (F)
@@ -283,13 +283,16 @@ canonicalise :: [TermList f] -> Subst f
 canonicalise [] = emptySubst
 canonicalise (t:ts) = loop emptySubst vars t ts
   where
-    n = maximum (V 0:map boundList (t:ts))
+    (V m, V n) = boundLists (t:ts)
     vars =
       buildTermList $
-        mconcat [emitVar x | x <- [V 0..n]]
+        -- Produces two variables when the term is ground
+        -- (n = minBound, m = maxBound), which is OK.
+        mconcat [emitVar (V x) | x <- [0..n-m+1]]
 
     loop !_ !_ !_ !_ | False = undefined
     loop sub _ Empty [] = sub
+    loop sub Empty _ _ = sub
     loop sub vs Empty (t:ts) = loop sub vs t ts
     loop sub vs (ConsSym App{} t) ts = loop sub vs t ts
     loop sub vs0@(Cons v vs) (Cons (Var x) t) ts =
@@ -492,21 +495,33 @@ extend x t sub = extendList x (singleton t) sub
 len :: Term f -> Int
 len = lenList . singleton
 
--- | Return the highest-numbered variable in a term plus 1.
+-- | Return the lowest- and highest-numbered variables in a term.
 {-# INLINE bound #-}
-bound :: Term f -> Var
+bound :: Term f -> (Var, Var)
 bound t = boundList (singleton t)
 
--- | Return the highest-numbered variable in a termlist plus 1.
+-- | Return the lowest- and highest-numbered variables in a termlist.
 {-# INLINE boundList #-}
-boundList :: TermList f -> Var
-boundList t = aux (V 0) t
-  where
-    aux n Empty = n
-    aux n (ConsSym App{} t) = aux n t
-    aux n (ConsSym (Var x) t)
-      | x >= n = aux (succ x) t
-      | otherwise = aux n t
+boundList :: TermList f -> (Var, Var)
+boundList t = boundListFrom (V maxBound) (V minBound) t
+
+boundListFrom :: Var -> Var -> TermList f -> (Var, Var)
+boundListFrom !m !n Empty = (m, n)
+boundListFrom m n (ConsSym App{} t) = boundListFrom m n t
+boundListFrom m n (ConsSym (Var x) t) =
+  boundListFrom (m `min` x) (n `max` x) t
+
+-- | Return the lowest- and highest-numbered variables in a list of termlists.
+boundLists :: [TermList f] -> (Var, Var)
+boundLists t = boundListsFrom (V maxBound) (V minBound) t
+
+boundListsFrom :: Var -> Var -> [TermList f] -> (Var, Var)
+boundListsFrom !m !n [] = (m, n)
+boundListsFrom m n (t:ts) =
+  let
+    (m', n') = boundListFrom m n t
+  in
+    boundListsFrom m' n' ts
 
 -- | Check if a variable occurs in a term.
 {-# INLINE occurs #-}

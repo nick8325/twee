@@ -157,13 +157,20 @@ canonicalise t = subst sub t
     sub = Term.canonicalise (DList.toList (termsDL t))
 
 -- | Rename the second argument so that it does not mention any variable which
--- occur in the first.
+-- occurs in the first.
 {-# INLINEABLE renameAvoiding #-}
 renameAvoiding :: (Symbolic a, Symbolic b) => a -> b -> b
-renameAvoiding x y =
-  subst (\(V x) -> var (V (x+n))) y
+renameAvoiding x y
+  | x2 < y1 || y2 < x1 =
+    -- No overlap. Important in the case when x is ground,
+    -- in which case x2 == minBound and the calculation below doesn't work.
+    y
+  | otherwise =
+    -- Map y1 to x2+1
+    subst (\(V x) -> var (V (x-y1+x2+1))) y
   where
-    V n = maximum (V 0:map boundList (terms x))
+    (V x1, V x2) = boundLists (terms x)
+    (V y1, V y2) = boundLists (terms y)
 
 -- | Check if a term is the minimal constant.
 isMinimal :: Minimal f => Term f -> Bool

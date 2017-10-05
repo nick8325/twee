@@ -189,7 +189,8 @@ fun_value f = find (unsafeMkLabel (fromIntegral (fun_id f)))
 newtype Var =
   V {
     -- | The variable's number.
-    -- Must be non-negative; this is not currently checked!
+    -- Don't use huge variable numbers:
+    -- they will be truncated to 32 bits when stored in a term.
     var_id :: Int } deriving (Eq, Ord, Enum)
 instance Show (Fun f) where show f = "f" ++ show (fun_id f)
 instance Show Var     where show x = "x" ++ show (var_id x)
