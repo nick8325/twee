@@ -229,6 +229,16 @@ type Function f = (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm 
 class EqualsBonus f where
   hasEqualsBonus :: f -> Bool
   hasEqualsBonus _ = False
+  isEquals, isTrue, isFalse :: f -> Bool
+  isEquals _ = False
+  isTrue _ = False
+  isFalse _ = False
+
+instance EqualsBonus f => EqualsBonus (Fun f) where
+  hasEqualsBonus = hasEqualsBonus . fun_value
+  isEquals = isEquals . fun_value
+  isTrue = isTrue . fun_value
+  isFalse = isFalse . fun_value
 
 -- | A function symbol extended with a minimal constant and Skolem functions.
 -- Comes equipped with 'Minimal' and 'Skolem' instances.
@@ -267,3 +277,9 @@ instance (Typeable f, Ord f) => Skolem (Extended f) where
 instance EqualsBonus f => EqualsBonus (Extended f) where
   hasEqualsBonus (Function f) = hasEqualsBonus f
   hasEqualsBonus _ = False
+  isEquals (Function f) = isEquals f
+  isEquals _ = False
+  isTrue (Function f) = isTrue f
+  isTrue _ = False
+  isFalse (Function f) = isFalse f
+  isFalse _ = False

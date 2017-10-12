@@ -190,6 +190,9 @@ instance Ordered (Extended Constant) where
 
 instance EqualsBonus Constant where
   hasEqualsBonus = con_bonus
+  isEquals = Main.isEquals . con_id
+  isTrue = Main.isTrue . con_id
+  isFalse = Main.isFalse . con_id
 
 data TweeContext =
   TweeContext {
@@ -209,7 +212,7 @@ tweeConstant flags TweeContext{..} prec fun
     sz fun = if isType fun then 0 else 1
     bonus fun =
       (isIfeq fun && encoding flags /= Asymmetric2) ||
-      isEquals fun
+      Main.isEquals fun
 
 isType :: Jukebox.Function -> Bool
 isType fun = "$to_" `isPrefixOf` base (name fun)
@@ -219,6 +222,12 @@ isIfeq fun = "$ifeq" `isPrefixOf` base (name fun)
 
 isEquals :: Jukebox.Function -> Bool
 isEquals fun = "$equals" `isPrefixOf` base (name fun)
+
+isTrue :: Jukebox.Function -> Bool
+isTrue fun = "$true" `isPrefixOf` base (name fun)
+
+isFalse :: Jukebox.Function -> Bool
+isFalse fun = "$false" `isPrefixOf` base (name fun)
 
 jukeboxFunction :: TweeContext -> Extended Constant -> Jukebox.Function
 jukeboxFunction _ (Function Constant{..}) = con_id
