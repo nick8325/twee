@@ -540,7 +540,20 @@ flattenProof =
     trans (Trans p q) r = trans p (trans q r)
     trans Refl{} p = p
     trans p Refl{} = p
-    trans p q = Trans p q
+    trans p q =
+      case strip q of
+        Nothing -> Trans p q
+        Just q' -> trans p q'
+
+    strip p
+      | t == u = Just (Refl t)
+      | otherwise = strip' t p
+      where
+        t :=: u = equation (certify p)
+    strip' t (Trans _ q)
+      | eqn_lhs (equation (certify q)) == t = Just q
+      | otherwise = strip' t q
+    strip' _ _ = Nothing
 
 -- Transform a derivation into a list of single steps.
 -- Each step has the following form:
