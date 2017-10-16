@@ -15,7 +15,7 @@ module Twee.Proof(
   ProvedGoal(..), provedGoal, checkProvedGoal,
   pPrintPresentation, present, describeEquation) where
 
-import Twee.Base
+import Twee.Base hiding (invisible)
 import Twee.Equation
 import Twee.Utils
 import Control.Monad
@@ -464,6 +464,9 @@ presentWithGoals config@Config{..} goals lemmas
     oneStep Trans{} = False
     oneStep _ = True
 
+invisible :: Function f => Equation f -> Bool
+invisible (t :=: u) = show (pPrint t) == show (pPrint u)
+
 -- Pretty-print the proof of a single lemma.
 pPrintLemma :: Function f => Config -> (Id -> String) -> Proof f -> Doc
 pPrintLemma Config{..} lemmaName p =
@@ -472,6 +475,7 @@ pPrintLemma Config{..} lemmaName p =
     q = flattenProof p
 
     pp (Trans p q) = pp p $$ pp q
+    pp p | invisible (equation (certify p)) = pPrintEmpty
     pp p =
       (text "= { by" <+>
        ppStep
@@ -556,9 +560,11 @@ pPrintPresentation :: forall f. Function f => Config -> Presentation f -> Doc
 pPrintPresentation config (Presentation axioms lemmas goals) =
   vcat $ intersperse (text "") $
     vcat [ describeEquation "Axiom" (show n) (Just name) eqn
-         | Axiom n name eqn <- axioms ]:
+         | Axiom n name eqn <- axioms,
+           not (invisible eqn) ]:
     [ pp "Lemma" (num n) Nothing (equation p) emptySubst p
-    | Lemma n p <- lemmas ] ++
+    | Lemma n p <- lemmas,
+      not (invisible (equation p)) ] ++
     [ pp "Goal" (show num) (Just pg_name) pg_goal_hint pg_witness_hint pg_proof
     | (num, ProvedGoal{..}) <- zip [1..] goals ]
   where

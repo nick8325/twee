@@ -177,7 +177,8 @@ instance Pretty Constant where
 
 instance PrettyTerm Constant where
   termStyle Constant{..}
-    | any isAlphaNum (base con_id) = uncurried
+    | "$to_" `isPrefixOf` (base con_id) = invisible
+    | any isAlphaNum (base con_id) = curried
     | otherwise =
       case con_arity of
         1 -> prefix
