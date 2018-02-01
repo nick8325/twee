@@ -24,7 +24,6 @@ import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size, Lemma)
 import Jukebox.Tools.EncodeTypes
 import Jukebox.TPTP.Print
-import Jukebox.Tools.Clausify(ClausifyFlags(..), clausify)
 import Jukebox.Tools.HornToUnit
 import qualified Data.IntMap.Strict as IntMap
 import System.IO
@@ -601,25 +600,22 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
                   isJust (matchList ts us) && isJust (matchList us ts)
 
 main = do
-  let
-    -- Never use splitting
-    clausifyBox =
-      pure (\prob -> return $! clausify (ClausifyFlags False) prob)
   hSetBuffering stdout LineBuffering
-  join . parseCommandLine "Twee, an equational theorem prover" .
-    version ("twee version " ++ VERSION_twee) $
-    globalFlags *> parseMainFlags *>
+  join . parseCommandLineWithExtraArgs
+    ["--no-conjunctive-conjectures", "--no-split"]
+    "Twee, an equational theorem prover" . version ("twee version " ++ VERSION_twee) $
+      globalFlags *> parseMainFlags *>
       -- hack: get --quiet and --no-proof options to appear before --tstp
-    forAllFilesBox <*>
-      (readProblemBox =>>=
-       expert clausifyBox =>>=
-       forAllConjecturesBox <*>
-         (combine <$>
-           hornToUnitBox <*>
-           (toFormulasBox =>>=
-            expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
-            clausifyBox =>>= oneConjectureBox) <*>
-           (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> hornFlags <*> parseConfig <*> parsePrecedence)))
+      forAllFilesBox <*>
+        (readProblemBox =>>=
+         expert clausifyBox =>>=
+         forAllConjecturesBox <*>
+           (combine <$>
+             hornToUnitBox <*>
+             (toFormulasBox =>>=
+              expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
+              clausifyBox =>>= oneConjectureBox) <*>
+             (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> hornFlags <*> parseConfig <*> parsePrecedence)))
   where
     combine horn encode prove later prob = do
       res <- horn prob
