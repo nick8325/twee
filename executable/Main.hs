@@ -611,11 +611,11 @@ main = do
          expert clausifyBox =>>=
          forAllConjecturesBox <*>
            (combine <$>
-             hornToUnitBox <*>
+             expert hornToUnitBox <*>
              (toFormulasBox =>>=
               expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
-              clausifyBox =>>= oneConjectureBox) <*>
-             (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> hornFlags <*> parseConfig <*> parsePrecedence)))
+              expert clausifyBox =>>= expert oneConjectureBox) <*>
+             (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> expert hornFlags <*> parseConfig <*> parsePrecedence)))
   where
     combine horn encode prove later prob = do
       res <- horn prob
