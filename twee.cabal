@@ -1,4 +1,4 @@
-name:                twee-lib
+name:                twee
 version:             2.1
 synopsis:            An equational theorem prover
 homepage:            http://github.com/nick8325/twee
@@ -22,8 +22,6 @@ description:
    The input problem should be in TPTP format (see
    http://www.tptp.org). You can use types and quantifiers, but apart
    from that the problem must be equational.
-   .
-   This package contains only the library part of twee.
 
 source-repository head
   type:     git
@@ -42,53 +40,22 @@ flag llvm
   description: Build using LLVM backend for faster code.
   default: False
 
-flag bounds-checks
-  description: Use bounds checks for all array operations.
-  default: False
-
-library
-  exposed-modules:
-    Twee
-    Twee.Base
-    Twee.Constraints
-    Twee.CP
-    Twee.Equation
-    Twee.Index
-    Twee.Join
-    Twee.KBO
-    Twee.Label
-    Twee.PassiveQueue
-    Twee.Pretty
-    Twee.Proof
-    Twee.Rule
-    Twee.Rule.Index
-    Twee.Term
-    Twee.Task
-    Twee.Utils
-  other-modules:
-    Data.ChurchList
-    Data.DynamicArray
-    Data.Heap
-    Twee.Term.Core
-
-  build-depends:
-    base >= 4 && < 5,
-    containers,
-    transformers,
-    dlist,
-    pretty,
-    ghc-prim,
-    primitive >= 0.6.2.0,
-    vector
-  hs-source-dirs:      src
-  ghc-options:         -W -fno-warn-incomplete-patterns -O2 -fmax-worker-args=100
+executable twee
+  main-is:             executable/Main.hs
   default-language:    Haskell2010
+  build-depends:       base < 5,
+                       twee-lib == 2.1,
+                       containers,
+                       pretty,
+                       split,
+                       jukebox >= 0.3.2
+  ghc-options:         -W -fno-warn-incomplete-patterns -O2 -fmax-worker-args=100
 
   if flag(llvm)
     ghc-options: -fllvm
-  if flag(bounds-checks)
-    cpp-options: -DBOUNDS_CHECKS
-    exposed-modules:
-      Data.Primitive.SmallArray.Checked
-      Data.Primitive.ByteArray.Checked
-      Data.Primitive.Checked
+
+  if flag(static)
+    ghc-options: -optl -static
+
+  if flag(static-cxx)
+    ghc-options: -pgml misc/static-libstdc++

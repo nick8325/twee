@@ -10,9 +10,9 @@ running:
 
     cabal install twee -fllvm
 
-If you really want the latest unstable version, run `cabal install` in
-this repository, and then in the `executable` subdirectory.
-You will most likely need the latest git version of Jukebox, from
+If you really want the latest unstable version, run
+`cabal install src/ .` in this repository. You will most likely need
+the latest git version of Jukebox, from
 https://github.com/nick8325/jukebox, too - and things may break from
 time to time.
 
