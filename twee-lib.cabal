@@ -9,7 +9,7 @@ maintainer:          nicsma@chalmers.se
 category:            Theorem Provers
 build-type:          Simple
 cabal-version:       >=1.10
-extra-source-files:  README tests/*.p misc/*
+extra-source-files:  README.md tests/*.p misc/*.hs misc/*.pl misc/static-libstdc++
 description:
    Twee is an experimental equational theorem prover based on
    Knuth-Bendix completion.
