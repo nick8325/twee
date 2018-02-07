@@ -1,0 +1,61 @@
+name:                twee
+version:             2.0
+synopsis:            An equational theorem prover
+homepage:            http://github.com/nick8325/twee
+license:             BSD3
+license-file:        LICENSE
+author:              Nick Smallbone
+maintainer:          nicsma@chalmers.se
+category:            Theorem Provers
+build-type:          Simple
+cabal-version:       >=1.10
+extra-source-files:  README tests/*.p misc/*
+description:
+   Twee is an experimental equational theorem prover based on
+   Knuth-Bendix completion.
+   .
+   Given a set of equational axioms and a set of equational
+   conjectures it will try to prove the conjectures.
+   It will terminate if the conjectures are true but normally
+   fail to terminate if they are false.
+   .
+   The input problem should be in TPTP format (see
+   http://www.tptp.org). You can use types and quantifiers, but apart
+   from that the problem must be equational.
+
+source-repository head
+  type:     git
+  location: git://github.com/nick8325/twee.git
+  branch:   master
+
+flag static
+  description: Build a static binary.
+  default: False
+
+flag static-cxx
+  description: Build a binary which statically links against libstdc++.
+  default: False
+
+flag llvm
+  description: Build using LLVM backend for faster code.
+  default: False
+
+executable twee
+  main-is:             Main.hs
+  default-language:    Haskell2010
+  build-depends:       base,
+                       twee-lib == 2.0,
+                       containers,
+                       pretty,
+                       split,
+                       jukebox >= 0.3
+  ghc-options:         -W -fno-warn-incomplete-patterns -O2 -fmax-worker-args=100
+
+  if flag(llvm)
+    ghc-options: -fllvm
+
+  if flag(static)
+    ghc-options: -optl -static
+
+  if flag(static-cxx)
+    ghc-options: -pgml misc/static-libstdc++
