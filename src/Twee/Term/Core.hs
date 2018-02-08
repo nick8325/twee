@@ -122,6 +122,9 @@ pattern Empty <- (patHead -> Nothing)
 pattern Cons :: Term f -> TermList f -> TermList f
 pattern Cons t ts <- (patHead -> Just (t, _, ts))
 
+{-# COMPLETE Empty, Cons #-}
+{-# COMPLETE Empty, ConsSym #-}
+
 -- | Like 'Cons', but does not check that the termlist is non-empty. Use only if
 -- you are sure the termlist is non-empty.
 pattern UnsafeCons :: Term f -> TermList f -> TermList f
@@ -202,6 +205,8 @@ pattern Var x <- (patTerm -> Left x)
 -- | Matches a function application.
 pattern App :: Fun f -> TermList f -> Term f
 pattern App f ts <- (patTerm -> Right (f, ts))
+
+{-# COMPLETE Var, App #-}
 
 -- A helper function for Var and App.
 {-# INLINE patTerm #-}

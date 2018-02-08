@@ -640,6 +640,7 @@ pathToPosition t ns = term 0 t ns
 -- | A pattern which extracts the 'fun_value' from a 'Fun'.
 pattern F :: f -> Fun f
 pattern F x <- (fun_value -> x)
+{-# COMPLETE F #-}
 
 -- | Compare the 'fun_value's of two 'Fun's.
 (<<) :: Ord f => Fun f -> Fun f -> Bool
