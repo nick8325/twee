@@ -672,8 +672,8 @@ decodeGoal pg =
 maybeDecodeGoal :: forall f. Function f =>
   ProvedGoal f -> Maybe (String, Subst f, Equation f, Derivation f)
 maybeDecodeGoal ProvedGoal{..}
-  -- N.B. presentWithGoals takes care of expanding any lemma which mentions
-  -- $equals, and flattening the proof.
+  --  N.B. presentWithGoals takes care of expanding any lemma which mentions
+  --  $equals, and flattening the proof.
   | isFalseTerm u = extract (derivSteps deriv)
     -- Orient the equation so that $false is the RHS.
   | isFalseTerm t = extract (derivSteps (symm deriv))
