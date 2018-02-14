@@ -183,9 +183,11 @@ score Config{..} Overlap{..} =
       | len t > 1, t `isSubtermOfList` ts =
         size' (n+cfg_dupcost+cfg_dupfactor*size t) ts
     size' n ts
-      | Cons (App f (Cons a (Cons b us))) vs <- ts,
-        hasEqualsBonus (fun_value f), isJust (unify a b) =
-        size' (size' (n+1) us) vs
+      | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
+        hasEqualsBonus (fun_value f),
+        Just sub <- unify a b =
+        size' (n+cfg_funweight*size f) ws `min`
+        size' (size' (n+1) (subst sub us)) (subst sub vs)
     size' n (Cons (Var _) ts) =
       size' (n+cfg_varweight) ts
     size' n (ConsSym (App f _) ts) =
