@@ -29,6 +29,7 @@ import qualified Data.IntMap.Strict as IntMap
 import System.IO
 import System.Exit
 import qualified Data.Set as Set
+import Twee.Label
 
 data MainFlags =
   MainFlags {
@@ -238,8 +239,8 @@ jukeboxFunction TweeContext{..} (Skolem _) =
 tweeTerm :: HornFlags -> TweeContext -> (Jukebox.Function -> Precedence) -> Jukebox.Term -> Term (Extended Constant)
 tweeTerm flags ctx prec t = build (tm t)
   where
-    tm (Jukebox.Var (Unique x _ _ ::: _)) =
-      var (V (fromIntegral x))
+    tm (Jukebox.Var (x ::: _)) =
+      var (V (fromIntegral (labelNum (label x))))
     tm (f :@: ts) =
       app (fun (tweeConstant flags ctx (prec f) f)) (map tm ts)
 
