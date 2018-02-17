@@ -3,7 +3,8 @@
 module Twee where
 
 import Twee.Base
-import Twee.Rule
+import Twee.Rule hiding (normalForms)
+import qualified Twee.Rule as Rule
 import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof(Proof, Axiom(..), Lemma(..), ProvedGoal(..), provedGoal, certify, derivation, symm)
@@ -603,6 +604,11 @@ completePure cfg state
 normaliseTerm :: Function f => State f -> Term f -> Resulting f
 normaliseTerm State{..} t =
   normaliseWith (const True) (rewrite reduces (index_all st_rules)) t
+
+{-# INLINEABLE normalForms #-}
+normalForms :: Function f => State f -> Term f -> Set (Resulting f)
+normalForms State{..} t =
+  Rule.normalForms (rewrite reduces (index_all st_rules)) [reduce (Refl t)]
 
 {-# INLINEABLE simplifyTerm #-}
 simplifyTerm :: Function f => State f -> Term f -> Term f
