@@ -8,7 +8,6 @@ import Twee.Rule
 import Twee.Index(Index)
 import qualified Data.Set as Set
 import Control.Monad
-import Data.Maybe
 import Data.List
 import qualified Data.ChurchList as ChurchList
 import Data.ChurchList (ChurchList(..))
