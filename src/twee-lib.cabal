@@ -75,7 +75,7 @@ library
     containers,
     transformers,
     dlist,
-    pretty,
+    pretty >= 1.1.2.0,
     ghc-prim,
     primitive >= 0.6.2.0,
     vector
