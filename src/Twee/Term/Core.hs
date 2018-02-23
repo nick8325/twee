@@ -15,7 +15,7 @@ import Data.Primitive.ByteArray
 import Control.Monad.ST.Strict
 import Data.Bits
 import Data.Int
-import GHC.Int(Int(..))
+import GHC.Types(Int(..))
 import GHC.Prim
 import GHC.ST hiding (liftST)
 import Data.Ord

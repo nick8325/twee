@@ -25,7 +25,6 @@ import Prelude hiding (null, lookup)
 import Data.Maybe
 import Twee.Base hiding (var, fun, empty, size, singleton, prefix, funs, lookupList, lookup)
 import qualified Twee.Term as Term
-import Twee.Term.Core(TermList(..))
 import Data.DynamicArray
 import qualified Data.List as List
 
