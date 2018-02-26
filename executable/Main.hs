@@ -52,7 +52,7 @@ parseMainFlags =
         Nothing ((\x y -> Just (x, y)) <$> argFile <*> argModule)
     argModule = arg "<module>" "expected a Prolog module name" Just
 
-parseConfig :: OptionParser Config
+parseConfig :: OptionParser (Config (Extended Constant))
 parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
@@ -61,7 +61,8 @@ parseConfig =
   where
     maxSize =
       inGroup "Resource limits" $
-      flag "max-term-size" ["Discard rewrite rules whose left-hand side is bigger than this limit (unlimited by default)."] maxBound argNum
+      flag "max-term-size" ["Discard rewrite rules whose left-hand side is bigger than this limit (unlimited by default)."] Nothing (Just <$> checkSize <$> argNum)
+    checkSize n t = size t <= n
     maxCPs =
       inGroup "Resource limits" $
       flag "max-cps" ["Give up after considering this many critical pairs (unlimited by default)."] maxBound argNum
@@ -354,7 +355,7 @@ identifyProblem TweeContext{..} prob =
       return $ Left (pre inp (Jukebox.Var ctx_var, ctx_minimal :@: []))
     identify inp = Left inp
 
-runTwee :: GlobalFlags -> TSTPFlags -> MainFlags -> HornFlags -> Config -> [String] -> (IO () -> IO ()) -> Problem Clause -> IO Answer
+runTwee :: GlobalFlags -> TSTPFlags -> MainFlags -> HornFlags -> Config (Extended Constant) -> [String] -> (IO () -> IO ()) -> Problem Clause -> IO Answer
 runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# SCC runTwee #-} do
   let
     -- Encode whatever needs encoding in the problem
