@@ -434,11 +434,11 @@ addJoinable state eqn@(t :=: u) =
 -- Name and number are for information only.
 data Goal f =
   Goal {
-    goal_name   :: String,
-    goal_number :: Int,
-    goal_eqn    :: Equation f,
-    goal_lhs    :: Set (Resulting f),
-    goal_rhs    :: Set (Resulting f) }
+    goal_name     :: String,
+    goal_number   :: Int,
+    goal_eqn      :: Equation f,
+    goal_lhs      :: Set (Resulting f),
+    goal_rhs      :: Set (Resulting f) }
 
 -- Add a new goal.
 {-# INLINEABLE addGoal #-}
@@ -450,13 +450,34 @@ addGoal _config state@State{..} goal =
 {-# INLINEABLE normaliseGoals #-}
 normaliseGoals :: Function f => State f -> State f
 normaliseGoals state@State{..} =
-  {-# SCC normaliseGoals #-}
   state {
     st_goals =
-      map (goalMap (successors (rewrite reduces (index_all st_rules)) . Set.toList)) st_goals }
+      map (goalMap (Rule.normalForms (rewrite reduces (index_all st_rules)))) st_goals }
   where
     goalMap f goal@Goal{..} =
       goal { goal_lhs = f goal_lhs, goal_rhs = f goal_rhs }
+
+-- Recompute all normal forms of all goals. Starts from the original goal term.
+-- Different from normalising all goals, because there may be an intermediate
+-- term on one of the reduction paths which we can now rewrite in a different
+-- way.
+{-# INLINEABLE recomputeGoals #-}
+recomputeGoals :: Function f => State f -> State f
+recomputeGoals state =
+  -- Make this strict so that newTask can time it correctly
+  forceList (map goal_lhs (st_goals state')) `seq`
+  forceList (map goal_rhs (st_goals state')) `seq`
+  state'
+  where
+    state' =
+      normaliseGoals (state { st_goals = map reset (st_goals state) })
+
+    reset goal@Goal{goal_eqn = t :=: u, ..} =
+      goal { goal_lhs = Set.singleton (reduce (Refl t)),
+             goal_rhs = Set.singleton (reduce (Refl u)) }
+
+    forceList [] = ()
+    forceList (x:xs) = x `seq` forceList xs
 
 -- Create a goal.
 {-# INLINE goal #-}
@@ -517,7 +538,6 @@ interreduce1 config@Config{..} state active =
       sub <- match t' t
       matchIn sub u' u
 
-
 ----------------------------------------------------------------------
 -- The main loop.
 ----------------------------------------------------------------------
@@ -539,7 +559,10 @@ complete Output{..} config@Config{..} state =
          when cfg_simplify $ do
            lift $ output_message Interreduce
            state <- StateM.get
-           StateM.put $! interreduce config state]
+           StateM.put $! interreduce config state,
+       newTask 1 0.02 $ do
+          state <- StateM.get
+          StateM.put $! recomputeGoals state ]
 
     let
       loop = do
@@ -608,7 +631,7 @@ normaliseTerm State{..} t =
 {-# INLINEABLE normalForms #-}
 normalForms :: Function f => State f -> Term f -> Set (Resulting f)
 normalForms State{..} t =
-  Rule.normalForms (rewrite reduces (index_all st_rules)) [reduce (Refl t)]
+  Rule.normalForms (rewrite reduces (index_all st_rules)) (Set.singleton (reduce (Refl t)))
 
 {-# INLINEABLE simplifyTerm #-}
 simplifyTerm :: Function f => State f -> Term f -> Term f

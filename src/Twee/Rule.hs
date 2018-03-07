@@ -351,33 +351,37 @@ normaliseWith ok strat t = {-# SCC normaliseWith #-} res
         _ -> Resulting t p
 
 -- | Compute all normal forms of a set of terms wrt a particular strategy.
-normalForms :: Function f => Strategy f -> [Resulting f] -> Set (Resulting f)
+normalForms :: Function f => Strategy f -> Set (Resulting f) -> Set (Resulting f)
 normalForms strat ps = snd (successorsAndNormalForms strat ps)
 
 -- | Compute all successors of a set of terms (a successor of a term @t@
 -- is a term @u@ such that @t ->* u@).
-successors :: Function f => Strategy f -> [Resulting f] -> Set (Resulting f)
-successors strat ps = Set.union qs rs
+successors :: Function f => Strategy f -> Set (Resulting f) -> Set (Resulting f)
+successors strat ps =
+  trace (printf "%d successors and %d normal forms" (Set.size qs) (Set.size rs)) $
+  Set.union qs rs
   where
     (qs, rs) = successorsAndNormalForms strat ps
 
 {-# INLINEABLE successorsAndNormalForms #-}
-successorsAndNormalForms :: Function f => Strategy f -> [Resulting f] ->
+successorsAndNormalForms :: Function f => Strategy f -> Set (Resulting f) ->
   (Set (Resulting f), Set (Resulting f))
 successorsAndNormalForms strat ps =
   {-# SCC successorsAndNormalForms #-} go Set.empty Set.empty ps
   where
-    go dead norm [] = (dead, norm)
-    go dead norm (p:ps)
-      | p `Set.member` dead = go dead norm ps
-      | p `Set.member` norm = go dead norm ps
-      | null qs = go dead (Set.insert p norm) ps
-      | otherwise =
-        go (Set.insert p dead) norm (qs ++ ps)
-      where
-        qs =
-          [ reduce (reduction p `Trans` q)
-          | q <- anywhere strat (result p) ]
+    go dead norm ps =
+      case Set.minView ps of
+        Nothing -> (dead, norm)
+        Just (p, ps)
+          | p `Set.member` dead -> go dead norm ps
+          | p `Set.member` norm -> go dead norm ps
+          | null qs -> go dead (Set.insert p norm) ps
+          | otherwise ->
+            go (Set.insert p dead) norm (Set.fromList qs `Set.union` ps)
+          where
+            qs =
+              [ reduce (reduction p `trans` q)
+              | q <- anywhere strat (result p) ]
 
 -- | Apply a strategy anywhere in a term.
 anywhere :: Strategy f -> Strategy f

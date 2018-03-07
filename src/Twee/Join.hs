@@ -54,8 +54,8 @@ joinCriticalPair config eqns idx mmodel cp@CriticalPair{cp_eqn = t :=: u} =
       Right (Nothing, [])
     _ | cfg_set_join config &&
         not (null $ Set.intersection
-          (normalForms (rewrite reduces (index_all idx)) [reduce (Refl t)])
-          (normalForms (rewrite reduces (index_all idx)) [reduce (Refl u)])) ->
+          (normalForms (rewrite reduces (index_all idx)) (Set.singleton (reduce (Refl t))))
+          (normalForms (rewrite reduces (index_all idx)) (Set.singleton (reduce (Refl u))))) ->
       Right (Just cp, [])
     Just cp ->
       case groundJoinFromMaybe config eqns idx mmodel (branches (And [])) cp of
