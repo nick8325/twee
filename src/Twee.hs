@@ -555,7 +555,7 @@ complete Output{..} config@Config{..} state =
          lift $ output_message SimplifyQueue
          state <- StateM.get
          StateM.put $! simplifyQueue config state,
-       newTask 0.25 0.05 $ do
+       newTask 1 0.05 $ do
          when cfg_simplify $ do
            lift $ output_message Interreduce
            state <- StateM.get
