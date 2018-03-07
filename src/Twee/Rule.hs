@@ -358,7 +358,6 @@ normalForms strat ps = snd (successorsAndNormalForms strat ps)
 -- is a term @u@ such that @t ->* u@).
 successors :: Function f => Strategy f -> Set (Resulting f) -> Set (Resulting f)
 successors strat ps =
-  trace (printf "%d successors and %d normal forms" (Set.size qs) (Set.size rs)) $
   Set.union qs rs
   where
     (qs, rs) = successorsAndNormalForms strat ps
