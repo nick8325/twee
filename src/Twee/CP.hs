@@ -184,6 +184,8 @@ score Config{..} Overlap{..} =
     size' n ts
       | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
         hasEqualsBonus (fun_value f),
+        not (isVar a),
+        not (isVar b),
         Just sub <- unify a b =
         size' (n+cfg_funweight*size f) ws `min`
         size' (size' (n+1) (subst sub us)) (subst sub vs)
