@@ -605,7 +605,11 @@ main = do
   hSetBuffering stdout LineBuffering
   join . parseCommandLineWithExtraArgs
     ["--no-conjunctive-conjectures", "--no-split"]
+#ifdef VERSION_twee
     "Twee, an equational theorem prover" . version ("twee version " ++ VERSION_twee) $
+#else
+    "Twee, an equational theorem prover" . version "twee development version" $
+#endif
       globalFlags *> parseMainFlags *>
       -- hack: get --quiet and --no-proof options to appear before --tstp
       forAllFilesBox <*>
