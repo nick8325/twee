@@ -193,6 +193,7 @@ erase xs t = subst sub t
 class Skolem f where
   -- | Turn a variable into a Skolem constant.
   skolem  :: Var -> Fun f
+  getSkolem :: Fun f -> Maybe Var
 
 -- | For types which have a notion of arity.
 class Arity f where
@@ -273,6 +274,8 @@ instance (Typeable f, Ord f) => Minimal (Extended f) where
 
 instance (Typeable f, Ord f) => Skolem (Extended f) where
   skolem x = fun (Skolem x)
+  getSkolem (F (Skolem x)) = Just x
+  getSkolem _ = Nothing
 
 instance EqualsBonus f => EqualsBonus (Extended f) where
   hasEqualsBonus (Function f) = hasEqualsBonus f

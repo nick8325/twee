@@ -3,7 +3,7 @@
 module Twee.Rule where
 
 import Twee.Base
-import Twee.Constraints
+import Twee.Constraints hiding (funs)
 import qualified Twee.Index as Index
 import Twee.Index(Index)
 import Control.Monad
@@ -488,4 +488,5 @@ reducesSkolem :: Function f => Rule f -> Subst f -> Bool
 reducesSkolem rule sub =
   reducesWith (\t u -> lessEq (subst skolemise t) (subst skolemise u)) rule sub
   where
-    skolemise = con . skolem
+    skolemise (V x) = con (skolem (V (x + k)))
+    V k = maximum (V 0:map succ (catMaybes (map getSkolem (funs rule))))
