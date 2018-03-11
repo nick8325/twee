@@ -217,7 +217,7 @@ tweeConstant flags TweeContext{..} prec fun
       Main.isEquals fun
 
 isType :: Jukebox.Function -> Bool
-isType fun = "$to_" `isPrefixOf` base (name fun)
+isType fun = "$to_" `isPrefixOf` base (name fun) && Jukebox.arity fun == 1
 
 isIfeq :: Jukebox.Function -> Bool
 isIfeq fun = "$ifeq" `isPrefixOf` base (name fun)
