@@ -48,7 +48,7 @@ module Twee.Term(
   match, matchIn, matchList, matchListIn, isInstanceOf, isVariantOf,
   -- * Unification
   unify, unifyList,
-  unifyTri, unifyListTri,
+  unifyTri, unifyListTri, unifyListTriFrom,
   TriangleSubst(..),
   close,
   -- * Positions in terms
@@ -401,7 +401,11 @@ unifyTri t u = unifyListTri (singleton t) (singleton u)
 -- | Unify two termlists, returning a triangle substitution.
 -- This is slightly faster than 'unify'.
 unifyListTri :: TermList f -> TermList f -> Maybe (TriangleSubst f)
-unifyListTri !t !u = fmap Triangle ({-# SCC unify #-} loop emptySubst t u)
+unifyListTri t u = unifyListTriFrom t u (Triangle emptySubst)
+
+unifyListTriFrom :: TermList f -> TermList f -> TriangleSubst f -> Maybe (TriangleSubst f)
+unifyListTriFrom !t !u (Triangle !sub) =
+  fmap Triangle ({-# SCC unify #-} loop sub t u)
   where
     loop !_ !_ !_ | False = undefined
     loop sub Empty Empty = Just sub
