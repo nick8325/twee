@@ -489,4 +489,6 @@ reducesSkolem rule sub =
   reducesWith (\t u -> lessEq (subst skolemise t) (subst skolemise u)) rule sub
   where
     skolemise (V x) = con (skolem (V (x + k)))
+    -- Make sure the Skolem constants we choose don't overlap with any
+    -- already in the rule
     V k = maximum (V 0:map succ (catMaybes (map getSkolem (funs rule))))
