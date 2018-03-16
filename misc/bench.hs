@@ -1,24 +1,24 @@
 {-# LANGUAGE PatternGuards, FlexibleInstances #-}
 import Criterion.Main
-import Twee.Term hiding (isFun)
+import Twee.Term hiding (isFun, F)
 import qualified Twee.Term
-import Test.QuickCheck
+import Test.QuickCheck hiding (Fun)
 import Data.Int
 import Data.Maybe
 import Twee.Term.Core hiding (subst)
 
-instance Num (Fun Int) where fromInteger n = F (fromInteger n) (fromInteger n)
+instance Num (Fun Int) where fromInteger n = F (fromInteger n)
 instance Num Var where fromInteger = V . fromInteger
 
 t0, t1, u0, u1, t2, t, u :: Term Int
-t0 = build $ fun 0 [var 0, fun 0 [var 0, fun 0 [fun 0 [var 0, var 1], var 2]]]
-u0 = build $ fun 0 [fun 0 [fun 2 [fun 2 [var 2, var 2], var 1], fun 0 [fun 2 [var 2, var 2], var 3]], fun 0 [fun 0 [fun 2 [fun 2 [var 2, var 2], var 1], fun 0 [fun 2 [var 2, var 2], var 3]], fun 0 [fun 0 [fun 0 [fun 2 [fun 2 [var 2, var 2], var 1], fun 0 [fun 2 [var 2, var 2], var 3]], fun 2 [fun 2 [var 2, var 2], var 1]], fun 2 [var 2, var 2]]]]
+t0 = build $ app 0 [var 0, app 0 [var 0, app 0 [app 0 [var 0, var 1], var 2]]]
+u0 = build $ app 0 [app 0 [app 2 [app 2 [var 2, var 2], var 1], app 0 [app 2 [var 2, var 2], var 3]], app 0 [app 0 [app 2 [app 2 [var 2, var 2], var 1], app 0 [app 2 [var 2, var 2], var 3]], app 0 [app 0 [app 0 [app 2 [app 2 [var 2, var 2], var 1], app 0 [app 2 [var 2, var 2], var 3]], app 2 [app 2 [var 2, var 2], var 1]], app 2 [var 2, var 2]]]]
 
-t1 = build $ fun 0 [fun 1 [var 0], fun 1 [var 1]]
-u1 = build $ fun 0 [fun 1 [fun 0 [fun 2 emptyTermList, fun 3 emptyTermList]], fun 1 [fun 0 [fun 4 emptyTermList, fun 5 emptyTermList]]]
+t1 = build $ app 0 [app 1 [var 0], app 1 [var 1]]
+u1 = build $ app 0 [app 1 [app 0 [app 2 empty, app 3 empty]], app 1 [app 0 [app 4 empty, app 5 empty]]]
 
-t2 = build $ fun 0 [var 0, fun 1 [var 1, fun 1 [var 1, var 1]]]
-u2 = build $ fun 0 [fun 0 [var 2, var 2], var 2]
+t2 = build $ app 0 [var 0, app 1 [var 1, app 1 [var 1, var 1]]]
+u2 = build $ app 0 [app 0 [var 2, var 2], var 2]
 
 t = t0
 u = u0
@@ -61,7 +61,7 @@ main = do
     bench "unify-subst-closed2" (whnf (build . uncurry subst) (csub', u2)),
     bench "mgu-tri" (whnf (uncurry mgu1) (t2, u2)),
     bench "mgu-close" (whnf (uncurry mgu2) (t2, u2)),
-    bench "make-constant" (whnf (build . uncurry fun) (F 0 0, emptyTermList)),
+    bench "make-constant" (whnf (build . uncurry app) (F 0, empty)),
     bench "baseline" (whnf (uncurry (+)) (0 :: Int, 0))]
 
 prop :: Bool -> NonNegative (Small Int) -> NonNegative (Small Int) -> Property
