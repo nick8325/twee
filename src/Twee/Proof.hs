@@ -117,7 +117,10 @@ certify p =
 
 ----------------------------------------------------------------------
 -- Everything below this point need not be trusted, since all proof
--- construction goes through the "proof" function.
+-- construction goes through the "certify" function.
+--
+-- N.B.: For this reason, the code below must never directly invoke
+-- the Proof constructor!
 ----------------------------------------------------------------------
 
 -- Typeclass instances.
