@@ -81,7 +81,10 @@ step3 Config{..} eqns idx cp
     case cp_top cp of
       Just top ->
         case (join (cp, top), join (flipCP (cp, top))) of
-          (Just _, Just _) -> Just cp
+          (Just cp1, Just cp2) ->
+            case simplerThan (cp_eqn cp1) (cp_eqn cp2) of
+              True -> Just cp1
+              False -> Just cp2
           _ -> Nothing
       _ -> Just cp
   where
