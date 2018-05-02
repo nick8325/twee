@@ -254,7 +254,7 @@ data Extended f =
 
 instance Pretty f => Pretty (Extended f) where
   pPrintPrec _ _ Minimal = text "?"
-  pPrintPrec _ _ (Skolem (V n)) = text "sk" <> pPrint n
+  pPrintPrec _ _ (Skolem (V n)) = text "sk" <#> pPrint n
   pPrintPrec l p (Function f) = pPrintPrec l p f
 
 instance PrettyTerm f => PrettyTerm (Extended f) where
