@@ -62,7 +62,7 @@ import Prelude hiding (lookup)
 import Twee.Term.Core hiding (F)
 import Data.List hiding (lookup, find)
 import Data.Maybe
-import Data.Monoid
+import Data.Semigroup(Semigroup(..))
 import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
 
