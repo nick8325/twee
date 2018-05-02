@@ -460,7 +460,7 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
     sayTrace ""
     forM_ (pres_lemmas pres) $ \Lemma{..} ->
       sayTrace $ show $
-        traceApp "lemma" [traceEqn (equation lemma_proof)] <> text "."
+        traceApp "lemma" [traceEqn (equation lemma_proof)] <#> text "."
 
     when tstp $ do
       putStrLn "% SZS output start CNFRefutation"
