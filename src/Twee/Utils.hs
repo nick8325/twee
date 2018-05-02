@@ -58,28 +58,6 @@ unbuffered x = do
     (hSetBuffering stdout buf)
     x
 
-newtype Max a = Max { getMax :: Maybe a }
-
-getMaxWith :: Ord a => a -> Max a -> a
-getMaxWith x (Max (Just y)) = x `max` y
-getMaxWith x (Max Nothing)  = x
-
-instance Ord a => Monoid (Max a) where
-  mempty = Max Nothing
-  Max (Just x) `mappend` y = Max (Just (getMaxWith x y))
-  Max Nothing  `mappend` y = y
-
-newtype Min a = Min { getMin :: Maybe a }
-
-getMinWith :: Ord a => a -> Min a -> a
-getMinWith x (Min (Just y)) = x `min` y
-getMinWith x (Min Nothing)  = x
-
-instance Ord a => Monoid (Min a) where
-  mempty = Min Nothing
-  Min (Just x) `mappend` y = Min (Just (getMinWith x y))
-  Min Nothing  `mappend` y = y
-
 labelM :: Monad m => (a -> m b) -> [a] -> m [(a, b)]
 labelM f = mapM (\x -> do { y <- f x; return (x, y) })
 

@@ -3,7 +3,7 @@
 {-# LANGUAGE Rank2Types #-}
 module Twee.Pretty(module Twee.Pretty, module Text.PrettyPrint.HughesPJClass, Pretty(..)) where
 
-import Text.PrettyPrint.HughesPJClass hiding (empty)
+import Text.PrettyPrint.HughesPJClass hiding (empty, (<>))
 import qualified Text.PrettyPrint.HughesPJClass as PP
 import qualified Data.Map as Map
 import Data.Map(Map)
@@ -17,6 +17,12 @@ import Twee.Term
 -- | Print a value to the console.
 prettyPrint :: Pretty a => a -> IO ()
 prettyPrint x = putStrLn (prettyShow x)
+
+-- | Put one document beside another, i.e., 'PP.<>'.
+-- Renamed here because (a different) '<>' is exported by "Prelude".
+infixl 6 <#>
+(<#>) :: Doc -> Doc -> Doc
+(<#>) = (PP.<>)
 
 -- | The empty document. Used to avoid name clashes with 'Twee.Term.empty'.
 pPrintEmpty :: Doc
@@ -53,7 +59,7 @@ instance (Pretty k, Pretty v) => Pretty (Map k v) where
 instance (Eq a, Integral a, Pretty a) => Pretty (Ratio a) where
   pPrint a
     | denominator a == 1 = pPrint (numerator a)
-    | otherwise = text "(" <+> pPrint (numerator a) <> text "/" <> pPrint (denominator a) <+> text ")"
+    | otherwise = text "(" <+> pPrint (numerator a) <#> text "/" <#> pPrint (denominator a) <+> text ")"
 
 -- | Generate a list of candidate names for pretty-printing.
 supply :: [String] -> [String]
@@ -78,7 +84,7 @@ instance PrettyTerm f => Pretty (TermList f) where
   pPrintPrec _ _ = pPrint . unpack
 
 instance PrettyTerm f => Pretty (Subst f) where
-  pPrint sub = text "{" <> fsep (punctuate (text ",") docs) <> text "}"
+  pPrint sub = text "{" <#> fsep (punctuate (text ",") docs) <#> text "}"
     where
       docs =
         [ hang (pPrint x <+> text "->") 2 (pPrint t)
@@ -130,7 +136,7 @@ uncurried =
     let
       f [] = d
       f xs =
-        d <> parens (hsep (punctuate comma (map (pPrintPrec l 0) xs)))
+        d <#> parens (hsep (punctuate comma (map (pPrintPrec l 0) xs)))
     in f
 
 -- | A helper function that deals with under- and oversaturated applications.
@@ -158,13 +164,13 @@ implicitArguments n (TermStyle pp) =
 prefix =
   fixedArity 1 $
   TermStyle $ \l _ d [x] ->
-    d <> pPrintPrec l 11 x
+    d <#> pPrintPrec l 11 x
 
 -- | For postfix operators.
 postfix =
   fixedArity 1 $
   TermStyle $ \l _ d [x] ->
-    pPrintPrec l 11 x <> d
+    pPrintPrec l 11 x <#> d
 
 -- | For infix operators.
 infixStyle :: Int -> TermStyle

@@ -21,6 +21,7 @@ import GHC.ST hiding (liftST)
 import Data.Ord
 import Twee.Label
 import Data.Typeable
+import Data.Semigroup
 
 --------------------------------------------------------------------------------
 -- Symbols. A symbol is a single function or variable in a flatterm.
@@ -281,11 +282,14 @@ newtype Builder f =
 
 type Builder1 s f = State# s -> MutableByteArray# s -> Int# -> Int# -> (# State# s, Int# #)
 
+instance Semigroup (Builder f) where
+  {-# INLINE (<>) #-}
+  Builder m1 <> Builder m2 = Builder (m1 `then_` m2)
 instance Monoid (Builder f) where
   {-# INLINE mempty #-}
   mempty = Builder built
   {-# INLINE mappend #-}
-  Builder m1 `mappend` Builder m2 = Builder (m1 `then_` m2)
+  mappend = (<>)
 
 -- Build a termlist from a Builder.
 -- Works by guessing an appropriate size, and retrying if that was too small.

@@ -153,26 +153,26 @@ instance Function f => Pretty (Proof f) where
   pPrint = pPrintLemma defaultConfig prettyShow
 instance PrettyTerm f => Pretty (Derivation f) where
   pPrint (UseLemma lemma sub) =
-    text "subst" <> pPrintTuple [pPrint lemma, pPrint sub]
+    text "subst" <#> pPrintTuple [pPrint lemma, pPrint sub]
   pPrint (UseAxiom axiom sub) =
-    text "subst" <> pPrintTuple [pPrint axiom, pPrint sub]
+    text "subst" <#> pPrintTuple [pPrint axiom, pPrint sub]
   pPrint (Refl t) =
-    text "refl" <> pPrintTuple [pPrint t]
+    text "refl" <#> pPrintTuple [pPrint t]
   pPrint (Symm p) =
-    text "symm" <> pPrintTuple [pPrint p]
+    text "symm" <#> pPrintTuple [pPrint p]
   pPrint (Trans p q) =
-    text "trans" <> pPrintTuple [pPrint p, pPrint q]
+    text "trans" <#> pPrintTuple [pPrint p, pPrint q]
   pPrint (Cong f ps) =
-    text "cong" <> pPrintTuple (pPrint f:map pPrint ps)
+    text "cong" <#> pPrintTuple (pPrint f:map pPrint ps)
 
 instance PrettyTerm f => Pretty (Axiom f) where
   pPrint Axiom{..} =
-    text "axiom" <>
+    text "axiom" <#>
     pPrintTuple [pPrint axiom_number, text axiom_name, pPrint axiom_eqn]
 
 instance PrettyTerm f => Pretty (Lemma f) where
   pPrint Lemma{..} =
-    text "lemma" <>
+    text "lemma" <#>
     pPrintTuple [pPrint lemma_id, pPrint (equation lemma_proof)]
 
 -- | Simplify a derivation.
@@ -356,7 +356,7 @@ checkProvedGoal pg@ProvedGoal{..}
     error $ show $
       text "Invalid ProvedGoal!" $$
       text "Claims to prove" <+> pPrint pg_goal_hint $$
-      text "with witness" <+> pPrint pg_witness_hint <> text "," $$
+      text "with witness" <+> pPrint pg_witness_hint <#> text "," $$
       text "but actually proves" <+> pPrint (equation pg_proof)
 
 instance Function f => Pretty (Presentation f) where
@@ -487,7 +487,7 @@ pPrintLemma Config{..} lemmaName p =
        text "}" $$
        ppTerm (eqn_rhs (equation (certify p))))
 
-    ppTerm t = text "  " <> pPrint t
+    ppTerm t = text "  " <#> pPrint t
 
     ppStep [] = text "reflexivity" -- ??
     ppStep [x] = text x
@@ -497,13 +497,13 @@ pPrintLemma Config{..} lemmaName p =
       text (last xs)
 
     ppLemma (Lemma{..}, sub) =
-      text "lemma" <+> text (lemmaName lemma_id) <> showSubst sub
+      text "lemma" <+> text (lemmaName lemma_id) <#> showSubst sub
     ppAxiom (Axiom{..}, sub) =
-      text "axiom" <+> pPrint axiom_number <+> parens (text axiom_name) <> showSubst sub
+      text "axiom" <+> pPrint axiom_number <+> parens (text axiom_name) <#> showSubst sub
 
     showSubst sub
       | cfg_show_instances && not (null (substToList sub)) =
-        text " with " <>
+        text " with " <#>
         fsep (punctuate comma
           [ pPrint x <+> text "->" <+> pPrint t
           | (x, t) <- substToList sub ])
@@ -615,11 +615,11 @@ describeEquation ::
   PrettyTerm f =>
   String -> String -> Maybe String -> Equation f -> Doc
 describeEquation kind num mname eqn =
-  text kind <+> text num <>
+  text kind <+> text num <#>
   (case mname of
      Nothing -> text ""
-     Just name -> text (" (" ++ name ++ ")")) <>
-  text ":" <+> pPrint eqn <> text "."
+     Just name -> text (" (" ++ name ++ ")")) <#>
+  text ":" <+> pPrint eqn <#> text "."
 
 ----------------------------------------------------------------------
 -- Making proofs of existential goals more readable.

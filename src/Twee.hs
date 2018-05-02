@@ -122,7 +122,7 @@ instance Function f => Pretty (Message f) where
   pPrint (NewEquation eqn) =
     text "  (hard)" <+> pPrint eqn
   pPrint (DeleteActive rule) =
-    text "  (delete rule " <> pPrint (active_id rule) <> text ")"
+    text "  (delete rule " <#> pPrint (active_id rule) <#> text ")"
   pPrint SimplifyQueue =
     text "  (simplifying queued critical pairs...)"
   pPrint Interreduce =
@@ -293,7 +293,7 @@ instance Eq (ActiveRule f) where
 
 instance Function f => Pretty (Active f) where
   pPrint Active{..} =
-    pPrint active_id <> text "." <+> pPrint (canonicalise active_rule)
+    pPrint active_id <#> text "." <+> pPrint (canonicalise active_rule)
 
 instance Has (ActiveRule f) Id where the = rule_active
 instance Has (ActiveRule f) RuleId where the = rule_rid

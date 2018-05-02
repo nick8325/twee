@@ -437,7 +437,7 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
       pPrintTerm uncurried prettyNormal 0 (text f) xs
 
     step :: String -> [Doc] -> Doc
-    step f xs = traceApp "step" [traceApp f xs] <> text "."
+    step f xs = traceApp "step" [traceApp f xs] <#> text "."
 
   say "Here is the input problem:"
   forM_ axioms $ \Axiom{..} ->
