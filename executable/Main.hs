@@ -360,7 +360,7 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
   let
     -- Encode whatever needs encoding in the problem
     ctx = makeContext obligs
-    prob = addNarrowing ctx obligs
+    prob = prettyNames (addNarrowing ctx obligs)
 
   (axioms0, goals0) <-
     case identifyProblem ctx prob of
