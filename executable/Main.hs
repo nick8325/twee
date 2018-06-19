@@ -510,7 +510,7 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
 
   return $
     if solved state then Unsat Unsatisfiable Nothing
-    else if configIsComplete config then Sat Satisfiable Nothing
+    else if configIsComplete config && not (dropNonHorn horn) then Sat Satisfiable Nothing
     else NoAnswer GaveUp
 
 -- Transform a proof presentation into a Jukebox proof.
