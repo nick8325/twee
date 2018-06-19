@@ -178,7 +178,7 @@ instance Pretty Constant where
 
 instance PrettyTerm Constant where
   termStyle Constant{..}
-    | "$to_" `isPrefixOf` (base con_id) = invisible
+    | "$$to_" `isPrefixOf` (base con_id) = invisible
     | any isAlphaNum (base con_id) = uncurried
     | otherwise =
       case con_arity of
@@ -217,19 +217,19 @@ tweeConstant flags TweeContext{..} prec fun
       Main.isEquals fun
 
 isType :: Jukebox.Function -> Bool
-isType fun = "$to_" `isPrefixOf` base (name fun) && Jukebox.arity fun == 1
+isType fun = "$$to_" `isPrefixOf` base (name fun) && Jukebox.arity fun == 1
 
 isIfeq :: Jukebox.Function -> Bool
-isIfeq fun = "$ifeq" `isPrefixOf` base (name fun)
+isIfeq fun = "$$ifeq" `isPrefixOf` base (name fun)
 
 isEquals :: Jukebox.Function -> Bool
-isEquals fun = "$equals" `isPrefixOf` base (name fun)
+isEquals fun = "$$equals" `isPrefixOf` base (name fun)
 
 isTrue :: Jukebox.Function -> Bool
-isTrue fun = "$true" `isPrefixOf` base (name fun)
+isTrue fun = "$$true" `isPrefixOf` base (name fun)
 
 isFalse :: Jukebox.Function -> Bool
-isFalse fun = "$false" `isPrefixOf` base (name fun)
+isFalse fun = "$$false" `isPrefixOf` base (name fun)
 
 jukeboxFunction :: TweeContext -> Extended Constant -> Jukebox.Function
 jukeboxFunction _ (Function Constant{..}) = con_id
@@ -262,10 +262,10 @@ makeContext prob = run prob $ \prob -> do
         [ty] -> ty
 
   var     <- newSymbol "X" ty
-  minimal <- newFunction "$constant" [] ty
-  true    <- newFunction "$true" [] ty
-  false   <- newFunction "$false" [] ty
-  equals  <- newFunction "$equals" [ty, ty] ty
+  minimal <- newFunction "$$constant" [] ty
+  true    <- newFunction "$$true" [] ty
+  false   <- newFunction "$$false" [] ty
+  equals  <- newFunction "$$equals" [ty, ty] ty
 
   return TweeContext {
     ctx_var = var,
