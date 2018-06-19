@@ -34,11 +34,12 @@ import Twee.Label
 data MainFlags =
   MainFlags {
     flags_proof :: Bool,
-    flags_trace :: Maybe (String, String) }
+    flags_trace :: Maybe (String, String),
+    flags_casc  :: Bool }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace
+  MainFlags <$> proof <*> trace <*> casc
   where
     proof =
       inGroup "Output options" $
@@ -50,6 +51,11 @@ parseMainFlags =
       flag "trace"
         ["Write a Prolog-format execution trace to this file (off by default)."]
         Nothing ((\x y -> Just (x, y)) <$> argFile <*> argModule)
+    casc =
+      expert $
+      inGroup "Output options" $
+      bool "casc" ["Print output in CASC format (off by default)."] False
+        
     argModule = arg "<module>" "expected a Prolog module name" Just
 
 parseConfig :: OptionParser (Config (Extended Constant))
@@ -462,7 +468,45 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
       sayTrace $ show $
         traceApp "lemma" [traceEqn (equation lemma_proof)] <#> text "."
 
-    when tstp $ do
+    when (flags_casc main) $ do
+      putStrLn "% SZS output start Derivation"
+      let
+        axiomForms =
+          Map.fromList
+            (zip (map axiom_number axioms) (map pre_form axioms0))
+        goalForms =
+          Map.fromList
+            (zip (map goal_number goals) (map pre_form goals0))
+
+        findSource forms n =
+          case Map.lookup n forms of
+            Nothing -> []
+            Just inp -> go inp
+           where
+            go Input{source = Unknown} = []
+            go Input{source = Inference _ _ inps} = concatMap go inps
+            go inp@Input{source = FromFile _ _} = [inp]
+
+      putStrLn "Take the following subset of the input axioms:"
+      mapM_ putStrLn $ map ("  " ++) $ lines $ showProblem $
+        usortBy (comparing show) $
+          (pres_axioms pres >>= findSource axiomForms . axiom_number) ++
+          (pres_goals pres >>= findSource goalForms . pg_number)
+
+      putStrLn ""
+      putStrLn "Now clausify the problem and encode Horn clauses using $$ifeq;"
+      putStrLn "see http://www.cse.chalmers.se/~nicsma/papers/horn.pdf for details."
+      putStrLn "a=b => c=d becomes $$ifeq(a,b,c,d)=d, plus an axiom $$ifeq(X,X,Y,Z)=Y."
+      putStrLn "A predicate p(X) is encoded as p(X)=$$true (this is sound, because the"
+      putStrLn "input problem has no model of domain size 1)."
+      putStrLn ""
+      putStrLn "The encoding turns the above axioms into the following unit equations and goals:"
+      putStrLn ""
+      print $ pPrintPresentation (cfg_proof_presentation config) pres
+      putStrLn "% SZS output end Derivation"
+      putStrLn ""
+  
+    when (tstp && not (flags_casc main)) $ do
       putStrLn "% SZS output start CNFRefutation"
       print $ pPrintProof $
         presentToJukebox ctx (curry toEquation)
@@ -472,10 +516,11 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
       putStrLn "% SZS output end CNFRefutation"
       putStrLn ""
 
-    putStrLn "The conjecture is true! Here is a proof."
-    putStrLn ""
-    print $ pPrintPresentation (cfg_proof_presentation config) pres
-    putStrLn ""
+    when (not (flags_casc main)) $ do
+      putStrLn "The conjecture is true! Here is a proof."
+      putStrLn ""
+      print $ pPrintPresentation (cfg_proof_presentation config) pres
+      putStrLn ""
 
   when (not (quiet globals) && not (solved state)) $ later $ do
     let
