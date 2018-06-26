@@ -469,7 +469,7 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
         traceApp "lemma" [traceEqn (equation lemma_proof)] <#> text "."
 
     when (flags_casc main) $ do
-      putStrLn "% SZS output start Derivation"
+      putStrLn "% SZS output start Proof"
       let
         axiomForms =
           Map.fromList
@@ -507,7 +507,7 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
       putStrLn "The encoding turns the above axioms into the following unit equations and goals:"
       putStrLn ""
       print $ pPrintPresentation (cfg_proof_presentation config) pres
-      putStrLn "% SZS output end Derivation"
+      putStrLn "% SZS output end Proof"
       putStrLn ""
   
     when (tstp && not (flags_casc main)) $ do
