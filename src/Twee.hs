@@ -7,7 +7,7 @@ import Twee.Rule hiding (normalForms)
 import qualified Twee.Rule as Rule
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Proof, Axiom(..), Lemma(..), ProvedGoal(..), provedGoal, certify, derivation, symm)
+import Twee.Proof(Axiom(..), Proof(..), ProvedGoal(..), provedGoal, certify, derivation, symm)
 import Twee.CP hiding (Config)
 import qualified Twee.CP as CP
 import Twee.Join hiding (Config, defaultConfig)
@@ -300,7 +300,6 @@ instance Has (ActiveRule f) RuleId where the = rule_rid
 instance Has (ActiveRule f) Depth where the = rule_depth
 instance f ~ g => Has (ActiveRule f) (Rule g) where the = rule_rule
 instance f ~ g => Has (ActiveRule f) (Proof g) where the = rule_proof
-instance f ~ g => Has (ActiveRule f) (Lemma g) where the x = Lemma (the x) (the x)
 instance f ~ g => Has (ActiveRule f) (Positions g) where the = rule_positions
 
 newtype RuleId = RuleId Id deriving (Eq, Ord, Show, Num, Real, Integral, Enum)

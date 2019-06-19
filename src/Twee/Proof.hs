@@ -2,7 +2,7 @@
 {-# LANGUAGE TypeFamilies, PatternGuards, RecordWildCards, ScopedTypeVariables #-}
 module Twee.Proof(
   -- * Constructing proofs
-  Proof, Derivation(..), Lemma(..), Axiom(..),
+  Proof, Derivation(..), Axiom(..),
   certify, equation, derivation,
   -- ** Smart constructors for derivations
   lemma, axiom, symm, trans, cong, congPath,
@@ -37,13 +37,13 @@ data Proof f =
   Proof {
     equation   :: !(Equation f),
     derivation :: !(Derivation f) }
-  deriving (Eq, Show)
+  deriving Show
 
 -- | A derivation is an unchecked proof. It might be wrong!
 -- The way to check it is to call 'certify' to turn it into a 'Proof'.
 data Derivation f =
     -- | Apply an existing rule (with proof!) to the root of a term
-    UseLemma {-# UNPACK #-} !(Lemma f) !(Subst f)
+    UseLemma {-# UNPACK #-} !(Proof f) !(Subst f)
     -- | Apply an axiom to the root of a term
   | UseAxiom {-# UNPACK #-} !(Axiom f) !(Subst f)
     -- | Reflexivity. @'Refl' t@ proves @t = t@.
@@ -57,16 +57,6 @@ data Derivation f =
     -- argument of that function.
   | Cong {-# UNPACK #-} !(Fun f) ![Derivation f]
   deriving (Eq, Show)
-
--- | A lemma, which includes a proof.
-data Lemma f =
-  Lemma {
-    -- | The id number of the lemma.
-    -- Has no semantic meaning; for convenience only.
-    lemma_id :: {-# UNPACK #-} !Id,
-    -- | A proof of the lemma.
-    lemma_proof :: !(Proof f) }
-  deriving Show
 
 --  | An axiom, which comes without proof.
 data Axiom f =
@@ -95,8 +85,8 @@ certify p =
     Nothing -> error ("Invalid proof created!\n" ++ prettyShow p)
     Just eqn -> Proof eqn p
   where
-    check (UseLemma Lemma{..} sub) =
-      return (subst sub (equation lemma_proof))
+    check (UseLemma proof sub) =
+      return (subst sub (equation proof))
     check (UseAxiom Axiom{..} sub) =
       return (subst sub axiom_eqn)
     check (Refl t) =
@@ -124,14 +114,12 @@ certify p =
 ----------------------------------------------------------------------
 
 -- Typeclass instances.
-instance Eq (Lemma f) where
+instance Eq (Proof f) where
   x == y = compare x y == EQ
-instance Ord (Lemma f) where
-  compare =
-    comparing (\x ->
-      -- Don't look into lemma proofs when comparing derivations,
-      -- to avoid exponential blowup
-      (lemma_id x, equation (lemma_proof x)))
+instance Ord (Proof f) where
+  -- Don't look at the proof itself, to prevent exponential blowup
+  -- when a proof contains UseLemma
+  compare = comparing equation
 
 instance Symbolic (Derivation f) where
   type ConstantOf (Derivation f) = f
@@ -150,10 +138,10 @@ instance Symbolic (Derivation f) where
   subst_ sub (Cong f ps) = cong f (subst_ sub ps)
 
 instance Function f => Pretty (Proof f) where
-  pPrint = pPrintLemma defaultConfig prettyShow
+  pPrint = pPrintLemma defaultConfig (prettyShow . equation)
 instance PrettyTerm f => Pretty (Derivation f) where
   pPrint (UseLemma lemma sub) =
-    text "subst" <#> pPrintTuple [pPrint lemma, pPrint sub]
+    text "subst" <#> pPrintTuple [text "lemma" <#> pPrint (equation lemma), pPrint sub]
   pPrint (UseAxiom axiom sub) =
     text "subst" <#> pPrintTuple [pPrint axiom, pPrint sub]
   pPrint (Refl t) =
@@ -170,11 +158,6 @@ instance PrettyTerm f => Pretty (Axiom f) where
     text "axiom" <#>
     pPrintTuple [pPrint axiom_number, text axiom_name, pPrint axiom_eqn]
 
-instance PrettyTerm f => Pretty (Lemma f) where
-  pPrint Lemma{..} =
-    text "lemma" <#>
-    pPrintTuple [pPrint lemma_id, pPrint (equation lemma_proof)]
-
 -- | Simplify a derivation.
 --
 -- After simplification, a derivation has the following properties:
@@ -182,25 +165,25 @@ instance PrettyTerm f => Pretty (Lemma f) where
 --   * 'Symm' is pushed down next to 'Lemma' and 'Axiom'
 --   * 'Refl' only occurs inside 'Cong' or at the top level
 --   * 'Trans' is right-associated and is pushed inside 'Cong' if possible
-simplify :: Minimal f => (Lemma f -> Maybe (Derivation f)) -> Derivation f -> Derivation f
+simplify :: Minimal f => (Proof f -> Maybe (Derivation f)) -> Derivation f -> Derivation f
 simplify lem p = simp p
   where
-    simp p@(UseLemma lemma sub) =
-      case lem lemma of
+    simp p@(UseLemma q sub) =
+      case lem q of
         Nothing -> p
-        Just q ->
+        Just r ->
           let
             -- Get rid of any variables that are not bound by sub
             -- (e.g., ones which only occur internally in q)
-            dead = usort (vars q) \\ substDomain sub
-          in simp (subst sub (erase dead q))
+            dead = usort (vars r) \\ substDomain sub
+          in simp (subst sub (erase dead r))
     simp (Symm p) = symm (simp p)
     simp (Trans p q) = trans (simp p) (simp q)
     simp (Cong f ps) = cong f (map simp ps)
     simp p = p
 
-lemma :: Lemma f -> Subst f -> Derivation f
-lemma lem@Lemma{..} sub = UseLemma lem sub
+lemma :: Proof f -> Subst f -> Derivation f
+lemma p sub = UseLemma p sub
 
 axiom :: Axiom f -> Derivation f
 axiom ax@Axiom{..} =
@@ -244,15 +227,15 @@ cong f ps =
     unRefl _ = Nothing
 
 -- | Find all lemmas which are used in a derivation.
-usedLemmas :: Derivation f -> [Lemma f]
+usedLemmas :: Derivation f -> [Proof f]
 usedLemmas p = map fst (usedLemmasAndSubsts p)
 
 -- | Find all lemmas which are used in a derivation,
 -- together with the substitutions used.
-usedLemmasAndSubsts :: Derivation f -> [(Lemma f, Subst f)]
+usedLemmasAndSubsts :: Derivation f -> [(Proof f, Subst f)]
 usedLemmasAndSubsts p = lem p []
   where
-    lem (UseLemma lemma sub) = ((lemma, sub):)
+    lem (UseLemma p sub) = ((p, sub):)
     lem (Symm p) = lem p
     lem (Trans p q) = lem p . lem q
     lem (Cong _ ps) = foldr (.) id (map lem ps)
@@ -313,7 +296,7 @@ data Presentation f =
     -- | The used axioms.
     pres_axioms :: [Axiom f],
     -- | The used lemmas.
-    pres_lemmas :: [Lemma f],
+    pres_lemmas :: [Proof f],
     -- | The goals proved.
     pres_goals  :: [ProvedGoal f] }
   deriving Show
@@ -359,8 +342,8 @@ checkProvedGoal pg@ProvedGoal{..}
       text "with witness" <+> pPrint pg_witness_hint <#> text "," $$
       text "but actually proves" <+> pPrint (equation pg_proof)
 
-instance Function f => Pretty (Presentation f) where
-  pPrint = pPrintPresentation defaultConfig
+-- instance Function f => Pretty (Presentation f) where
+--   pPrint = pPrintPresentation defaultConfig
 
 -- | Simplify and present a proof.
 present :: Function f => Config -> [ProvedGoal f] -> Presentation f
@@ -374,11 +357,11 @@ present config goals =
       | x `Set.member` lems = used lems xs
       | otherwise =
         used (Set.insert x lems)
-          (usedLemmas (derivation (lemma_proof x)) ++ xs)
+          (usedLemmas (derivation x) ++ xs)
 
 presentWithGoals ::
   Function f =>
-  Config -> [ProvedGoal f] -> [Lemma f] -> Presentation f
+  Config -> [ProvedGoal f] -> [Proof f] -> Presentation f
 presentWithGoals config@Config{..} goals lemmas
   -- We inline a lemma if one of the following holds:
   --   * It only has one step
@@ -392,11 +375,10 @@ presentWithGoals config@Config{..} goals lemmas
     let
       axioms = usort $
         concatMap (usedAxioms . derivation . pg_proof) goals ++
-        concatMap (usedAxioms . derivation . lemma_proof) lemmas
+        concatMap (usedAxioms . derivation) lemmas
     in
       Presentation axioms
-        [ lemma { lemma_proof = flattenProof lemma_proof }
-        | lemma@Lemma{..} <- lemmas ]
+        (map flattenProof lemmas)
         [ decodeGoal (goal { pg_proof = flattenProof pg_proof })
         | goal@ProvedGoal{..} <- goals ]
 
@@ -408,8 +390,8 @@ presentWithGoals config@Config{..} goals lemmas
         [ decodeGoal (goal { pg_proof = certify $ simplify inline (derivation pg_proof) })
         | goal@ProvedGoal{..} <- goals ]
       lemmas' =
-        [ Lemma n (certify $ simplify inline (derivation p))
-        | lemma@(Lemma n p) <- lemmas, not (lemma `Map.member` inlinings) ]
+        [ certify $ simplify inline (derivation lemma)
+        | lemma <- lemmas, not (lemma `Map.member` inlinings) ]
     in
       presentWithGoals config goals' lemmas'
 
@@ -419,25 +401,25 @@ presentWithGoals config@Config{..} goals lemmas
         [ (lemma, p)
         | lemma <- lemmas, Just p <- [tryInline lemma]]
 
-    tryInline (Lemma n p)
-      | shouldInline n p = Just (derivation p)
-    tryInline (Lemma n p)
-      -- Check for subsumption by an earlier lemma
-      | Just (Lemma m q) <- Map.lookup (canonicalise (t :=: u)) equations, m < n =
-        Just (subsume p (derivation q))
-      | Just (Lemma m q) <- Map.lookup (canonicalise (u :=: t)) equations, m < n =
-        Just (subsume p (Symm (derivation q)))
-      where
-        t :=: u = equation p
+    tryInline p
+      | shouldInline p = Just (derivation p)
+    -- tryInline (Lemma n p)
+    --   -- Check for subsumption by an earlier lemma
+    --   | Just (Lemma m q) <- Map.lookup (canonicalise (t :=: u)) equations, m < n =
+    --     Just (subsume p (derivation q))
+    --   | Just (Lemma m q) <- Map.lookup (canonicalise (u :=: t)) equations, m < n =
+    --     Just (subsume p (Symm (derivation q)))
+    --   where
+    --     t :=: u = equation p
     tryInline _ = Nothing
 
-    shouldInline n p =
+    shouldInline p =
       cfg_no_lemmas ||
       oneStep (derivation p) ||
       (not cfg_all_lemmas &&
        (isJust (decodeEquality (eqn_lhs (equation p))) ||
         isJust (decodeEquality (eqn_rhs (equation p))) ||
-        Map.lookup n uses == Just 1))
+        Map.lookup p uses == Just 1))
   
     subsume p q =
       -- Rename q so its variables match p's
@@ -450,17 +432,17 @@ presentWithGoals config@Config{..} goals lemmas
     -- Record which lemma proves each equation
     equations =
       Map.fromList
-        [ (canonicalise (equation lemma_proof), lemma)
-        | lemma@Lemma{..} <- lemmas]
+        [ (canonicalise (equation p), p)
+        | p <- lemmas]
 
     -- Count how many times each lemma is used
     uses =
       Map.fromListWith (+)
-        [ (lemma_id, 1)
-        | Lemma{..} <-
+        [ (p, 1)
+        | p <-
             concatMap usedLemmas
               (map (derivation . pg_proof) goals ++
-               map (derivation . lemma_proof) lemmas) ]
+               map derivation lemmas) ]
 
     -- Check if a proof only has one step.
     -- Trans only occurs at the top level by this point.
@@ -471,7 +453,7 @@ invisible :: Function f => Equation f -> Bool
 invisible (t :=: u) = show (pPrint t) == show (pPrint u)
 
 -- Pretty-print the proof of a single lemma.
-pPrintLemma :: Function f => Config -> (Id -> String) -> Proof f -> Doc
+pPrintLemma :: Function f => Config -> (Proof f -> String) -> Proof f -> Doc
 pPrintLemma Config{..} lemmaName p =
   ppTerm (eqn_lhs (equation q)) $$ pp (derivation q)
   where
@@ -496,8 +478,8 @@ pPrintLemma Config{..} lemmaName p =
       text "and" <+>
       text (last xs)
 
-    ppLemma (Lemma{..}, sub) =
-      text "lemma" <+> text (lemmaName lemma_id) <#> showSubst sub
+    ppLemma (p, sub) =
+      text "lemma" <+> text (lemmaName p) <#> showSubst sub
     ppAxiom (Axiom{..}, sub) =
       text "axiom" <+> pPrint axiom_number <+> parens (text axiom_name) <#> showSubst sub
 
@@ -578,8 +560,8 @@ pPrintPresentation config (Presentation axioms lemmas goals) =
     vcat [ describeEquation "Axiom" (show n) (Just name) eqn
          | Axiom n name eqn <- axioms,
            not (invisible eqn) ]:
-    [ pp "Lemma" (num n) Nothing (equation p) emptySubst p
-    | Lemma n p <- lemmas,
+    [ pp "Lemma" (num p) Nothing (equation p) emptySubst p
+    | p <- lemmas,
       not (invisible (equation p)) ] ++
     [ pp "Goal" (show num) (Just pg_name) pg_goal_hint pg_witness_hint pg_proof
     | (num, ProvedGoal{..}) <- zip [1..] goals ]
@@ -590,9 +572,10 @@ pPrintPresentation config (Presentation axioms lemmas goals) =
       text "Proof:" $$
       pPrintLemma config num p
 
+    nums = Map.fromList (zip lemmas [n+1 ..])
+      where
+        n = maximum (0:map axiom_number axioms)
     num x = show (fromJust (Map.lookup x nums))
-    nums = Map.fromList (zip (map lemma_id lemmas) [n+1 ..])
-    n = maximum $ 0:map axiom_number axioms
 
     ppWitness sub
       | sub == emptySubst = pPrintEmpty

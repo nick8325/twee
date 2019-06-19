@@ -21,7 +21,7 @@ import Jukebox.Options
 import Jukebox.Toolbox
 import Jukebox.Name hiding (lhs, rhs, label)
 import qualified Jukebox.Form as Jukebox
-import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size, Lemma, matchList)
+import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size, matchList)
 import Jukebox.Tools.EncodeTypes
 import Jukebox.TPTP.Print
 import Jukebox.Tools.HornToUnit
@@ -469,9 +469,9 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
       pres = present (cfg_proof_presentation config) (solutions state)
 
     sayTrace ""
-    forM_ (pres_lemmas pres) $ \Lemma{..} ->
+    forM_ (pres_lemmas pres) $ \p ->
       sayTrace $ show $
-        traceApp "lemma" [traceEqn (equation lemma_proof)] <#> text "."
+        traceApp "lemma" [traceEqn (equation p)] <#> text "."
 
     when (flags_casc main) $ do
       putStrLn "% SZS output start Proof"
@@ -597,7 +597,7 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
         | Axiom{..} <- pres_axioms ]
 
     lemma_proofs =
-      Map.fromList [(lemma_id, tstp lemma_proof) | Lemma{..} <- pres_lemmas]
+      Map.fromList [(p, tstp p) | p <- pres_lemmas]
 
     goal_proofs =
       Map.fromList [(pg_number, tstp pg_proof) | ProvedGoal{..} <- pres_goals]
@@ -624,8 +624,8 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
 
     sources :: Derivation (Extended Constant) -> [Input Form]
     sources p =
-      [ fromJust (Map.lookup lemma_id lemma_proofs)
-      | Lemma{..} <- usortBy (comparing lemma_id) (usedLemmas p) ] ++
+      [ fromJust (Map.lookup lemma lemma_proofs)
+      | lemma <- usort (usedLemmas p) ] ++
       [ fromJust (Map.lookup axiom_number axiom_proofs)
       | Axiom{..} <- usort (usedAxioms p) ]
 

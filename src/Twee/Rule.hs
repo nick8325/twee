@@ -18,7 +18,7 @@ import qualified Twee.Term as Term
 import Data.Ord
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Derivation, Lemma(..))
+import Twee.Proof(Derivation, Proof)
 import Data.Tuple
 
 --------------------------------------------------------------------------------
@@ -229,7 +229,7 @@ type Strategy f = Term f -> [Reduction f]
 -- | A multi-step rewrite proof @t ->* u@
 data Reduction f =
     -- | Apply a single rewrite rule to the root of a term
-    Step {-# UNPACK #-} !(Lemma f) !(Rule f) !(Subst f)
+    Step {-# UNPACK #-} !(Proof f) !(Rule f) !(Subst f)
     -- | Reflexivity
   | Refl {-# UNPACK #-} !(Term f)
     -- | Transivitity
@@ -290,7 +290,7 @@ reductionProof (Cong f ps) = Proof.cong f (map reductionProof ps)
 
 -- | Construct a basic rewrite step.
 {-# INLINE step #-}
-step :: (Has a (Rule f), Has a (Lemma f)) => a -> Subst f -> Reduction f
+step :: (Has a (Rule f), Has a (Proof f)) => a -> Subst f -> Reduction f
 step x sub = Step (the x) (the x) sub
 
 ----------------------------------------------------------------------
@@ -420,14 +420,14 @@ parallel strat t =
 
 -- | A strategy which rewrites using an index.
 {-# INLINE rewrite #-}
-rewrite :: (Function f, Has a (Rule f), Has a (Lemma f)) => (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
+rewrite :: (Function f, Has a (Rule f), Has a (Proof f)) => (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
 rewrite p rules t = do
   rule <- Index.approxMatches t rules
   tryRule p rule t
 
 -- | A strategy which applies one rule only.
 {-# INLINEABLE tryRule #-}
-tryRule :: (Function f, Has a (Rule f), Has a (Lemma f)) => (Rule f -> Subst f -> Bool) -> a -> Strategy f
+tryRule :: (Function f, Has a (Rule f), Has a (Proof f)) => (Rule f -> Subst f -> Bool) -> a -> Strategy f
 tryRule p rule t = do
   sub <- maybeToList (match (lhs (the rule)) t)
   guard (p (the rule) sub)
