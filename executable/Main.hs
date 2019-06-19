@@ -19,9 +19,9 @@ import Data.List
 import Data.Maybe
 import Jukebox.Options
 import Jukebox.Toolbox
-import Jukebox.Name hiding (lhs, rhs)
+import Jukebox.Name hiding (lhs, rhs, label)
 import qualified Jukebox.Form as Jukebox
-import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size, Lemma)
+import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size, Lemma, matchList)
 import Jukebox.Tools.EncodeTypes
 import Jukebox.TPTP.Print
 import Jukebox.Tools.HornToUnit
@@ -184,7 +184,7 @@ instance Pretty Constant where
 
 instance PrettyTerm Constant where
   termStyle Constant{..}
-    | "$$to_" `isPrefixOf` (base con_id) = invisible
+    | hasLabel "type_tag" con_id = invisible
     | any isAlphaNum (base con_id) = uncurried
     | otherwise =
       case con_arity of
@@ -223,19 +223,24 @@ tweeConstant flags TweeContext{..} prec fun
       Main.isEquals fun
 
 isType :: Jukebox.Function -> Bool
-isType fun = "$$to_" `isPrefixOf` base (name fun) && Jukebox.arity fun == 1
+isType fun =
+  hasLabel "type_tag" (name fun) && Jukebox.arity fun == 1
 
 isIfeq :: Jukebox.Function -> Bool
-isIfeq fun = "$$ifeq" `isPrefixOf` base (name fun)
+isIfeq fun =
+  hasLabel "ifeq" (name fun)
 
 isEquals :: Jukebox.Function -> Bool
-isEquals fun = "$$equals" `isPrefixOf` base (name fun)
+isEquals fun =
+  hasLabel "equals" (name fun) && Jukebox.arity fun == 2
 
 isTrue :: Jukebox.Function -> Bool
-isTrue fun = "$$true" `isPrefixOf` base (name fun)
+isTrue fun =
+  hasLabel "true" (name fun) && Jukebox.arity fun == 0
 
 isFalse :: Jukebox.Function -> Bool
-isFalse fun = "$$false" `isPrefixOf` base (name fun)
+isFalse fun =
+  hasLabel "false" (name fun) && Jukebox.arity fun == 0
 
 jukeboxFunction :: TweeContext -> Extended Constant -> Jukebox.Function
 jukeboxFunction _ (Function Constant{..}) = con_id
@@ -253,7 +258,7 @@ tweeTerm flags ctx prec t = build (tm t)
 
 jukeboxTerm :: TweeContext -> Term (Extended Constant) -> Jukebox.Term
 jukeboxTerm TweeContext{..} (Var (V x)) =
-  Jukebox.Var (Unique (fromIntegral x) "X" defaultRenamer ::: ctx_type)
+  Jukebox.Var (Unique (fromIntegral x) "X" Nothing defaultRenamer ::: ctx_type)
 jukeboxTerm ctx@TweeContext{..} (App f t) =
   jukeboxFunction ctx (fun_value f) :@: map (jukeboxTerm ctx) ts
   where
@@ -268,10 +273,10 @@ makeContext prob = run prob $ \prob -> do
         [ty] -> ty
 
   var     <- newSymbol "X" ty
-  minimal <- newFunction "$$constant" [] ty
-  true    <- newFunction "$$true" [] ty
-  false   <- newFunction "$$false" [] ty
-  equals  <- newFunction "$$equals" [ty, ty] ty
+  minimal <- newFunction (withLabel "minimal" (name "constant")) [] ty
+  true    <- newFunction (withLabel "true" (name "true")) [] ty
+  false   <- newFunction (withLabel "false" (name "false")) [] ty
+  equals  <- newFunction (withLabel "equals" (name "equals")) [ty, ty] ty
 
   return TweeContext {
     ctx_var = var,
@@ -497,11 +502,11 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
       putStrLn "Now clausify the problem and encode Horn clauses using encoding 3 of"
       putStrLn "http://www.cse.chalmers.se/~nicsma/papers/horn.pdf."
       putStrLn "We repeatedly replace C & s=t => u=v by the two clauses:"
-      putStrLn "  $$fresh(y, y, x1...xn) = u"
-      putStrLn "  C => $$fresh(s, t, x1...xn) = v"
-      putStrLn "where $$fresh is a fresh function symbol and x1..xn are the free"
+      putStrLn "  fresh(y, y, x1...xn) = u"
+      putStrLn "  C => fresh(s, t, x1...xn) = v"
+      putStrLn "where fresh is a fresh function symbol and x1..xn are the free"
       putStrLn "variables of u and v."
-      putStrLn "A predicate p(X) is encoded as p(X)=$$true (this is sound, because the"
+      putStrLn "A predicate p(X) is encoded as p(X)=true (this is sound, because the"
       putStrLn "input problem has no model of domain size 1)."
       putStrLn ""
       putStrLn "The encoding turns the above axioms into the following unit equations and goals:"
