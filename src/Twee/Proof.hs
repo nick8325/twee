@@ -138,7 +138,7 @@ instance Symbolic (Derivation f) where
   subst_ sub (Cong f ps) = cong f (subst_ sub ps)
 
 instance Function f => Pretty (Proof f) where
-  pPrint = pPrintLemma defaultConfig (prettyShow . equation)
+  pPrint = pPrintLemma defaultConfig (prettyShow . axiom_number) (prettyShow . equation)
 instance PrettyTerm f => Pretty (Derivation f) where
   pPrint (UseLemma lemma sub) =
     text "subst" <#> pPrintTuple [text "lemma" <#> pPrint (equation lemma), pPrint sub]
@@ -453,8 +453,8 @@ invisible :: Function f => Equation f -> Bool
 invisible (t :=: u) = show (pPrint t) == show (pPrint u)
 
 -- Pretty-print the proof of a single lemma.
-pPrintLemma :: Function f => Config -> (Proof f -> String) -> Proof f -> Doc
-pPrintLemma Config{..} lemmaName p =
+pPrintLemma :: Function f => Config -> (Axiom f -> String) -> (Proof f -> String) -> Proof f -> Doc
+pPrintLemma Config{..} axiomNum lemmaNum p =
   ppTerm (eqn_lhs (equation q)) $$ pp (derivation q)
   where
     q = flattenProof p
@@ -479,9 +479,9 @@ pPrintLemma Config{..} lemmaName p =
       text (last xs)
 
     ppLemma (p, sub) =
-      text "lemma" <+> text (lemmaName p) <#> showSubst sub
-    ppAxiom (Axiom{..}, sub) =
-      text "axiom" <+> pPrint axiom_number <+> parens (text axiom_name) <#> showSubst sub
+      text "lemma" <+> text (lemmaNum p) <#> showSubst sub
+    ppAxiom (axiom@Axiom{..}, sub) =
+      text "axiom" <+> text (axiomNum axiom) <+> parens (text axiom_name) <#> showSubst sub
 
     showSubst sub
       | cfg_show_instances && not (null (substToList sub)) =
@@ -557,10 +557,10 @@ derivSteps = steps . derivation . flattenProof . certify
 pPrintPresentation :: forall f. Function f => Config -> Presentation f -> Doc
 pPrintPresentation config (Presentation axioms lemmas goals) =
   vcat $ intersperse (text "") $
-    vcat [ describeEquation "Axiom" (show n) (Just name) eqn
-         | Axiom n name eqn <- axioms,
+    vcat [ describeEquation "Axiom" (axiomNum axiom) (Just name) eqn
+         | axiom@(Axiom _ name eqn) <- axioms,
            not (invisible eqn) ]:
-    [ pp "Lemma" (num p) Nothing (equation p) emptySubst p
+    [ pp "Lemma" (lemmaNum p) Nothing (equation p) emptySubst p
     | p <- lemmas,
       not (invisible (equation p)) ] ++
     [ pp "Goal" (show num) (Just pg_name) pg_goal_hint pg_witness_hint pg_proof
@@ -570,12 +570,12 @@ pPrintPresentation config (Presentation axioms lemmas goals) =
       describeEquation kind n mname eqn $$
       ppWitness witness $$
       text "Proof:" $$
-      pPrintLemma config num p
+      pPrintLemma config axiomNum lemmaNum p
 
-    nums = Map.fromList (zip lemmas [n+1 ..])
-      where
-        n = maximum (0:map axiom_number axioms)
-    num x = show (fromJust (Map.lookup x nums))
+    axiomNums = Map.fromList (zip axioms [1..])
+    lemmaNums = Map.fromList (zip lemmas [length axioms+1..])
+    axiomNum x = show (fromJust (Map.lookup x axiomNums))
+    lemmaNum x = show (fromJust (Map.lookup x lemmaNums))
 
     ppWitness sub
       | sub == emptySubst = pPrintEmpty
