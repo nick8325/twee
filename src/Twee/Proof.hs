@@ -350,14 +350,15 @@ present :: Function f => Config -> [ProvedGoal f] -> Presentation f
 present config goals =
   -- First find all the used lemmas, then hand off to presentWithGoals
   presentWithGoals config goals
-    (used Set.empty (concatMap (usedLemmas . derivation . pg_proof) goals))
+    (snd (used Set.empty (concatMap (usedLemmas . derivation . pg_proof) goals)))
   where
-    used lems [] = Set.elems lems
+    used lems [] = (lems, [])
     used lems (x:xs)
       | x `Set.member` lems = used lems xs
       | otherwise =
-        used (Set.insert x lems)
-          (usedLemmas (derivation x) ++ xs)
+        let (lems1, ys) = used (Set.insert x lems) (usedLemmas (derivation x))
+            (lems2, zs) = used lems1 xs
+        in (lems2, ys ++ [x] ++ zs)
 
 presentWithGoals ::
   Function f =>
