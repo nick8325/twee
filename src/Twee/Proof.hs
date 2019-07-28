@@ -342,8 +342,8 @@ checkProvedGoal pg@ProvedGoal{..}
       text "with witness" <+> pPrint pg_witness_hint <#> text "," $$
       text "but actually proves" <+> pPrint (equation pg_proof)
 
--- instance Function f => Pretty (Presentation f) where
---   pPrint = pPrintPresentation defaultConfig
+instance Function f => Pretty (Presentation f) where
+  pPrint = pPrintPresentation defaultConfig
 
 -- | Simplify and present a proof.
 present :: Function f => Config -> [ProvedGoal f] -> Presentation f
