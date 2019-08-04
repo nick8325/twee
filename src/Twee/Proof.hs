@@ -404,14 +404,15 @@ presentWithGoals config@Config{..} goals lemmas
 
     tryInline p
       | shouldInline p = Just (derivation p)
-    -- tryInline (Lemma n p)
-    --   -- Check for subsumption by an earlier lemma
-    --   | Just (Lemma m q) <- Map.lookup (canonicalise (t :=: u)) equations, m < n =
-    --     Just (subsume p (derivation q))
-    --   | Just (Lemma m q) <- Map.lookup (canonicalise (u :=: t)) equations, m < n =
-    --     Just (subsume p (Symm (derivation q)))
-    --   where
-    --     t :=: u = equation p
+    tryInline p
+      -- Check for subsumption by an earlier lemma
+      | Just (m, q) <- Map.lookup (canonicalise (t :=: u)) equations, m < n =
+        Just (subsume p (derivation q))
+      | Just (m, q) <- Map.lookup (canonicalise (u :=: t)) equations, m < n =
+        Just (subsume p (Symm (derivation q)))
+      where
+        t :=: u = equation p
+        Just (n, _) = Map.lookup (canonicalise (equation p)) equations
     tryInline _ = Nothing
 
     shouldInline p =
@@ -433,8 +434,8 @@ presentWithGoals config@Config{..} goals lemmas
     -- Record which lemma proves each equation
     equations =
       Map.fromList
-        [ (canonicalise (equation p), p)
-        | p <- lemmas]
+        [ (canonicalise (equation p), (i, p))
+        | (i, p) <- zip [0..] lemmas]
 
     -- Count how many times each lemma is used
     uses =
