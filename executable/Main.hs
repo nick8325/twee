@@ -35,11 +35,12 @@ data MainFlags =
   MainFlags {
     flags_proof :: Bool,
     flags_trace :: Maybe (String, String),
-    flags_casc  :: Bool }
+    flags_casc  :: Bool,
+    flags_explain_encoding :: Bool }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> casc
+  MainFlags <$> proof <*> trace <*> casc <*> explain
   where
     proof =
       inGroup "Output options" $
@@ -55,6 +56,10 @@ parseMainFlags =
       expert $
       inGroup "Output options" $
       bool "casc" ["Print output in CASC format (off by default)."] False
+    explain =
+      expert $
+      inGroup "Output options" $
+      bool "explain-encoding" ["In CASC mode, explain the conditional encoding (off by default)."] False
         
     argModule = arg "<module>" "expected a Prolog module name" Just
 
@@ -492,25 +497,26 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
             go Input{source = Inference _ _ inps} = concatMap go inps
             go inp@Input{source = FromFile _ _} = [inp]
 
-      putStrLn "Take the following subset of the input axioms:"
-      mapM_ putStrLn $ map ("  " ++) $ lines $ showProblem $
-        usortBy (comparing show) $
-          (pres_axioms pres >>= findSource axiomForms . axiom_number) ++
-          (pres_goals pres >>= findSource goalForms . pg_number)
+      when (flags_explain_encoding main) $ do
+        putStrLn "Take the following subset of the input axioms:"
+        mapM_ putStrLn $ map ("  " ++) $ lines $ showProblem $
+          usortBy (comparing show) $
+            (pres_axioms pres >>= findSource axiomForms . axiom_number) ++
+            (pres_goals pres >>= findSource goalForms . pg_number)
 
-      putStrLn ""
-      putStrLn "Now clausify the problem and encode Horn clauses using encoding 3 of"
-      putStrLn "http://www.cse.chalmers.se/~nicsma/papers/horn.pdf."
-      putStrLn "We repeatedly replace C & s=t => u=v by the two clauses:"
-      putStrLn "  fresh(y, y, x1...xn) = u"
-      putStrLn "  C => fresh(s, t, x1...xn) = v"
-      putStrLn "where fresh is a fresh function symbol and x1..xn are the free"
-      putStrLn "variables of u and v."
-      putStrLn "A predicate p(X) is encoded as p(X)=true (this is sound, because the"
-      putStrLn "input problem has no model of domain size 1)."
-      putStrLn ""
-      putStrLn "The encoding turns the above axioms into the following unit equations and goals:"
-      putStrLn ""
+        putStrLn ""
+        putStrLn "Now clausify the problem and encode Horn clauses using encoding 3 of"
+        putStrLn "http://www.cse.chalmers.se/~nicsma/papers/horn.pdf."
+        putStrLn "We repeatedly replace C & s=t => u=v by the two clauses:"
+        putStrLn "  fresh(y, y, x1...xn) = u"
+        putStrLn "  C => fresh(s, t, x1...xn) = v"
+        putStrLn "where fresh is a fresh function symbol and x1..xn are the free"
+        putStrLn "variables of u and v."
+        putStrLn "A predicate p(X) is encoded as p(X)=true (this is sound, because the"
+        putStrLn "input problem has no model of domain size 1)."
+        putStrLn ""
+        putStrLn "The encoding turns the above axioms into the following unit equations and goals:"
+        putStrLn ""
       print $ pPrintPresentation (cfg_proof_presentation config) pres
       putStrLn "% SZS output end Proof"
       putStrLn ""
