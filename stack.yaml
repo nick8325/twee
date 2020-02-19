@@ -1,9 +1,9 @@
-resolver: lts-13.13
+resolver: lts-14.22
 
 packages:
 - .
 - src
 
 extra-deps:
-- jukebox-0.4.2
+- jukebox-0.4.3
 - minisat-0.1.2
