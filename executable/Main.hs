@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards #-}
+{-# OPTIONS_GHC -flate-specialise #-}
 import Control.Monad
 import Data.Char
 import Data.Either
