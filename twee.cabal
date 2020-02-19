@@ -36,10 +36,6 @@ flag static-cxx
   description: Build a binary which statically links against libstdc++.
   default: False
 
-flag llvm
-  description: Build using LLVM backend for faster code.
-  default: False
-
 executable twee
   main-is:             executable/Main.hs
   default-language:    Haskell2010
@@ -50,9 +46,6 @@ executable twee
                        split,
                        jukebox == 0.4.*
   ghc-options:         -W -fno-warn-incomplete-patterns -O
-
-  if flag(llvm)
-    cpp-options: -DUSE_LLVM
 
   if flag(static)
     ghc-options: -optl -static
