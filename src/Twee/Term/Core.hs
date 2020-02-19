@@ -4,6 +4,7 @@
 {-# LANGUAGE CPP, PatternSynonyms, ViewPatterns,
     MagicHash, UnboxedTuples, BangPatterns,
     RankNTypes, RecordWildCards, GeneralizedNewtypeDeriving #-}
+{-# OPTIONS_GHC -O2 -fmax-worker-args=100 -fllvm #-}
 module Twee.Term.Core where
 
 import Data.Primitive(sizeOf)

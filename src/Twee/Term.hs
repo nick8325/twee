@@ -14,6 +14,7 @@
 --   * unification ('unify') and matching ('match');
 --   * miscellaneous useful functions on terms.
 {-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables #-}
+{-# OPTIONS_GHC -O2 -fmax-worker-args=100 -fllvm #-}
 module Twee.Term(
   -- * Terms
   Term, pattern Var, pattern App, isApp, isVar, singleton, len,
