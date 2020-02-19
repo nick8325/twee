@@ -5,10 +5,13 @@
 -- the search term is an instance of the key, and return the corresponding
 -- values.
 
-{-# LANGUAGE BangPatterns, RecordWildCards, OverloadedStrings, FlexibleContexts #-}
+{-# LANGUAGE BangPatterns, RecordWildCards, OverloadedStrings, FlexibleContexts, CPP #-}
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
-{-# OPTIONS_GHC -O2 -fmax-worker-args=100 -fllvm #-}
+{-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
+#ifdef USE_LLVM
+{-# OPTIONS_GHC -fllvm #-}
+#endif
 module Twee.Index(
   Index,
   empty,

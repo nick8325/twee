@@ -49,10 +49,10 @@ executable twee
                        pretty,
                        split,
                        jukebox == 0.4.*
-  ghc-options:         -W -fno-warn-incomplete-patterns -O2 -fmax-worker-args=100
+  ghc-options:         -W -fno-warn-incomplete-patterns -O
 
   if flag(llvm)
-    ghc-options: -fllvm
+    cpp-options: -DUSE_LLVM
 
   if flag(static)
     ghc-options: -optl -static

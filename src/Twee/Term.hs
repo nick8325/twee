@@ -13,8 +13,11 @@
 --   * substitutions ('Substitution', 'Subst', 'subst');
 --   * unification ('unify') and matching ('match');
 --   * miscellaneous useful functions on terms.
-{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables #-}
-{-# OPTIONS_GHC -O2 -fmax-worker-args=100 -fllvm #-}
+{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables, CPP #-}
+{-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
+#ifdef USE_LLVM
+{-# OPTIONS_GHC -fllvm #-}
+#endif
 module Twee.Term(
   -- * Terms
   Term, pattern Var, pattern App, isApp, isVar, singleton, len,

@@ -3,8 +3,11 @@
 -- and provides primitives for building higher-level stuff.
 {-# LANGUAGE CPP, PatternSynonyms, ViewPatterns,
     MagicHash, UnboxedTuples, BangPatterns,
-    RankNTypes, RecordWildCards, GeneralizedNewtypeDeriving #-}
-{-# OPTIONS_GHC -O2 -fmax-worker-args=100 -fllvm #-}
+    RankNTypes, RecordWildCards, GeneralizedNewtypeDeriving, CPP #-}
+{-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
+#ifdef USE_LLVM
+{-# OPTIONS_GHC -fllvm #-}
+#endif
 module Twee.Term.Core where
 
 import Data.Primitive(sizeOf)
