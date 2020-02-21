@@ -45,7 +45,7 @@ executable twee
                        pretty,
                        split,
                        jukebox == 0.4.*
-  ghc-options:         -W -fno-warn-incomplete-patterns -O
+  ghc-options:         -W -fno-warn-incomplete-patterns
 
   if flag(static)
     ghc-options: -optl -static
