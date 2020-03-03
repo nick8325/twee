@@ -268,7 +268,10 @@ groundAxiomsAndSubsts p = ax p
     ax (UseAxiom axiom sub) =
       Map.singleton axiom (Set.singleton sub)
     ax (UseLemma lemma sub) =
-      Map.map (Set.map (subst sub)) (lem lemma)
+      Map.map (Set.map substAndErase) (lem lemma)
+      where
+        substAndErase sub' =
+          erase (vars sub' \\ vars sub) (subst sub sub')
     ax (Symm p) = ax p
     ax (Trans p q) = Map.unionWith Set.union (ax p) (ax q)
     ax (Cong _ ps) = Map.unionsWith Set.union (map ax ps)
