@@ -4,7 +4,7 @@ import Control.Monad
 import Data.Char
 import Data.Either
 import Twee hiding (message)
-import Twee.Base hiding (char, lookup, vars)
+import Twee.Base hiding (char, lookup, vars, ground)
 import Twee.Rule(lhs, rhs, unorient)
 import Twee.Equation
 import qualified Twee.Proof as Proof

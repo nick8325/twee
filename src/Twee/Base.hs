@@ -12,7 +12,7 @@ module Twee.Base(
   -- * General-purpose functionality
   Id(..), Has(..),
   -- * Typeclasses
-  Minimal(..), minimalTerm, isMinimal, erase,
+  Minimal(..), minimalTerm, isMinimal, erase, ground,
   Skolem(..), Arity(..), Sized(..), Ordered(..), lessThan, orientTerms, EqualsBonus(..), Strictness(..), Function, Extended(..)) where
 
 import Prelude hiding (lookup)
@@ -188,6 +188,10 @@ erase [] t = t
 erase xs t = subst sub t
   where
     sub = fromMaybe undefined $ listToSubst [(x, minimalTerm) | x <- xs]
+
+-- | Replace all variables in the argument with the minimal constant.
+ground :: (Symbolic a, ConstantOf a ~ f, Minimal f) => a -> a
+ground t = erase (vars t) t
 
 -- | Construction of Skolem constants.
 class Skolem f where

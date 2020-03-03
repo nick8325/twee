@@ -46,7 +46,7 @@ module Twee.Term(
   -- ** Other operations on substitutions
   foldSubst, allSubst, substDomain,
   substSize,
-  substCompose, substCompatible, substUnion, idempotent, idempotentOn,
+  substCompatible, substUnion, idempotent, idempotentOn,
   canonicalise,
   -- * Matching
   match, matchIn, matchList, matchListIn, isInstanceOf, isVariantOf,
@@ -236,11 +236,6 @@ retract x (Subst sub) = Subst (IntMap.delete (var_id x) sub)
 {-# INLINE unsafeExtendList #-}
 unsafeExtendList :: Var -> TermList f -> Subst f -> Subst f
 unsafeExtendList x !t (Subst sub) = Subst (IntMap.insert (var_id x) t sub)
-
--- | Compose two substitutions.
-substCompose :: Subst f -> Subst f -> Subst f
-substCompose (Subst !sub1) (Subst !sub2) =
-  Subst (IntMap.map (buildList . substList (Subst sub2)) sub1 `IntMap.union` sub2)
 
 -- | Check if two substitutions are compatible (they do not send the same
 -- variable to different terms).

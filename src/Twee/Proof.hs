@@ -23,8 +23,11 @@ import Control.Monad
 import Data.Maybe
 import Data.List
 import Data.Ord
+import Data.MemoUgly
 import qualified Data.Set as Set
+import Data.Set(Set)
 import qualified Data.Map.Strict as Map
+import Data.Map(Map)
 
 ----------------------------------------------------------------------
 -- Equational proofs. Only valid proofs can be constructed.
@@ -257,17 +260,21 @@ usedAxiomsAndSubsts p = ax p []
     ax (Cong _ ps) = foldr (.) id (map ax ps)
     ax _ = id
 
--- | Find all axioms which are used in the grounded form
--- of a derivation (no lemmas).
-groundAxiomsAndSubsts :: Derivation f -> [(Axiom f, Subst f)]
-groundAxiomsAndSubsts p = ax emptySubst p []
+-- | Find all ground instances of axioms which are used in the
+-- expanded form of a derivation (no lemmas).
+groundAxiomsAndSubsts :: Function f => Derivation f -> Map (Axiom f) (Set (Subst f))
+groundAxiomsAndSubsts p = ax p
   where
-    ax sub1 (UseAxiom axiom sub2) = ((axiom, substCompose sub1 sub2):)
-    ax sub1 (UseLemma lemma sub2) = ax (substCompose sub1 sub2) (derivation lemma)
-    ax sub  (Symm p) = ax sub p
-    ax sub  (Trans p q) = ax sub p . ax sub q
-    ax sub  (Cong _ ps) = foldr (.) id (map (ax sub) ps)
-    ax _    _           = id
+    ax (UseAxiom axiom sub) =
+      Map.singleton axiom (Set.singleton sub)
+    ax (UseLemma lemma sub) =
+      Map.map (Set.map (subst sub)) (lem lemma)
+    ax (Symm p) = ax p
+    ax (Trans p q) = Map.unionWith Set.union (ax p) (ax q)
+    ax (Cong _ ps) = Map.unionsWith Set.union (map ax ps)
+    ax _ = Map.empty
+
+    lem = memo $ \lemma -> ax (derivation lemma)
 
 -- | Applies a derivation at a particular path in a term.
 congPath :: [Int] -> Term f -> Derivation f -> Derivation f
@@ -626,12 +633,11 @@ pPrintPresentation config (Presentation axioms lemmas goals) =
 
     axiomUses axiom = Map.findWithDefault Set.empty axiom usesMap
     usesMap =
-      Map.fromListWith Set.union
-        [ (axiom, Set.singleton (erase (vars sub) sub))
+      Map.unionsWith Set.union
+        [ Map.map (Set.delete emptySubst . Set.map ground)
+            (groundAxiomsAndSubsts p)
         | goal <- goals,
-          let p = derivation (pg_proof goal),
-          (axiom, sub) <- groundAxiomsAndSubsts p,
-          sub /= emptySubst ]
+          let p = derivation (pg_proof goal) ]
 
 -- | Format an equation nicely.
 --
