@@ -9,6 +9,7 @@ module Twee.Proof(
 
   -- * Analysing proofs
   simplify, usedLemmas, usedAxioms, usedLemmasAndSubsts, usedAxiomsAndSubsts,
+  groundAxiomsAndSubsts,
 
   -- * Pretty-printing proofs
   Config(..), defaultConfig, Presentation(..),
@@ -256,6 +257,18 @@ usedAxiomsAndSubsts p = ax p []
     ax (Cong _ ps) = foldr (.) id (map ax ps)
     ax _ = id
 
+-- | Find all axioms which are used in the grounded form
+-- of a derivation (no lemmas).
+groundAxiomsAndSubsts :: Derivation f -> [(Axiom f, Subst f)]
+groundAxiomsAndSubsts p = ax emptySubst p []
+  where
+    ax sub1 (UseAxiom axiom sub2) = ((axiom, substCompose sub1 sub2):)
+    ax sub1 (UseLemma lemma sub2) = ax (substCompose sub1 sub2) (derivation lemma)
+    ax sub  (Symm p) = ax sub p
+    ax sub  (Trans p q) = ax sub p . ax sub q
+    ax sub  (Cong _ ps) = foldr (.) id (map (ax sub) ps)
+    ax _    _           = id
+
 -- | Applies a derivation at a particular path in a term.
 congPath :: [Int] -> Term f -> Derivation f -> Derivation f
 congPath [] _ p = p
@@ -280,7 +293,9 @@ data Config =
     -- | Inline all lemmas.
     cfg_no_lemmas :: !Bool,
     -- | Print out explicit substitutions.
-    cfg_show_instances :: !Bool }
+    cfg_show_instances :: !Bool,
+    -- | Print out which instances of some axioms were used.
+    cfg_show_uses_of_axioms :: [String] }
 
 -- | The default configuration.
 defaultConfig :: Config
@@ -288,7 +303,8 @@ defaultConfig =
   Config {
     cfg_all_lemmas = False,
     cfg_no_lemmas = False,
-    cfg_show_instances = False }
+    cfg_show_instances = False,
+    cfg_show_uses_of_axioms = [] }
 
 -- | A proof, with all axioms and lemmas explicitly listed.
 data Presentation f =
@@ -487,11 +503,15 @@ pPrintLemma Config{..} axiomNum lemmaNum p =
 
     showSubst sub
       | cfg_show_instances && not (null (substToList sub)) =
-        text " with " <#>
-        fsep (punctuate comma
-          [ pPrint x <+> text "->" <+> pPrint t
-          | (x, t) <- substToList sub ])
+        text " with " <#> pPrintSubst sub
       | otherwise = pPrintEmpty
+
+-- Pretty-print a substitution.
+pPrintSubst :: Function f => Subst f -> Doc
+pPrintSubst sub =
+  fsep (punctuate comma
+    [ pPrint x <+> text "->" <+> pPrint t
+    | (x, t) <- substToList sub ])
 
 -- Transform a proof so that each step uses exactly one axiom
 -- or lemma. The proof will have the following form afterwards:
@@ -559,7 +579,8 @@ derivSteps = steps . derivation . flattenProof . certify
 pPrintPresentation :: forall f. Function f => Config -> Presentation f -> Doc
 pPrintPresentation config (Presentation axioms lemmas goals) =
   vcat $ intersperse (text "") $
-    vcat [ describeEquation "Axiom" (axiomNum axiom) (Just name) eqn
+    vcat [ describeEquation "Axiom" (axiomNum axiom) (Just name) eqn $$
+           ppAxiomUses axiom
          | axiom@(Axiom _ name eqn) <- axioms,
            not (invisible eqn) ]:
     [ pp "Lemma" (lemmaNum p) Nothing (equation p) emptySubst p
@@ -592,6 +613,25 @@ pPrintPresentation config (Presentation axioms lemmas goals) =
               text "stands for an arbitrary term of your choice."
             else pPrintEmpty,
             text ""]
+
+    ppAxiomUses axiom
+      | axiom_name axiom `elem` cfg_show_uses_of_axioms config && not (null uses) =
+        text "Used with:" $$
+        nest 2 (vcat
+          [ pPrint i <#> text "." <+> pPrintSubst sub
+          | (i, sub) <- zip [1 :: Int ..] uses ])
+      | otherwise = pPrintEmpty
+      where
+        uses = Set.toList (axiomUses axiom)
+
+    axiomUses axiom = Map.findWithDefault Set.empty axiom usesMap
+    usesMap =
+      Map.fromListWith Set.union
+        [ (axiom, Set.singleton (erase (vars sub) sub))
+        | goal <- goals,
+          let p = derivation (pg_proof goal),
+          (axiom, sub) <- groundAxiomsAndSubsts p,
+          sub /= emptySubst ]
 
 -- | Format an equation nicely.
 --

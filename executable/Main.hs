@@ -69,7 +69,7 @@ parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
-    (Proof.Config <$> all_lemmas <*> flat_proof <*> show_instances)
+    (Proof.Config <$> all_lemmas <*> flat_proof <*> show_instances <*> show_axiom_uses)
   where
     maxSize =
       inGroup "Resource limits" $
@@ -154,8 +154,15 @@ parseConfig =
       expert $
       inGroup "Proof presentation" $
       bool "show-instances"
-        ["Show which instances of each axiom and lemma were used (off by default)."]
+        ["Show which instance of a lemma or axiom each rewrite step uses (off by default)."]
         False
+    show_axiom_uses =
+      expert $
+      inGroup "Proof presentation" $
+      flag "show-uses-of"
+        ["Show which instances of the given axioms were needed (none by default)."]
+        []
+        (splitOn "," <$> arg "<axioms>" "expected a list of axiom names" Just)
     defaultFlag name desc field parser =
       flag name [desc ++ " (" ++ show def ++ " by default)."] def parser
       where

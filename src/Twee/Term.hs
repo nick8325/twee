@@ -202,7 +202,7 @@ subst sub t = substList sub (singleton t)
 newtype Subst f =
   Subst {
     unSubst :: IntMap (TermList f) }
-  deriving Eq
+  deriving (Eq, Ord)
 
 -- | Return the highest-number variable in a substitution plus 1.
 {-# INLINE substSize #-}
@@ -238,9 +238,9 @@ unsafeExtendList :: Var -> TermList f -> Subst f -> Subst f
 unsafeExtendList x !t (Subst sub) = Subst (IntMap.insert (var_id x) t sub)
 
 -- | Compose two substitutions.
-substCompose :: Substitution s => Subst (SubstFun s) -> s -> Subst (SubstFun s)
-substCompose (Subst !sub1) !sub2 =
-  Subst (IntMap.map (buildList . substList sub2) sub1)
+substCompose :: Subst f -> Subst f -> Subst f
+substCompose (Subst !sub1) (Subst !sub2) =
+  Subst (IntMap.map (buildList . substList (Subst sub2)) sub1 `IntMap.union` sub2)
 
 -- | Check if two substitutions are compatible (they do not send the same
 -- variable to different terms).
@@ -279,7 +279,10 @@ idempotentOn !sub = aux
 close :: TriangleSubst f -> Subst f
 close (Triangle sub)
   | idempotent sub = sub
-  | otherwise      = close (Triangle (substCompose sub sub))
+  | otherwise      = close (Triangle (compose sub sub))
+  where
+    compose (Subst !sub1) !sub2 =
+      Subst (IntMap.map (buildList . substList sub2) sub1)
 
 -- | Return a substitution which renames the variables of a list of terms to put
 -- them in a canonical order.
