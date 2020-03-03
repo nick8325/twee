@@ -296,7 +296,7 @@ congPath _ _ _ = error "bad path"
 ----------------------------------------------------------------------
 
 -- | Options for proof presentation.
-data Config =
+data Config f =
   Config {
     -- | Never inline lemmas.
     cfg_all_lemmas :: !Bool,
@@ -305,16 +305,16 @@ data Config =
     -- | Print out explicit substitutions.
     cfg_show_instances :: !Bool,
     -- | Print out which instances of some axioms were used.
-    cfg_show_uses_of_axioms :: [String] }
+    cfg_show_uses_of_axioms :: Axiom f -> Bool }
 
 -- | The default configuration.
-defaultConfig :: Config
+defaultConfig :: Config f
 defaultConfig =
   Config {
     cfg_all_lemmas = False,
     cfg_no_lemmas = False,
     cfg_show_instances = False,
-    cfg_show_uses_of_axioms = [] }
+    cfg_show_uses_of_axioms = const False }
 
 -- | A proof, with all axioms and lemmas explicitly listed.
 data Presentation f =
@@ -372,7 +372,7 @@ instance Function f => Pretty (Presentation f) where
   pPrint = pPrintPresentation defaultConfig
 
 -- | Simplify and present a proof.
-present :: Function f => Config -> [ProvedGoal f] -> Presentation f
+present :: Function f => Config f -> [ProvedGoal f] -> Presentation f
 present config goals =
   -- First find all the used lemmas, then hand off to presentWithGoals
   presentWithGoals config goals
@@ -388,7 +388,7 @@ present config goals =
 
 presentWithGoals ::
   Function f =>
-  Config -> [ProvedGoal f] -> [Proof f] -> Presentation f
+  Config f -> [ProvedGoal f] -> [Proof f] -> Presentation f
 presentWithGoals config@Config{..} goals lemmas
   -- We inline a lemma if one of the following holds:
   --   * It only has one step
@@ -481,7 +481,7 @@ invisible :: Function f => Equation f -> Bool
 invisible (t :=: u) = show (pPrint t) == show (pPrint u)
 
 -- Pretty-print the proof of a single lemma.
-pPrintLemma :: Function f => Config -> (Axiom f -> String) -> (Proof f -> String) -> Proof f -> Doc
+pPrintLemma :: Function f => Config f -> (Axiom f -> String) -> (Proof f -> String) -> Proof f -> Doc
 pPrintLemma Config{..} axiomNum lemmaNum p =
   ppTerm (eqn_lhs (equation q)) $$ pp (derivation q)
   where
@@ -586,7 +586,7 @@ derivSteps = steps . derivation . flattenProof . certify
     steps p = [p]
 
 -- | Print a presented proof.
-pPrintPresentation :: forall f. Function f => Config -> Presentation f -> Doc
+pPrintPresentation :: forall f. Function f => Config f -> Presentation f -> Doc
 pPrintPresentation config (Presentation axioms lemmas goals) =
   vcat $ intersperse (text "") $
     vcat [ describeEquation "Axiom" (axiomNum axiom) (Just name) eqn $$
@@ -625,7 +625,7 @@ pPrintPresentation config (Presentation axioms lemmas goals) =
             text ""]
 
     ppAxiomUses axiom
-      | axiom_name axiom `elem` cfg_show_uses_of_axioms config && not (null uses) =
+      | cfg_show_uses_of_axioms config axiom && not (null uses) =
         text "Used with:" $$
         nest 2 (vcat
           [ pPrint i <#> text "." <+> pPrintSubst sub

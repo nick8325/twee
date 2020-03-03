@@ -159,10 +159,15 @@ parseConfig =
     show_axiom_uses =
       expert $
       inGroup "Proof presentation" $
+      interpret <$>
       flag "show-uses-of"
-        ["Show which instances of the given axioms were needed (none by default)."]
+        ["Show which instances of the given axioms were needed (none by default).",
+         "Separate multiple axiom names with commas.",
+         "Use --show-uses-of all to show uses of all axioms."]
         []
         (splitOn "," <$> arg "<axioms>" "expected a list of axiom names" Just)
+      where
+        interpret xss ax = axiom_name ax `elem` xss || "all" `elem` xss
     defaultFlag name desc field parser =
       flag name [desc ++ " (" ++ show def ++ " by default)."] def parser
       where

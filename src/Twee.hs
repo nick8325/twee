@@ -49,7 +49,7 @@ data Config f =
     cfg_renormalise_percent    :: Int,
     cfg_critical_pairs         :: CP.Config,
     cfg_join                   :: Join.Config,
-    cfg_proof_presentation     :: Proof.Config }
+    cfg_proof_presentation     :: Proof.Config f }
 
 -- | The prover state.
 data State f =
