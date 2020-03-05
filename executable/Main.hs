@@ -138,26 +138,22 @@ parseConfig =
         ["Compute all normal forms when joining critical pairs (off by default)."]
         False
     all_lemmas =
-      expert $
       inGroup "Proof presentation" $
       bool "all-lemmas"
         ["Produce a proof with one lemma for each critical pair (off by default)."]
         False
     flat_proof =
-      expert $
       inGroup "Proof presentation" $
       bool "no-lemmas"
         ["Produce a proof with no lemmas (off by default).",
          "May lead to exponentially large proofs."]
         False
     show_instances =
-      expert $
       inGroup "Proof presentation" $
       bool "show-instances"
         ["Show which instance of a lemma or axiom each rewrite step uses (off by default)."]
         False
     show_axiom_uses =
-      expert $
       inGroup "Proof presentation" $
       interpret <$>
       flag "show-uses-of"
