@@ -47,6 +47,7 @@ data Config f =
     cfg_max_cp_depth           :: Int,
     cfg_simplify               :: Bool,
     cfg_renormalise_percent    :: Int,
+    cfg_set_join_goals         :: Bool,
     cfg_critical_pairs         :: CP.Config,
     cfg_join                   :: Join.Config,
     cfg_proof_presentation     :: Proof.Config f }
@@ -74,6 +75,7 @@ defaultConfig =
     cfg_max_cp_depth = maxBound,
     cfg_simplify = True,
     cfg_renormalise_percent = 5,
+    cfg_set_join_goals = True,
     cfg_critical_pairs = CP.defaultConfig,
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig }
@@ -317,7 +319,7 @@ addActive config state@State{..} active0 =
   in if subsumed st_joinable st_rules (unorient active_rule) then
     state
   else
-    normaliseGoals $
+    normaliseGoals config $
     foldl' (uncurry . enqueue) state'
       [ (the rule, makePassives config state' rule)
       | rule <- active_rules ]
@@ -442,34 +444,39 @@ data Goal f =
 -- Add a new goal.
 {-# INLINEABLE addGoal #-}
 addGoal :: Function f => Config f -> State f -> Goal f -> State f
-addGoal _config state@State{..} goal =
-  normaliseGoals state { st_goals = goal:st_goals }
+addGoal config state@State{..} goal =
+  normaliseGoals config state { st_goals = goal:st_goals }
 
 -- Normalise all goals.
 {-# INLINEABLE normaliseGoals #-}
-normaliseGoals :: Function f => State f -> State f
-normaliseGoals state@State{..} =
+normaliseGoals :: Function f => Config f -> State f -> State f
+normaliseGoals Config{..} state@State{..} =
   state {
     st_goals =
-      map (goalMap (Rule.normalForms (rewrite reduces (index_all st_rules)))) st_goals }
+      map (goalMap (nf (rewrite reduces (index_all st_rules)))) st_goals }
   where
     goalMap f goal@Goal{..} =
       goal { goal_lhs = f goal_lhs, goal_rhs = f goal_rhs }
+    nf reduce
+      | cfg_set_join_goals = Rule.normalForms reduce
+      | otherwise =
+        Set.map $ \r ->
+          Rule.reduce (reduction r `trans` reduction (Rule.normaliseWith (const True) reduce (result r)))
 
 -- Recompute all normal forms of all goals. Starts from the original goal term.
 -- Different from normalising all goals, because there may be an intermediate
 -- term on one of the reduction paths which we can now rewrite in a different
 -- way.
 {-# INLINEABLE recomputeGoals #-}
-recomputeGoals :: Function f => State f -> State f
-recomputeGoals state =
+recomputeGoals :: Function f => Config f -> State f -> State f
+recomputeGoals config state =
   -- Make this strict so that newTask can time it correctly
   forceList (map goal_lhs (st_goals state')) `seq`
   forceList (map goal_rhs (st_goals state')) `seq`
   state'
   where
     state' =
-      normaliseGoals (state { st_goals = map reset (st_goals state) })
+      normaliseGoals config (state { st_goals = map reset (st_goals state) })
 
     reset goal@Goal{goal_eqn = t :=: u, ..} =
       goal { goal_lhs = Set.singleton (reduce (Refl t)),
@@ -561,7 +568,7 @@ complete Output{..} config@Config{..} state =
            StateM.put $! interreduce config state,
        newTask 1 0.02 $ do
           state <- StateM.get
-          StateM.put $! recomputeGoals state ]
+          StateM.put $! recomputeGoals config state ]
 
     let
       loop = do

@@ -66,7 +66,7 @@ parseMainFlags =
 
 parseConfig :: OptionParser (Config (Extended Constant))
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*>
+  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> set_join_goals <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> show_instances <*> show_axiom_uses)
@@ -137,6 +137,12 @@ parseConfig =
       bool "set-join"
         ["Compute all normal forms when joining critical pairs (off by default)."]
         False
+    set_join_goals =
+      expert $
+      inGroup "Critical pair joining heuristics" $
+      bool "set-join-goals"
+        ["Compute all normal forms when joining goal terms (on by default)."]
+        True
     all_lemmas =
       inGroup "Proof presentation" $
       bool "all-lemmas"
