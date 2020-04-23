@@ -145,7 +145,7 @@ instance Function f => Pretty (Proof f) where
   pPrint = pPrintLemma defaultConfig (prettyShow . axiom_number) (prettyShow . equation)
 instance PrettyTerm f => Pretty (Derivation f) where
   pPrint (UseLemma lemma sub) =
-    text "subst" <#> pPrintTuple [text "lemma" <#> pPrint (equation lemma), pPrint sub]
+    text "subst" <#> pPrintTuple [text "lemma" <+> pPrint (equation lemma), pPrint sub]
   pPrint (UseAxiom axiom sub) =
     text "subst" <#> pPrintTuple [pPrint axiom, pPrint sub]
   pPrint (Refl t) =
