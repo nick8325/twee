@@ -6,40 +6,35 @@ module Data.Heap(
 
 -- | A heap.
 
--- Representation: the size of the heap, and the heap itself.
-data Heap a = Heap {-# UNPACK #-} !Int !(Heap1 a) deriving Show
 -- N.B.: arguments are not strict so code has to take care
 -- to force stuff appropriately.
-data Heap1 a = Nil | Node a (Heap1 a) (Heap1 a) deriving Show
+-- The Int field is the size of the heap.
+data Heap a = Nil | Node {-# UNPACK #-} !Int a (Heap a) (Heap a) deriving Show
 
 -- | Take the union of two heaps.
 {-# INLINEABLE union #-}
-union :: Ord a => Heap a -> Heap a -> Heap a
-union (Heap n1 h1) (Heap n2 h2) = Heap (n1+n2) (union1 h1 h2)
-
-{-# INLINEABLE union1 #-}
-union1 :: forall a. Ord a => Heap1 a -> Heap1 a -> Heap1 a
-union1 = u1
+union :: forall a. Ord a => Heap a -> Heap a -> Heap a
+union = u
   where
     -- The generated code is better when we do everything
-    -- through this u1 function instead of union1...
-    -- This is because u1 has no Ord constraint in its type.
-    u1 :: Heap1 a -> Heap1 a -> Heap1 a
-    u1 Nil h = h
-    u1 h Nil = h
-    u1 h1@(Node x1 l1 r1) h2@(Node x2 l2 r2)
-      | x1 <= x2 = (Node x1 $! u1 r1 h2) l1
-      | otherwise = (Node x2 $! u1 r2 h1) l2
+    -- through this u function instead of union...
+    -- This is because u has no Ord constraint in its type.
+    u :: Heap a -> Heap a -> Heap a
+    u Nil h = h
+    u h Nil = h
+    u h1@(Node s1 x1 l1 r1) h2@(Node s2 x2 l2 r2)
+      | x1 <= x2 = (Node (s1+s2) x1 $! u r1 h2) l1
+      | otherwise = (Node (s1+s2) x2 $! u r2 h1) l2
 
 -- | A singleton heap.
 {-# INLINE singleton #-}
 singleton :: a -> Heap a
-singleton !x = Heap 1 (Node x Nil Nil)
+singleton !x = Node 1 x Nil Nil
 
 -- | The empty heap.
 {-# INLINE empty #-}
 empty :: Heap a
-empty = Heap 0 Nil
+empty = Nil
 
 -- | Insert an element.
 {-# INLINEABLE insert #-}
@@ -49,60 +44,41 @@ insert x h = union (singleton x) h
 -- | Find and remove the minimum element.
 {-# INLINEABLE removeMin #-}
 removeMin :: Ord a => Heap a -> Maybe (a, Heap a)
-removeMin (Heap _ Nil) = Nothing
-removeMin (Heap n (Node x l r)) = Just (x, Heap (n-1) (union1 l r))
+removeMin Nil = Nothing
+removeMin (Node _ x l r) = Just (x, union l r)
 
 -- | Map a function over a heap, removing all values which
 -- map to 'Nothing'. May be more efficient when the function
 -- being mapped is mostly monotonic.
 {-# INLINEABLE mapMaybe #-}
-mapMaybe :: Ord b => (a -> Maybe b) -> Heap a -> Heap b
-mapMaybe f (Heap _ h) = Heap (sz 0 h') h'
+mapMaybe :: forall a b. Ord b => (a -> Maybe b) -> Heap a -> Heap b
+mapMaybe f h = mm h
   where
-    -- Compute the size fairly efficiently.
-    sz !n Nil = n
-    sz !n (Node _ l r) = sz (sz (n+1) l) r
-
-    h' = mm h
-
+    mm :: Heap a -> Heap b
     mm Nil = Nil
-    mm (Node x l r) =
+    mm (Node _ x l r) =
       case f x of
         -- If the value maps to Nothing, get rid of it.
-        Nothing -> union1 l' r'
-        -- Otherwise, check if the heap invariant still holds
-        -- and sift downwards to restore it.
-        Just !y -> down y l' r'
+        Nothing -> union l' r'
+        -- If y is still the smallest in its subheap,
+        -- the calls to insert and union here will work without making
+        -- any recursive subcalls!
+        Just !y -> insert y l' `union` r'
       where
         !l' = mm l
         !r' = mm r
 
-    down x l@(Node y ll lr) r@(Node z rl rr)
-      -- Put the smallest of x, y and z at the root.
-      | y < x && y <= z =
-        (Node y $! down x ll lr) r
-      | z < x && z <= y =
-        Node z l $! down x rl rr
-    down x Nil (Node y l r)
-      -- Put the smallest of x and y at the root.
-      | y < x =
-        Node y Nil $! down x l r
-    down x (Node y l r) Nil
-      -- Put the smallest of x and y at the root.
-      | y < x =
-        (Node y $! down x l r) Nil
-    down x l r = Node x l r
-
 -- | Return the number of elements in the heap.
 {-# INLINE size #-}
 size :: Heap a -> Int
-size (Heap n _) = n
+size Nil = 0
+size (Node n _ _ _) = n
 
 -- Testing code:
 -- import Test.QuickCheck
 -- import qualified Data.List as List
 -- import qualified Data.Maybe as Maybe
-
+-- 
 -- instance (Arbitrary a, Ord a) => Arbitrary (Heap a) where
 --   arbitrary = sized arb
 --     where
@@ -113,42 +89,45 @@ size (Heap n _) = n
 --            (n-1, union <$> arb' <*> arb')]
 --         where
 --           arb' = arb (n `div` 2)
-
+-- 
 -- toList :: Ord a => Heap a -> [a]
 -- toList = List.unfoldr removeMin
-
+-- 
 -- invariant :: Ord a => Heap a -> Bool
--- invariant h@(Heap n h1) =
---   n == length (toList h) && ord h1
+-- invariant h = ord h && sizeOK h
 --   where
 --     ord Nil = True
---     ord (Node x l r) = ord1 x l && ord1 x r
-
+--     ord (Node _ x l r) = ord1 x l && ord1 x r
+-- 
 --     ord1 _ Nil = True
---     ord1 x h@(Node y _ _) = x <= y && ord h
-
--- prop_1 h = withMaxSuccess 10000 $ invariant h
--- prop_2 x h = withMaxSuccess 10000 $ invariant (insert x h)
+--     ord1 x h@(Node _ y _ _) = x <= y && ord h
+-- 
+--     sizeOK Nil = size Nil == 0
+--     sizeOK (Node s _ l r) =
+--       s == size l + size r + 1
+-- 
+-- prop_1 h = withMaxSuccess 100000 $ invariant h
+-- prop_2 x h = withMaxSuccess 100000 $ invariant (insert x h)
 -- prop_3 h =
---   withMaxSuccess 1000 $
+--   withMaxSuccess 100000 $
 --   case removeMin h of
 --     Nothing -> discard
 --     Just (_, h) -> invariant h
--- prop_4 h = withMaxSuccess 10000 $ List.sort (toList h) == toList h
--- prop_5 x h = withMaxSuccess 10000 $ toList (insert x h) == List.insert x (toList h)
+-- prop_4 h = withMaxSuccess 100000 $ List.sort (toList h) == toList h
+-- prop_5 x h = withMaxSuccess 100000 $ toList (insert x h) == List.insert x (toList h)
 -- prop_6 x h =
---   withMaxSuccess 1000 $
+--   withMaxSuccess 100000 $
 --   case removeMin h of
 --     Nothing -> discard
 --     Just (x, h') -> toList h == List.insert x (toList h')
--- prop_7 h1 h2 = withMaxSuccess 10000 $
+-- prop_7 h1 h2 = withMaxSuccess 100000 $
 --   invariant (union h1 h2)
--- prop_8 h1 h2 = withMaxSuccess 10000 $
+-- prop_8 h1 h2 = withMaxSuccess 100000 $
 --   toList (union h1 h2) == List.sort (toList h1 ++ toList h2)
--- prop_9 (Blind f) h = withMaxSuccess 10000 $
+-- prop_9 (Blind f) h = withMaxSuccess 100000 $
 --   invariant (mapMaybe f h)
 -- prop_10 (Blind f) h = withMaxSuccess 1000000 $
 --   toList (mapMaybe f h) == List.sort (Maybe.mapMaybe f (toList h))
-
+-- 
 -- return []
 -- main = $quickCheckAll
