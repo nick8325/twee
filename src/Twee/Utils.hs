@@ -11,6 +11,7 @@ import System.IO
 import GHC.Prim
 import GHC.Types
 import Data.Bits
+import System.Random
 --import Test.QuickCheck hiding ((.&.))
 
 repeatM :: Monad m => m a -> m [a]
@@ -121,3 +122,18 @@ prop_split_2 (Positive k) (lo, hi) =
   where
     splits = splitInterval k (lo, hi)
 -}
+
+reservoir :: Int -> [(Integer, Int)]
+reservoir k =
+  zip (map fromIntegral prefix) prefix ++
+  zip (map (+fromIntegral k) (scanl1 (+) is)) ks
+  where
+    xs, ys :: [Double]
+    xs = randomRs (0, 1) (mkStdGen 314159265)
+    ys = randomRs (0, 1) (mkStdGen 358979323)
+    ks = randomRs (0, k-1) (mkStdGen 846264338)
+
+    ws = scanl1 (*) [ x ** (1 / fromIntegral k) | x <- xs ]
+    is = zipWith gen ws ys
+    gen w y = floor (log y / log (1-w)) + 1
+    prefix = [0..k-1]

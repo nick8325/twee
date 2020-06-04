@@ -4,7 +4,7 @@ module Twee.PassiveQueue(
   Params(..),
   Queue,
   Passive(..),
-  empty, insert, removeMin, mapMaybe) where
+  empty, insert, removeMin, mapMaybe, toList) where
 
 import qualified Data.Heap as Heap
 import qualified Data.Vector.Unboxed as Vector
@@ -115,6 +115,18 @@ makePassiveSet rule ps
        packId proxy (if isLeft then passive_rule2 else passive_rule1),
        fromIntegral passive_pos)
 
+-- Convert a PassiveSet back into a list of Passives.
+{-# INLINEABLE unpackPassiveSet #-}
+unpackPassiveSet :: forall params.Params params => PassiveSet params -> (Int, [Passive params])
+unpackPassiveSet PassiveSet{..} =
+  (1 + Vector.length passiveset_left + Vector.length passiveset_right,
+   passiveset_best:
+   map (unpack proxy passiveset_rule True) (Vector.toList passiveset_left) ++
+   map (unpack proxy passiveset_rule False) (Vector.toList passiveset_right))
+  where
+    proxy :: Proxy params
+    proxy = Proxy
+
 -- Find and remove the best element from a PassiveSet.
 {-# INLINEABLE unconsPassiveSet #-}
 unconsPassiveSet :: forall params. Params params => PassiveSet params -> (Passive params, Maybe (PassiveSet params))
@@ -174,10 +186,13 @@ removeMin (Queue q) = do
 mapMaybe :: Params params => (Passive params -> Maybe (Passive params)) -> Queue params -> Queue params
 mapMaybe f (Queue q) = Queue (Heap.mapMaybe g q)
   where
-    g PassiveSet{..} =
+    g passiveSet@PassiveSet{..} =
       makePassiveSet passiveset_rule $ Data.Maybe.mapMaybe f $
-        passiveset_best:
-        map (unpack proxy passiveset_rule True) (Vector.toList passiveset_left) ++
-        map (unpack proxy passiveset_rule False) (Vector.toList passiveset_right)
-    proxy :: Proxy params
-    proxy = Proxy
+        snd (unpackPassiveSet passiveSet)
+
+-- | Convert a queue into a list of 'Passive's.
+-- The 'Passive's are produced in batches, with each batch labelled
+-- with its size.
+{-# INLINEABLE toList #-}
+toList :: Params params => Queue params -> [(Int, [Passive params])]
+toList (Queue h) = map unpackPassiveSet (Heap.toList h)

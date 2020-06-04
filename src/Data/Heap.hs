@@ -2,7 +2,9 @@
 
 {-# LANGUAGE BangPatterns, ScopedTypeVariables #-}
 module Data.Heap(
-  Heap, empty, singleton, insert, removeMin, union, mapMaybe, size) where
+  Heap, empty, singleton, insert, removeMin, union, mapMaybe, size, toList) where
+
+import qualified Data.List as List
 
 -- | A heap.
 
@@ -47,6 +49,13 @@ removeMin :: Ord a => Heap a -> Maybe (a, Heap a)
 removeMin Nil = Nothing
 removeMin (Node _ x l r) = Just (x, union l r)
 
+-- | Get the elements of a heap as a list, in unspecified order.
+toList :: Heap a -> [a]
+toList h = tl h []
+  where
+    tl Nil = id
+    tl (Node _ x l r) = (x:) . tl l . tl r
+
 -- | Map a function over a heap, removing all values which
 -- map to 'Nothing'. May be more efficient when the function
 -- being mapped is mostly monotonic.
@@ -90,8 +99,8 @@ size (Node n _ _ _) = n
 --         where
 --           arb' = arb (n `div` 2)
 -- 
--- toList :: Ord a => Heap a -> [a]
--- toList = List.unfoldr removeMin
+-- toSortedList :: Ord a => Heap a -> [a]
+-- toSortedList = List.unfoldr removeMin
 -- 
 -- invariant :: Ord a => Heap a -> Bool
 -- invariant h = ord h && sizeOK h
@@ -113,21 +122,21 @@ size (Node n _ _ _) = n
 --   case removeMin h of
 --     Nothing -> discard
 --     Just (_, h) -> invariant h
--- prop_4 h = withMaxSuccess 100000 $ List.sort (toList h) == toList h
--- prop_5 x h = withMaxSuccess 100000 $ toList (insert x h) == List.insert x (toList h)
+-- prop_4 h = withMaxSuccess 100000 $ List.sort (toSortedList h) == toSortedList h
+-- prop_5 x h = withMaxSuccess 100000 $ toSortedList (insert x h) == List.insert x (toSortedList h)
 -- prop_6 x h =
 --   withMaxSuccess 100000 $
 --   case removeMin h of
 --     Nothing -> discard
---     Just (x, h') -> toList h == List.insert x (toList h')
+--     Just (x, h') -> toSortedList h == List.insert x (toSortedList h')
 -- prop_7 h1 h2 = withMaxSuccess 100000 $
 --   invariant (union h1 h2)
 -- prop_8 h1 h2 = withMaxSuccess 100000 $
---   toList (union h1 h2) == List.sort (toList h1 ++ toList h2)
+--   toSortedList (union h1 h2) == List.sort (toSortedList h1 ++ toSortedList h2)
 -- prop_9 (Blind f) h = withMaxSuccess 100000 $
 --   invariant (mapMaybe f h)
 -- prop_10 (Blind f) h = withMaxSuccess 1000000 $
---   toList (mapMaybe f h) == List.sort (Maybe.mapMaybe f (toList h))
+--   toSortedList (mapMaybe f h) == List.sort (Maybe.mapMaybe f (toSortedList h))
 -- 
 -- return []
 -- main = $quickCheckAll

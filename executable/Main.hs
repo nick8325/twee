@@ -66,7 +66,7 @@ parseMainFlags =
 
 parseConfig :: OptionParser (Config (Extended Constant))
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> set_join_goals <*>
+  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> show_instances <*> show_axiom_uses)
@@ -90,7 +90,15 @@ parseConfig =
     normPercent =
       expert $
       inGroup "Completion heuristics" $
-      defaultFlag "normalise-queue-percent" "Percent of time spent renormalising queued critical pairs" (cfg_renormalise_percent) argNum
+      defaultFlag "normalise-queue-percent" "Percent of time spent renormalising queued critical pairs" cfg_renormalise_percent argNum
+    cpSampleSize =
+      expert $
+      inGroup "Completion heuristics" $
+      defaultFlag "cp-sample-size" "Size of random CP sample used to trigger renormalisation" cfg_cp_sample_size argNum
+    cpRenormaliseThreshold =
+      expert $
+      inGroup "Completion heuristics" $
+      defaultFlag "cp-renormalise-threshold" "Trigger renormalisation when this percentage of CPs can be simplified" cfg_renormalise_threshold argNum
     lweight =
       expert $
       inGroup "Critical pair weighting heuristics" $
@@ -424,7 +432,7 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
       [ Axiom n pre_name (toEquation pre_eqn)
       | (n, PreEquation{..}) <- zip [1..] axioms0 ]
 
-    withGoals = foldl' (addGoal config) initialState goals
+    withGoals = foldl' (addGoal config) (initialState config) goals
     withAxioms = foldl' (addAxiom config) withGoals axioms
 
   -- Set up tracing.

@@ -47,6 +47,8 @@ data Config f =
     cfg_max_cp_depth           :: Int,
     cfg_simplify               :: Bool,
     cfg_renormalise_percent    :: Int,
+    cfg_cp_sample_size         :: Int,
+    cfg_renormalise_threshold  :: Int,
     cfg_set_join_goals         :: Bool,
     cfg_critical_pairs         :: CP.Config,
     cfg_join                   :: Join.Config,
@@ -64,6 +66,9 @@ data State f =
     st_next_active    :: {-# UNPACK #-} !Id,
     st_next_rule      :: {-# UNPACK #-} !RuleId,
     st_considered     :: {-# UNPACK #-} !Int64,
+    st_cp_sample      :: ![Maybe (Overlap f)],
+    st_cp_next_sample :: ![(Integer, Int)],
+    st_num_cps        :: !Integer,
     st_messages_rev   :: ![Message f] }
 
 -- | The default prover configuration.
@@ -75,6 +80,8 @@ defaultConfig =
     cfg_max_cp_depth = maxBound,
     cfg_simplify = True,
     cfg_renormalise_percent = 5,
+    cfg_renormalise_threshold = 20,
+    cfg_cp_sample_size = 100,
     cfg_set_join_goals = True,
     cfg_critical_pairs = CP.defaultConfig,
     cfg_join = Join.defaultConfig,
@@ -88,8 +95,8 @@ configIsComplete Config{..} =
   cfg_max_cp_depth == maxBound
 
 -- | The initial state.
-initialState :: State f
-initialState =
+initialState :: Config f -> State f
+initialState Config{..} =
   State {
     st_rules = RuleIndex.empty,
     st_active_ids = IntMap.empty,
@@ -100,6 +107,9 @@ initialState =
     st_next_active = 1,
     st_next_rule = 0,
     st_considered = 0,
+    st_cp_sample = [],
+    st_cp_next_sample = reservoir cfg_cp_sample_size,
+    st_num_cps = 0,
     st_messages_rev = [] }
 
 ----------------------------------------------------------------------
@@ -172,8 +182,8 @@ makePassives Config{..} State{..} rule =
 -- | Turn a Passive back into an overlap.
 -- Doesn't try to simplify it.
 {-# INLINEABLE findPassive #-}
-findPassive :: forall f. Function f => Config f -> State f -> Passive Params -> Maybe (ActiveRule f, ActiveRule f, Overlap f)
-findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
+findPassive :: forall f. Function f => State f -> Passive Params -> Maybe (ActiveRule f, ActiveRule f, Overlap f)
+findPassive State{..} Passive{..} = {-# SCC findPassive #-} do
   rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
   rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
   let !depth = 1 + max (the rule1) (the rule2)
@@ -185,20 +195,26 @@ findPassive Config{..} State{..} Passive{..} = {-# SCC findPassive #-} do
 -- | Renormalise a queued Passive.
 {-# INLINEABLE simplifyPassive #-}
 simplifyPassive :: Function f => Config f -> State f -> Passive Params -> Maybe (Passive Params)
-simplifyPassive config@Config{..} state@State{..} passive = {-# SCC simplifyPassive #-} do
-  (_, _, overlap) <- findPassive config state passive
+simplifyPassive Config{..} state@State{..} passive = {-# SCC simplifyPassive #-} do
+  (_, _, overlap) <- findPassive state passive
   overlap <- simplifyOverlap (index_oriented st_rules) overlap
   return passive {
     passive_score = fromIntegral $
       fromIntegral (passive_score passive) `intMin`
       score cfg_critical_pairs overlap }
 
+-- | Check if we should renormalise the queue.
+{-# INLINEABLE shouldSimplifyQueue #-}
+shouldSimplifyQueue :: Function f => Config f -> State f -> Bool
+shouldSimplifyQueue Config{..} State{..} =
+  length (filter isNothing st_cp_sample) * 100 >= cfg_renormalise_threshold * cfg_cp_sample_size
+
 -- | Renormalise the entire queue.
 {-# INLINEABLE simplifyQueue #-}
 simplifyQueue :: Function f => Config f -> State f -> State f
 simplifyQueue config state =
   {-# SCC simplifyQueue #-}
-  state { st_queue = simp (st_queue state) }
+  resetSample config state { st_queue = simp (st_queue state) }
   where
     simp =
       Queue.mapMaybe (simplifyPassive config state)
@@ -218,7 +234,7 @@ enqueue state rule passives =
 --   * ignoring CPs that are too big
 {-# INLINEABLE dequeue #-}
 dequeue :: Function f => Config f -> State f -> (Maybe (CriticalPair f, ActiveRule f, ActiveRule f), State f)
-dequeue config@Config{..} state@State{..} =
+dequeue Config{..} state@State{..} =
   {-# SCC dequeue #-}
   case deq 0 st_queue of
     -- Explicitly make the queue empty, in case it e.g. contained a
@@ -230,7 +246,7 @@ dequeue config@Config{..} state@State{..} =
   where
     deq !n queue = do
       (passive, queue) <- Queue.removeMin queue
-      case findPassive config state passive of
+      case findPassive state passive of
         Just (rule1, rule2, overlap)
           | passive_score passive >= 0,
             Just Overlap{overlap_eqn = t :=: u} <-
@@ -320,9 +336,58 @@ addActive config state@State{..} active0 =
     state
   else
     normaliseGoals config $
-    foldl' (uncurry . enqueue) state'
-      [ (the rule, makePassives config state' rule)
-      | rule <- active_rules ]
+    foldl' enqueueRule state' active_rules
+  where
+    enqueueRule state rule =
+      sample config (length passives) passives $
+      enqueue state (the rule) passives
+      where
+        passives = makePassives config state rule
+
+-- Update the list of sampled critical pairs.
+{-# INLINEABLE sample #-}
+sample :: Function f => Config f -> Int -> [Passive Params] -> State f -> State f
+sample cfg m passives state@State{st_cp_next_sample = ((n, pos):rest), ..}
+  | idx < fromIntegral m =
+    sample cfg m passives state {
+      st_cp_next_sample = rest,
+      st_cp_sample =
+        take pos st_cp_sample ++
+        [find (passives !! fromIntegral idx)] ++
+        drop (pos+1) st_cp_sample }
+  | otherwise = state{st_num_cps = st_num_cps + fromIntegral m}
+  where
+    idx = n - st_num_cps
+    find passive = do
+      (_, _, overlap) <- findPassive state passive
+      simplifyOverlap (index_oriented st_rules) overlap
+
+-- Reset the list of sampled critical pairs.
+{-# INLINEABLE resetSample #-}
+resetSample :: Function f => Config f -> State f -> State f
+resetSample cfg@Config{..} state@State{..} =
+  foldl' sample1 state' (Queue.toList st_queue)
+  where
+    state' =
+      state {
+        st_num_cps = 0,
+        st_cp_next_sample = reservoir cfg_cp_sample_size,
+        st_cp_sample = [] }
+
+    sample1 state (n, passives) = sample cfg n passives state
+
+-- Simplify the sampled critical pairs.
+-- (A sampled critical pair is replaced with Nothing if it can be
+-- simplified.)
+{-# INLINEABLE simplifySample #-}
+simplifySample :: Function f => State f -> State f
+simplifySample state@State{..} =
+  state{st_cp_sample = map (>>= simp) st_cp_sample}
+  where
+    simp overlap = do
+      overlap' <- simplifyOverlap (index_oriented st_rules) overlap
+      guard (overlap_eqn overlap == overlap_eqn overlap')
+      return overlap
 
 -- Add an active without generating critical pairs. Used in interreduction.
 {-# INLINEABLE addActiveOnly #-}
@@ -557,15 +622,16 @@ complete :: (Function f, MonadIO m) => Output m f -> Config f -> State f -> m (S
 complete Output{..} config@Config{..} state =
   flip StateM.execStateT state $ do
     tasks <- sequence
-      [newTask 1 (fromIntegral cfg_renormalise_percent / 100) $ do
-         lift $ output_message SimplifyQueue
+      [newTask 10 (fromIntegral cfg_renormalise_percent / 100) $ do
          state <- StateM.get
-         StateM.put $! simplifyQueue config state,
+         when (shouldSimplifyQueue config state) $ do
+           lift $ output_message SimplifyQueue
+           StateM.put $! simplifyQueue config state,
        newTask 1 0.05 $ do
          when cfg_simplify $ do
            lift $ output_message Interreduce
            state <- StateM.get
-           StateM.put $! interreduce config state,
+           StateM.put $! simplifySample $! interreduce config state,
        newTask 1 0.02 $ do
           state <- StateM.get
           StateM.put $! recomputeGoals config state ]

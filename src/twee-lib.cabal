@@ -71,7 +71,8 @@ library
     ghc-prim,
     primitive >= 0.6.2.0,
     vector,
-    uglymemo
+    uglymemo,
+    random
   hs-source-dirs:      .
   ghc-options:         -W -fno-warn-incomplete-patterns
   default-language:    Haskell2010
