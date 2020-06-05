@@ -37,11 +37,12 @@ data MainFlags =
     flags_proof :: Bool,
     flags_trace :: Maybe (String, String),
     flags_casc  :: Bool,
-    flags_explain_encoding :: Bool }
+    flags_explain_encoding :: Bool,
+    flags_flip_ordering :: Bool }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> casc <*> explain
+  MainFlags <$> proof <*> trace <*> casc <*> explain <*> flipOrdering
   where
     proof =
       inGroup "Output options" $
@@ -61,6 +62,10 @@ parseMainFlags =
       expert $
       inGroup "Output options" $
       bool "explain-encoding" ["In CASC mode, explain the conditional encoding (off by default)."] False
+    flipOrdering =
+      expert $
+      inGroup "Term order options" $
+      bool "flip-ordering" ["Make more common function symbols larger (off by default)."] False
         
     argModule = arg "<module>" "expected a Prolog module name" Just
 
@@ -395,7 +400,7 @@ identifyProblem TweeContext{..} prob =
     identify inp = Left inp
 
 runTwee :: GlobalFlags -> TSTPFlags -> MainFlags -> HornFlags -> Config (Extended Constant) -> [String] -> (IO () -> IO ()) -> Problem Clause -> IO Answer
-runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# SCC runTwee #-} do
+runTwee globals (TSTPFlags tstp) MainFlags{..} horn config precedence later obligs = {-# SCC runTwee #-} do
   let
     -- Encode whatever needs encoding in the problem
     ctx = makeContext obligs
@@ -418,7 +423,8 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
         (isType c)
         (isNothing (elemIndex (base c) precedence))
         (fmap negate (elemIndex (base c) precedence))
-        (negate (Map.findWithDefault 0 c occs))
+        (maybeNegate (Map.findWithDefault 0 c occs))
+    maybeNegate = if flags_flip_ordering then id else negate
     occs = funsOcc prob
 
     -- Translate everything to Twee.
@@ -437,7 +443,7 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
 
   -- Set up tracing.
   sayTrace <-
-    case flags_trace main of
+    case flags_trace of
       Nothing -> return $ \_ -> return ()
       Just (file, mod) -> do
         h <- openFile file WriteMode
@@ -492,7 +498,7 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
   state <- complete output config withAxioms
   line
 
-  when (solved state && flags_proof main) $ later $ do
+  when (solved state && flags_proof) $ later $ do
     let
       pres = present (cfg_proof_presentation config) (solutions state)
 
@@ -501,7 +507,7 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
       sayTrace $ show $
         traceApp "lemma" [traceEqn (equation p)] <#> text "."
 
-    when (flags_casc main) $ do
+    when flags_casc $ do
       putStrLn "% SZS output start Proof"
       let
         axiomForms =
@@ -520,7 +526,7 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
             go Input{source = Inference _ _ inps} = concatMap go inps
             go inp@Input{source = FromFile _ _} = [inp]
 
-      when (flags_explain_encoding main) $ do
+      when flags_explain_encoding $ do
         putStrLn "Take the following subset of the input axioms:"
         mapM_ putStrLn $ map ("  " ++) $ lines $ showProblem $
           usortBy (comparing show) $
@@ -544,7 +550,7 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
       putStrLn "% SZS output end Proof"
       putStrLn ""
   
-    when (tstp && not (flags_casc main)) $ do
+    when (tstp && not flags_casc) $ do
       putStrLn "% SZS output start CNFRefutation"
       print $ pPrintProof $
         presentToJukebox ctx (curry toEquation)
@@ -554,7 +560,7 @@ runTwee globals (TSTPFlags tstp) main horn config precedence later obligs = {-# 
       putStrLn "% SZS output end CNFRefutation"
       putStrLn ""
 
-    when (not (flags_casc main)) $ do
+    when (not flags_casc) $ do
       putStrLn "The conjecture is true! Here is a proof."
       putStrLn ""
       print $ pPrintPresentation (cfg_proof_presentation config) pres
