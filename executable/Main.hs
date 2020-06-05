@@ -31,6 +31,23 @@ import System.IO
 import System.Exit
 import qualified Data.Set as Set
 import Twee.Label
+import Control.Concurrent.Async
+
+data ConcurrencyFlags =
+  ConcurrencyFlags {
+    flags_cores :: Int }
+
+parseConcurrencyFlags :: OptionParser ConcurrencyFlags
+parseConcurrencyFlags =
+  ConcurrencyFlags <$> cores
+  where
+    cores =
+      expert $
+      inGroup "Resource limits" $
+      flag "cpu-cores"
+        ["Use this number of CPU cores (1 by default).",
+         "",
+         "Using more than one core disables some heuristic options."] 1 argNum
 
 data MainFlags =
   MainFlags {
@@ -602,6 +619,21 @@ runTwee globals (TSTPFlags tstp) MainFlags{..} horn config precedence later obli
     else if configIsComplete config && not (dropNonHorn horn) then Sat Satisfiable Nothing
     else NoAnswer GaveUp
 
+runConcurrentTwee :: ConcurrencyFlags -> GlobalFlags -> TSTPFlags -> MainFlags -> HornFlags -> Config (Extended Constant) -> [String] -> (IO () -> IO ()) -> Problem Clause -> IO Answer
+runConcurrentTwee ConcurrencyFlags{..} globals tstp main horn config@Config{..} precedence later obligs
+  | flags_cores == 1 =
+    runTwee globals tstp main horn config precedence later obligs
+  | otherwise =
+    raceMany
+      [ runTwee globals tstp main' horn config' precedence later obligs
+      | (main', config') <- take flags_cores variants ]
+  where
+    variants =
+      [(main{flags_flip_ordering=False},
+        config{cfg_critical_pairs = cfg_critical_pairs{CP.cfg_lhsweight = 3}}),
+       (main{flags_flip_ordering=False},
+        config{cfg_critical_pairs = cfg_critical_pairs{CP.cfg_lhsweight = 4}})]
+  
 -- Transform a proof presentation into a Jukebox proof.
 presentToJukebox ::
   TweeContext ->
@@ -690,6 +722,14 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
                 in
                   isJust (matchList ts us) && isJust (matchList us ts)
 
+raceMany :: [IO a] -> IO a
+raceMany [x] = x
+raceMany (x:xs) = do
+  result <- race x (raceMany xs)
+  case result of
+    Left res  -> return res
+    Right res -> return res
+
 main = do
   hSetBuffering stdout LineBuffering
   join . parseCommandLineWithExtraArgs
@@ -710,7 +750,7 @@ main = do
              (toFormulasBox =>>=
               expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
               expert clausifyBox =>>= expert oneConjectureBox) <*>
-             (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> expert hornFlags <*> parseConfig <*> parsePrecedence)))
+             (runConcurrentTwee <$> parseConcurrencyFlags <*> globalFlags <*> tstpFlags <*> parseMainFlags <*> expert hornFlags <*> parseConfig <*> parsePrecedence)))
   where
     combine horn encode prove later prob = do
       res <- horn prob

@@ -44,8 +44,9 @@ executable twee
                        containers,
                        pretty,
                        split,
+                       async,
                        jukebox == 0.4.*
-  ghc-options:         -W -fno-warn-incomplete-patterns
+  ghc-options:         -W -fno-warn-incomplete-patterns -threaded -with-rtsopts=-N
 
   if flag(static)
     ghc-options: -optl -static
