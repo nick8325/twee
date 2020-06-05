@@ -524,7 +524,7 @@ runTwee globals (TSTPFlags tstp) MainFlags{..} horn config precedence later obli
       sayTrace $ show $
         traceApp "lemma" [traceEqn (equation p)] <#> text "."
 
-    when flags_casc $ do
+    when (flags_casc && not tstp) $ do
       putStrLn "% SZS output start Proof"
       let
         axiomForms =
@@ -567,7 +567,7 @@ runTwee globals (TSTPFlags tstp) MainFlags{..} horn config precedence later obli
       putStrLn "% SZS output end Proof"
       putStrLn ""
   
-    when (tstp && not flags_casc) $ do
+    when tstp $ do
       putStrLn "% SZS output start CNFRefutation"
       print $ pPrintProof $
         presentToJukebox ctx (curry toEquation)
