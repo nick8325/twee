@@ -67,6 +67,7 @@ data State f =
     st_next_active    :: {-# UNPACK #-} !Id,
     st_next_rule      :: {-# UNPACK #-} !RuleId,
     st_considered     :: {-# UNPACK #-} !Int64,
+    st_simplified_at  :: {-# UNPACK #-} !Id,
     st_cp_sample      :: ![Maybe (Overlap f)],
     st_cp_next_sample :: ![(Integer, Int)],
     st_num_cps        :: !Integer,
@@ -109,6 +110,7 @@ initialState Config{..} =
     st_next_active = 1,
     st_next_rule = 0,
     st_considered = 0,
+    st_simplified_at = 1,
     st_cp_sample = [],
     st_cp_next_sample = reservoir cfg_cp_sample_size,
     st_num_cps = 0,
@@ -570,6 +572,7 @@ goal n name (t :=: u) =
 -- Simplify all rules.
 {-# INLINEABLE interreduce #-}
 interreduce :: Function f => Config f -> State f -> State f
+interreduce _ state@State{..} | st_simplified_at == st_next_active = state
 interreduce config@Config{..} state =
   {-# SCC interreduce #-}
   let
@@ -579,7 +582,7 @@ interreduce config@Config{..} state =
         -- equations have made use of each active.
         state { st_joinable = Index.empty }
         (IntMap.elems (st_active_ids state))
-    in state' { st_joinable = st_joinable state }
+    in state' { st_joinable = st_joinable state, st_simplified_at = st_next_active state' }
 
 {-# INLINEABLE interreduce1 #-}
 interreduce1 :: Function f => Config f -> State f -> Active f -> State f
