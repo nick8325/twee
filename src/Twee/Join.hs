@@ -60,7 +60,7 @@ joinCriticalPair config eqns idx mmodel cp@CriticalPair{cp_eqn = t :=: u} =
     Just cp ->
       case groundJoinFromMaybe config eqns idx mmodel (branches (And [])) cp of
         Left model -> Left (cp, model)
-        Right cps -> Right (Just cp, cps)
+        Right (mcp, cps) -> Right (mcp, cps)
 
 {-# INLINEABLE step1 #-}
 {-# INLINEABLE step2 #-}
@@ -152,25 +152,25 @@ subsumed _ _ _ = False
 {-# INLINEABLE groundJoin #-}
 groundJoin ::
   (Function f, Has a (Rule f), Has a (Proof f)) =>
-  Config -> Index f (Equation f) -> RuleIndex f a -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
+  Config -> Index f (Equation f) -> RuleIndex f a -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
 groundJoin config eqns idx ctx cp@CriticalPair{cp_eqn = t :=: u, ..} =
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
     ([], instances) ->
       let cps = [ subst sub cp | sub <- instances ] in
-      Right (usortBy (comparing (canonicalise . order . cp_eqn)) cps)
+      Right (Just cp, usortBy (comparing (canonicalise . order . cp_eqn)) cps)
     (model:_, _) ->
       groundJoinFrom config eqns idx model ctx cp
 
 {-# INLINEABLE groundJoinFrom #-}
 groundJoinFrom ::
   (Function f, Has a (Rule f), Has a (Proof f)) =>
-  Config -> Index f (Equation f) -> RuleIndex f a -> Model f -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
+  Config -> Index f (Equation f) -> RuleIndex f a -> Model f -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
 groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :=: u, ..}
   | not cfg_ground_join ||
-    (modelOK model && isJust (allSteps config eqns idx cp { cp_eqn = t' :=: u' })) = Left model
+    (modelOK model && isJust (allSteps config' eqns idx cp { cp_eqn = t' :=: u' })) = Left model
   | otherwise =
       let model1 = optimise model weakenModel (\m -> not (modelOK m) || (valid m (reduction nt) && valid m (reduction nu)))
-          model2 = optimise model1 weakenModel (\m -> not (modelOK m) || isNothing (allSteps config eqns idx cp { cp_eqn = result (normaliseIn m t u) :=: result (normaliseIn m u t) }))
+          model2 = optimise model1 weakenModel (\m -> not (modelOK m) || isNothing (allSteps config' eqns idx cp { cp_eqn = result (normaliseIn m t u) :=: result (normaliseIn m u t) }))
 
           diag [] = Or []
           diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
@@ -178,8 +178,12 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
           weaken x = x
           ctx' = formAnd (diag (modelToLiterals model2)) ctx in
 
-      groundJoin config eqns idx ctx' cp
+      case groundJoin config eqns idx ctx' cp of
+        Right (_, cps) | not (modelOK model) ->
+          Right (Nothing, cps)
+        res -> res
   where
+    config' = config{cfg_use_connectedness = False}
     normaliseIn m t u = normaliseWith (const True) (rewrite (ok t u m) (index_all idx)) t
     ok t u m rule sub =
       reducesInModel m rule sub &&
@@ -190,20 +194,22 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
     t' = result nt
     u' = result nu
 
+    -- XXXXXXXX! Is it safe to add "ground connected" CPs to the
+    -- equation set???? Maybe not!
+
     -- XXX not safe to exploit the top term if we then add the equation to
     -- the joinable set. (It might then be used to join a CP with an entirely
     -- different top term.)
-    modelOK _ = True
-{-    modelOK m =
+    modelOK m =
       case cp_top of
         Nothing -> True
         Just top ->
-          isNothing (lessIn m top t) && isNothing (lessIn m top u)-}
+          isNothing (lessIn m top t) && isNothing (lessIn m top u)
 
 {-# INLINEABLE groundJoinFromMaybe #-}
 groundJoinFromMaybe ::
   (Function f, Has a (Rule f), Has a (Proof f)) =>
-  Config -> Index f (Equation f) -> RuleIndex f a -> Maybe (Model f) -> [Branch f] -> CriticalPair f -> Either (Model f) [CriticalPair f]
+  Config -> Index f (Equation f) -> RuleIndex f a -> Maybe (Model f) -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
 groundJoinFromMaybe config eqns idx Nothing = groundJoin config eqns idx
 groundJoinFromMaybe config eqns idx (Just model) = groundJoinFrom config eqns idx model
 
