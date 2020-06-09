@@ -88,7 +88,7 @@ parseMainFlags =
 
 parseConfig :: OptionParser (Config (Extended Constant))
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*>
+  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> show_instances <*> show_axiom_uses)
@@ -173,6 +173,12 @@ parseConfig =
       bool "set-join-goals"
         ["Compute all normal forms when joining goal terms (on by default)."]
         True
+    always_simplify =
+      expert $
+      inGroup "Debugging options" $
+      bool "always-simplify"
+        ["Interreduce rules after every step."]
+        False
     all_lemmas =
       inGroup "Proof presentation" $
       bool "all-lemmas"

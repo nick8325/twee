@@ -50,6 +50,7 @@ data Config f =
     cfg_cp_sample_size         :: Int,
     cfg_renormalise_threshold  :: Int,
     cfg_set_join_goals         :: Bool,
+    cfg_always_simplify        :: Bool,
     cfg_critical_pairs         :: CP.Config,
     cfg_join                   :: Join.Config,
     cfg_proof_presentation     :: Proof.Config f }
@@ -83,6 +84,7 @@ defaultConfig =
     cfg_renormalise_threshold = 20,
     cfg_cp_sample_size = 100,
     cfg_set_join_goals = True,
+    cfg_always_simplify = False,
     cfg_critical_pairs = CP.defaultConfig,
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig }
@@ -639,6 +641,10 @@ complete Output{..} config@Config{..} state =
     let
       loop = do
         progress <- StateM.state (complete1 config)
+        when cfg_always_simplify $ do
+          lift $ output_message Interreduce
+          state <- StateM.get
+          StateM.put $! simplifySample $! interreduce config state
         state <- StateM.get
         lift $ mapM_ output_message (messages state)
         StateM.put (clearMessages state)
