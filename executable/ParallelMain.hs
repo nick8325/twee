@@ -6,7 +6,7 @@ import System.Environment
 import qualified SequentialMain
 import Control.Monad
 
-foreign import ccall "link_to_parent" link :: IO ()
+foreign import ccall "link_to_parent" link :: CPid -> IO ()
 
 raceMany :: [IO a] -> IO a
 raceMany [x] = x
@@ -24,8 +24,9 @@ raceStdout xs = do
     end = "*** END OF OUTPUT"
     waitForStdout p = do
       (fdIn, fdOut) <- createPipe
+      pid <- getProcessID
       forkProcess $ do
-        link
+        link (fromIntegral pid)
         dupTo fdOut stdOutput
         hSetBuffering stdout LineBuffering
         p
