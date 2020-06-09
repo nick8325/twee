@@ -77,6 +77,7 @@ step1 _ eqns idx = joinWith eqns idx (\t _ -> normaliseWith (const True) (rewrit
 step2 _ eqns idx = joinWith eqns idx (\t _ -> normaliseWith (const True) (rewrite reduces (index_all idx)) t)
 step3 Config{..} eqns idx cp
   | not cfg_use_connectedness = Just cp
+  | tooBig cp = Nothing
   | otherwise =
     case cp_top cp of
       Just top ->
@@ -88,6 +89,10 @@ step3 Config{..} eqns idx cp
           _ -> Nothing
       _ -> Just cp
   where
+    tooBig CriticalPair{cp_top = Just top, cp_eqn = t :=: u} =
+      lessEq top t || lessEq top u
+    tooBig _ = False
+
     join (cp, top) =
       joinWith eqns idx (\t u -> normaliseWith (`lessThan` top) (rewrite (ok t u) (index_all idx)) t) cp
 

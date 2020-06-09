@@ -256,7 +256,7 @@ dequeue Config{..} state@State{..} =
               simplifyOverlap (index_oriented st_rules) overlap,
             fromMaybe True (cfg_accept_term <*> pure t),
             fromMaybe True (cfg_accept_term <*> pure u),
-            Just cp <- makeCriticalPair rule1 rule2 overlap ->
+            cp <- makeCriticalPair rule1 rule2 overlap ->
               return ((cp, rule1, rule2), n+1, queue)
         _ -> deq (n+1) queue
 
