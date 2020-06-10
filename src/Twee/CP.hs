@@ -66,7 +66,7 @@ newtype Depth = Depth Int deriving (Eq, Ord, Num, Real, Enum, Integral, Show)
 -- | Compute all overlaps of a rule with a set of rules.
 {-# INLINEABLE overlaps #-}
 overlaps ::
-  (Function f, Has a (Rule f), Has a (Positions f), Has a Depth) =>
+  forall a f. (Function f, Has a Id, Has a (Rule f), Has a (Positions f), Has a Depth) =>
   Depth -> Index f a -> [a] -> a -> [(a, a, Overlap f)]
 overlaps max_depth idx rules r =
   ChurchList.toList (overlapsChurch max_depth idx rules r)

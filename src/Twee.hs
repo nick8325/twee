@@ -597,8 +597,8 @@ interreduce1 config@Config{..} state active =
       message (DeleteActive active) $
       deleteActive state active
     Left (cp, model)
-      | not (cp_eqn cp `isInstanceOf` cp_eqn (active_cp active)) ->
-        flip (foldl' (addCP config model)) (split cp) $
+      | cp_eqn cp `simplerThan` cp_eqn (active_cp active) ->
+        flip (foldl' (consider config)) (split cp) $
         message (DeleteActive active) $
         deleteActive state active
       | model /= active_model active ->

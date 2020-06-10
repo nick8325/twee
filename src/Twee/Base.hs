@@ -12,7 +12,7 @@ module Twee.Base(
   -- * General-purpose functionality
   Id(..), Has(..),
   -- * Typeclasses
-  Minimal(..), minimalTerm, isMinimal, erase, ground,
+  Minimal(..), minimalTerm, isMinimal, erase, ground, skolemise,
   Skolem(..), Arity(..), Sized(..), Ordered(..), lessThan, orientTerms, EqualsBonus(..), Strictness(..), Function, Extended(..)) where
 
 import Prelude hiding (lookup)
@@ -198,6 +198,10 @@ class Skolem f where
   -- | Turn a variable into a Skolem constant.
   skolem  :: Var -> Fun f
   getSkolem :: Fun f -> Maybe Var
+
+-- | Replace all variables in the arguments with Skolem constants.
+skolemise :: (Symbolic a, ConstantOf a ~ f, Skolem f) => a -> a
+skolemise t = subst (con . skolem) t
 
 -- | For types which have a notion of arity.
 class Arity f where

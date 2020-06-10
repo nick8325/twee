@@ -37,7 +37,7 @@ order (l :=: r)
     case compare (size l) (size r) of
       LT -> r :=: l
       GT -> l :=: r
-      EQ -> if lessEq l r then r :=: l else l :=: r
+      EQ -> if lessEq (skolemise l) (skolemise r) then r :=: l else l :=: r
 
 -- | Apply a function to both sides of an equation.
 bothSides :: (Term f -> Term f') -> Equation f -> Equation f'
@@ -49,10 +49,8 @@ trivial (t :=: u) = t == u
 
 simplerThan :: Function f => Equation f -> Equation f -> Bool
 eq1 `simplerThan` eq2 =
-  t1 `lessEq` t2 &&
-  (isNothing (unify t1 t2) || (u1 `lessEq` u2))
+  --traceShow (hang (pPrint eq1) 2 (text "`simplerThan`" <+> pPrint eq2 <+> text "=" <+> pPrint res)) res
+  t1 `lessEq` t2 && (t1 /= t2 || ((u1 `lessEq` u2 && u1 /= u2)))
   where
-    t1 :=: u1 = skolemise eq1
-    t2 :=: u2 = skolemise eq2
-
-    skolemise = subst (con . skolem)
+    t1 :=: u1 = skolemise (canonicalise (order eq1))
+    t2 :=: u2 = skolemise (canonicalise (order eq2))
