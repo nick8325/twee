@@ -251,10 +251,8 @@ dequeue Config{..} state@State{..} =
     deq !n queue = do
       (passive, queue) <- Queue.removeMin queue
       case findPassive state passive of
-        Just (rule1, rule2, overlap)
-          | Just Overlap{overlap_eqn = t :=: u} <-
-              simplifyOverlap (index_oriented st_rules) overlap,
-            fromMaybe True (cfg_accept_term <*> pure t),
+        Just (rule1, rule2, overlap@Overlap{overlap_eqn = t :=: u})
+          | fromMaybe True (cfg_accept_term <*> pure t),
             fromMaybe True (cfg_accept_term <*> pure u),
             cp <- makeCriticalPair rule1 rule2 overlap ->
               return ((cp, rule1, rule2), n+1, queue)

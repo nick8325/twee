@@ -122,7 +122,7 @@ overlapAt !n !depth (Rule _ !outer !outer') (Rule _ !inner !inner') = do
 {-# INLINE simplifyOverlap #-}
 simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap f -> Maybe (Overlap f)
 simplifyOverlap idx overlap@Overlap{overlap_eqn = lhs :=: rhs, ..}
-  | lhs == rhs'  = Nothing
+  | lhs == rhs   = Nothing
   | lhs' == rhs' = Nothing
   | otherwise = Just overlap{overlap_eqn = lhs' :=: rhs'}
   where
