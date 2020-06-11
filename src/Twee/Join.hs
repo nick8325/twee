@@ -69,15 +69,29 @@ joinCriticalPair config eqns idx mmodel cp@CriticalPair{cp_eqn = t :=: u} =
 step1, step2, step3, allSteps ::
   (Function f, Has a (Rule f), Has a (Proof f)) =>
   Config -> Index f (Equation f) -> RuleIndex f a -> CriticalPair f -> Maybe (CriticalPair f)
+checkOrder :: Function f => CriticalPair f -> Maybe (CriticalPair f)
 allSteps config eqns idx cp =
   step1 config eqns idx cp >>=
   step2 config eqns idx >>=
+  checkOrder >>=
   step3 config eqns idx
-step1 _ eqns idx = joinWith eqns idx (\t _ -> normaliseWith (const True) (rewrite reducesOriented (index_oriented idx)) t)
-step2 _ eqns idx = joinWith eqns idx (\t _ -> normaliseWith (const True) (rewrite reduces (index_all idx)) t)
+checkOrder cp
+  | tooBig cp = Nothing
+  | otherwise = Just cp
+  where
+    tooBig CriticalPair{cp_top = Just top, cp_eqn = t :=: u} =
+      lessEq top t || lessEq top u
+    tooBig _ = False
+step1 _ eqns idx = joinWith eqns idx (\t u -> normaliseWith (const True) (rewrite (ok t u) (index_oriented idx)) t)
+  where
+    --ok _ _ = reducesOriented
+   ok t u rule sub = reducesOriented rule sub && unorient rule `simplerThan` (t :=: u)
+step2 _ eqns idx = joinWith eqns idx (\t u -> normaliseWith (const True) (rewrite (ok t u) (index_all idx)) t)
+  where
+    --ok _ _ = reduces
+    ok t u rule sub = reduces rule sub && unorient rule `simplerThan` (t :=: u)
 step3 Config{..} eqns idx cp
   | not cfg_use_connectedness = Just cp
-  | tooBig cp = Nothing
   | otherwise =
     case cp_top cp of
       Just top ->
@@ -89,10 +103,6 @@ step3 Config{..} eqns idx cp
           _ -> Nothing
       _ -> Just cp
   where
-    tooBig CriticalPair{cp_top = Just top, cp_eqn = t :=: u} =
-      lessEq top t || lessEq top u
-    tooBig _ = False
-
     join (cp, top) =
       joinWith eqns idx (\t u -> normaliseWith (`lessThan` top) (rewrite (ok t u) (index_all idx)) t) cp
 
@@ -166,17 +176,22 @@ groundJoinFrom ::
   (Function f, Has a (Rule f), Has a (Proof f)) =>
   Config -> Index f (Equation f) -> RuleIndex f a -> Model f -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
 groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :=: u, ..}
-  | not cfg_ground_join ||
-    (modelOK model && isJust (allSteps config' eqns idx cp { cp_eqn = t' :=: u' })) = Left model
+  | not cfg_ground_join = Left model
+  | modelOK model && isJust (allSteps config' eqns idx cp { cp_eqn = t' :=: u' }) = Left model
   | otherwise =
-      let model1 = optimise model weakenModel (\m -> not (modelOK m) || (valid m (reduction nt) && valid m (reduction nu)))
-          model2 = optimise model1 weakenModel (\m -> not (modelOK m) || isNothing (allSteps config' eqns idx cp { cp_eqn = result (normaliseIn m t u) :=: result (normaliseIn m u t) }))
+      let
+        model'
+          | modelOK model =
+            optimise weakenModel (\m -> modelOK m && isNothing (allSteps config' eqns idx cp { cp_eqn = result (normaliseIn m t u) :=: result (normaliseIn m u t) })) $
+            optimise weakenModel (\m -> modelOK m && (valid m (reduction nt) && valid m (reduction nu))) model
+          | otherwise =
+            optimise weakenModel (not . modelOK) model
 
-          diag [] = Or []
-          diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
-          weaken (LessEq t u) = Less t u
-          weaken x = x
-          ctx' = formAnd (diag (modelToLiterals model2)) ctx in
+        diag [] = Or []
+        diag (r:rs) = negateFormula r ||| (weaken r &&& diag rs)
+        weaken (LessEq t u) = Less t u
+        weaken x = x
+        ctx' = formAnd (diag (modelToLiterals model')) ctx in
 
       case groundJoin config eqns idx ctx' cp of
         Right (_, cps) | not (modelOK model) ->
@@ -194,12 +209,6 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
     t' = result nt
     u' = result nu
 
-    -- XXXXXXXX! Is it safe to add "ground connected" CPs to the
-    -- equation set???? Maybe not!
-
-    -- XXX not safe to exploit the top term if we then add the equation to
-    -- the joinable set. (It might then be used to join a CP with an entirely
-    -- different top term.)
     modelOK m =
       case cp_top of
         Nothing -> True
@@ -219,8 +228,8 @@ valid model red =
   and [ reducesInModel model rule sub
       | Step _ rule sub <- steps red ]
 
-optimise :: a -> (a -> [a]) -> (a -> Bool) -> a
-optimise x f p =
+optimise :: (a -> [a]) -> (a -> Bool) -> a -> a
+optimise f p x =
   case filter p (f x) of
-    y:_ -> optimise y f p
+    y:_ -> optimise f p y
     _   -> x

@@ -588,7 +588,7 @@ interreduce1 config@Config{..} state active =
   -- joinability, otherwise it will be trivially joinable.
   case
     joinCriticalPair cfg_join
-      (st_joinable state)
+      Index.empty -- (st_joinable state)
       (st_rules (deleteActive state active))
       (Just (active_model active)) (active_cp active)
   of
