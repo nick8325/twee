@@ -38,13 +38,13 @@ data MainFlags =
   MainFlags {
     flags_proof :: Bool,
     flags_trace :: Maybe (String, String),
-    flags_casc  :: Bool,
+    flags_formal_proof :: Bool,
     flags_explain_encoding :: Bool,
     flags_flip_ordering :: Bool }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> casc <*> explain <*> flipOrdering
+  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering
   where
     proof =
       inGroup "Output options" $
@@ -56,10 +56,10 @@ parseMainFlags =
       flag "trace"
         ["Write a Prolog-format execution trace to this file (off by default)."]
         Nothing ((\x y -> Just (x, y)) <$> argFile <*> argModule)
-    casc =
+    formal =
       expert $
       inGroup "Output options" $
-      bool "casc" ["Print output in CASC format (off by default)."] False
+      bool "formal-proof" ["Print proof as formal TSTP derivation (off by default)."] False
     explain =
       expert $
       inGroup "Output options" $
@@ -515,7 +515,7 @@ runTwee globals (TSTPFlags tstp) MainFlags{..} horn config precedence later obli
       sayTrace $ show $
         traceApp "lemma" [traceEqn (equation p)] <#> text "."
 
-    when (flags_casc && not tstp) $ do
+    when (tstp && not flags_formal_proof) $ do
       putStrLn "% SZS output start Proof"
       let
         axiomForms =
@@ -558,7 +558,7 @@ runTwee globals (TSTPFlags tstp) MainFlags{..} horn config precedence later obli
       putStrLn "% SZS output end Proof"
       putStrLn ""
   
-    when tstp $ do
+    when (tstp && flags_formal_proof) $ do
       putStrLn "% SZS output start CNFRefutation"
       print $ pPrintProof $
         presentToJukebox ctx (curry toEquation)
@@ -568,7 +568,7 @@ runTwee globals (TSTPFlags tstp) MainFlags{..} horn config precedence later obli
       putStrLn "% SZS output end CNFRefutation"
       putStrLn ""
 
-    when (not flags_casc) $ do
+    unless tstp $ do
       putStrLn "The conjecture is true! Here is a proof."
       putStrLn ""
       print $ pPrintPresentation (cfg_proof_presentation config) pres
