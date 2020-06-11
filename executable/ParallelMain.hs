@@ -35,8 +35,8 @@ raceStdout xs = do
       hIn <- fdToHandle fdIn
       hSetBuffering hIn LineBuffering
       line <- hGetLine hIn
-      putStrLn line
       return $ do
+        putStrLn line
         let
           loop = do
             line <- hGetLine hIn
