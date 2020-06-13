@@ -47,9 +47,14 @@ raceStdout xs = do
 
 variants :: [[String]]
 variants =
-  concat $ repeat
-  [["--lhs-weight", "3"],
-   ["--lhs-weight", "4", "--flip-ordering"]]
+  [["--normalise-queue-percent", "10", "--cp-renormalise-threshold", "10", "--flip-ordering", "--lhs-weight", "4"],
+   ["--normalise-queue-percent", "10", "--cp-renormalise-threshold", "10", "--flip-ordering", "--lhs-weight", "9"],
+   ["--lhs-weight", "1", "--flip-ordering"],
+   ["--lhs-weight", "4"],
+   ["--lhs-weight", "5"],
+   ["--normalise-queue-percent", "10", "--cp-renormalise-threshold", "10", "--dup-cost", "0", "--dup-factor", "7"],
+   ["--no-simplify"],
+   ["--normalise-queue-percent", "10", "--cp-renormalise-threshold", "10", "--depth-weight", "0"]]
 
 main = do
   hSetBuffering stdout LineBuffering
