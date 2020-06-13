@@ -11,10 +11,7 @@ running:
     cabal install twee -fllvm
 
 If you really want the latest unstable version, run
-`cabal install src/ .` in this repository. You will most likely need
-the latest git version of Jukebox, from
-https://github.com/nick8325/jukebox, too - and things may break from
-time to time.
+`cabal install src/ .` in this repository. 
 
 Afterwards, run `twee nameofproblem.p`. The problem should be in TPTP
 format (http://www.tptp.org). You can find a few examples in the
