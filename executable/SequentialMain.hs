@@ -40,11 +40,12 @@ data MainFlags =
     flags_trace :: Maybe (String, String),
     flags_formal_proof :: Bool,
     flags_explain_encoding :: Bool,
-    flags_flip_ordering :: Bool }
+    flags_flip_ordering :: Bool,
+    flags_give_up_on_saturation :: Bool }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering
+  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp
   where
     proof =
       inGroup "Output options" $
@@ -68,6 +69,10 @@ parseMainFlags =
       expert $
       inGroup "Term order options" $
       bool "flip-ordering" ["Make more common function symbols larger (off by default)."] False
+    giveUp =
+      expert $
+      inGroup "Output options" $
+      bool "give-up-on-saturation" ["Report SZS status GiveUp rather than Unsatisfiable on saturation (off by default)."] False
         
     argModule = arg "<module>" "expected a Prolog module name" Just
 
@@ -607,7 +612,7 @@ runTwee globals (TSTPFlags tstp) MainFlags{..} horn config precedence later obli
 
   return $
     if solved state then Unsat Unsatisfiable Nothing
-    else if configIsComplete config && not (dropNonHorn horn) then Sat Satisfiable Nothing
+    else if configIsComplete config && not (dropNonHorn horn) && not flags_give_up_on_saturation then Sat Satisfiable Nothing
     else NoAnswer GaveUp
 
 -- Transform a proof presentation into a Jukebox proof.
