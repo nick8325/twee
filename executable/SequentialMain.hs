@@ -412,8 +412,8 @@ identifyProblem TweeContext{..} prob =
       return $ Left (pre inp (Jukebox.Var ctx_var, ctx_minimal :@: []))
     identify inp = Left inp
 
-runTwee :: GlobalFlags -> TSTPFlags -> MainFlags -> HornFlags -> Config (Extended Constant) -> [String] -> (IO () -> IO ()) -> Problem Clause -> IO Answer
-runTwee globals (TSTPFlags tstp) MainFlags{..} horn config precedence later obligs = {-# SCC runTwee #-} do
+runTwee :: GlobalFlags -> TSTPFlags -> HornFlags -> [String] -> Config (Extended Constant) -> MainFlags -> (IO () -> IO ()) -> Problem Clause -> IO Answer
+runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obligs = {-# SCC runTwee #-} do
   let
     -- Encode whatever needs encoding in the problem
     ctx = makeContext obligs
@@ -720,14 +720,23 @@ main = do
          forAllConjecturesBox <*>
            (combine <$>
              expert hornToUnitBox <*>
+             parseConfig <*>
+             parseMainFlags <*>
              (toFormulasBox =>>=
               expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
               expert clausifyBox =>>= expert oneConjectureBox) <*>
-             (runTwee <$> globalFlags <*> tstpFlags <*> parseMainFlags <*> expert hornFlags <*> parseConfig <*> parsePrecedence)))
+             (runTwee <$> globalFlags <*> tstpFlags <*> expert hornFlags <*> parsePrecedence)))
   where
-    combine horn encode prove later prob = do
-      res <- horn prob
+    combine horn config main encode prove later prob0 = do
+      res <- horn prob0
       case res of
         Left ans -> return ans
-        Right prob ->
-          encode prob >>= prove later
+        Right prob -> do
+          let
+            isUnitEquality [Pos (_ Jukebox.:=: _)] = True
+            isUnitEquality [Neg (_ Jukebox.:=: _)] = True
+            isUnitEquality _ = False
+            isUnit = all isUnitEquality (map (toLiterals . what) prob0)
+            main' = if isUnit then main else main{flags_formal_proof = False}
+            config' = if not isUnit then config else config{cfg_proof_presentation = (cfg_proof_presentation config){cfg_all_lemmas = True}}
+          encode prob >>= prove config' main' later
