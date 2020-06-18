@@ -460,7 +460,7 @@ reducesWith p (Rule (Permutative ts) _ _) sub =
         t' = subst sub t
         u' = subst sub u
 reducesWith p (Rule Unoriented t u) sub =
-  p u' t' && u' /= t'
+  t' /= u' && p u' t'
   where
     t' = subst sub t
     u' = subst sub u
