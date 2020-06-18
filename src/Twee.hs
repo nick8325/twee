@@ -449,12 +449,11 @@ considerUsing rules config@Config{..} state@State{..} cp0 =
 {-# INLINEABLE addCP #-}
 addCP :: Function f => Config f -> Model f -> State f -> CriticalPair f -> State f
 addCP config model state@State{..} CriticalPair{..} =
-  addActive config state $ \n k1 k2 ->
   let
     pf = certify cp_proof
     rule = orient cp_eqn
 
-    makeRule k r p =
+    makeRule n k r p =
       ActiveRule {
         rule_active = n,
         rule_rid = k,
@@ -463,6 +462,7 @@ addCP config model state@State{..} CriticalPair{..} =
         rule_proof = p pf,
         rule_positions = positions (lhs (r rule)) }
   in
+  addActive config state $ \n k1 k2 ->
   Active {
     active_id = n,
     active_depth = cp_depth,
@@ -472,8 +472,8 @@ addCP config model state@State{..} CriticalPair{..} =
     active_proof = pf,
     active_rules =
       usortBy (comparing (canonicalise . rule_rule)) $
-        makeRule k1 id id:
-        [ makeRule k2 backwards (certify . symm . derivation)
+        makeRule n k1 id id:
+        [ makeRule n k2 backwards (certify . symm . derivation)
         | not (oriented (orientation rule)) ] }
 
 -- Add a new equation.
