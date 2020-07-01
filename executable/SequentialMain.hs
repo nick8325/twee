@@ -60,7 +60,7 @@ parseMainFlags =
     formal =
       expert $
       inGroup "Output options" $
-      bool "formal-proof" ["Print proof as formal TSTP derivation (off by default)."] False
+      bool "formal-proof" ["Print proof as formal TSTP derivation (requires --tstp; off by default)."] False
     explain =
       expert $
       inGroup "Output options" $
@@ -513,7 +513,12 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
 
   when (solved state && flags_proof) $ later $ do
     let
-      pres = present (cfg_proof_presentation config) (solutions state)
+      cfg_present
+        | tstp && flags_formal_proof =
+          (cfg_proof_presentation config){cfg_all_lemmas = True}
+        | otherwise =
+          cfg_proof_presentation config
+      pres = present cfg_present (solutions state)
 
     sayTrace ""
     forM_ (pres_lemmas pres) $ \p ->
@@ -738,5 +743,4 @@ main = do
             isUnitEquality _ = False
             isUnit = all isUnitEquality (map (toLiterals . what) prob0)
             main' = if isUnit then main else main{flags_formal_proof = False}
-            config' = if not isUnit then config else config{cfg_proof_presentation = (cfg_proof_presentation config){cfg_all_lemmas = True}}
-          encode prob >>= prove config' main' later
+          encode prob >>= prove config main' later
