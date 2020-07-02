@@ -8,8 +8,8 @@ import Data.IORef
 import System.IO.Unsafe
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
-import qualified Data.IntMap.Strict as IntMap
-import Data.IntMap.Strict(IntMap)
+import qualified Data.DynamicArray as DynamicArray
+import Data.DynamicArray(Array)
 import Data.Typeable
 import GHC.Exts
 import Unsafe.Coerce
@@ -30,7 +30,7 @@ unsafeMkLabel = Label
 -- The global cache of labels.
 {-# NOINLINE cachesRef #-}
 cachesRef :: IORef Caches
-cachesRef = unsafePerformIO (newIORef (Caches 0 Map.empty IntMap.empty))
+cachesRef = unsafePerformIO (newIORef (Caches 0 Map.empty DynamicArray.newArray))
 
 data Caches =
   Caches {
@@ -39,7 +39,7 @@ data Caches =
     -- A map from values to labels.
     caches_from   :: !(Map TypeRep (Cache Any)),
     -- The reverse map from labels to values.
-    caches_to     :: !(IntMap Any) }
+    caches_to     :: !(Array Any) }
 
 type Cache a = Map a Int32
 
@@ -105,7 +105,7 @@ label x =
       (caches {
          caches_nextId = n+1,
          caches_from = Map.insert ty (toAnyCache (Map.insert x n cache)) caches_from,
-         caches_to = IntMap.insert (fromIntegral n) (toAny x) caches_to },
+         caches_to = DynamicArray.updateWithDefault undefined (fromIntegral n) (toAny x) caches_to },
        Label n)
       where
         n = caches_nextId
@@ -121,5 +121,5 @@ find :: Label a -> a
 -- doesn't work.
 find (Label !n) = unsafeDupablePerformIO $ do
   Caches{..} <- readIORef cachesRef
-  x <- return $! fromAny (IntMap.findWithDefault undefined (fromIntegral n) caches_to)
+  x <- return $! fromAny (DynamicArray.getWithDefault undefined (fromIntegral n) caches_to)
   return x

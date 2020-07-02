@@ -41,24 +41,33 @@ instance Show a => Show (Array a) where
     "}"
 
 -- | Create an empty array.
-newArray :: Default a => Array a
+newArray :: Array a
 newArray = runST $ do
-  marr <- P.newSmallArray 0 def
+  marr <- P.newSmallArray 0 undefined
   arr  <- P.unsafeFreezeSmallArray marr
   return (Array 0 arr)
 
 -- | Index into an array. O(1) time.
 {-# INLINE (!) #-}
 (!) :: Default a => Array a -> Int -> a
-arr ! n
+arr ! n = getWithDefault def n arr
+
+-- | Index into an array. O(1) time.
+{-# INLINE getWithDefault #-}
+getWithDefault :: a -> Int -> Array a -> a
+getWithDefault def n arr
   | 0 <= n && n < arraySize arr =
     P.indexSmallArray (arrayContents arr) n
   | otherwise = def
 
 -- | Update the array. O(n) time.
-{-# INLINEABLE update #-}
+{-# INLINE update #-}
 update :: Default a => Int -> a -> Array a -> Array a
-update n x arr = runST $ do
+update n x arr = updateWithDefault def n x arr
+
+{-# INLINEABLE updateWithDefault #-}
+updateWithDefault :: a -> Int -> a -> Array a -> Array a
+updateWithDefault def n x arr = runST $ do
   let size = arraySize arr `max` (n+1)
   marr <- P.newSmallArray size def
   P.copySmallArray marr 0 (arrayContents arr) 0 (arraySize arr)
