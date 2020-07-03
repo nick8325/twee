@@ -12,6 +12,7 @@ import Data.Maybe
 import Control.Monad
 
 -- | Check if one term is less than another in KBO.
+{-# SCC lessEq #-}
 lessEq :: Function f => Term f -> Term f -> Bool
 lessEq (App f Empty) _ | f == minimal = True
 lessEq (Var x) (Var y) | x == y = True
@@ -43,6 +44,7 @@ lessEq t@(App f ts) u@(App g us) =
 
 -- See "notes/kbo under assumptions" for how this works.
 
+{-# SCC lessIn #-}
 lessIn :: Function f => Model f -> Term f -> Term f -> Maybe Strictness
 lessIn model t u =
   case sizeLessIn model t u of

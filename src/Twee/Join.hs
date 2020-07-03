@@ -32,6 +32,7 @@ defaultConfig =
     cfg_set_join = False }
 
 {-# INLINEABLE joinCriticalPair #-}
+{-# SCC joinCriticalPair #-}
 joinCriticalPair ::
   (Function f, Has a (Rule f), Has a (Proof f)) =>
   Config ->
@@ -48,7 +49,6 @@ joinCriticalPair ::
     -- after successfully joining all instances.
     (Maybe (CriticalPair f), [CriticalPair f])
 joinCriticalPair config eqns idx mmodel cp@CriticalPair{cp_eqn = t :=: u} =
-  {-# SCC joinCriticalPair #-}
   case allSteps config eqns idx cp of
     Nothing ->
       Right (Nothing, [])

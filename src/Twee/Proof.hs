@@ -82,9 +82,9 @@ data Axiom f =
 
 -- This is the trusted core of the module.
 {-# INLINEABLE certify #-}
+{-# SCC certify #-}
 certify :: PrettyTerm f => Derivation f -> Proof f
 certify p =
-  {-# SCC certify #-}
   case check p of
     Nothing -> error ("Invalid proof created!\n" ++ prettyShow p)
     Just eqn -> Proof eqn p

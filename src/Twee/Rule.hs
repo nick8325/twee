@@ -177,12 +177,9 @@ backwards (Rule or t u) = Rule (back or) u t
 
 -- | Compute the normal form of a term wrt only oriented rules.
 {-# INLINEABLE simplify #-}
+{-# SCC simplify #-}
 simplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
-simplify !idx !t = {-# SCC simplify #-} simplify1 idx t
-
-{-# INLINEABLE simplify1 #-}
-simplify1 :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
-simplify1 idx t
+simplify !idx !t
   | t == u = t
   | otherwise = simplify idx u
   where
@@ -202,13 +199,14 @@ canSimplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Bool
 canSimplify idx t = canSimplifyList idx (singleton t)
 
 {-# INLINEABLE canSimplifyList #-}
+{-# SCC canSimplifyList #-}
 canSimplifyList :: (Function f, Has a (Rule f)) => Index f a -> TermList f -> Bool
 canSimplifyList idx t =
-  {-# SCC canSimplifyList #-}
   any (isJust . simpleRewrite idx) (filter isApp (subtermsList t))
 
 -- | Find a simplification step that applies to a term.
 {-# INLINEABLE simpleRewrite #-}
+{-# SCC simpleRewrite #-}
 simpleRewrite :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Maybe (Rule f, Subst f)
 simpleRewrite idx t =
   -- Use instead of maybeToList to make fusion work
@@ -324,7 +322,7 @@ reduce p =
   where
     res (Trans _ q) = res q
     res (Refl t) = t
-    res p = {-# SCC res_emitRes #-} build (emitResult p)
+    res p = build (emitResult p)
 
     emitResult (Step _ r sub) = Term.subst sub (rhs r)
     emitResult (Refl t) = builder t
@@ -337,8 +335,9 @@ reduce p =
 
 -- | Normalise a term wrt a particular strategy.
 {-# INLINE normaliseWith #-}
+{-# SCC normaliseWith #-}
 normaliseWith :: Function f => (Term f -> Bool) -> Strategy f -> Term f -> Resulting f
-normaliseWith ok strat t = {-# SCC normaliseWith #-} res
+normaliseWith ok strat t = res
   where
     res = aux 0 (Refl t) t
     aux 1000 p _ =
@@ -363,10 +362,11 @@ successors strat ps =
     (qs, rs) = successorsAndNormalForms strat ps
 
 {-# INLINEABLE successorsAndNormalForms #-}
+{-# SCC successorsAndNormalForms #-}
 successorsAndNormalForms :: Function f => Strategy f -> Set (Resulting f) ->
   (Set (Resulting f), Set (Resulting f))
 successorsAndNormalForms strat ps =
-  {-# SCC successorsAndNormalForms #-} go Set.empty Set.empty ps
+  go Set.empty Set.empty ps
   where
     go dead norm ps =
       case Set.minView ps of

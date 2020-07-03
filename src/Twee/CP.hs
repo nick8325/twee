@@ -98,17 +98,17 @@ asymmetricOverlaps idx depth posns r1 r2 = do
 -- | Create an overlap at a particular position in a term.
 -- Doesn't simplify the overlap.
 {-# INLINE overlapAt #-}
+{-# SCC overlapAt #-}
 overlapAt :: Int -> Depth -> Rule f -> Rule f -> Maybe (Overlap f)
 overlapAt !n !depth (Rule _ !outer !outer') (Rule _ !inner !inner') = do
   let t = at n (singleton outer)
   sub <- unifyTri inner t
   let
-    top = {-# SCC overlap_top #-} termSubst sub outer
-    innerTerm = {-# SCC overlap_inner #-} termSubst sub inner
+    top = termSubst sub outer
+    innerTerm = termSubst sub inner
     -- Make sure to keep in sync with overlapProof
-    lhs = {-# SCC overlap_eqn_1 #-} termSubst sub outer'
-    rhs = {-# SCC overlap_eqn_2 #-}
-      buildReplacePositionSub sub n (singleton inner') (singleton outer)
+    lhs = termSubst sub outer'
+    rhs = buildReplacePositionSub sub n (singleton inner') (singleton outer)
 
   guard (lhs /= rhs)
   return Overlap {

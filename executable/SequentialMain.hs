@@ -239,8 +239,8 @@ instance PrettyTerm Constant where
         _ -> uncurried
 
 instance Ordered (Extended Constant) where
-  lessEq t u = {-# SCC lessEq #-} KBO.lessEq t u
-  lessIn model t u = {-# SCC lessIn #-} KBO.lessIn model t u
+  lessEq t u = KBO.lessEq t u
+  lessIn model t u = KBO.lessIn model t u
 
 instance EqualsBonus Constant where
   hasEqualsBonus = con_bonus

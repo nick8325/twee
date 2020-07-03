@@ -98,13 +98,15 @@ data Stack f a =
   | Stop
 
 -- Turn a stack into a list of results.
+{-# SCC run #-}
 run :: Stack f a -> [a]
 run Stop = []
-run Frame{..} = run ({-# SCC run_inner #-} step frame_term frame_index frame_rest)
-run Yield{..} = {-# SCC run_found #-} yield_found ++ run yield_rest
+run Frame{..} = run (step frame_term frame_index frame_rest)
+run Yield{..} = yield_found ++ run yield_rest
 
 -- Execute a single stack frame.
 {-# INLINE step #-}
+{-# SCC step #-}
 step :: TermList f -> Index f a -> Stack f a -> Stack f a
 step !_ _ _ | False = undefined
 step t idx rest =
@@ -195,8 +197,9 @@ singletonList :: TermList f -> a -> Index f a
 singletonList t x = Index 0 t [x] newArray Nil
 
 -- | Insert an entry into the index.
+{-# SCC insert #-}
 insert :: Term f -> a -> Index f a -> Index f a
-insert !t x !idx = {-# SCC insert #-} aux (Term.singleton t) idx
+insert !t x !idx = aux (Term.singleton t) idx
   where
     aux t Nil = singletonList t x
     aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
@@ -248,8 +251,9 @@ expand idx@Index{size = size, prefix = ConsSym t ts} =
 
 -- | Delete an entry from the index.
 {-# INLINEABLE delete #-}
+{-# SCC delete #-}
 delete :: Eq a => Term f -> a -> Index f a -> Index f a
-delete !t x !idx = {-# SCC delete #-} aux (Term.singleton t) idx
+delete !t x !idx = aux (Term.singleton t) idx
   where
     aux _ Nil = Nil
     aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
@@ -299,9 +303,9 @@ matchesList t idx =
 approxMatches :: Term f -> Index f a -> [a]
 approxMatches t idx = approxMatchesList (Term.singleton t) idx
 
+{-# SCC approxMatchesList #-}
 approxMatchesList :: TermList f -> Index f a -> [a]
 approxMatchesList t idx =
-  {-# SCC approxMatchesList #-}
   run (Frame t idx Stop)
 
 -- | Return all elements of the index.
