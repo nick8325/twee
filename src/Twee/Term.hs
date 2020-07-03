@@ -303,7 +303,7 @@ canonicalise (t:ts) = loop emptySubst vars t ts
         Nothing  -> loop sub vs0 t ts
 
 -- | The empty substitution.
-{-# NOINLINE emptySubst #-}
+emptySubst :: Subst f
 emptySubst = Subst IntMap.empty
 
 -- | Construct a substitution from a list.
