@@ -69,7 +69,7 @@ library
     dlist,
     pretty >= 1.1.2.0,
     ghc-prim,
-    primitive >= 0.6.2.0,
+    primitive >= 0.7.1.0,
     vector,
     uglymemo,
     random

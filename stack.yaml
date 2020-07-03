@@ -7,3 +7,4 @@ packages:
 extra-deps:
 - jukebox-0.4.4
 - minisat-0.1.2
+- primitive-0.7.1.0

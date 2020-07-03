@@ -10,7 +10,7 @@
 #endif
 module Twee.Term.Core where
 
-import Data.Primitive(sizeOf)
+import Data.Primitive(sizeOf, compareByteArrays)
 #ifdef BOUNDS_CHECKS
 import Data.Primitive.ByteArray.Checked
 #else
@@ -233,29 +233,12 @@ singleton Term{..} = termlist
 -- comparing Int64s instead of Symbols.
 instance Eq (TermList f) where
   -- Manual worker-wrapper to prevent too much from being inlined.
-  t == u = eqTermList t u
-
-{-# INLINE eqTermList #-}
-eqTermList :: TermList f -> TermList f -> Bool
-eqTermList
-  (TermList (I# low1) (I# high1) (ByteArray array1))
-  (TermList (I# low2) (I# high2) (ByteArray array2)) =
-    weqTermList low1 high1 array1 low2 high2 array2
-
--- Manually worker-wrapper transform the thing, ugh...
-{-# NOINLINE weqTermList #-}
-weqTermList ::
-  Int# -> Int# -> ByteArray# ->
-  Int# -> Int# -> ByteArray# ->
-  Bool
-weqTermList low1 high1 array1 low2 high2 array2 =
-  lenList t == lenList u && eqSameLength t u
-  where
-    t = TermList (I# low1) (I# high1) (ByteArray array1)
-    u = TermList (I# low2) (I# high2) (ByteArray array2)
-    eqSameLength Empty !_ = True
-    eqSameLength (ConsSym s1 t) (UnsafeConsSym s2 u) =
-      root s1 == root s2 && eqSameLength t u
+  t == u =
+    lenList t == lenList u &&
+    compareByteArrays (array t) (low t * k)
+      (array u) (low u * k) ((high t - low t) * k) == EQ
+    where
+      k = sizeOf (fromSymbol undefined)
 
 instance Ord (TermList f) where
   {-# INLINE compare #-}
@@ -417,9 +400,8 @@ isSubArrayOf :: TermList f -> TermList f -> Bool
 isSubArrayOf t u =
   lenList t <= lenList u && (here t u || next t u)
   where
-    here Empty _ = True
-    here (ConsSym s1 t) (UnsafeConsSym s2 u) =
-      root s1 == root s2 && here t u
+    here t u =
+      t == u{high = low u + high t - low t}
 
     -- This is safe because lenList t <= lenList u
     -- so if u = Empty, then t = Empty and here t u = True.
