@@ -1,9 +1,10 @@
 -- | An implementation of Knuth-Bendix ordering.
 
 {-# LANGUAGE PatternGuards #-}
-module Twee.KBO(lessEq, lessIn) where
+module Twee.KBO(lessEq, lessIn, Sized(..)) where
 
 import Twee.Base hiding (lessEq, lessIn)
+import Twee.Equation
 import Data.List
 import Twee.Constraints hiding (lessEq, lessIn)
 import qualified Data.Map.Strict as Map
@@ -13,7 +14,7 @@ import Control.Monad
 
 -- | Check if one term is less than another in KBO.
 {-# SCC lessEq #-}
-lessEq :: Function f => Term f -> Term f -> Bool
+lessEq :: (Function f, Sized f) => Term f -> Term f -> Bool
 lessEq (App f Empty) _ | f == minimal = True
 lessEq (Var x) (Var y) | x == y = True
 lessEq _ (Var _) = False
@@ -45,14 +46,14 @@ lessEq t@(App f ts) u@(App g us) =
 -- See "notes/kbo under assumptions" for how this works.
 
 {-# SCC lessIn #-}
-lessIn :: Function f => Model f -> Term f -> Term f -> Maybe Strictness
+lessIn :: (Function f, Sized f) => Model f -> Term f -> Term f -> Maybe Strictness
 lessIn model t u =
   case sizeLessIn model t u of
     Nothing -> Nothing
     Just Strict -> Just Strict
     Just Nonstrict -> lexLessIn model t u
 
-sizeLessIn :: Function f => Model f -> Term f -> Term f -> Maybe Strictness
+sizeLessIn :: (Function f, Sized f) => Model f -> Term f -> Term f -> Maybe Strictness
 sizeLessIn model t u =
   case minimumIn model m of
     Just l
@@ -67,7 +68,7 @@ sizeLessIn model t u =
     addSize op (App f _) (k, m) = (k + op (size f), m)
     addSize op (Var x) (k, m) = (k, Map.insertWith (+) x (op 1) m)
 
-minimumIn :: Function f => Model f -> Map Var Int -> Maybe Int
+minimumIn :: (Function f, Sized f) => Model f -> Map Var Int -> Maybe Int
 minimumIn model t =
   liftM2 (+)
     (fmap sum (mapM minGroup (varGroups model)))
@@ -92,7 +93,7 @@ minimumIn model t =
       | k < 0 = Nothing
       | otherwise = Just k
 
-lexLessIn :: Function f => Model f -> Term f -> Term f -> Maybe Strictness
+lexLessIn :: (Function f, Sized f) => Model f -> Term f -> Term f -> Maybe Strictness
 lexLessIn _ t u | t == u = Just Nonstrict
 lexLessIn cond t u
   | Just a <- fromTerm t,
@@ -121,3 +122,28 @@ lexLessIn cond (App f ts) (App g us)
     loop _ _ = error "incorrect function arity"
 lexLessIn _ t _ | isMinimal t = Just Nonstrict
 lexLessIn _ _ _ = Nothing
+
+class Sized a where
+  -- | Compute the size.
+  size  :: a -> Int
+
+instance (Labelled f, Sized f) => Sized (Fun f) where
+  size = size . fun_value
+
+instance (Labelled f, Sized f) => Sized (TermList f) where
+  size = aux 0
+    where
+      aux n Empty = n
+      aux n (ConsSym (App f _) t) = aux (n+size f) t
+      aux n (Cons (Var _) t) = aux (n+1) t
+
+instance (Labelled f, Sized f) => Sized (Term f) where
+  size = size . singleton
+
+instance Sized f => Sized (Extended f) where
+  size (Function f) = size f
+  size _ = 1
+
+instance (Labelled f, Sized f) => Sized (Equation f) where
+  size (x :=: y) = size x + size y
+

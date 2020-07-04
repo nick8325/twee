@@ -3,7 +3,6 @@
 module Twee.Equation where
 
 import Twee.Base
-import Data.Maybe
 import Control.Monad
 
 --------------------------------------------------------------------------------
@@ -25,19 +24,13 @@ instance Symbolic (Equation f) where
 instance PrettyTerm f => Pretty (Equation f) where
   pPrint (x :=: y) = pPrint x <+> text "=" <+> pPrint y
 
-instance (Labelled f, Sized f) => Sized (Equation f) where
-  size (x :=: y) = size x + size y
-
 -- | Order an equation roughly left-to-right.
 -- However, there is no guarantee that the result is oriented.
 order :: Function f => Equation f -> Equation f
 order (l :=: r)
   | l == r = l :=: r
-  | otherwise =
-    case compare (size l) (size r) of
-      LT -> r :=: l
-      GT -> l :=: r
-      EQ -> if lessEq (skolemise l) (skolemise r) then r :=: l else l :=: r
+  | lessEq (skolemise l) (skolemise r) = r :=: l
+  | otherwise = l :=: r
 
 -- | Apply a function to both sides of an equation.
 bothSides :: (Term f -> Term f') -> Equation f -> Equation f'

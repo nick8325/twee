@@ -180,18 +180,18 @@ score Config{..} Overlap{..} =
     size' !n Empty = n
     size' n (Cons t ts)
       | len t > 1, t `isSubtermOfList` ts =
-        size' (n+cfg_dupcost+cfg_dupfactor*size t) ts
+        size' (n+cfg_dupcost+cfg_dupfactor*len t) ts
     size' n ts
       | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
         not (isVar a),
         not (isVar b),
         hasEqualsBonus (fun_value f),
         Just sub <- unify a b =
-        size' (n+cfg_funweight*size f) ws `min`
+        size' (n+cfg_funweight) ws `min`
         size' (size' (n+1) (subst sub us)) (subst sub vs)
     size' n (Cons (Var _) ts) =
       size' (n+cfg_varweight) ts
-    size' n (ConsSym (App f _) ts) =
+    size' n (ConsSym (App _ _) ts) =
       size' (n+cfg_funweight) ts
 
 ----------------------------------------------------------------------

@@ -86,7 +86,7 @@ parseConfig =
     maxSize =
       inGroup "Resource limits" $
       flag "max-term-size" ["Discard rewrite rules whose left-hand side is bigger than this limit (unlimited by default)."] Nothing (Just <$> checkSize <$> argNum)
-    checkSize n t = size t <= n
+    checkSize n t = KBO.size t <= n
     maxCPs =
       inGroup "Resource limits" $
       flag "max-cps" ["Give up after considering this many critical pairs (unlimited by default)."] maxBound argNum
@@ -224,7 +224,7 @@ instance Labelled Constant where
   label = fromIntegral . Label.labelNum . Label.label
   find = Label.find . Label.unsafeMkLabel . fromIntegral
 
-instance Sized Constant where
+instance KBO.Sized Constant where
   size Constant{..} = con_size
 instance Arity Constant where
   arity Constant{..} = con_arity
@@ -592,8 +592,8 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
     let
       state' = interreduce config state
       score rule =
-        (size (lhs rule), lhs rule,
-         size (rhs rule), rhs rule)
+        (KBO.size (lhs rule), lhs rule,
+         KBO.size (rhs rule), rhs rule)
       actives =
         sortBy (comparing (score . active_rule)) $
         IntMap.elems (st_active_ids state')

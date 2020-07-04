@@ -13,7 +13,7 @@ module Twee.Base(
   Id(..), Has(..),
   -- * Typeclasses
   Minimal(..), minimalTerm, isMinimal, erase, ground, skolemise,
-  Skolem(..), Arity(..), Sized(..), Ordered(..), lessThan, orientTerms, EqualsBonus(..), Strictness(..), Function, Extended(..)) where
+  Skolem(..), Arity(..), Ordered(..), lessThan, orientTerms, EqualsBonus(..), Strictness(..), Function, Extended(..)) where
 
 import Prelude hiding (lookup)
 import Control.Monad
@@ -212,26 +212,9 @@ instance (Labelled f, Arity f) => Arity (Fun f) where
   arity = arity . fun_value
 
 -- | For types which have a notion of size.
-class Sized a where
-  -- | Compute the size.
-  size  :: a -> Int
-
-instance (Labelled f, Sized f) => Sized (Fun f) where
-  size = size . fun_value
-
-instance (Labelled f, Sized f) => Sized (TermList f) where
-  size = aux 0
-    where
-      aux n Empty = n
-      aux n (ConsSym (App f _) t) = aux (n+size f) t
-      aux n (Cons (Var _) t) = aux (n+1) t
-
-instance (Labelled f, Sized f) => Sized (Term f) where
-  size = size . singleton
-
 -- | The collection of constraints which the type of function symbols must
 -- satisfy in order to be used by twee.
-type Function f = (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f, EqualsBonus f, Labelled f)
+type Function f = (Ordered f, Arity f, Minimal f, Skolem f, PrettyTerm f, EqualsBonus f, Labelled f)
 
 -- | A hack for encoding Horn clauses. See 'Twee.CP.Score'.
 -- The default implementation of 'hasEqualsBonus' should work OK.
@@ -268,10 +251,6 @@ instance Pretty f => Pretty (Extended f) where
 instance PrettyTerm f => PrettyTerm (Extended f) where
   termStyle (Function f) = termStyle f
   termStyle _ = uncurried
-
-instance Sized f => Sized (Extended f) where
-  size (Function f) = size f
-  size _ = 1
 
 instance Arity f => Arity (Extended f) where
   arity (Function f) = arity f
