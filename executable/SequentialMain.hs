@@ -32,7 +32,7 @@ import qualified Data.IntMap.Strict as IntMap
 import System.IO
 import System.Exit
 import qualified Data.Set as Set
-import Twee.Label
+import qualified Twee.Label as Label
 
 data MainFlags =
   MainFlags {
@@ -220,6 +220,10 @@ data Constant =
 data Precedence = Precedence !Bool !Bool !(Maybe Int) !Int
   deriving (Eq, Ord)
 
+instance Labelled Constant where
+  label = fromIntegral . Label.labelNum . Label.label
+  find = Label.find . Label.unsafeMkLabel . fromIntegral
+
 instance Sized Constant where
   size Constant{..} = con_size
 instance Arity Constant where
@@ -298,7 +302,7 @@ tweeTerm :: HornFlags -> TweeContext -> (Jukebox.Function -> Precedence) -> Juke
 tweeTerm flags ctx prec t = build (tm t)
   where
     tm (Jukebox.Var (x ::: _)) =
-      var (V (fromIntegral (labelNum (label x))))
+      var (V (fromIntegral (Label.labelNum (Label.label x))))
     tm (f :@: ts) =
       app (fun (tweeConstant flags ctx (prec f) f)) (map tm ts)
 

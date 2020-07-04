@@ -208,7 +208,7 @@ class Arity f where
   -- | Measure the arity.
   arity :: f -> Int
 
-instance Arity f => Arity (Fun f) where
+instance (Labelled f, Arity f) => Arity (Fun f) where
   arity = arity . fun_value
 
 -- | For types which have a notion of size.
@@ -216,22 +216,22 @@ class Sized a where
   -- | Compute the size.
   size  :: a -> Int
 
-instance Sized f => Sized (Fun f) where
+instance (Labelled f, Sized f) => Sized (Fun f) where
   size = size . fun_value
 
-instance Sized f => Sized (TermList f) where
+instance (Labelled f, Sized f) => Sized (TermList f) where
   size = aux 0
     where
       aux n Empty = n
       aux n (ConsSym (App f _) t) = aux (n+size f) t
       aux n (Cons (Var _) t) = aux (n+1) t
 
-instance Sized f => Sized (Term f) where
+instance (Labelled f, Sized f) => Sized (Term f) where
   size = size . singleton
 
 -- | The collection of constraints which the type of function symbols must
 -- satisfy in order to be used by twee.
-type Function f = (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f, EqualsBonus f)
+type Function f = (Ordered f, Arity f, Sized f, Minimal f, Skolem f, PrettyTerm f, EqualsBonus f, Labelled f)
 
 -- | A hack for encoding Horn clauses. See 'Twee.CP.Score'.
 -- The default implementation of 'hasEqualsBonus' should work OK.
@@ -243,7 +243,7 @@ class EqualsBonus f where
   isTrue _ = False
   isFalse _ = False
 
-instance EqualsBonus f => EqualsBonus (Fun f) where
+instance (Labelled f, EqualsBonus f) => EqualsBonus (Fun f) where
   hasEqualsBonus = hasEqualsBonus . fun_value
   isEquals = isEquals . fun_value
   isTrue = isTrue . fun_value
@@ -277,13 +277,23 @@ instance Arity f => Arity (Extended f) where
   arity (Function f) = arity f
   arity _ = 0
 
-instance (Typeable f, Ord f) => Minimal (Extended f) where
+instance Labelled f => Minimal (Extended f) where
   minimal = fun Minimal
 
-instance (Typeable f, Ord f) => Skolem (Extended f) where
+instance Labelled f => Skolem (Extended f) where
   skolem x = fun (Skolem x)
   getSkolem (F (Skolem x)) = Just x
   getSkolem _ = Nothing
+
+instance Labelled f => Labelled (Extended f) where
+  label Minimal = 0
+  label (Skolem (V x)) = 2*x+1
+  label (Function f) = 2*label f+2
+
+  find 0 = Minimal
+  find n
+    | odd n = Skolem (V ((n-1) `div` 2))
+    | otherwise = Function (find ((n-2) `div` 2))
 
 instance EqualsBonus f => EqualsBonus (Extended f) where
   hasEqualsBonus (Function f) = hasEqualsBonus f

@@ -26,7 +26,7 @@ module Twee.Term(
   pattern UnsafeCons, pattern UnsafeConsSym,
   empty, unpack, lenList,
   -- * Function symbols and variables
-  Fun, fun, fun_id, fun_value, pattern F, Var(..), 
+  Fun, fun, fun_id, fun_value, pattern F, Var(..), Labelled(..),
   -- * Building terms
   Build(..),
   Builder,
@@ -64,11 +64,13 @@ module Twee.Term(
 
 import Prelude hiding (lookup)
 import Twee.Term.Core hiding (F)
+import qualified Twee.Term.Core as Core
 import Data.List hiding (lookup, find)
 import Data.Maybe
 import Data.Semigroup(Semigroup(..))
 import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import Data.Int
 
 --------------------------------------------------------------------------------
 -- * A type class for builders
@@ -646,11 +648,27 @@ pathToPosition t ns = term 0 t ns
     list k (Cons t u) n ns =
       list (k+len t) u (n-1) ns
 
+class Labelled f where
+  -- | Labels should be small positive integers!
+  label :: f -> Int
+  find :: Int -> f
+
 -- | A pattern which extracts the 'fun_value' from a 'Fun'.
-pattern F :: f -> Fun f
+pattern F :: Labelled f => f -> Fun f
 pattern F x <- (fun_value -> x)
 {-# COMPLETE F #-}
 
 -- | Compare the 'fun_value's of two 'Fun's.
-(<<) :: Ord f => Fun f -> Fun f -> Bool
+(<<) :: (Labelled f, Ord f) => Fun f -> Fun f -> Bool
 f << g = fun_value f < fun_value g
+
+-- | Construct a 'Fun' from a function symbol.
+{-# INLINEABLE fun #-}
+fun :: Labelled f => f -> Fun f
+fun f = Core.F (fromIntegral (label f))
+
+-- | The underlying function symbol of a 'Fun'.
+{-# INLINEABLE fun_value #-}
+fun_value :: Labelled f => Fun f -> f
+fun_value f = find (fromIntegral (fun_id f))
+

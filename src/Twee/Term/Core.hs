@@ -23,7 +23,6 @@ import GHC.Types(Int(..))
 import GHC.Prim
 import GHC.ST hiding (liftST)
 import Data.Ord
-import Twee.Label
 import Data.Typeable
 import Data.Semigroup(Semigroup(..))
 
@@ -178,20 +177,12 @@ patHead t@TermList{..}
 -- by the user; @'Fun' f@ is an @f@ together with an automatically-generated unique number.
 newtype Fun f =
   F {
-    -- | The unique number of a 'Fun'.
+    -- | The unique number of a 'Fun'. Must fit in 32 bits.
     fun_id :: Int }
 instance Eq (Fun f) where
   f == g = fun_id f == fun_id g
 instance Ord (Fun f) where
   compare = comparing fun_id
-
--- | Construct a 'Fun' from a function symbol.
-fun :: (Ord f, Typeable f) => f -> Fun f
-fun f = F (fromIntegral (labelNum (label f)))
-
--- | The underlying function symbol of a 'Fun'.
-fun_value :: Fun f -> f
-fun_value f = find (unsafeMkLabel (fromIntegral (fun_id f)))
 
 -- | A variable.
 newtype Var =

@@ -25,7 +25,7 @@ instance Symbolic (Equation f) where
 instance PrettyTerm f => Pretty (Equation f) where
   pPrint (x :=: y) = pPrint x <+> text "=" <+> pPrint y
 
-instance Sized f => Sized (Equation f) where
+instance (Labelled f, Sized f) => Sized (Equation f) where
   size (x :=: y) = size x + size y
 
 -- | Order an equation roughly left-to-right.

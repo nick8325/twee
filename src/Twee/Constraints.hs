@@ -115,7 +115,7 @@ trueBranch = Branch [] [] []
 norm :: Eq f => Branch f -> Atom f -> Atom f
 norm Branch{..} x = fromMaybe x (lookup x equals)
 
-contradictory :: (Minimal f, Ord f) => Branch f -> Bool
+contradictory :: (Minimal f, Ord f, Labelled f) => Branch f -> Bool
 contradictory Branch{..} =
   or [f == minimal | (_, Constant f) <- less] ||
   or [f /= g | (Constant f, Constant g) <- equals] ||
@@ -125,7 +125,7 @@ contradictory Branch{..} =
     cyclic (AcyclicSCC _) = False
     cyclic (CyclicSCC _) = True
 
-formAnd :: (Minimal f, Ordered f) => Formula f -> [Branch f] -> [Branch f]
+formAnd :: (Minimal f, Ordered f, Labelled f) => Formula f -> [Branch f] -> [Branch f]
 formAnd f bs = usort (bs >>= add f)
   where
     add (Less t u) b = addLess t u b
@@ -134,7 +134,7 @@ formAnd f bs = usort (bs >>= add f)
     add (And (f:fs)) b = add f b >>= add (And fs)
     add (Or fs) b = usort (concat [ add f b | f <- fs ])
 
-branches :: (Minimal f, Ordered f) => Formula f -> [Branch f]
+branches :: (Minimal f, Ordered f, Labelled f) => Formula f -> [Branch f]
 branches x = aux [x]
   where
     aux [] = [Branch [] [] []]
@@ -146,7 +146,7 @@ branches x = aux [x]
       concatMap (addLess t u) (aux xs) ++
       concatMap (addEquals u t) (aux xs)
 
-addLess :: (Minimal f, Ordered f) => Atom f -> Atom f -> Branch f -> [Branch f]
+addLess :: (Minimal f, Ordered f, Labelled f) => Atom f -> Atom f -> Branch f -> [Branch f]
 addLess _ (Constant min) _ | min == minimal = []
 addLess (Constant min) _ b | min == minimal = [b]
 addLess t0 u0 b@Branch{..} =
@@ -156,7 +156,7 @@ addLess t0 u0 b@Branch{..} =
     t = norm b t0
     u = norm b u0
 
-addEquals :: (Minimal f, Ordered f) => Atom f -> Atom f -> Branch f -> [Branch f]
+addEquals :: (Minimal f, Ordered f, Labelled f) => Atom f -> Atom f -> Branch f -> [Branch f]
 addEquals t0 u0 b@Branch{..}
   | t == u || (t, u) `elem` equals = [b]
   | otherwise =
@@ -172,7 +172,7 @@ addEquals t0 u0 b@Branch{..}
       | x == t = u
       | otherwise = x
 
-addTerm :: (Minimal f, Ordered f) => Atom f -> Branch f -> Branch f
+addTerm :: (Minimal f, Ordered f, Labelled f) => Atom f -> Branch f -> Branch f
 addTerm (Constant f) b
   | f `notElem` funs b =
     b {
@@ -251,7 +251,7 @@ class Minimal f where
   minimal :: Fun f
 
 {-# INLINE lessEqInModel #-}
-lessEqInModel :: (Minimal f, Ordered f) => Model f -> Atom f -> Atom f -> Maybe Strictness
+lessEqInModel :: (Minimal f, Ordered f, Labelled f) => Model f -> Atom f -> Atom f -> Maybe Strictness
 lessEqInModel (Model m) x y
   | Just (a, _) <- Map.lookup x m,
     Just (b, _) <- Map.lookup y m,
@@ -264,7 +264,7 @@ lessEqInModel (Model m) x y
   | Constant a <- x, a == minimal = Just Nonstrict
   | otherwise = Nothing
 
-solve :: (Minimal f, Ordered f, PrettyTerm f) => [Atom f] -> Branch f -> Either (Model f) (Subst f)
+solve :: (Minimal f, Ordered f, PrettyTerm f, Labelled f) => [Atom f] -> Branch f -> Either (Model f) (Subst f)
 solve xs branch@Branch{..}
   | null equals && not (all true less) =
     error $ "Model " ++ prettyShow model ++ " is not a model of " ++ prettyShow branch ++ " (edges = " ++ prettyShow edges ++ ", vs = " ++ prettyShow vs ++ ")"
