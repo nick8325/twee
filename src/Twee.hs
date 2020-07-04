@@ -608,10 +608,6 @@ interreduce1 config@Config{..} state active =
         deleteActive state active
       | otherwise ->
         state
-  where
-    (t :=: u) `isInstanceOf` (t' :=: u') = isJust $ do
-      sub <- match t' t
-      matchIn sub u' u
 
 ----------------------------------------------------------------------
 -- The main loop.
