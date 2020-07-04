@@ -192,7 +192,7 @@ score Config{..} Overlap{..} =
     size' n (Cons (Var _) ts) =
       size' (n+cfg_varweight) ts
     size' n (ConsSym (App f _) ts) =
-      size' (n+cfg_funweight*size f) ts
+      size' (n+cfg_funweight) ts
 
 ----------------------------------------------------------------------
 -- * Higher-level handling of critical pairs.
