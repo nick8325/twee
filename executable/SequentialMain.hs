@@ -210,11 +210,12 @@ parsePrecedence =
 
 data Constant =
   Constant {
-    con_prec  :: {-# UNPACK #-} !Precedence,
-    con_id    :: {-# UNPACK #-} !Jukebox.Function,
-    con_arity :: {-# UNPACK #-} !Int,
-    con_size  :: {-# UNPACK #-} !Int,
-    con_bonus :: !Bool }
+    con_prec   :: {-# UNPACK #-} !Precedence,
+    con_id     :: {-# UNPACK #-} !Jukebox.Function,
+    con_arity  :: {-# UNPACK #-} !Int,
+    con_size   :: !Integer,
+    con_weight :: !Integer,
+    con_bonus  :: !Bool }
   deriving (Eq, Ord)
 
 data Precedence = Precedence !Bool !Bool !(Maybe Int) !Int
@@ -226,6 +227,8 @@ instance Labelled Constant where
 
 instance KBO.Sized Constant where
   size Constant{..} = con_size
+instance KBO.Weighted Constant where
+  argWeight Constant{..} = con_weight
 instance Arity Constant where
   arity Constant{..} = con_arity
 
@@ -265,7 +268,7 @@ data TweeContext =
 tweeConstant :: HornFlags -> TweeContext -> Precedence -> Jukebox.Function -> Extended Constant
 tweeConstant flags TweeContext{..} prec fun
   | fun == ctx_minimal = Minimal
-  | otherwise = Function (Constant prec fun (Jukebox.arity fun) (sz fun) (bonus fun))
+  | otherwise = Function (Constant prec fun (Jukebox.arity fun) (sz fun) 1 (bonus fun))
   where
     sz fun = if isType fun then 0 else 1
     bonus fun =
