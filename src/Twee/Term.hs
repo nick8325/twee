@@ -71,6 +71,7 @@ import Data.Semigroup(Semigroup(..))
 import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.Int
+import Control.Arrow((&&&))
 
 --------------------------------------------------------------------------------
 -- * A type class for builders
@@ -474,15 +475,15 @@ unpack t = unfoldr op t
     op Empty = Nothing
     op (Cons t ts) = Just (t, ts)
 
-instance Show (Term f) where
+instance (Labelled f, Show f) => Show (Term f) where
   show (Var x) = show x
   show (App f Empty) = show f
   show (App f ts) = show f ++ "(" ++ intercalate "," (map show (unpack ts)) ++ ")"
 
-instance Show (TermList f) where
+instance (Labelled f, Show f) => Show (TermList f) where
   show = show . unpack
 
-instance Show (Subst f) where
+instance (Labelled f, Show f) => Show (Subst f) where
   show subst =
     show
       [ (i, t)
@@ -653,9 +654,11 @@ class Labelled f where
   label :: f -> Int
   find :: Int -> f
 
+instance (Labelled f, Show f) => Show (Fun f) where show = show . fun_value
+
 -- | A pattern which extracts the 'fun_value' from a 'Fun'.
-pattern F :: Labelled f => f -> Fun f
-pattern F x <- (fun_value -> x)
+pattern F :: Labelled f => Int -> f -> Fun f
+pattern F x y <- (fun_id &&& fun_value -> (x, y))
 {-# COMPLETE F #-}
 
 -- | Compare the 'fun_value's of two 'Fun's.
@@ -670,5 +673,4 @@ fun f = Core.F (fromIntegral (label f))
 -- | The underlying function symbol of a 'Fun'.
 {-# INLINEABLE fun_value #-}
 fun_value :: Labelled f => Fun f -> f
-fun_value f = find (fromIntegral (fun_id f))
-
+fun_value x = find (fun_id x)

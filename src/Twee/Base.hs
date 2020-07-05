@@ -261,7 +261,7 @@ instance Labelled f => Minimal (Extended f) where
 
 instance Labelled f => Skolem (Extended f) where
   skolem x = fun (Skolem x)
-  getSkolem (F (Skolem x)) = Just x
+  getSkolem (F _ (Skolem x)) = Just x
   getSkolem _ = Nothing
 
 instance Labelled f => Labelled (Extended f) where

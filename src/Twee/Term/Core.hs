@@ -41,7 +41,7 @@ data Symbol =
 
 instance Show Symbol where
   show Symbol{..}
-    | isFun = show (F index) ++ "=" ++ show size
+    | isFun = "f" ++ show index ++ "=" ++ show size
     | otherwise = show (V index)
 
 -- Convert symbols to/from Int64 for storage in flatterms.
@@ -179,10 +179,7 @@ newtype Fun f =
   F {
     -- | The unique number of a 'Fun'. Must fit in 32 bits.
     fun_id :: Int }
-instance Eq (Fun f) where
-  f == g = fun_id f == fun_id g
-instance Ord (Fun f) where
-  compare = comparing fun_id
+  deriving (Eq, Ord)
 
 -- | A variable.
 newtype Var =
@@ -191,8 +188,8 @@ newtype Var =
     -- Don't use huge variable numbers:
     -- they will be truncated to 32 bits when stored in a term.
     var_id :: Int } deriving (Eq, Ord, Enum)
-instance Show (Fun f) where show f = "f" ++ show (fun_id f)
-instance Show Var     where show x = "x" ++ show (var_id x)
+instance Show Var where
+  show x = "x" ++ show (var_id x)
 
 -- | Matches a variable.
 pattern Var :: Var -> Term f
