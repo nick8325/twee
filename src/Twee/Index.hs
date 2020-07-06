@@ -83,7 +83,7 @@ data Index f a =
 instance Default (Index f a) where def = Nil
 
 -- To get predictable performance, the lookup function uses an explicit stack
--- instead of recursion to control backtracking.
+-- instead of a lazy list to control backtracking.
 data Stack f a =
   -- A normal stack frame: records the current index node and term.
   Frame {
@@ -145,15 +145,15 @@ pref search prefix here fun var rest =
           -- Seems to work better to explore the function node first.
           case t of
             App f _ ->
-              case fun ! fun_id f of
-                Nil ->
-                  case var of
-                    Nil -> rest
-                    _ -> step ts var rest
-                idx ->
-                  case var of
-                    Nil -> step ts1 idx rest
-                    idx' -> step ts1 idx (Frame ts var rest)
+              case (fun ! fun_id f, var) of
+                (Nil, Nil) ->
+                  rest
+                (Nil, Index{}) ->
+                  step ts var rest
+                (idx, Nil) ->
+                  step ts1 idx rest
+                (idx, Index{}) ->
+                  step ts1 idx (Frame ts var rest)
             _ ->
               case var of
                 Nil -> rest
