@@ -68,7 +68,7 @@ parseMainFlags =
     flipOrdering =
       expert $
       inGroup "Term order options" $
-      bool "flip-ordering" ["Make more common function symbols larger (off by default)."] False
+      bool "flip-ordering" ["Make more common function symbols smaller (off by default)."] False
     giveUp =
       expert $
       inGroup "Output options" $
@@ -456,7 +456,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
         (isNothing (elemIndex (base c) precedence))
         (fmap negate (elemIndex (base c) precedence))
         (maybeNegate (Map.findWithDefault 0 c occs))
-    maybeNegate = if flags_flip_ordering then id else negate
+    maybeNegate = if flags_flip_ordering then negate else id
     occs = funsOcc prob
 
     -- Translate everything to Twee.

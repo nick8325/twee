@@ -152,7 +152,7 @@ data Config =
 defaultConfig :: Config
 defaultConfig =
   Config {
-    cfg_lhsweight = 3,
+    cfg_lhsweight = 4,
     cfg_rhsweight = 1,
     cfg_funweight = 7,
     cfg_varweight = 6,
