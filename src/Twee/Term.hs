@@ -436,6 +436,7 @@ unifyListTriFrom !t !u (Triangle !sub) =
     loop sub _ Empty = Just sub
     loop _ _ _ = Nothing
 
+    {-# INLINE var #-}
     var sub x t =
       case lookupList x sub of
         Just u -> loop sub u (singleton t)
