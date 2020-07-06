@@ -193,8 +193,9 @@ insert :: Term f -> a -> Index f a -> Index f a
 insert !t x !idx = aux (Term.singleton t) idx
   where
     aux t Nil = singletonList t x
-    aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
-      withPrefix (Term.singleton t) (aux ts idx{prefix = us})
+    aux (ConsSym{hd = t, rest = ts}) idx@Index{prefix = ConsSym{hd = u, rest = us}}
+      | t `sameSymbolAs` u =
+        withPrefix t (aux ts idx{prefix = us})
     aux t idx@Index{prefix = Cons{}} = aux t (expand idx)
 
     aux Empty idx =
@@ -210,13 +211,23 @@ insert !t x !idx = aux (Term.singleton t) idx
         size = lenList t `min` size idx,
         var  = aux u (var idx) }
 
+-- Given two terms, check whether their respective root symbols
+-- would lead down the same path in the trie.
+sameSymbolAs :: Term f -> Term f -> Bool
+Var _ `sameSymbolAs` Var _ = True
+App f _ `sameSymbolAs` App g _ = f == g
+_ `sameSymbolAs` _ = False
+
 -- Add a prefix to an index.
+-- The prefix added is the root symbol of the Term argument.
 -- Does not update the size field.
-withPrefix :: TermList f -> Index f a -> Index f a
-withPrefix Empty idx = idx
+withPrefix :: Term f -> Index f a -> Index f a
 withPrefix _ Nil = Nil
 withPrefix t idx@Index{..} =
-  idx{prefix = buildList (builder t `mappend` builder prefix)}
+  idx{prefix = buildList (atom t `mappend` builder prefix)}
+  where
+    atom (Var x) = Term.var x
+    atom (App f _) = con f
 
 -- Take an index with a prefix and pull out the first symbol of the prefix,
 -- giving an index which doesn't start with a prefix.
@@ -246,8 +257,12 @@ delete :: Eq a => Term f -> a -> Index f a -> Index f a
 delete !t x !idx = aux (Term.singleton t) idx
   where
     aux _ Nil = Nil
-    aux (Cons t ts) idx@Index{prefix = Cons u us} | t == u =
-      withPrefix (Term.singleton t) (aux ts idx{prefix = us})
+    aux (ConsSym{rest = ts}) idx@Index{prefix = u@ConsSym{rest = us}} =
+      -- The prefix must match, since the term ought to be in the index
+      -- (which is checked in the Empty case below).
+      case aux ts idx{prefix = us} of
+        Nil -> Nil
+        idx -> idx{prefix = u}
     aux _ idx@Index{prefix = Cons{}} = idx
 
     aux Empty idx
