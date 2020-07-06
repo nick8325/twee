@@ -33,8 +33,9 @@ lessEqSkolem (App (F _ f) ts) (App (F _ g) us) =
     GT -> False
     EQ ->
       let loop Empty Empty = True
-          loop (Cons t ts) (Cons u us) =
-            lessEq t u && (t /= u || loop ts us)
+          loop (Cons t ts) (Cons u us)
+            | t == u = loop ts us
+            | otherwise = lessEqSkolem t u
       in loop ts us
 
 -- | Check if one term is less than another in KBO.
