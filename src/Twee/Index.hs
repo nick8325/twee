@@ -143,22 +143,21 @@ pref search prefix here fun var rest =
         _ ->
           -- We've exhausted the prefix, so let's descend into the tree.
           -- Seems to work better to explore the function node first.
-          let
-            tryVar =
+          case t of
+            App f _ ->
+              case fun ! fun_id f of
+                Nil ->
+                  case var of
+                    Nil -> rest
+                    _ -> step ts var rest
+                idx ->
+                  case var of
+                    Nil -> step ts1 idx rest
+                    idx' -> step ts1 idx (Frame ts var rest)
+            _ ->
               case var of
                 Nil -> rest
-                Index{} -> Frame ts var rest
-
-            tryFun =
-              case t of
-                App f _ ->
-                  case fun ! fun_id f of
-                    Nil -> tryVar
-                    idx -> Frame ts1 idx $! tryVar
-                _ ->
-                  tryVar
-          in
-            tryFun
+                _ -> step ts var rest
     Empty ->
       case prefix of
         Empty ->
