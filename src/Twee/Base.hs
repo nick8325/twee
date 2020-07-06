@@ -12,8 +12,8 @@ module Twee.Base(
   -- * General-purpose functionality
   Id(..), Has(..),
   -- * Typeclasses
-  Minimal(..), minimalTerm, isMinimal, erase, ground, skolemise,
-  Skolem(..), Arity(..), Ordered(..), lessThan, orientTerms, EqualsBonus(..), Strictness(..), Function, Extended(..)) where
+  Minimal(..), minimalTerm, isMinimal, erase, ground,
+  Arity(..), Ordered(..), lessThan, orientTerms, EqualsBonus(..), Strictness(..), Function, Extended(..)) where
 
 import Prelude hiding (lookup)
 import Control.Monad
@@ -193,16 +193,6 @@ erase xs t = subst sub t
 ground :: (Symbolic a, ConstantOf a ~ f, Minimal f) => a -> a
 ground t = erase (vars t) t
 
--- | Construction of Skolem constants.
-class Skolem f where
-  -- | Turn a variable into a Skolem constant.
-  skolem  :: Var -> Fun f
-  getSkolem :: Fun f -> Maybe Var
-
--- | Replace all variables in the arguments with Skolem constants.
-skolemise :: (Symbolic a, ConstantOf a ~ f, Skolem f) => a -> a
-skolemise t = subst (con . skolem) t
-
 -- | For types which have a notion of arity.
 class Arity f where
   -- | Measure the arity.
@@ -214,7 +204,7 @@ instance (Labelled f, Arity f) => Arity (Fun f) where
 -- | For types which have a notion of size.
 -- | The collection of constraints which the type of function symbols must
 -- satisfy in order to be used by twee.
-type Function f = (Ordered f, Arity f, Minimal f, Skolem f, PrettyTerm f, EqualsBonus f, Labelled f)
+type Function f = (Ordered f, Arity f, Minimal f, PrettyTerm f, EqualsBonus f, Labelled f)
 
 -- | A hack for encoding Horn clauses. See 'Twee.CP.Score'.
 -- The default implementation of 'hasEqualsBonus' should work OK.
@@ -237,15 +227,12 @@ instance (Labelled f, EqualsBonus f) => EqualsBonus (Fun f) where
 data Extended f =
     -- | The minimal constant.
     Minimal
-    -- | A Skolem function.
-  | Skolem Var
     -- | An ordinary function symbol.
   | Function f
   deriving (Eq, Ord, Show, Functor)
 
 instance Pretty f => Pretty (Extended f) where
   pPrintPrec _ _ Minimal = text "?"
-  pPrintPrec _ _ (Skolem (V n)) = text "sk" <#> pPrint n
   pPrintPrec l p (Function f) = pPrintPrec l p f
 
 instance PrettyTerm f => PrettyTerm (Extended f) where
@@ -259,20 +246,12 @@ instance Arity f => Arity (Extended f) where
 instance Labelled f => Minimal (Extended f) where
   minimal = fun Minimal
 
-instance Labelled f => Skolem (Extended f) where
-  skolem x = fun (Skolem x)
-  getSkolem (F _ (Skolem x)) = Just x
-  getSkolem _ = Nothing
-
 instance Labelled f => Labelled (Extended f) where
   label Minimal = 0
-  label (Skolem (V x)) = 2*x+1
-  label (Function f) = 2*label f+2
+  label (Function f) = label f+1
 
   find 0 = Minimal
-  find n
-    | odd n = Skolem (V ((n-1) `div` 2))
-    | otherwise = Function (find ((n-2) `div` 2))
+  find n = Function (find (n-1))
 
 instance EqualsBonus f => EqualsBonus (Extended f) where
   hasEqualsBonus (Function f) = hasEqualsBonus f

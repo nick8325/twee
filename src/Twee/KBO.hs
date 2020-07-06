@@ -1,17 +1,41 @@
 -- | An implementation of Knuth-Bendix ordering.
 
-{-# LANGUAGE PatternGuards #-}
-module Twee.KBO(lessEq, lessIn, Sized(..), Weighted(..)) where
+{-# LANGUAGE PatternGuards, BangPatterns #-}
+module Twee.KBO(lessEq, lessIn, lessEqSkolem, Sized(..), Weighted(..)) where
 
-import Twee.Base hiding (lessEq, lessIn)
+import Twee.Base hiding (lessEq, lessIn, lessEqSkolem)
 import Twee.Equation
 import Data.List
-import Twee.Constraints hiding (lessEq, lessIn)
+import Twee.Constraints hiding (lessEq, lessIn, lessEqSkolem)
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)
 import Data.Maybe
 import Control.Monad
 import Twee.Utils
+
+lessEqSkolem :: (Function f, Sized f, Weighted f) => Term f -> Term f -> Bool
+lessEqSkolem !t !u
+  | m < n = True
+  | m > n = False
+  where
+    m = size t
+    n = size u
+lessEqSkolem (App x Empty) _
+  | x == minimal = True
+lessEqSkolem _ (App x Empty)
+  | x == minimal = False
+lessEqSkolem (Var x) (Var y) = x <= y
+lessEqSkolem (Var _) _ = True
+lessEqSkolem _ (Var _) = False
+lessEqSkolem (App (F _ f) ts) (App (F _ g) us) =
+  case compare f g of
+    LT -> True
+    GT -> False
+    EQ ->
+      let loop Empty Empty = True
+          loop (Cons t ts) (Cons u us) =
+            lessEq t u && (t /= u || loop ts us)
+      in loop ts us
 
 -- | Check if one term is less than another in KBO.
 {-# SCC lessEq #-}

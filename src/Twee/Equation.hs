@@ -29,7 +29,7 @@ instance PrettyTerm f => Pretty (Equation f) where
 order :: Function f => Equation f -> Equation f
 order (l :=: r)
   | l == r = l :=: r
-  | lessEq (skolemise l) (skolemise r) = r :=: l
+  | lessEqSkolem l r = r :=: l
   | otherwise = l :=: r
 
 -- | Apply a function to both sides of an equation.
@@ -43,7 +43,7 @@ trivial (t :=: u) = t == u
 simplerThan :: Function f => Equation f -> Equation f -> Bool
 eq1 `simplerThan` eq2 =
   --traceShow (hang (pPrint eq1) 2 (text "`simplerThan`" <+> pPrint eq2 <+> text "=" <+> pPrint res)) res
-  t1 `lessEq` t2 && (t1 /= t2 || ((u1 `lessEq` u2 && u1 /= u2)))
+  t1 `lessEqSkolem` t2 && (t1 /= t2 || ((u1 `lessEqSkolem` u2 && u1 /= u2)))
   where
-    t1 :=: u1 = skolemise (canonicalise (order eq1))
-    t2 :=: u2 = skolemise (canonicalise (order eq2))
+    t1 :=: u1 = canonicalise (order eq1)
+    t2 :=: u2 = canonicalise (order eq2)

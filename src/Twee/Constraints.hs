@@ -288,6 +288,7 @@ class Ord f => Ordered f where
   -- | Check if the first term is less than or equal to the second in the given model,
   -- and decide whether the inequality is strict or nonstrict.
   lessIn :: Model f -> Term f -> Term f -> Maybe Strictness
+  lessEqSkolem :: Term f -> Term f -> Bool
 
 -- | Describes whether an inequality is strict or nonstrict.
 data Strictness =

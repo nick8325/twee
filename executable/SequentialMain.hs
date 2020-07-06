@@ -248,6 +248,7 @@ instance PrettyTerm Constant where
 instance Ordered (Extended Constant) where
   lessEq t u = KBO.lessEq t u
   lessIn model t u = KBO.lessIn model t u
+  lessEqSkolem t u = KBO.lessEqSkolem t u
 
 instance EqualsBonus Constant where
   hasEqualsBonus = con_bonus
@@ -298,8 +299,6 @@ isFalse fun =
 jukeboxFunction :: TweeContext -> Extended Constant -> Jukebox.Function
 jukeboxFunction _ (Function Constant{..}) = con_id
 jukeboxFunction TweeContext{..} Minimal = ctx_minimal
-jukeboxFunction TweeContext{..} (Skolem _) =
-  error "Skolem variable leaked into rule"
 
 tweeTerm :: HornFlags -> TweeContext -> (Jukebox.Function -> Precedence) -> Jukebox.Term -> Term (Extended Constant)
 tweeTerm flags ctx prec t = build (tm t)
