@@ -72,6 +72,7 @@ import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.Int
 import Control.Arrow((&&&))
+import Twee.Utils
 
 --------------------------------------------------------------------------------
 -- * A type class for builders
@@ -523,27 +524,19 @@ bound :: Term f -> (Var, Var)
 bound t = boundList (singleton t)
 
 -- | Return the lowest- and highest-numbered variables in a termlist.
-{-# INLINE boundList #-}
 boundList :: TermList f -> (Var, Var)
-boundList t = boundListFrom (V maxBound) (V minBound) t
-
-boundListFrom :: Var -> Var -> TermList f -> (Var, Var)
-boundListFrom !m !n Empty = (m, n)
-boundListFrom m n ConsSym{hd = App{}, rest = t} = boundListFrom m n t
-boundListFrom m n ConsSym{hd = Var x, rest = t} =
-  boundListFrom (m `min` x) (n `max` x) t
+boundList t = boundListFrom (V maxBound, V minBound) t
 
 -- | Return the lowest- and highest-numbered variables in a list of termlists.
 boundLists :: [TermList f] -> (Var, Var)
-boundLists t = boundListsFrom (V maxBound) (V minBound) t
+boundLists ts = foldl' boundListFrom (V maxBound, V minBound) ts
 
-boundListsFrom :: Var -> Var -> [TermList f] -> (Var, Var)
-boundListsFrom !m !n [] = (m, n)
-boundListsFrom m n (t:ts) =
-  let
-    (m', n') = boundListFrom m n t
-  in
-    boundListsFrom m' n' ts
+{-# INLINE boundListFrom #-}
+boundListFrom :: (Var, Var) -> TermList f -> (Var, Var)
+boundListFrom (V !ex, V !ey) ts = (V x, V y)
+  where
+    !(!x, !y) = foldl' op (ex, ey) [x | Var (V x) <- subtermsList ts]
+    op (!mn, !mx) x = (mn `intMin` x, mx `intMax` x)
 
 -- | Check if a variable occurs in a term.
 {-# INLINE occurs #-}
