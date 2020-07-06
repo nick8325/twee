@@ -193,9 +193,12 @@ insert :: Term f -> a -> Index f a -> Index f a
 insert !t x !idx = aux (Term.singleton t) idx
   where
     aux t Nil = singletonList t x
+    aux (Cons t ts) idx@Index{prefix = Cons u us}
+      | skeleton t == skeleton u =
+        withPrefix t (aux ts idx{prefix = us})
     aux (ConsSym{hd = t, rest = ts}) idx@Index{prefix = ConsSym{hd = u, rest = us}}
       | t `sameSymbolAs` u =
-        withPrefix t (aux ts idx{prefix = us})
+        withPrefix (build (atom t)) (aux ts idx{prefix = us})
     aux t idx@Index{prefix = Cons{}} = aux t (expand idx)
 
     aux Empty idx =
@@ -211,23 +214,21 @@ insert !t x !idx = aux (Term.singleton t) idx
         size = lenList t `min` size idx,
         var  = aux u (var idx) }
 
--- Given two terms, check whether their respective root symbols
--- would lead down the same path in the trie.
-sameSymbolAs :: Term f -> Term f -> Bool
-Var _ `sameSymbolAs` Var _ = True
-App f _ `sameSymbolAs` App g _ = f == g
-_ `sameSymbolAs` _ = False
+    Var _ `sameSymbolAs` Var _ = True
+    App f _ `sameSymbolAs` App g _ = f == g
+    _ `sameSymbolAs` _ = False
+
+    skeleton t = build (subst (const (Term.var (V 0))) t)
+
+    atom (Var x) = Term.var x
+    atom (App f _) = con f
 
 -- Add a prefix to an index.
--- The prefix added is the root symbol of the Term argument.
 -- Does not update the size field.
 withPrefix :: Term f -> Index f a -> Index f a
 withPrefix _ Nil = Nil
 withPrefix t idx@Index{..} =
-  idx{prefix = buildList (atom t `mappend` builder prefix)}
-  where
-    atom (Var x) = Term.var x
-    atom (App f _) = con f
+  idx{prefix = buildList (builder t `mappend` builder prefix)}
 
 -- Take an index with a prefix and pull out the first symbol of the prefix,
 -- giving an index which doesn't start with a prefix.
