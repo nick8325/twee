@@ -204,43 +204,29 @@ pattern App f ts <- (patTerm -> Right (f, ts))
 -- A helper function for Var and App.
 {-# INLINE patTerm #-}
 patTerm :: Term f -> Either Var (Fun f, TermList f)
-patTerm t@Term{..}
+patTerm Term{..}
   | isFun     = Right (F index, ts)
   | otherwise = Left (V index)
   where
     Symbol{..} = toSymbol root
-    !(UnsafeConsSym _ ts) = singleton t
+    !(UnsafeConsSym _ ts) = termlist
 
 -- | Convert a term to a termlist.
 {-# INLINE singleton #-}
 singleton :: Term f -> TermList f
 singleton Term{..} = termlist
 
--- We can implement equality almost without access to the
--- internal representation of the termlists, but we cheat by
--- comparing Int64s instead of Symbols.
 instance Eq (TermList f) where
-  -- Manual worker-wrapper to prevent too much from being inlined.
-  t == u =
-    lenList t == lenList u &&
-    compareByteArrays (array t) (low t * k)
-      (array u) (low u * k) ((high t - low t) * k) == EQ
-    where
-      k = sizeOf (fromSymbol undefined)
+  t == u = compare t u == EQ
 
 instance Ord (TermList f) where
   {-# INLINE compare #-}
   compare t u =
-    case compare (lenList t) (lenList u) of
-      EQ -> compareContents t u
-      x  -> x
-
-compareContents :: TermList f -> TermList f -> Ordering
-compareContents Empty !_ = EQ
-compareContents (ConsSym s1 t) (UnsafeConsSym s2 u) =
-  case compare (root s1) (root s2) of
-    EQ -> compareContents t u
-    x  -> x
+    compare (lenList t) (lenList u) `mappend`
+    compareByteArrays (array t) (low t * k)
+      (array u) (low u * k) ((high t - low t) * k)
+    where
+      k = sizeOf (fromSymbol undefined)
 
 --------------------------------------------------------------------------------
 -- Building terms.
@@ -379,21 +365,10 @@ emitTermList (TermList lo hi array) =
 {-# INLINE isSubtermOfList #-}
 isSubtermOfList :: Term f -> TermList f -> Bool
 isSubtermOfList t u =
-  isSubArrayOf (singleton t) u
-
--- N.B. this one should not be exported from Twee.Term
--- because subarray is not the same as subterm if t is not
--- a singleton
-isSubArrayOf :: TermList f -> TermList f -> Bool
-isSubArrayOf t u =
-  lenList t <= lenList u && (here t u || next t u)
+  or [ singleton t == u{low = low u + i, high = low u + i + n}
+     | i <- [0..lenList u - n]]
   where
-    here t u =
-      t == u{high = low u + high t - low t}
-
-    -- This is safe because lenList t <= lenList u
-    -- so if u = Empty, then t = Empty and here t u = True.
-    next t (UnsafeConsSym _ u) = isSubArrayOf t u
+    n = lenList (singleton t)
 
 -- | Check if a variable occurs in a termlist.
 {-# INLINE occursList #-}
