@@ -132,6 +132,8 @@ data Message f =
   | SimplifyQueue
     -- | The rules were reduced wrt each other.
   | Interreduce
+    -- | Status update: how many queued critical pairs there are.
+  | Status !Int
 
 instance Function f => Pretty (Message f) where
   pPrint (NewActive rule) = pPrint rule
@@ -143,6 +145,8 @@ instance Function f => Pretty (Message f) where
     text "  (simplifying queued critical pairs...)"
   pPrint Interreduce =
     text "  (simplifying rules with respect to one another...)"
+  pPrint (Status n) =
+    text "  (" <#> pPrint n <+> text "queued critical pairs)"
 
 -- | Emit a message.
 message :: PrettyTerm f => Message f -> State f -> State f
@@ -634,7 +638,11 @@ complete Output{..} config@Config{..} state =
            StateM.put $! simplifySample $! interreduce config state,
        newTask 1 0.02 $ do
           state <- StateM.get
-          StateM.put $! recomputeGoals config state ]
+          StateM.put $! recomputeGoals config state,
+       newTask 60 0.01 $ do
+          State{..} <- StateM.get
+          let !n = Queue.queueSize st_queue
+          lift $ output_message (Status n)]
 
     let
       loop = do

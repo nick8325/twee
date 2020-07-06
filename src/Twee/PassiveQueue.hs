@@ -4,7 +4,7 @@ module Twee.PassiveQueue(
   Params(..),
   Queue,
   Passive(..),
-  empty, insert, removeMin, mapMaybe, toList) where
+  empty, insert, removeMin, mapMaybe, toList, queueSize) where
 
 import qualified Data.Heap as Heap
 import qualified Data.Vector.Unboxed as Vector
@@ -196,3 +196,6 @@ mapMaybe f (Queue q) = Queue (Heap.mapMaybe g q)
 {-# INLINEABLE toList #-}
 toList :: Params params => Queue params -> [(Int, [Passive params])]
 toList (Queue h) = map unpackPassiveSet (Heap.toList h)
+
+queueSize :: Params params => Queue params -> Int
+queueSize = sum . map fst . toList
