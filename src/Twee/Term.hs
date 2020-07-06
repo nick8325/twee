@@ -22,8 +22,8 @@ module Twee.Term(
   -- * Terms
   Term, pattern Var, pattern App, isApp, isVar, singleton, len,
   -- * Termlists
-  TermList, pattern Empty, pattern Cons, pattern ConsSym,
-  pattern UnsafeCons, pattern UnsafeConsSym,
+  TermList, pattern Empty, pattern Cons, pattern ConsSym, hd, tl, rest,
+  pattern UnsafeCons, pattern UnsafeConsSym, uhd, utl, urest,
   empty, unpack, lenList,
   -- * Function symbols and variables
   Fun, fun, fun_id, fun_value, pattern F, Var(..), Labelled(..),
@@ -271,7 +271,7 @@ idempotentOn :: Subst f -> TermList f -> Bool
 idempotentOn !sub = aux
   where
     aux Empty = True
-    aux (ConsSym App{} t) = aux t
+    aux ConsSym{hd = App{}, rest = t} = aux t
     aux (Cons (Var x) t) = isNothing (lookupList x sub) && aux t
 
 -- | Iterate a triangle substitution to make it idempotent.
@@ -300,7 +300,7 @@ canonicalise (t:ts) = loop emptySubst vars t ts
     loop sub _ Empty [] = sub
     loop sub Empty _ _ = sub
     loop sub vs Empty (t:ts) = loop sub vs t ts
-    loop sub vs (ConsSym App{} t) ts = loop sub vs t ts
+    loop sub vs ConsSym{hd = App{}, rest = t} ts = loop sub vs t ts
     loop sub vs0@(Cons v vs) (Cons (Var x) t) ts =
       case extend x v sub of
         Just sub -> loop sub vs  t ts
@@ -344,13 +344,17 @@ matchListIn :: Subst f -> TermList f -> TermList f -> Maybe (Subst f)
 matchListIn !sub !pat !t
   | lenList t < lenList pat = Nothing
   | otherwise =
-    let loop !_ !_ !_ | False = undefined
-        loop sub Empty Empty = Just sub
-        loop sub (ConsSym (App f _) pat) (ConsSym (App g _) t)
-          | f == g = loop sub pat t
-        loop sub (Cons (Var x) pat) (Cons t u) = do
-          sub <- extend x t sub
-          loop sub pat u
+    let 
+        loop !sub ConsSym{hd = pat, tl = pats, rest = pats1} !ts = do
+          ConsSym{hd = t, tl = ts, rest = ts1} <- Just ts
+          case (pat, t) of
+            (App f _, App g _) | f == g ->
+              loop sub pats1 ts1
+            (Var x, _) -> do
+              sub <- extend x t sub
+              loop sub pats ts
+            _ -> Nothing
+        loop sub _ Empty = Just sub
         loop _ _ _ = Nothing
     in loop sub pat t
 
@@ -416,15 +420,19 @@ unifyListTriFrom !t !u (Triangle !sub) =
   fmap Triangle (loop sub t u)
   where
     loop !_ !_ !_ | False = undefined
-    loop sub Empty Empty = Just sub
-    loop sub (ConsSym (App f _) t) (ConsSym (App g _) u)
-      | f == g = loop sub t u
-    loop sub (Cons (Var x) t) (Cons u v) = do
-      sub <- var sub x u
-      loop sub t v
-    loop sub (Cons t u) (Cons (Var x) v) = do
-      sub <- var sub x t
-      loop sub u v
+    loop sub (ConsSym{hd = t, tl = ts, rest = ts1}) u = do
+      ConsSym{hd = u, tl = us, rest =  us1} <- Just u
+      case (t, u) of
+        (App f _, App g _) | f == g ->
+          loop sub ts1 us1
+        (Var x, _) -> do
+          sub <- var sub x u
+          loop sub ts us
+        (_, Var x) -> do
+          sub <- var sub x t
+          loop sub ts us
+        _ -> Nothing
+    loop sub _ Empty = Just sub
     loop _ _ _ = Nothing
 
     var sub x t =
@@ -443,15 +451,17 @@ unifyListTriFrom !t !u (Triangle !sub) =
       occurs sub x (singleton t)
       extend x t sub
 
-    occurs !_ !_ Empty = Just ()
-    occurs sub x (ConsSym App{} t) = occurs sub x t
-    occurs sub x (ConsSym (Var y) t)
-      | x == y = Nothing
-      | otherwise = do
-          occurs sub x t
-          case lookupList y sub of
-            Nothing -> Just ()
-            Just u  -> occurs sub x u
+    occurs !sub !x (ConsSym{hd = t, rest = ts}) =
+      case t of
+        App{} -> occurs sub x ts
+        Var y
+          | x == y -> Nothing
+          | otherwise -> do
+            occurs sub x ts
+            case lookupList y sub of
+              Nothing -> Just ()
+              Just u  -> occurs sub x u
+    occurs _ _ _ = Just ()
 
 --------------------------------------------------------------------------------
 -- Miscellaneous stuff.
@@ -466,7 +476,7 @@ empty = buildList (mempty :: Builder f)
 children :: Term f -> TermList f
 children t =
   case singleton t of
-    UnsafeConsSym _ ts -> ts
+    UnsafeConsSym{urest = ts} -> ts
 
 -- | Convert a termlist into an ordinary list of terms.
 unpack :: TermList f -> [Term f]
@@ -519,8 +529,8 @@ boundList t = boundListFrom (V maxBound) (V minBound) t
 
 boundListFrom :: Var -> Var -> TermList f -> (Var, Var)
 boundListFrom !m !n Empty = (m, n)
-boundListFrom m n (ConsSym App{} t) = boundListFrom m n t
-boundListFrom m n (ConsSym (Var x) t) =
+boundListFrom m n ConsSym{hd = App{}, rest = t} = boundListFrom m n t
+boundListFrom m n ConsSym{hd = Var x, rest = t} =
   boundListFrom (m `min` x) (n `max` x) t
 
 -- | Return the lowest- and highest-numbered variables in a list of termlists.
@@ -546,7 +556,7 @@ subtermsList :: TermList f -> [Term f]
 subtermsList t = unfoldr op t
   where
     op Empty = Nothing
-    op (ConsSym t u) = Just (t, u)
+    op ConsSym{hd = t, rest = u} = Just (t, u)
 
 -- | Find all subterms of a term.
 {-# INLINE subterms #-}

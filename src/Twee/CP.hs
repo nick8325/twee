@@ -30,7 +30,7 @@ positions t = aux 0 Set.empty (singleton t)
     -- Consider only general superpositions.
     aux !_ !_ Empty = NilP
     aux n m (Cons (Var _) t) = aux (n+1) m t
-    aux n m (ConsSym t@App{} u)
+    aux n m ConsSym{hd = t@App{}, rest = u}
       | t `Set.member` m = aux (n+1) m u
       | otherwise = ConsP n (aux (n+1) (Set.insert t m) u)
 
@@ -191,7 +191,7 @@ score Config{..} Overlap{..} =
         size' (size' (n+1) (subst sub us)) (subst sub vs)
     size' n (Cons (Var _) ts) =
       size' (n+cfg_varweight) ts
-    size' n (ConsSym (App _ _) ts) =
+    size' n ConsSym{hd = App{}, rest = ts} =
       size' (n+cfg_funweight) ts
 
 ----------------------------------------------------------------------

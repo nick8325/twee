@@ -143,13 +143,13 @@ pattern UnsafeCons t ts <- (unsafePatHead -> (t, _, ts))
 --
 -- > u  = f(x,y)
 -- > us = [x, y, g(z)]
-pattern ConsSym :: Term f -> TermList f -> TermList f
-pattern ConsSym t ts <- (patHead -> Just (t, ts, _))
+pattern ConsSym :: Term f -> TermList f -> TermList f -> TermList f
+pattern ConsSym{hd, tl, rest} <- (patHead -> Just (hd, rest, tl))
 
 -- | Like 'ConsSym', but does not check that the termlist is non-empty. Use only
 -- if you are sure the termlist is non-empty.
-pattern UnsafeConsSym :: Term f -> TermList f -> TermList f
-pattern UnsafeConsSym t ts <- (unsafePatHead -> (t, ts, _))
+pattern UnsafeConsSym :: Term f -> TermList f -> TermList f -> TermList f
+pattern UnsafeConsSym{uhd, utl, urest} <- (unsafePatHead -> (uhd, urest, utl))
 
 -- A helper for UnsafeCons/UnsafeConsSym.
 {-# INLINE unsafePatHead #-}
@@ -209,7 +209,7 @@ patTerm Term{..}
   | otherwise = Left (V index)
   where
     Symbol{..} = toSymbol root
-    !(UnsafeConsSym _ ts) = termlist
+    !UnsafeConsSym{urest = ts} = termlist
 
 -- | Convert a term to a termlist.
 {-# INLINE singleton #-}
@@ -377,4 +377,4 @@ occursList (V x) t = symbolOccursList (fromSymbol (Symbol False x 1)) t
 
 symbolOccursList :: Int64 -> TermList f -> Bool
 symbolOccursList !_ Empty = False
-symbolOccursList n (ConsSym t ts) = root t == n || symbolOccursList n ts
+symbolOccursList n ConsSym{hd = t, rest = ts} = root t == n || symbolOccursList n ts

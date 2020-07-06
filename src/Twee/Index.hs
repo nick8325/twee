@@ -120,25 +120,14 @@ step t idx rest =
 
 -- The main work of 'step' goes on here.
 -- It is carefully tweaked to generate nice code,
--- including using UnsafeCons and only casing on each
--- term list exactly once.
+-- in particular casing on each term list exactly once.
 pref :: TermList f -> TermList f -> [a] -> Array (Index f a) -> Index f a -> Stack f a -> Stack f a
 pref !_ !_ _ !_ !_ _ | False = undefined
 pref search prefix here fun var rest =
   case search of
-    Empty ->
+    ConsSym{hd = t, tl = ts, rest = ts1} ->
       case prefix of
-        Empty ->
-          -- The search term matches this node.
-          case here of
-            [] -> rest
-            _ -> Yield here rest
-        _ ->
-          -- We've run out of search term - it doesn't match this node.
-          rest
-    UnsafeCons t ts ->
-      case prefix of
-        Cons u us ->
+        ConsSym{hd = u, tl = us, rest = us1} ->
           -- Check the search term against the prefix.
           case (t, u) of
             (_, Var _) ->
@@ -147,10 +136,7 @@ pref search prefix here fun var rest =
               pref ts us here fun var rest
             (App f _, App g _) | f == g ->
               -- Term and prefix start with same symbol, chop them off.
-               let
-                 UnsafeConsSym _ ts' = search
-                 UnsafeConsSym _ us' = prefix
-               in pref ts' us' here fun var rest
+               pref ts1 us1 here fun var rest
             _ ->
               -- Term and prefix don't match.
               rest
@@ -162,21 +148,27 @@ pref search prefix here fun var rest =
               case var of
                 Nil -> rest
                 Index{} -> Frame ts var rest
-              where
-                UnsafeCons _ ts = search
 
             tryFun =
               case t of
                 App f _ ->
                   case fun ! fun_id f of
                     Nil -> tryVar
-                    idx -> Frame ts idx $! tryVar
+                    idx -> Frame ts1 idx $! tryVar
                 _ ->
                   tryVar
-              where
-                UnsafeConsSym t ts = search
           in
             tryFun
+    Empty ->
+      case prefix of
+        Empty ->
+          -- The search term matches this node.
+          case here of
+            [] -> rest
+            _ -> Yield here rest
+        _ ->
+          -- We've run out of search term - it doesn't match this node.
+          rest
 
 -- | An empty index.
 empty :: Index f a
@@ -208,13 +200,13 @@ insert !t x !idx = aux (Term.singleton t) idx
 
     aux Empty idx =
       idx { size = 0, here = x:here idx }
-    aux t@(ConsSym (App f _) u) idx =
+    aux t@ConsSym{hd = App f _, rest = u} idx =
       idx {
         size = lenList t `min` size idx,
         fun  = update (fun_id f) idx' (fun idx) }
       where
         idx' = aux u (fun idx ! fun_id f)
-    aux t@(ConsSym (Var _) u) idx =
+    aux t@ConsSym{hd = Var _, rest = u} idx =
       idx {
         size = lenList t `min` size idx,
         var  = aux u (var idx) }
@@ -232,7 +224,7 @@ withPrefix t idx@Index{..} =
 -- giving an index which doesn't start with a prefix.
 {-# INLINE expand #-}
 expand :: Index f a -> Index f a
-expand idx@Index{size = size, prefix = ConsSym t ts} =
+expand idx@Index{size = size, prefix = ConsSym{hd = t, rest = ts}} =
   case t of
     Var _ ->
       Index {
@@ -265,9 +257,9 @@ delete !t x !idx = aux (Term.singleton t) idx
         idx { here = List.delete x (here idx) }
       | otherwise =
         error "deleted term not found in index"
-    aux (ConsSym (App f _) t) idx =
+    aux ConsSym{hd = App f _, rest = t} idx =
       idx { fun = update (fun_id f) (aux t (fun idx ! fun_id f)) (fun idx) }
-    aux (ConsSym (Var _) t) idx =
+    aux ConsSym{hd = Var _, rest = t} idx =
       idx { var = aux t (var idx) }
 
 -- | Look up a term in the index. Finds all key-value such that the search term
