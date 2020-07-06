@@ -76,7 +76,7 @@ parseMainFlags =
         
     argModule = arg "<module>" "expected a Prolog module name" Just
 
-parseConfig :: OptionParser (Config (Extended Constant))
+parseConfig :: OptionParser (Config Constant)
 parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
@@ -209,6 +209,7 @@ parsePrecedence =
   (flag "precedence" ["List of functions in descending order of precedence."] [] (arg "<function>" "expected a function name" Just))
 
 data Constant =
+  Minimal |
   Constant {
     con_prec   :: {-# UNPACK #-} !Precedence,
     con_id     :: {-# UNPACK #-} !Jukebox.Function,
@@ -226,16 +227,21 @@ instance Labelled Constant where
   find = Label.find . Label.unsafeMkLabel . fromIntegral
 
 instance KBO.Sized Constant where
+  size Minimal = 1
   size Constant{..} = con_size
 instance KBO.Weighted Constant where
+  argWeight Minimal = 1
   argWeight Constant{..} = con_weight
 instance Arity Constant where
+  arity Minimal = 0
   arity Constant{..} = con_arity
 
 instance Pretty Constant where
+  pPrint Minimal = text "?"
   pPrint Constant{..} = text (base con_id)
 
 instance PrettyTerm Constant where
+  termStyle Minimal = uncurried
   termStyle Constant{..}
     | hasLabel "type_tag" con_id = invisible
     | any isAlphaNum (base con_id) = uncurried
@@ -245,16 +251,23 @@ instance PrettyTerm Constant where
         2 -> infixStyle 5
         _ -> uncurried
 
-instance Ordered (Extended Constant) where
+instance Minimal Constant where
+  minimal = fun Minimal
+
+instance Ordered Constant where
   lessEq t u = KBO.lessEq t u
   lessIn model t u = KBO.lessIn model t u
   lessEqSkolem t u = KBO.lessEqSkolem t u
 
 instance EqualsBonus Constant where
-  hasEqualsBonus = con_bonus
-  isEquals = SequentialMain.isEquals . con_id
-  isTrue = SequentialMain.isTrue . con_id
-  isFalse = SequentialMain.isFalse . con_id
+  hasEqualsBonus Minimal = False
+  hasEqualsBonus c = con_bonus c
+  isEquals Minimal = False
+  isEquals c = SequentialMain.isEquals (con_id c)
+  isTrue Minimal = False
+  isTrue c = SequentialMain.isTrue (con_id c)
+  isFalse Minimal = False
+  isFalse c = SequentialMain.isFalse (con_id c)
 
 data TweeContext =
   TweeContext {
@@ -266,10 +279,10 @@ data TweeContext =
     ctx_type    :: Type }
 
 -- Convert back and forth between Twee and Jukebox.
-tweeConstant :: HornFlags -> TweeContext -> Precedence -> Jukebox.Function -> Extended Constant
+tweeConstant :: HornFlags -> TweeContext -> Precedence -> Jukebox.Function -> Constant
 tweeConstant flags TweeContext{..} prec fun
   | fun == ctx_minimal = Minimal
-  | otherwise = Function (Constant prec fun (Jukebox.arity fun) (sz fun) 1 (bonus fun))
+  | otherwise = Constant prec fun (Jukebox.arity fun) (sz fun) 1 (bonus fun)
   where
     sz fun = if isType fun then 0 else 1
     bonus fun =
@@ -296,11 +309,11 @@ isFalse :: Jukebox.Function -> Bool
 isFalse fun =
   hasLabel "false" (name fun) && Jukebox.arity fun == 0
 
-jukeboxFunction :: TweeContext -> Extended Constant -> Jukebox.Function
-jukeboxFunction _ (Function Constant{..}) = con_id
+jukeboxFunction :: TweeContext -> Constant -> Jukebox.Function
+jukeboxFunction _ Constant{..} = con_id
 jukeboxFunction TweeContext{..} Minimal = ctx_minimal
 
-tweeTerm :: HornFlags -> TweeContext -> (Jukebox.Function -> Precedence) -> Jukebox.Term -> Term (Extended Constant)
+tweeTerm :: HornFlags -> TweeContext -> (Jukebox.Function -> Precedence) -> Jukebox.Term -> Term Constant
 tweeTerm flags ctx prec t = build (tm t)
   where
     tm (Jukebox.Var (x ::: _)) =
@@ -308,7 +321,7 @@ tweeTerm flags ctx prec t = build (tm t)
     tm (f :@: ts) =
       app (fun (tweeConstant flags ctx (prec f) f)) (map tm ts)
 
-jukeboxTerm :: TweeContext -> Term (Extended Constant) -> Jukebox.Term
+jukeboxTerm :: TweeContext -> Term Constant -> Jukebox.Term
 jukeboxTerm TweeContext{..} (Var (V x)) =
   Jukebox.Var (Unique (fromIntegral x) "X" Nothing defaultRenamer ::: ctx_type)
 jukeboxTerm ctx@TweeContext{..} (App f t) =
@@ -418,7 +431,7 @@ identifyProblem TweeContext{..} prob =
       return $ Left (pre inp (Jukebox.Var ctx_var, ctx_minimal :@: []))
     identify inp = Left inp
 
-runTwee :: GlobalFlags -> TSTPFlags -> HornFlags -> [String] -> Config (Extended Constant) -> MainFlags -> (IO () -> IO ()) -> Problem Clause -> IO Answer
+runTwee :: GlobalFlags -> TSTPFlags -> HornFlags -> [String] -> Config Constant -> MainFlags -> (IO () -> IO ()) -> Problem Clause -> IO Answer
 runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obligs = {-# SCC runTwee #-} do
   let
     -- Encode whatever needs encoding in the problem
@@ -629,12 +642,12 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
 -- Transform a proof presentation into a Jukebox proof.
 presentToJukebox ::
   TweeContext ->
-  (Jukebox.Term -> Jukebox.Term -> Equation (Extended Constant)) ->
+  (Jukebox.Term -> Jukebox.Term -> Equation Constant) ->
   -- Axioms, indexed by axiom number.
   [(Int, Input Form)] ->
   -- N.B. the formula here proves the negated goal.
   [(Int, Input Form)] ->
-  Presentation (Extended Constant) ->
+  Presentation Constant ->
   Problem Form
 presentToJukebox ctx toEquation axioms goals Presentation{..} =
   [ Input {
@@ -661,14 +674,14 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
     goal_proofs =
       Map.fromList [(pg_number, tstp pg_proof) | ProvedGoal{..} <- pres_goals]
 
-    tstp :: Proof (Extended Constant) -> Input Form
+    tstp :: Proof Constant -> Input Form
     tstp = deriv . derivation
 
-    deriv :: Derivation (Extended Constant) -> Input Form
+    deriv :: Derivation Constant -> Input Form
     deriv p@(Trans q r) = derivFrom (deriv r:sources q) p
     deriv p = derivFrom (sources p) p
 
-    derivFrom :: [Input Form] -> Derivation (Extended Constant) -> Input Form
+    derivFrom :: [Input Form] -> Derivation Constant -> Input Form
     derivFrom sources p =
       Input {
         tag = "step",
@@ -677,11 +690,11 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
         source =
           Inference "rw" "thm" sources }
 
-    jukeboxEquation :: Equation (Extended Constant) -> Form
+    jukeboxEquation :: Equation Constant -> Form
     jukeboxEquation (t :=: u) =
       toForm $ clause [Pos (jukeboxTerm ctx t Jukebox.:=: jukeboxTerm ctx u)]
 
-    sources :: Derivation (Extended Constant) -> [Input Form]
+    sources :: Derivation Constant -> [Input Form]
     sources p =
       [ fromJust (Map.lookup lemma lemma_proofs)
       | lemma <- usort (usedLemmas p) ] ++

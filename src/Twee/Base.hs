@@ -13,7 +13,7 @@ module Twee.Base(
   Id(..), Has(..),
   -- * Typeclasses
   Minimal(..), minimalTerm, isMinimal, erase, ground,
-  Arity(..), Ordered(..), lessThan, orientTerms, EqualsBonus(..), Strictness(..), Function, Extended(..)) where
+  Arity(..), Ordered(..), lessThan, orientTerms, EqualsBonus(..), Strictness(..), Function) where
 
 import Prelude hiding (lookup)
 import Control.Monad
@@ -23,7 +23,6 @@ import qualified Twee.Term as Term
 import Twee.Pretty
 import Twee.Constraints hiding (funs)
 import Data.DList(DList)
-import Data.Typeable
 import Data.Int
 import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
@@ -221,44 +220,3 @@ instance (Labelled f, EqualsBonus f) => EqualsBonus (Fun f) where
   isEquals = isEquals . fun_value
   isTrue = isTrue . fun_value
   isFalse = isFalse . fun_value
-
--- | A function symbol extended with a minimal constant and Skolem functions.
--- Comes equipped with 'Minimal' and 'Skolem' instances.
-data Extended f =
-    -- | The minimal constant.
-    Minimal
-    -- | An ordinary function symbol.
-  | Function f
-  deriving (Eq, Ord, Show, Functor)
-
-instance Pretty f => Pretty (Extended f) where
-  pPrintPrec _ _ Minimal = text "?"
-  pPrintPrec l p (Function f) = pPrintPrec l p f
-
-instance PrettyTerm f => PrettyTerm (Extended f) where
-  termStyle (Function f) = termStyle f
-  termStyle _ = uncurried
-
-instance Arity f => Arity (Extended f) where
-  arity (Function f) = arity f
-  arity _ = 0
-
-instance Labelled f => Minimal (Extended f) where
-  minimal = fun Minimal
-
-instance Labelled f => Labelled (Extended f) where
-  label Minimal = 0
-  label (Function f) = label f+1
-
-  find 0 = Minimal
-  find n = Function (find (n-1))
-
-instance EqualsBonus f => EqualsBonus (Extended f) where
-  hasEqualsBonus (Function f) = hasEqualsBonus f
-  hasEqualsBonus _ = False
-  isEquals (Function f) = isEquals f
-  isEquals _ = False
-  isTrue (Function f) = isTrue f
-  isTrue _ = False
-  isFalse (Function f) = isFalse f
-  isFalse _ = False

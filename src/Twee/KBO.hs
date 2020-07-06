@@ -185,14 +185,6 @@ instance (Labelled f, Sized f, Weighted f) => Sized (TermList f) where
 instance (Labelled f, Sized f, Weighted f) => Sized (Term f) where
   size = size . singleton
 
-instance Sized f => Sized (Extended f) where
-  size (Function f) = size f
-  size _ = 1
-
-instance Weighted f => Weighted (Extended f) where
-  argWeight (Function f) = argWeight f
-  argWeight _ = 1
-
 instance (Labelled f, Sized f, Weighted f) => Sized (Equation f) where
   size (x :=: y) = size x + size y
 
