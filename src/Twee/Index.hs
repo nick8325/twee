@@ -213,7 +213,6 @@ insert !t x !idx = aux (Term.singleton t) idx
 
 -- Add a prefix to an index.
 -- Does not update the size field.
-{-# INLINE withPrefix #-}
 withPrefix :: TermList f -> Index f a -> Index f a
 withPrefix Empty idx = idx
 withPrefix _ Nil = Nil
