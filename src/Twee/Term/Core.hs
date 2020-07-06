@@ -132,7 +132,7 @@ pattern Cons t ts <- (patHead -> Just (t, _, ts))
 -- | Like 'Cons', but does not check that the termlist is non-empty. Use only if
 -- you are sure the termlist is non-empty.
 pattern UnsafeCons :: Term f -> TermList f -> TermList f
-pattern UnsafeCons t ts <- (unsafePatHead -> Just (t, _, ts))
+pattern UnsafeCons t ts <- (unsafePatHead -> (t, _, ts))
 
 -- | Matches a non-empty termlist, unpacking it into head and
 -- /everything except the root symbol of the head/.
@@ -149,15 +149,15 @@ pattern ConsSym t ts <- (patHead -> Just (t, ts, _))
 -- | Like 'ConsSym', but does not check that the termlist is non-empty. Use only
 -- if you are sure the termlist is non-empty.
 pattern UnsafeConsSym :: Term f -> TermList f -> TermList f
-pattern UnsafeConsSym t ts <- (unsafePatHead -> Just (t, ts, _))
+pattern UnsafeConsSym t ts <- (unsafePatHead -> (t, ts, _))
 
 -- A helper for UnsafeCons/UnsafeConsSym.
 {-# INLINE unsafePatHead #-}
-unsafePatHead :: TermList f -> Maybe (Term f, TermList f, TermList f)
+unsafePatHead :: TermList f -> (Term f, TermList f, TermList f)
 unsafePatHead TermList{..} =
-  Just (Term x (TermList low (low+size) array),
-        TermList (low+1) high array,
-        TermList (low+size) high array)
+  (Term x (TermList low (low+size) array),
+   TermList (low+1) high array,
+   TermList (low+size) high array)
   where
     !x = indexByteArray array low
     Symbol{..} = toSymbol x
@@ -167,7 +167,7 @@ unsafePatHead TermList{..} =
 patHead :: TermList f -> Maybe (Term f, TermList f, TermList f)
 patHead t@TermList{..}
   | low == high = Nothing
-  | otherwise = unsafePatHead t
+  | otherwise = Just (unsafePatHead t)
 
 -- Pattern synonyms for single terms.
 -- * Var :: Var -> Term f
