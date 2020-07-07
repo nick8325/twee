@@ -17,3 +17,4 @@ cnf(a, axiom, '<>'('<>'(X, Y), Z) = '<>'(X, '<>'(Y, Z))).
 cnf(a, axiom, '<>'(text(X), text(Y)) = text('++'(X, Y))).
 cnf(a, axiom, '$$'(nest(I, X), nest(I, Y)) = nest(I, '$$'(X, Y))).
 cnf(a, axiom, '<>'(text(Xs), '$$'('<>'(text('[]'), X), Y)) = '$$'('<>'(text(Xs), X), nest(length(Xs), Y))).
+cnf(a, axiom, a != b).

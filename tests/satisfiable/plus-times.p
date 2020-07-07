@@ -6,3 +6,4 @@ cnf(plus_zero, axiom, '+'(X, '0') = X).
 cnf(times_zero, axiom, '*'(X, '0') = '0').
 cnf(times_one, axiom, '*'(X, '1') = X).
 cnf(distrib, axiom, '*'(X, '+'(Y, Z)) = '+'('*'(X, Y), '*'(X, Z))).
+cnf(a, axiom, a != b).

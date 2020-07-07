@@ -10,3 +10,4 @@ cnf(not_not, axiom, not(not(X)) = X).
 cnf(de_morgan, axiom, not('+'(X, Y)) = '*'(not(X), not(Y))).
 cnf(lem, axiom, '+'(X, not(X)) = '1').
 cnf(contra, axiom, '*'(X, not(X)) = '0').
+cnf(a, axiom, a != b).
