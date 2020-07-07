@@ -8,7 +8,7 @@ module Twee.Base(
   -- * The 'Symbolic' typeclass
   Symbolic(..), subst, terms,
   TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
-  vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding,
+  vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding, renameManyAvoiding,
   -- * General-purpose functionality
   Id(..), Has(..),
   -- * Typeclasses
@@ -171,6 +171,14 @@ renameAvoiding x y
     (V x1, V x2) = boundLists (terms x)
     (V y1, V y2) = boundLists (terms y)
 
+{-# INLINEABLE renameManyAvoiding #-}
+renameManyAvoiding :: Symbolic a => [a] -> [a]
+renameManyAvoiding [] = []
+renameManyAvoiding (t:ts) = u:us
+  where
+    u = renameAvoiding us t
+    us = renameManyAvoiding ts
+  
 -- | Check if a term is the minimal constant.
 isMinimal :: Minimal f => Term f -> Bool
 isMinimal (App f Empty) | f == minimal = True
