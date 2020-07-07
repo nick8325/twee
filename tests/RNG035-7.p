@@ -1,0 +1,12 @@
+cnf(left_additive_identity, axiom, add(additive_identity, X)=X).
+cnf(right_additive_identity, axiom, add(X, additive_identity)=X).
+cnf(left_additive_inverse, axiom, add(additive_inverse(X), X)=additive_identity).
+cnf(right_additive_inverse, axiom, add(X, additive_inverse(X))=additive_identity).
+cnf(associativity_for_addition, axiom, add(X, add(Y, Z))=add(add(X, Y), Z)).
+cnf(commutativity_for_addition, axiom, add(X, Y)=add(Y, X)).
+cnf(associativity_for_multiplication, axiom, multiply(X, multiply(Y, Z))=multiply(multiply(X, Y), Z)).
+cnf(distribute1, axiom, multiply(X, add(Y, Z))=add(multiply(X, Y), multiply(X, Z))).
+cnf(distribute2, axiom, multiply(add(X, Y), Z)=add(multiply(X, Z), multiply(Y, Z))).
+cnf(x_fourthed_is_x, hypothesis, multiply(X, multiply(X, multiply(X, X)))=X).
+cnf(a_times_b_is_c, negated_conjecture, multiply(a, b)=c).
+cnf(prove_commutativity, negated_conjecture, multiply(b, a)!=c).

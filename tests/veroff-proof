@@ -1,0 +1,1679 @@
+The conjecture is true! Here is a proof.
+
+Axiom 1 (majority): f(X, X, Y) = X.
+Axiom 2 (2a): f(X, Y, Z) = f(Z, X, Y).
+Axiom 3 (2b): f(X, Y, Z) = f(X, Z, Y).
+Axiom 4 (associativity): f(f(X, Y, Z), Y, W) = f(X, Y, f(Z, Y, W)).
+Axiom 5 (a123): f(a1, a2, a3) = f123.
+Axiom 6 (a145): f(a1, a4, a5) = f145.
+Axiom 7 (a245): f(a2, a4, a5) = f245.
+Axiom 8 (a345): f(a3, a4, a5) = f345.
+Axiom 9 (lhs): f(f123, a4, a5) = c1.
+Axiom 10 (rhs): f(f145, f245, f345) = c2.
+
+Lemma 11: f(Z, Y, X) = f(Y, Z, X).
+Proof:
+  f(Z, Y, X)
+= { by axiom 3 (2b) }
+  f(Z, X, Y)
+= { by axiom 2 (2a) }
+  f(Y, Z, X)
+
+Lemma 12: f(Y, W, f(X, Y, Z)) = f(X, Y, f(Z, Y, W)).
+Proof:
+  f(Y, W, f(X, Y, Z))
+= { by axiom 2 (2a) }
+  f(f(X, Y, Z), Y, W)
+= { by axiom 4 (associativity) }
+  f(X, Y, f(Z, Y, W))
+
+Lemma 13: f(W, Z, f(Y, Z, X)) = f(Z, f(W, Z, Y), X).
+Proof:
+  f(W, Z, f(Y, Z, X))
+= { by lemma 12 }
+  f(Z, X, f(W, Z, Y))
+= { by axiom 2 (2a) }
+  f(f(W, Z, Y), Z, X)
+= { by lemma 11 }
+  f(Z, f(W, Z, Y), X)
+
+Lemma 14: f(X, f(Y, X, Z), W) = f(Y, X, f(X, W, Z)).
+Proof:
+  f(X, f(Y, X, Z), W)
+= { by lemma 13 }
+  f(Y, X, f(Z, X, W))
+= { by axiom 2 (2a) }
+  f(Y, X, f(X, W, Z))
+
+Lemma 15: f(Z, Y, f(W, Z, X)) = f(W, Z, f(Z, Y, X)).
+Proof:
+  f(Z, Y, f(W, Z, X))
+= { by axiom 3 (2b) }
+  f(Z, f(W, Z, X), Y)
+= { by lemma 14 }
+  f(W, Z, f(Z, Y, X))
+
+Lemma 16: f(Y, Z, f(W, Z, X)) = f(W, Z, f(Z, Y, X)).
+Proof:
+  f(Y, Z, f(W, Z, X))
+= { by lemma 11 }
+  f(Z, Y, f(W, Z, X))
+= { by lemma 15 }
+  f(W, Z, f(Z, Y, X))
+
+Lemma 17: f(W, Z, f(Z, Y, X)) = f(Y, Z, f(W, X, Z)).
+Proof:
+  f(W, Z, f(Z, Y, X))
+= { by lemma 16 }
+  f(Y, Z, f(W, Z, X))
+= { by axiom 3 (2b) }
+  f(Y, Z, f(W, X, Z))
+
+Lemma 18: f(W, f(X, W, Z), Y) = f(W, Z, f(Y, W, X)).
+Proof:
+  f(W, f(X, W, Z), Y)
+= { by axiom 2 (2a) }
+  f(f(X, W, Z), Y, W)
+= { by axiom 2 (2a) }
+  f(Y, W, f(X, W, Z))
+= { by axiom 4 (associativity) }
+  f(f(Y, W, X), W, Z)
+= { by axiom 2 (2a) }
+  f(W, Z, f(Y, W, X))
+
+Lemma 19: f(X, f(X, Y, W), Z) = f(X, Y, f(X, Z, W)).
+Proof:
+  f(X, f(X, Y, W), Z)
+= { by axiom 2 (2a) }
+  f(X, f(W, X, Y), Z)
+= { by lemma 18 }
+  f(X, Y, f(Z, X, W))
+= { by lemma 11 }
+  f(X, Y, f(X, Z, W))
+
+Lemma 20: f(X, W, f(X, Y, Z)) = f(X, Y, f(X, Z, W)).
+Proof:
+  f(X, W, f(X, Y, Z))
+= { by axiom 3 (2b) }
+  f(X, W, f(X, Z, Y))
+= { by lemma 19 }
+  f(X, f(X, W, Y), Z)
+= { by lemma 11 }
+  f(X, f(W, X, Y), Z)
+= { by lemma 18 }
+  f(X, Y, f(Z, X, W))
+= { by lemma 11 }
+  f(X, Y, f(X, Z, W))
+
+Lemma 21: f(W, Z, f(W, Y, X)) = f(X, W, f(W, Z, Y)).
+Proof:
+  f(W, Z, f(W, Y, X))
+= { by lemma 20 }
+  f(W, X, f(W, Z, Y))
+= { by lemma 11 }
+  f(X, W, f(W, Z, Y))
+
+Lemma 22: f(Y, X, Y) = Y.
+Proof:
+  f(Y, X, Y)
+= { by axiom 2 (2a) }
+  f(Y, Y, X)
+= { by axiom 1 (majority) }
+  Y
+
+Lemma 23: f(X, Y, f(Z, X, Y)) = f(X, Y, Z).
+Proof:
+  f(X, Y, f(Z, X, Y))
+= { by axiom 2 (2a) }
+  f(f(Z, X, Y), X, Y)
+= { by axiom 4 (associativity) }
+  f(Z, X, f(Y, X, Y))
+= { by lemma 22 }
+  f(Z, X, Y)
+= { by lemma 11 }
+  f(X, Z, Y)
+= { by axiom 3 (2b) }
+  f(X, Y, Z)
+
+Lemma 24: f(X, Y, f(X, Y, Z)) = f(X, Y, Z).
+Proof:
+  f(X, Y, f(X, Y, Z))
+= { by lemma 12 }
+  f(Y, Z, f(X, Y, X))
+= { by lemma 22 }
+  f(Y, Z, X)
+= { by axiom 3 (2b) }
+  f(Y, X, Z)
+= { by lemma 11 }
+  f(X, Y, Z)
+
+Lemma 25: f(X, Y, f(Z, Y, W)) = f(W, Y, f(X, Y, Z)).
+Proof:
+  f(X, Y, f(Z, Y, W))
+= { by lemma 12 }
+  f(Y, W, f(X, Y, Z))
+= { by axiom 2 (2a) }
+  f(W, f(X, Y, Z), Y)
+= { by axiom 3 (2b) }
+  f(W, Y, f(X, Y, Z))
+
+Lemma 26: f(Z, X, f(W, X, Y)) = f(X, f(Y, X, Z), W).
+Proof:
+  f(Z, X, f(W, X, Y))
+= { by lemma 25 }
+  f(W, X, f(Y, X, Z))
+= { by axiom 2 (2a) }
+  f(X, f(Y, X, Z), W)
+
+Lemma 27: f(W, f(Z, W, Y), X) = f(W, Y, f(W, X, Z)).
+Proof:
+  f(W, f(Z, W, Y), X)
+= { by lemma 26 }
+  f(Y, W, f(X, W, Z))
+= { by lemma 11 }
+  f(Y, W, f(W, X, Z))
+= { by lemma 11 }
+  f(W, Y, f(W, X, Z))
+
+Lemma 28: f(X, W, f(X, Y, Z)) = f(X, Y, f(Z, X, W)).
+Proof:
+  f(X, W, f(X, Y, Z))
+= { by lemma 27 }
+  f(X, f(Z, X, W), Y)
+= { by axiom 3 (2b) }
+  f(X, Y, f(Z, X, W))
+
+Lemma 29: f(Z, Y, f(W, Z, X)) = f(Z, X, f(Z, W, Y)).
+Proof:
+  f(Z, Y, f(W, Z, X))
+= { by axiom 3 (2b) }
+  f(Z, f(W, Z, X), Y)
+= { by lemma 14 }
+  f(W, Z, f(Z, Y, X))
+= { by lemma 11 }
+  f(Z, W, f(Z, Y, X))
+= { by lemma 11 }
+  f(Z, W, f(Y, Z, X))
+= { by lemma 18 }
+  f(Z, f(X, Z, W), Y)
+= { by lemma 11 }
+  f(Z, f(Z, X, W), Y)
+= { by lemma 19 }
+  f(Z, X, f(Z, Y, W))
+= { by axiom 3 (2b) }
+  f(Z, X, f(Z, W, Y))
+
+Lemma 30: f(W, f(Z, W, Y), X) = f(W, Z, f(Y, W, X)).
+Proof:
+  f(W, f(Z, W, Y), X)
+= { by lemma 13 }
+  f(Z, W, f(Y, W, X))
+= { by lemma 11 }
+  f(W, Z, f(Y, W, X))
+
+Lemma 31: f(W, Z, f(Y, Z, X)) = f(Z, X, f(Y, W, Z)).
+Proof:
+  f(W, Z, f(Y, Z, X))
+= { by lemma 12 }
+  f(Z, X, f(W, Z, Y))
+= { by axiom 2 (2a) }
+  f(Z, X, f(Y, W, Z))
+
+Lemma 32: f(X, Z, f(Y, X, W)) = f(X, Y, f(Z, W, X)).
+Proof:
+  f(X, Z, f(Y, X, W))
+= { by lemma 30 }
+  f(X, f(Z, X, Y), W)
+= { by axiom 2 (2a) }
+  f(f(Z, X, Y), W, X)
+= { by axiom 2 (2a) }
+  f(W, X, f(Z, X, Y))
+= { by lemma 31 }
+  f(X, Y, f(Z, W, X))
+
+Lemma 33: f(W, Z, f(Z, Y, X)) = f(X, Z, f(W, Y, Z)).
+Proof:
+  f(W, Z, f(Z, Y, X))
+= { by lemma 21 }
+  f(Z, Y, f(Z, X, W))
+= { by lemma 29 }
+  f(Z, W, f(X, Z, Y))
+= { by lemma 32 }
+  f(Z, X, f(W, Y, Z))
+= { by lemma 11 }
+  f(X, Z, f(W, Y, Z))
+
+Lemma 34: f(Y, Z, f(Y, W, X)) = f(X, Y, f(Z, W, Y)).
+Proof:
+  f(Y, Z, f(Y, W, X))
+= { by lemma 11 }
+  f(Z, Y, f(Y, W, X))
+= { by lemma 33 }
+  f(X, Y, f(Z, W, Y))
+
+Lemma 35: f(W, f(W, Z, Y), X) = f(W, Z, f(W, Y, X)).
+Proof:
+  f(W, f(W, Z, Y), X)
+= { by axiom 3 (2b) }
+  f(W, X, f(W, Z, Y))
+= { by lemma 20 }
+  f(W, Z, f(W, Y, X))
+
+Lemma 36: f(X, Y, f(X, Z, f(Y, Z, W))) = f(X, Y, Z).
+Proof:
+  f(X, Y, f(X, Z, f(Y, Z, W)))
+= { by lemma 11 }
+  f(X, Y, f(X, Z, f(Z, Y, W)))
+= { by axiom 3 (2b) }
+  f(X, Y, f(X, Z, f(Z, W, Y)))
+= { by axiom 3 (2b) }
+  f(X, Y, f(X, f(Z, W, Y), Z))
+= { by lemma 11 }
+  f(X, Y, f(f(Z, W, Y), X, Z))
+= { by lemma 24 }
+  f(X, Y, f(X, Y, f(f(Z, W, Y), X, Z)))
+= { by lemma 28 }
+  f(X, Y, f(X, Z, f(X, Y, f(Z, W, Y))))
+= { by lemma 34 }
+  f(X, Y, f(X, Z, f(Y, Z, f(Y, W, X))))
+= { by lemma 27 }
+  f(X, Y, f(X, Z, f(Y, f(X, Y, Z), W)))
+= { by axiom 3 (2b) }
+  f(X, Y, f(X, Z, f(Y, W, f(X, Y, Z))))
+= { by lemma 35 }
+  f(X, f(X, Y, Z), f(Y, W, f(X, Y, Z)))
+= { by lemma 34 }
+  f(f(X, Y, Z), Y, f(f(X, Y, Z), W, X))
+= { by lemma 29 }
+  f(f(X, Y, Z), X, f(W, f(X, Y, Z), Y))
+= { by lemma 32 }
+  f(f(X, Y, Z), W, f(X, Y, f(X, Y, Z)))
+= { by lemma 24 }
+  f(f(X, Y, Z), W, f(X, Y, Z))
+= { by lemma 22 }
+  f(X, Y, Z)
+
+Lemma 37: f(Z, X, f(W, Y, Z)) = f(W, Z, f(Y, Z, X)).
+Proof:
+  f(Z, X, f(W, Y, Z))
+= { by axiom 3 (2b) }
+  f(Z, X, f(W, Z, Y))
+= { by lemma 12 }
+  f(W, Z, f(Y, Z, X))
+
+Lemma 38: f(W, Z, f(Y, Z, X)) = f(Y, Z, f(W, Z, X)).
+Proof:
+  f(W, Z, f(Y, Z, X))
+= { by lemma 37 }
+  f(Z, X, f(W, Y, Z))
+= { by axiom 2 (2a) }
+  f(Z, X, f(Y, Z, W))
+= { by lemma 12 }
+  f(Y, Z, f(W, Z, X))
+
+Lemma 39: f(W, Z, f(Y, Z, X)) = f(Z, f(W, Y, Z), X).
+Proof:
+  f(W, Z, f(Y, Z, X))
+= { by lemma 12 }
+  f(Z, X, f(W, Z, Y))
+= { by axiom 2 (2a) }
+  f(f(W, Z, Y), Z, X)
+= { by lemma 11 }
+  f(Z, f(W, Z, Y), X)
+= { by axiom 3 (2b) }
+  f(Z, f(W, Y, Z), X)
+
+Lemma 40: f(X, f(Y, Z, X), W) = f(Z, X, f(Y, W, X)).
+Proof:
+  f(X, f(Y, Z, X), W)
+= { by lemma 39 }
+  f(Y, X, f(Z, X, W))
+= { by lemma 25 }
+  f(Z, X, f(W, X, Y))
+= { by axiom 2 (2a) }
+  f(Z, X, f(Y, W, X))
+
+Lemma 41: f(f245, a2, a4) = f245.
+Proof:
+  f(f245, a2, a4)
+= { by lemma 11 }
+  f(a2, f245, a4)
+= { by axiom 3 (2b) }
+  f(a2, a4, f245)
+= { by axiom 7 (a245) }
+  f(a2, a4, f(a2, a4, a5))
+= { by lemma 24 }
+  f(a2, a4, a5)
+= { by axiom 7 (a245) }
+  f245
+
+Lemma 42: f(f245, a2, f(X, a2, a4)) = f(X, f245, a2).
+Proof:
+  f(f245, a2, f(X, a2, a4))
+= { by axiom 3 (2b) }
+  f(f245, a2, f(X, a4, a2))
+= { by lemma 40 }
+  f(a2, f(X, f245, a2), a4)
+= { by lemma 39 }
+  f(X, a2, f(f245, a2, a4))
+= { by lemma 41 }
+  f(X, a2, f245)
+= { by axiom 3 (2b) }
+  f(X, f245, a2)
+
+Lemma 43: f(a2, a4, f(X, a4, a5)) = f(X, f245, a4).
+Proof:
+  f(a2, a4, f(X, a4, a5))
+= { by lemma 11 }
+  f(a2, a4, f(a4, X, a5))
+= { by axiom 3 (2b) }
+  f(a2, a4, f(a4, a5, X))
+= { by lemma 11 }
+  f(a2, a4, f(a5, a4, X))
+= { by lemma 12 }
+  f(a4, X, f(a2, a4, a5))
+= { by axiom 7 (a245) }
+  f(a4, X, f245)
+= { by axiom 2 (2a) }
+  f(f245, a4, X)
+= { by axiom 3 (2b) }
+  f(f245, X, a4)
+= { by lemma 11 }
+  f(X, f245, a4)
+
+Lemma 44: f(f345, a4, a5) = f345.
+Proof:
+  f(f345, a4, a5)
+= { by lemma 11 }
+  f(a4, f345, a5)
+= { by axiom 3 (2b) }
+  f(a4, a5, f345)
+= { by axiom 8 (a345) }
+  f(a4, a5, f(a3, a4, a5))
+= { by lemma 23 }
+  f(a4, a5, a3)
+= { by axiom 3 (2b) }
+  f(a4, a3, a5)
+= { by lemma 11 }
+  f(a3, a4, a5)
+= { by axiom 8 (a345) }
+  f345
+
+Lemma 45: f(f245, a3, a4) = f(f245, f345, a4).
+Proof:
+  f(f245, a3, a4)
+= { by lemma 11 }
+  f(a3, f245, a4)
+= { by lemma 43 }
+  f(a2, a4, f(a3, a4, a5))
+= { by axiom 8 (a345) }
+  f(a2, a4, f345)
+= { by lemma 44 }
+  f(a2, a4, f(f345, a4, a5))
+= { by lemma 43 }
+  f(f345, f245, a4)
+= { by lemma 11 }
+  f(f245, f345, a4)
+
+Lemma 46: f(f245, f345, a2) = f245.
+Proof:
+  f(f245, f345, a2)
+= { by lemma 11 }
+  f(f345, f245, a2)
+= { by lemma 42 }
+  f(f245, a2, f(f345, a2, a4))
+= { by lemma 11 }
+  f(f245, a2, f(a2, f345, a4))
+= { by axiom 3 (2b) }
+  f(f245, a2, f(a2, a4, f345))
+= { by axiom 8 (a345) }
+  f(f245, a2, f(a2, a4, f(a3, a4, a5)))
+= { by lemma 43 }
+  f(f245, a2, f(a3, f245, a4))
+= { by lemma 11 }
+  f(f245, a2, f(f245, a3, a4))
+= { by lemma 45 }
+  f(f245, a2, f(f245, f345, a4))
+= { by lemma 19 }
+  f(f245, f(f245, a2, a4), f345)
+= { by lemma 41 }
+  f(f245, f245, f345)
+= { by axiom 1 (majority) }
+  f245
+
+Lemma 47: f(f345, c2, a2) = c2.
+Proof:
+  f(f345, c2, a2)
+= { by axiom 3 (2b) }
+  f(f345, a2, c2)
+= { by axiom 10 (rhs) }
+  f(f345, a2, f(f145, f245, f345))
+= { by lemma 37 }
+  f(f145, f345, f(f245, f345, a2))
+= { by lemma 46 }
+  f(f145, f345, f245)
+= { by axiom 3 (2b) }
+  f(f145, f245, f345)
+= { by axiom 10 (rhs) }
+  c2
+
+Lemma 48: f(Y, X, X) = X.
+Proof:
+  f(Y, X, X)
+= { by axiom 2 (2a) }
+  f(X, X, Y)
+= { by axiom 1 (majority) }
+  X
+
+Lemma 49: f(f345, c2, f(X, c2, a2)) = c2.
+Proof:
+  f(f345, c2, f(X, c2, a2))
+= { by lemma 38 }
+  f(X, c2, f(f345, c2, a2))
+= { by lemma 47 }
+  f(X, c2, c2)
+= { by lemma 48 }
+  c2
+
+Lemma 50: f(X, Y, f(Z, X, W)) = f(Z, X, f(X, Y, W)).
+Proof:
+  f(X, Y, f(Z, X, W))
+= { by axiom 2 (2a) }
+  f(f(Z, X, W), X, Y)
+= { by axiom 4 (associativity) }
+  f(Z, X, f(W, X, Y))
+= { by axiom 2 (2a) }
+  f(Z, X, f(X, Y, W))
+
+Lemma 51: f(Z, Y, f(X, W, Z)) = f(W, Z, f(Z, Y, X)).
+Proof:
+  f(Z, Y, f(X, W, Z))
+= { by axiom 2 (2a) }
+  f(Z, Y, f(W, Z, X))
+= { by lemma 50 }
+  f(W, Z, f(Z, Y, X))
+
+Lemma 52: f(Z, X, f(Y, Z, W)) = f(W, Z, f(Z, Y, X)).
+Proof:
+  f(Z, X, f(Y, Z, W))
+= { by lemma 30 }
+  f(Z, f(X, Z, Y), W)
+= { by axiom 2 (2a) }
+  f(f(X, Z, Y), W, Z)
+= { by axiom 2 (2a) }
+  f(W, Z, f(X, Z, Y))
+= { by lemma 31 }
+  f(Z, Y, f(X, W, Z))
+= { by lemma 51 }
+  f(W, Z, f(Z, Y, X))
+
+Lemma 53: f(Y, W, f(Y, Z, X)) = f(X, Y, f(Z, W, Y)).
+Proof:
+  f(Y, W, f(Y, Z, X))
+= { by lemma 11 }
+  f(W, Y, f(Y, Z, X))
+= { by lemma 52 }
+  f(Y, X, f(Z, Y, W))
+= { by axiom 3 (2b) }
+  f(Y, X, f(Z, W, Y))
+= { by lemma 11 }
+  f(X, Y, f(Z, W, Y))
+
+Lemma 54: f(f145, f245, f(X, f245, f345)) = f(X, f245, c2).
+Proof:
+  f(f145, f245, f(X, f245, f345))
+= { by lemma 11 }
+  f(f145, f245, f(f245, X, f345))
+= { by axiom 3 (2b) }
+  f(f145, f245, f(f245, f345, X))
+= { by lemma 11 }
+  f(f145, f245, f(f345, f245, X))
+= { by lemma 12 }
+  f(f245, X, f(f145, f245, f345))
+= { by axiom 10 (rhs) }
+  f(f245, X, c2)
+= { by lemma 11 }
+  f(X, f245, c2)
+
+Lemma 55: f(f145, f245, f(f245, f345, X)) = f(X, f245, c2).
+Proof:
+  f(f145, f245, f(f245, f345, X))
+= { by axiom 2 (2a) }
+  f(f145, f245, f(f345, X, f245))
+= { by axiom 2 (2a) }
+  f(f145, f245, f(X, f245, f345))
+= { by lemma 54 }
+  f(X, f245, c2)
+
+Lemma 56: f(f245, f345, f(X, c2, a2)) = f(X, f245, c2).
+Proof:
+  f(f245, f345, f(X, c2, a2))
+= { by axiom 3 (2b) }
+  f(f245, f(X, c2, a2), f345)
+= { by lemma 11 }
+  f(f(X, c2, a2), f245, f345)
+= { by lemma 36 }
+  f(f(X, c2, a2), f245, f(f(X, c2, a2), f345, f(f245, f345, c2)))
+= { by axiom 10 (rhs) }
+  f(f(X, c2, a2), f245, f(f(X, c2, a2), f345, f(f245, f345, f(f145, f245, f345))))
+= { by lemma 23 }
+  f(f(X, c2, a2), f245, f(f(X, c2, a2), f345, f(f245, f345, f145)))
+= { by axiom 3 (2b) }
+  f(f(X, c2, a2), f245, f(f(X, c2, a2), f345, f(f245, f145, f345)))
+= { by lemma 11 }
+  f(f(X, c2, a2), f245, f(f(X, c2, a2), f345, f(f145, f245, f345)))
+= { by axiom 10 (rhs) }
+  f(f(X, c2, a2), f245, f(f(X, c2, a2), f345, c2))
+= { by lemma 21 }
+  f(c2, f(X, c2, a2), f(f(X, c2, a2), f245, f345))
+= { by lemma 17 }
+  f(f245, f(X, c2, a2), f(c2, f345, f(X, c2, a2)))
+= { by lemma 11 }
+  f(f245, f(X, c2, a2), f(f345, c2, f(X, c2, a2)))
+= { by lemma 49 }
+  f(f245, f(X, c2, a2), c2)
+= { by axiom 3 (2b) }
+  f(f245, c2, f(X, c2, a2))
+= { by axiom 3 (2b) }
+  f(f245, c2, f(X, a2, c2))
+= { by lemma 53 }
+  f(c2, a2, f(c2, X, f245))
+= { by lemma 27 }
+  f(c2, f(f245, c2, a2), X)
+= { by axiom 3 (2b) }
+  f(c2, X, f(f245, c2, a2))
+= { by axiom 3 (2b) }
+  f(c2, X, f(f245, a2, c2))
+= { by lemma 11 }
+  f(c2, X, f(a2, f245, c2))
+= { by lemma 55 }
+  f(c2, X, f(f145, f245, f(f245, f345, a2)))
+= { by lemma 46 }
+  f(c2, X, f(f145, f245, f245))
+= { by lemma 48 }
+  f(c2, X, f245)
+= { by lemma 11 }
+  f(X, c2, f245)
+= { by axiom 3 (2b) }
+  f(X, f245, c2)
+
+Lemma 57: f(f123, a1, a2) = f123.
+Proof:
+  f(f123, a1, a2)
+= { by lemma 11 }
+  f(a1, f123, a2)
+= { by axiom 3 (2b) }
+  f(a1, a2, f123)
+= { by axiom 5 (a123) }
+  f(a1, a2, f(a1, a2, a3))
+= { by lemma 24 }
+  f(a1, a2, a3)
+= { by axiom 5 (a123) }
+  f123
+
+Lemma 58: f(f123, a2, f(X, a1, a2)) = f(X, f123, a2).
+Proof:
+  f(f123, a2, f(X, a1, a2))
+= { by lemma 11 }
+  f(f123, a2, f(a1, X, a2))
+= { by axiom 3 (2b) }
+  f(f123, a2, f(a1, a2, X))
+= { by lemma 37 }
+  f(a2, X, f(f123, a1, a2))
+= { by lemma 57 }
+  f(a2, X, f123)
+= { by lemma 11 }
+  f(X, a2, f123)
+= { by axiom 3 (2b) }
+  f(X, f123, a2)
+
+Lemma 59: f(W, Z, f(W, Y, X)) = f(W, Y, f(W, Z, X)).
+Proof:
+  f(W, Z, f(W, Y, X))
+= { by lemma 19 }
+  f(W, f(W, Z, X), Y)
+= { by axiom 3 (2b) }
+  f(W, Y, f(W, Z, X))
+
+Lemma 60: f(W, Z, f(W, Y, X)) = f(Y, W, f(W, Z, X)).
+Proof:
+  f(W, Z, f(W, Y, X))
+= { by lemma 59 }
+  f(W, Y, f(W, Z, X))
+= { by lemma 11 }
+  f(Y, W, f(W, Z, X))
+
+Lemma 61: f(f145, f345, c2) = c2.
+Proof:
+  f(f145, f345, c2)
+= { by axiom 10 (rhs) }
+  f(f145, f345, f(f145, f245, f345))
+= { by axiom 3 (2b) }
+  f(f145, f345, f(f145, f345, f245))
+= { by axiom 4 (associativity) }
+  f(f(f145, f345, f145), f345, f245)
+= { by axiom 2 (2a) }
+  f(f345, f245, f(f145, f345, f145))
+= { by lemma 22 }
+  f(f345, f245, f145)
+= { by axiom 3 (2b) }
+  f(f345, f145, f245)
+= { by lemma 11 }
+  f(f145, f345, f245)
+= { by axiom 3 (2b) }
+  f(f145, f245, f345)
+= { by axiom 10 (rhs) }
+  c2
+
+Lemma 62: f(f145, a1, a4) = f145.
+Proof:
+  f(f145, a1, a4)
+= { by lemma 11 }
+  f(a1, f145, a4)
+= { by axiom 3 (2b) }
+  f(a1, a4, f145)
+= { by axiom 6 (a145) }
+  f(a1, a4, f(a1, a4, a5))
+= { by lemma 24 }
+  f(a1, a4, a5)
+= { by axiom 6 (a145) }
+  f145
+
+Lemma 63: f(f145, a1, f(X, a1, a4)) = f(X, f145, a1).
+Proof:
+  f(f145, a1, f(X, a1, a4))
+= { by axiom 3 (2b) }
+  f(f145, a1, f(X, a4, a1))
+= { by lemma 40 }
+  f(a1, f(X, f145, a1), a4)
+= { by lemma 39 }
+  f(X, a1, f(f145, a1, a4))
+= { by lemma 62 }
+  f(X, a1, f145)
+= { by axiom 3 (2b) }
+  f(X, f145, a1)
+
+Lemma 64: f(a1, a4, f(X, a4, a5)) = f(X, f145, a4).
+Proof:
+  f(a1, a4, f(X, a4, a5))
+= { by lemma 11 }
+  f(a1, a4, f(a4, X, a5))
+= { by axiom 3 (2b) }
+  f(a1, a4, f(a4, a5, X))
+= { by lemma 11 }
+  f(a1, a4, f(a5, a4, X))
+= { by lemma 12 }
+  f(a4, X, f(a1, a4, a5))
+= { by axiom 6 (a145) }
+  f(a4, X, f145)
+= { by axiom 2 (2a) }
+  f(f145, a4, X)
+= { by axiom 3 (2b) }
+  f(f145, X, a4)
+= { by lemma 11 }
+  f(X, f145, a4)
+
+Lemma 65: f(f145, a3, a4) = f(f145, f345, a4).
+Proof:
+  f(f145, a3, a4)
+= { by lemma 11 }
+  f(a3, f145, a4)
+= { by lemma 64 }
+  f(a1, a4, f(a3, a4, a5))
+= { by axiom 8 (a345) }
+  f(a1, a4, f345)
+= { by lemma 44 }
+  f(a1, a4, f(f345, a4, a5))
+= { by lemma 64 }
+  f(f345, f145, a4)
+= { by lemma 11 }
+  f(f145, f345, a4)
+
+Lemma 66: f(f145, a1, f(f145, X, a4)) = f145.
+Proof:
+  f(f145, a1, f(f145, X, a4))
+= { by lemma 19 }
+  f(f145, f(f145, a1, a4), X)
+= { by lemma 62 }
+  f(f145, f145, X)
+= { by axiom 1 (majority) }
+  f145
+
+Lemma 67: f(f145, f345, a1) = f145.
+Proof:
+  f(f145, f345, a1)
+= { by lemma 11 }
+  f(f345, f145, a1)
+= { by lemma 63 }
+  f(f145, a1, f(f345, a1, a4))
+= { by lemma 11 }
+  f(f145, a1, f(a1, f345, a4))
+= { by axiom 3 (2b) }
+  f(f145, a1, f(a1, a4, f345))
+= { by axiom 8 (a345) }
+  f(f145, a1, f(a1, a4, f(a3, a4, a5)))
+= { by lemma 64 }
+  f(f145, a1, f(a3, f145, a4))
+= { by lemma 11 }
+  f(f145, a1, f(f145, a3, a4))
+= { by lemma 65 }
+  f(f145, a1, f(f145, f345, a4))
+= { by lemma 66 }
+  f145
+
+Lemma 68: f(X, Y, f(X, Z, f(Y, W, Z))) = f(X, Y, Z).
+Proof:
+  f(X, Y, f(X, Z, f(Y, W, Z)))
+= { by axiom 3 (2b) }
+  f(X, Y, f(X, Z, f(Y, Z, W)))
+= { by lemma 36 }
+  f(X, Y, Z)
+
+Lemma 69: f(c2, a1, a2) = f(f345, a1, a2).
+Proof:
+  f(c2, a1, a2)
+= { by axiom 3 (2b) }
+  f(c2, a2, a1)
+= { by lemma 11 }
+  f(a2, c2, a1)
+= { by axiom 3 (2b) }
+  f(a2, a1, c2)
+= { by lemma 61 }
+  f(a2, a1, f(f145, f345, c2))
+= { by axiom 3 (2b) }
+  f(a2, a1, f(f145, c2, f345))
+= { by lemma 11 }
+  f(a2, a1, f(c2, f145, f345))
+= { by axiom 3 (2b) }
+  f(a2, a1, f(c2, f345, f145))
+= { by lemma 11 }
+  f(a2, a1, f(f345, c2, f145))
+= { by lemma 67 }
+  f(a2, a1, f(f345, c2, f(f145, f345, a1)))
+= { by lemma 15 }
+  f(a2, a1, f(f145, f345, f(f345, c2, a1)))
+= { by lemma 51 }
+  f(a2, a1, f(f345, c2, f(a1, f145, f345)))
+= { by axiom 3 (2b) }
+  f(a2, a1, f(f345, c2, f(a1, f345, f145)))
+= { by lemma 12 }
+  f(a2, a1, f(a1, f345, f(f145, f345, c2)))
+= { by lemma 61 }
+  f(a2, a1, f(a1, f345, c2))
+= { by lemma 11 }
+  f(a2, a1, f(f345, a1, c2))
+= { by axiom 3 (2b) }
+  f(a2, a1, f(f345, c2, a1))
+= { by lemma 33 }
+  f(f345, a1, f(a1, c2, a2))
+= { by lemma 11 }
+  f(a1, f345, f(a1, c2, a2))
+= { by axiom 3 (2b) }
+  f(a1, f345, f(a1, a2, c2))
+= { by lemma 47 }
+  f(a1, f345, f(a1, a2, f(f345, c2, a2)))
+= { by lemma 68 }
+  f(a1, f345, a2)
+= { by lemma 11 }
+  f(f345, a1, a2)
+
+Lemma 70: f(f123, c2, a2) = f(f123, f345, a2).
+Proof:
+  f(f123, c2, a2)
+= { by lemma 11 }
+  f(c2, f123, a2)
+= { by lemma 58 }
+  f(f123, a2, f(c2, a1, a2))
+= { by lemma 69 }
+  f(f123, a2, f(f345, a1, a2))
+= { by lemma 58 }
+  f(f345, f123, a2)
+= { by lemma 11 }
+  f(f123, f345, a2)
+
+Lemma 71: f(W, Z, f(Z, Y, X)) = f(Y, Z, f(X, Z, W)).
+Proof:
+  f(W, Z, f(Z, Y, X))
+= { by lemma 11 }
+  f(W, Z, f(Y, Z, X))
+= { by lemma 26 }
+  f(Z, f(X, Z, W), Y)
+= { by axiom 3 (2b) }
+  f(Z, Y, f(X, Z, W))
+= { by lemma 11 }
+  f(Y, Z, f(X, Z, W))
+
+Lemma 72: f(f245, f345, f(X, f345, a2)) = f(X, f245, f345).
+Proof:
+  f(f245, f345, f(X, f345, a2))
+= { by lemma 71 }
+  f(a2, f345, f(f345, f245, X))
+= { by lemma 52 }
+  f(f345, X, f(f245, f345, a2))
+= { by lemma 46 }
+  f(f345, X, f245)
+= { by lemma 11 }
+  f(X, f345, f245)
+= { by axiom 3 (2b) }
+  f(X, f245, f345)
+
+Lemma 73: f(f123, c1, a4) = c1.
+Proof:
+  f(f123, c1, a4)
+= { by axiom 3 (2b) }
+  f(f123, a4, c1)
+= { by axiom 9 (lhs) }
+  f(f123, a4, f(f123, a4, a5))
+= { by lemma 24 }
+  f(f123, a4, a5)
+= { by axiom 9 (lhs) }
+  c1
+
+Lemma 74: f(f123, c1, f(X, a4, a5)) = c1.
+Proof:
+  f(f123, c1, f(X, a4, a5))
+= { by axiom 3 (2b) }
+  f(f123, f(X, a4, a5), c1)
+= { by lemma 73 }
+  f(f123, f(X, a4, a5), f(f123, c1, a4))
+= { by lemma 20 }
+  f(f123, c1, f(f123, a4, f(X, a4, a5)))
+= { by lemma 11 }
+  f(f123, c1, f(f123, a4, f(a4, X, a5)))
+= { by axiom 3 (2b) }
+  f(f123, c1, f(f123, a4, f(a4, a5, X)))
+= { by lemma 11 }
+  f(f123, c1, f(f123, a4, f(a5, a4, X)))
+= { by lemma 12 }
+  f(f123, c1, f(a4, X, f(f123, a4, a5)))
+= { by axiom 9 (lhs) }
+  f(f123, c1, f(a4, X, c1))
+= { by axiom 2 (2a) }
+  f(f123, c1, f(c1, a4, X))
+= { by axiom 3 (2b) }
+  f(f123, c1, f(c1, X, a4))
+= { by lemma 11 }
+  f(f123, c1, f(X, c1, a4))
+= { by axiom 3 (2b) }
+  f(f123, c1, f(X, a4, c1))
+= { by axiom 2 (2a) }
+  f(f123, c1, f(a4, c1, X))
+= { by axiom 4 (associativity) }
+  f(f(f123, c1, a4), c1, X)
+= { by axiom 2 (2a) }
+  f(c1, X, f(f123, c1, a4))
+= { by lemma 73 }
+  f(c1, X, c1)
+= { by lemma 22 }
+  c1
+
+Lemma 75: f(f123, f345, c1) = c1.
+Proof:
+  f(f123, f345, c1)
+= { by axiom 3 (2b) }
+  f(f123, c1, f345)
+= { by axiom 8 (a345) }
+  f(f123, c1, f(a3, a4, a5))
+= { by lemma 74 }
+  c1
+
+Lemma 76: f(f123, f345, f(f345, X, c1)) = f(X, f345, c1).
+Proof:
+  f(f123, f345, f(f345, X, c1))
+= { by lemma 15 }
+  f(f345, X, f(f123, f345, c1))
+= { by lemma 75 }
+  f(f345, X, c1)
+= { by lemma 11 }
+  f(X, f345, c1)
+
+Lemma 77: f(f123, f245, c1) = c1.
+Proof:
+  f(f123, f245, c1)
+= { by axiom 3 (2b) }
+  f(f123, c1, f245)
+= { by axiom 7 (a245) }
+  f(f123, c1, f(a2, a4, a5))
+= { by lemma 74 }
+  c1
+
+Lemma 78: f(f145, f245, f(X, f145, f345)) = f(X, f145, c2).
+Proof:
+  f(f145, f245, f(X, f145, f345))
+= { by axiom 2 (2a) }
+  f(f(X, f145, f345), f145, f245)
+= { by axiom 4 (associativity) }
+  f(X, f145, f(f345, f145, f245))
+= { by axiom 2 (2a) }
+  f(X, f145, f(f145, f245, f345))
+= { by axiom 10 (rhs) }
+  f(X, f145, c2)
+
+Lemma 79: f(f145, f245, f(f145, f345, X)) = f(X, f145, c2).
+Proof:
+  f(f145, f245, f(f145, f345, X))
+= { by axiom 2 (2a) }
+  f(f145, f245, f(f345, X, f145))
+= { by axiom 2 (2a) }
+  f(f145, f245, f(X, f145, f345))
+= { by lemma 78 }
+  f(X, f145, c2)
+
+Lemma 80: f(X, Y, f(Z, Y, f(W, X, Z))) = f(X, Y, Z).
+Proof:
+  f(X, Y, f(Z, Y, f(W, X, Z)))
+= { by axiom 2 (2a) }
+  f(X, Y, f(Z, Y, f(X, Z, W)))
+= { by lemma 50 }
+  f(X, Y, f(X, Z, f(Z, Y, W)))
+= { by lemma 59 }
+  f(X, Z, f(X, Y, f(Z, Y, W)))
+= { by lemma 16 }
+  f(X, Z, f(Z, Y, f(Y, X, W)))
+= { by lemma 60 }
+  f(Z, Y, f(Z, X, f(Y, X, W)))
+= { by lemma 36 }
+  f(Z, Y, X)
+= { by lemma 11 }
+  f(Y, Z, X)
+= { by axiom 3 (2b) }
+  f(Y, X, Z)
+= { by lemma 11 }
+  f(X, Y, Z)
+
+Lemma 81: f(f145, c1, f(c1, X, a1)) = f(X, f145, c1).
+Proof:
+  f(f145, c1, f(c1, X, a1))
+= { by lemma 15 }
+  f(c1, X, f(f145, c1, a1))
+= { by lemma 11 }
+  f(c1, X, f(c1, f145, a1))
+= { by axiom 3 (2b) }
+  f(c1, X, f(c1, a1, f145))
+= { by lemma 62 }
+  f(c1, X, f(c1, a1, f(f145, a1, a4)))
+= { by lemma 38 }
+  f(c1, X, f(f145, a1, f(c1, a1, a4)))
+= { by lemma 11 }
+  f(c1, X, f(f145, a1, f(a1, c1, a4)))
+= { by axiom 3 (2b) }
+  f(c1, X, f(f145, a1, f(a1, a4, c1)))
+= { by axiom 9 (lhs) }
+  f(c1, X, f(f145, a1, f(a1, a4, f(f123, a4, a5))))
+= { by lemma 64 }
+  f(c1, X, f(f145, a1, f(f123, f145, a4)))
+= { by lemma 15 }
+  f(c1, X, f(f123, f145, f(f145, a1, a4)))
+= { by lemma 62 }
+  f(c1, X, f(f123, f145, f145))
+= { by lemma 48 }
+  f(c1, X, f145)
+= { by lemma 11 }
+  f(X, c1, f145)
+= { by axiom 3 (2b) }
+  f(X, f145, c1)
+
+Lemma 82: f(f123, f145, c1) = c1.
+Proof:
+  f(f123, f145, c1)
+= { by axiom 3 (2b) }
+  f(f123, c1, f145)
+= { by axiom 6 (a145) }
+  f(f123, c1, f(a1, a4, a5))
+= { by lemma 74 }
+  c1
+
+Lemma 83: f(f123, X, f(X, f145, c1)) = f(X, f123, f145).
+Proof:
+  f(f123, X, f(X, f145, c1))
+= { by lemma 11 }
+  f(X, f123, f(X, f145, c1))
+= { by lemma 82 }
+  f(X, f123, f(X, f145, f(f123, f145, c1)))
+= { by lemma 36 }
+  f(X, f123, f145)
+
+Lemma 84: f(W, Z, f(Z, Y, X)) = f(Z, Y, f(W, X, Z)).
+Proof:
+  f(W, Z, f(Z, Y, X))
+= { by lemma 50 }
+  f(Z, Y, f(W, Z, X))
+= { by axiom 3 (2b) }
+  f(Z, Y, f(W, X, Z))
+
+Lemma 85: f(f123, f145, c2) = f(f123, f145, f345).
+Proof:
+  f(f123, f145, c2)
+= { by lemma 49 }
+  f(f123, f145, f(f345, c2, f(f123, c2, a2)))
+= { by lemma 70 }
+  f(f123, f145, f(f345, c2, f(f123, f345, a2)))
+= { by axiom 3 (2b) }
+  f(f123, f145, f(f345, c2, f(f123, a2, f345)))
+= { by lemma 84 }
+  f(f123, f145, f(f123, f345, f(f345, c2, a2)))
+= { by lemma 47 }
+  f(f123, f145, f(f123, f345, c2))
+= { by lemma 61 }
+  f(f123, f145, f(f123, f345, f(f145, f345, c2)))
+= { by lemma 36 }
+  f(f123, f145, f345)
+
+Lemma 86: f(f345, a3, a4) = f345.
+Proof:
+  f(f345, a3, a4)
+= { by lemma 11 }
+  f(a3, f345, a4)
+= { by axiom 3 (2b) }
+  f(a3, a4, f345)
+= { by axiom 8 (a345) }
+  f(a3, a4, f(a3, a4, a5))
+= { by lemma 24 }
+  f(a3, a4, a5)
+= { by axiom 8 (a345) }
+  f345
+
+Lemma 87: f(f345, a3, f(X, a3, a4)) = f(X, f345, a3).
+Proof:
+  f(f345, a3, f(X, a3, a4))
+= { by axiom 3 (2b) }
+  f(f345, a3, f(X, a4, a3))
+= { by lemma 40 }
+  f(a3, f(X, f345, a3), a4)
+= { by lemma 39 }
+  f(X, a3, f(f345, a3, a4))
+= { by lemma 86 }
+  f(X, a3, f345)
+= { by axiom 3 (2b) }
+  f(X, f345, a3)
+
+Lemma 88: f(Z, X, f(W, Z, Y)) = f(W, Z, f(Z, Y, X)).
+Proof:
+  f(Z, X, f(W, Z, Y))
+= { by lemma 11 }
+  f(Z, X, f(Z, W, Y))
+= { by axiom 3 (2b) }
+  f(Z, X, f(Z, Y, W))
+= { by lemma 19 }
+  f(Z, f(Z, X, W), Y)
+= { by lemma 11 }
+  f(Z, f(X, Z, W), Y)
+= { by lemma 18 }
+  f(Z, W, f(Y, Z, X))
+= { by lemma 11 }
+  f(Z, W, f(Z, Y, X))
+= { by lemma 11 }
+  f(W, Z, f(Z, Y, X))
+
+Lemma 89: f(f145, c2, a3) = c2.
+Proof:
+  f(f145, c2, a3)
+= { by axiom 3 (2b) }
+  f(f145, a3, c2)
+= { by lemma 11 }
+  f(a3, f145, c2)
+= { by lemma 79 }
+  f(f145, f245, f(f145, f345, a3))
+= { by lemma 87 }
+  f(f145, f245, f(f345, a3, f(f145, a3, a4)))
+= { by lemma 65 }
+  f(f145, f245, f(f345, a3, f(f145, f345, a4)))
+= { by lemma 88 }
+  f(f145, f245, f(f145, f345, f(f345, a4, a3)))
+= { by axiom 3 (2b) }
+  f(f145, f245, f(f145, f345, f(f345, a3, a4)))
+= { by lemma 86 }
+  f(f145, f245, f(f145, f345, f345))
+= { by lemma 48 }
+  f(f145, f245, f345)
+= { by axiom 10 (rhs) }
+  c2
+
+Lemma 90: f(a1, a3, f(X, a2, a3)) = f(X, f123, a3).
+Proof:
+  f(a1, a3, f(X, a2, a3))
+= { by axiom 3 (2b) }
+  f(a1, a3, f(X, a3, a2))
+= { by lemma 12 }
+  f(a3, a2, f(a1, a3, X))
+= { by axiom 2 (2a) }
+  f(a2, f(a1, a3, X), a3)
+= { by axiom 3 (2b) }
+  f(a2, a3, f(a1, a3, X))
+= { by lemma 12 }
+  f(a3, X, f(a2, a3, a1))
+= { by axiom 2 (2a) }
+  f(a3, X, f(a1, a2, a3))
+= { by axiom 5 (a123) }
+  f(a3, X, f123)
+= { by axiom 2 (2a) }
+  f(f123, a3, X)
+= { by axiom 3 (2b) }
+  f(f123, X, a3)
+= { by lemma 11 }
+  f(X, f123, a3)
+
+Lemma 91: f(f145, a2, a4) = f(f145, f245, a4).
+Proof:
+  f(f145, a2, a4)
+= { by lemma 11 }
+  f(a2, f145, a4)
+= { by lemma 64 }
+  f(a1, a4, f(a2, a4, a5))
+= { by lemma 11 }
+  f(a1, a4, f(a4, a2, a5))
+= { by axiom 3 (2b) }
+  f(a1, a4, f(a4, a5, a2))
+= { by lemma 23 }
+  f(a1, a4, f(a4, a5, f(a2, a4, a5)))
+= { by axiom 7 (a245) }
+  f(a1, a4, f(a4, a5, f245))
+= { by axiom 3 (2b) }
+  f(a1, a4, f(a4, f245, a5))
+= { by lemma 11 }
+  f(a1, a4, f(f245, a4, a5))
+= { by lemma 64 }
+  f(f245, f145, a4)
+= { by lemma 11 }
+  f(f145, f245, a4)
+
+Lemma 92: f(f145, f245, a2) = f245.
+Proof:
+  f(f145, f245, a2)
+= { by lemma 42 }
+  f(f245, a2, f(f145, a2, a4))
+= { by lemma 91 }
+  f(f245, a2, f(f145, f245, a4))
+= { by lemma 88 }
+  f(f145, f245, f(f245, a4, a2))
+= { by axiom 3 (2b) }
+  f(f145, f245, f(f245, a2, a4))
+= { by lemma 41 }
+  f(f145, f245, f245)
+= { by lemma 48 }
+  f245
+
+Lemma 93: f(c2, a2, a3) = f(f145, a2, a3).
+Proof:
+  f(c2, a2, a3)
+= { by axiom 3 (2b) }
+  f(c2, a3, a2)
+= { by lemma 11 }
+  f(a3, c2, a2)
+= { by axiom 3 (2b) }
+  f(a3, a2, c2)
+= { by axiom 10 (rhs) }
+  f(a3, a2, f(f145, f245, f345))
+= { by axiom 3 (2b) }
+  f(a3, a2, f(f145, f345, f245))
+= { by lemma 92 }
+  f(a3, a2, f(f145, f345, f(f145, f245, a2)))
+= { by lemma 59 }
+  f(a3, a2, f(f145, f245, f(f145, f345, a2)))
+= { by lemma 79 }
+  f(a3, a2, f(a2, f145, c2))
+= { by lemma 11 }
+  f(a3, a2, f(f145, a2, c2))
+= { by axiom 3 (2b) }
+  f(a3, a2, f(f145, c2, a2))
+= { by lemma 33 }
+  f(f145, a2, f(a2, c2, a3))
+= { by lemma 11 }
+  f(a2, f145, f(a2, c2, a3))
+= { by axiom 3 (2b) }
+  f(a2, f145, f(a2, a3, c2))
+= { by lemma 89 }
+  f(a2, f145, f(a2, a3, f(f145, c2, a3)))
+= { by lemma 68 }
+  f(a2, f145, a3)
+= { by lemma 11 }
+  f(f145, a2, a3)
+
+Lemma 94: f(f145, f245, a1) = f145.
+Proof:
+  f(f145, f245, a1)
+= { by lemma 11 }
+  f(f245, f145, a1)
+= { by lemma 63 }
+  f(f145, a1, f(f245, a1, a4))
+= { by lemma 11 }
+  f(f145, a1, f(a1, f245, a4))
+= { by axiom 3 (2b) }
+  f(f145, a1, f(a1, a4, f245))
+= { by axiom 7 (a245) }
+  f(f145, a1, f(a1, a4, f(a2, a4, a5)))
+= { by lemma 64 }
+  f(f145, a1, f(a2, f145, a4))
+= { by lemma 11 }
+  f(f145, a1, f(f145, a2, a4))
+= { by lemma 91 }
+  f(f145, a1, f(f145, f245, a4))
+= { by lemma 66 }
+  f145
+
+Lemma 95: f(f245, c2, a1) = c2.
+Proof:
+  f(f245, c2, a1)
+= { by axiom 3 (2b) }
+  f(f245, a1, c2)
+= { by lemma 11 }
+  f(a1, f245, c2)
+= { by lemma 55 }
+  f(f145, f245, f(f245, f345, a1))
+= { by lemma 15 }
+  f(f245, f345, f(f145, f245, a1))
+= { by lemma 94 }
+  f(f245, f345, f145)
+= { by lemma 11 }
+  f(f345, f245, f145)
+= { by axiom 3 (2b) }
+  f(f345, f145, f245)
+= { by lemma 11 }
+  f(f145, f345, f245)
+= { by axiom 3 (2b) }
+  f(f145, f245, f345)
+= { by axiom 10 (rhs) }
+  c2
+
+Lemma 96: f(f145, f245, c1) = f(f123, f145, f245).
+Proof:
+  f(f145, f245, c1)
+= { by lemma 11 }
+  f(f245, f145, c1)
+= { by lemma 77 }
+  f(f245, f145, f(f123, f245, c1))
+= { by lemma 15 }
+  f(f123, f245, f(f245, f145, c1))
+= { by lemma 83 }
+  f(f245, f123, f145)
+= { by lemma 11 }
+  f(f123, f245, f145)
+= { by axiom 3 (2b) }
+  f(f123, f145, f245)
+
+Lemma 97: f(f123, a1, f(X, a1, a2)) = f(X, f123, a1).
+Proof:
+  f(f123, a1, f(X, a1, a2))
+= { by axiom 3 (2b) }
+  f(f123, a1, f(X, a2, a1))
+= { by lemma 40 }
+  f(a1, f(X, f123, a1), a2)
+= { by lemma 39 }
+  f(X, a1, f(f123, a1, a2))
+= { by lemma 57 }
+  f(X, a1, f123)
+= { by axiom 3 (2b) }
+  f(X, f123, a1)
+
+Lemma 98: f(a1, a2, f(X, a1, a3)) = f(X, f123, a1).
+Proof:
+  f(a1, a2, f(X, a1, a3))
+= { by axiom 2 (2a) }
+  f(f(X, a1, a3), a1, a2)
+= { by axiom 4 (associativity) }
+  f(X, a1, f(a3, a1, a2))
+= { by axiom 2 (2a) }
+  f(X, a1, f(a1, a2, a3))
+= { by axiom 5 (a123) }
+  f(X, a1, f123)
+= { by axiom 3 (2b) }
+  f(X, f123, a1)
+
+Lemma 99: f(f145, c1, a2) = f(f123, f145, f245).
+Proof:
+  f(f145, c1, a2)
+= { by lemma 11 }
+  f(c1, f145, a2)
+= { by lemma 68 }
+  f(c1, f145, f(c1, a2, f(f145, f245, a2)))
+= { by lemma 92 }
+  f(c1, f145, f(c1, a2, f245))
+= { by lemma 41 }
+  f(c1, f145, f(c1, a2, f(f245, a2, a4)))
+= { by lemma 38 }
+  f(c1, f145, f(f245, a2, f(c1, a2, a4)))
+= { by lemma 11 }
+  f(c1, f145, f(f245, a2, f(a2, c1, a4)))
+= { by axiom 3 (2b) }
+  f(c1, f145, f(f245, a2, f(a2, a4, c1)))
+= { by axiom 9 (lhs) }
+  f(c1, f145, f(f245, a2, f(a2, a4, f(f123, a4, a5))))
+= { by lemma 43 }
+  f(c1, f145, f(f245, a2, f(f123, f245, a4)))
+= { by lemma 15 }
+  f(c1, f145, f(f123, f245, f(f245, a2, a4)))
+= { by lemma 41 }
+  f(c1, f145, f(f123, f245, f245))
+= { by lemma 48 }
+  f(c1, f145, f245)
+= { by lemma 11 }
+  f(f145, c1, f245)
+= { by axiom 3 (2b) }
+  f(f145, f245, c1)
+= { by lemma 96 }
+  f(f123, f145, f245)
+
+Lemma 100: f(a1, a2, f(X, a2, a3)) = f(X, f123, a2).
+Proof:
+  f(a1, a2, f(X, a2, a3))
+= { by lemma 11 }
+  f(a1, a2, f(a2, X, a3))
+= { by axiom 3 (2b) }
+  f(a1, a2, f(a2, a3, X))
+= { by lemma 11 }
+  f(a1, a2, f(a3, a2, X))
+= { by lemma 12 }
+  f(a2, X, f(a1, a2, a3))
+= { by axiom 5 (a123) }
+  f(a2, X, f123)
+= { by axiom 2 (2a) }
+  f(f123, a2, X)
+= { by axiom 3 (2b) }
+  f(f123, X, a2)
+= { by lemma 11 }
+  f(X, f123, a2)
+
+Lemma 101: f(a1, a2, f(a2, X, a3)) = f(X, f123, a2).
+Proof:
+  f(a1, a2, f(a2, X, a3))
+= { by lemma 11 }
+  f(a1, a2, f(X, a2, a3))
+= { by lemma 100 }
+  f(X, f123, a2)
+
+Lemma 102: f(f123, c1, a2) = f(f123, f145, a2).
+Proof:
+  f(f123, c1, a2)
+= { by lemma 11 }
+  f(c1, f123, a2)
+= { by lemma 101 }
+  f(a1, a2, f(a2, c1, a3))
+= { by lemma 11 }
+  f(a1, a2, f(c1, a2, a3))
+= { by lemma 80 }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f345, c1, a3))))
+= { by lemma 11 }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(c1, f345, a3))))
+= { by axiom 3 (2b) }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(c1, a3, f345))))
+= { by lemma 86 }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(c1, a3, f(f345, a3, a4)))))
+= { by lemma 38 }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f345, a3, f(c1, a3, a4)))))
+= { by lemma 11 }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f345, a3, f(a3, c1, a4)))))
+= { by axiom 3 (2b) }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f345, a3, f(a3, a4, c1)))))
+= { by axiom 9 (lhs) }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f345, a3, f(a3, a4, f(f123, a4, a5))))))
+= { by lemma 11 }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f345, a3, f(a3, a4, f(a4, f123, a5))))))
+= { by axiom 3 (2b) }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f345, a3, f(a3, a4, f(a4, a5, f123))))))
+= { by lemma 11 }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f345, a3, f(a3, a4, f(a5, a4, f123))))))
+= { by lemma 12 }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f345, a3, f(a4, f123, f(a3, a4, a5))))))
+= { by axiom 8 (a345) }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f345, a3, f(a4, f123, f345)))))
+= { by axiom 2 (2a) }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f345, a3, f(f345, a4, f123)))))
+= { by axiom 3 (2b) }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f345, a3, f(f345, f123, a4)))))
+= { by lemma 11 }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f345, a3, f(f123, f345, a4)))))
+= { by lemma 15 }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f123, f345, f(f345, a3, a4)))))
+= { by lemma 86 }
+  f(a1, a2, f(c1, a2, f(a3, a2, f(f123, f345, f345))))
+= { by lemma 48 }
+  f(a1, a2, f(c1, a2, f(a3, a2, f345)))
+= { by lemma 11 }
+  f(a1, a2, f(a2, c1, f(a3, a2, f345)))
+= { by axiom 3 (2b) }
+  f(a1, a2, f(a2, f(a3, a2, f345), c1))
+= { by lemma 27 }
+  f(a1, a2, f(a2, f345, f(a2, c1, a3)))
+= { by lemma 35 }
+  f(a1, a2, f(a2, f(a2, f345, c1), a3))
+= { by lemma 101 }
+  f(f(a2, f345, c1), f123, a2)
+= { by lemma 11 }
+  f(f123, f(a2, f345, c1), a2)
+= { by axiom 3 (2b) }
+  f(f123, a2, f(a2, f345, c1))
+= { by lemma 11 }
+  f(a2, f123, f(a2, f345, c1))
+= { by lemma 75 }
+  f(a2, f123, f(a2, f345, f(f123, f345, c1)))
+= { by lemma 36 }
+  f(a2, f123, f345)
+= { by lemma 11 }
+  f(f123, a2, f345)
+= { by axiom 3 (2b) }
+  f(f123, f345, a2)
+= { by lemma 70 }
+  f(f123, c2, a2)
+= { by lemma 11 }
+  f(c2, f123, a2)
+= { by lemma 100 }
+  f(a1, a2, f(c2, a2, a3))
+= { by lemma 93 }
+  f(a1, a2, f(f145, a2, a3))
+= { by lemma 100 }
+  f(f145, f123, a2)
+= { by lemma 11 }
+  f(f123, f145, a2)
+
+Lemma 103: f(X, c1, f(f123, f145, a2)) = f(f123, c1, f(c1, X, a2)).
+Proof:
+  f(X, c1, f(f123, f145, a2))
+= { by lemma 102 }
+  f(X, c1, f(f123, c1, a2))
+= { by lemma 16 }
+  f(f123, c1, f(c1, X, a2))
+
+Goal 1 (goal): c1 = c2.
+Proof:
+  c1
+= { by lemma 77 }
+  f(f123, f245, c1)
+= { by lemma 11 }
+  f(f245, f123, c1)
+= { by lemma 82 }
+  f(f245, f123, f(f123, f145, c1))
+= { by lemma 84 }
+  f(f123, f145, f(f245, c1, f123))
+= { by axiom 3 (2b) }
+  f(f123, f145, f(f245, f123, c1))
+= { by lemma 28 }
+  f(f123, c1, f(f123, f145, f245))
+= { by lemma 99 }
+  f(f123, c1, f(f145, c1, a2))
+= { by lemma 11 }
+  f(f123, c1, f(c1, f145, a2))
+= { by lemma 103 }
+  f(f145, c1, f(f123, f145, a2))
+= { by lemma 102 }
+  f(f145, c1, f(f123, c1, a2))
+= { by lemma 48 }
+  f(f145, c1, f(f123, c1, f(c1, a2, a2)))
+= { by lemma 103 }
+  f(f145, c1, f(a2, c1, f(f123, f145, a2)))
+= { by lemma 80 }
+  f(f145, c1, a2)
+= { by lemma 99 }
+  f(f123, f145, f245)
+= { by lemma 96 }
+  f(f145, f245, c1)
+= { by lemma 11 }
+  f(f245, f145, c1)
+= { by lemma 81 }
+  f(f145, c1, f(c1, f245, a1))
+= { by lemma 11 }
+  f(c1, f145, f(c1, f245, a1))
+= { by lemma 27 }
+  f(c1, f(a1, c1, f145), f245)
+= { by axiom 3 (2b) }
+  f(c1, f245, f(a1, c1, f145))
+= { by lemma 11 }
+  f(f245, c1, f(a1, c1, f145))
+= { by lemma 94 }
+  f(f245, c1, f(a1, c1, f(f145, f245, a1)))
+= { by lemma 80 }
+  f(f245, c1, a1)
+= { by lemma 11 }
+  f(c1, f245, a1)
+= { by lemma 68 }
+  f(c1, f245, f(c1, a1, f(f245, c2, a1)))
+= { by lemma 95 }
+  f(c1, f245, f(c1, a1, c2))
+= { by axiom 3 (2b) }
+  f(c1, f245, f(c1, c2, a1))
+= { by lemma 11 }
+  f(c1, f245, f(c2, c1, a1))
+= { by lemma 80 }
+  f(c1, f245, f(c2, c1, f(a1, c1, f(f145, c2, a1))))
+= { by axiom 3 (2b) }
+  f(c1, f245, f(c2, c1, f(a1, c1, f(f145, a1, c2))))
+= { by lemma 11 }
+  f(c1, f245, f(c2, c1, f(a1, c1, f(a1, f145, c2))))
+= { by lemma 79 }
+  f(c1, f245, f(c2, c1, f(a1, c1, f(f145, f245, f(f145, f345, a1)))))
+= { by lemma 67 }
+  f(c1, f245, f(c2, c1, f(a1, c1, f(f145, f245, f145))))
+= { by lemma 22 }
+  f(c1, f245, f(c2, c1, f(a1, c1, f145)))
+= { by lemma 11 }
+  f(c1, f245, f(c1, c2, f(a1, c1, f145)))
+= { by axiom 3 (2b) }
+  f(c1, f245, f(c1, f(a1, c1, f145), c2))
+= { by lemma 27 }
+  f(c1, f245, f(c1, f145, f(c1, c2, a1)))
+= { by lemma 11 }
+  f(c1, f245, f(f145, c1, f(c1, c2, a1)))
+= { by lemma 81 }
+  f(c1, f245, f(c2, f145, c1))
+= { by lemma 11 }
+  f(c1, f245, f(f145, c2, c1))
+= { by axiom 3 (2b) }
+  f(c1, f245, f(f145, c1, c2))
+= { by lemma 11 }
+  f(c1, f245, f(c1, f145, c2))
+= { by lemma 79 }
+  f(c1, f245, f(f145, f245, f(f145, f345, c1)))
+= { by lemma 76 }
+  f(c1, f245, f(f145, f245, f(f123, f345, f(f345, f145, c1))))
+= { by lemma 83 }
+  f(c1, f245, f(f145, f245, f(f345, f123, f145)))
+= { by lemma 11 }
+  f(c1, f245, f(f145, f245, f(f123, f345, f145)))
+= { by axiom 3 (2b) }
+  f(c1, f245, f(f145, f245, f(f123, f145, f345)))
+= { by lemma 78 }
+  f(c1, f245, f(f123, f145, c2))
+= { by lemma 89 }
+  f(c1, f245, f(f123, f145, f(f145, c2, a3)))
+= { by lemma 84 }
+  f(c1, f245, f(f145, c2, f(f123, a3, f145)))
+= { by axiom 3 (2b) }
+  f(c1, f245, f(f145, c2, f(f123, f145, a3)))
+= { by lemma 11 }
+  f(c1, f245, f(f145, c2, f(f145, f123, a3)))
+= { by lemma 90 }
+  f(c1, f245, f(f145, c2, f(a1, a3, f(f145, a2, a3))))
+= { by lemma 93 }
+  f(c1, f245, f(f145, c2, f(a1, a3, f(c2, a2, a3))))
+= { by lemma 90 }
+  f(c1, f245, f(f145, c2, f(c2, f123, a3)))
+= { by lemma 11 }
+  f(c1, f245, f(f145, c2, f(f123, c2, a3)))
+= { by lemma 71 }
+  f(c1, f245, f(a3, c2, f(c2, f145, f123)))
+= { by lemma 52 }
+  f(c1, f245, f(c2, f123, f(f145, c2, a3)))
+= { by lemma 89 }
+  f(c1, f245, f(c2, f123, c2))
+= { by lemma 22 }
+  f(c1, f245, c2)
+= { by lemma 55 }
+  f(f145, f245, f(f245, f345, c1))
+= { by lemma 76 }
+  f(f145, f245, f(f123, f345, f(f345, f245, c1)))
+= { by lemma 11 }
+  f(f145, f245, f(f345, f123, f(f345, f245, c1)))
+= { by lemma 77 }
+  f(f145, f245, f(f345, f123, f(f345, f245, f(f123, f245, c1))))
+= { by lemma 36 }
+  f(f145, f245, f(f345, f123, f245))
+= { by lemma 11 }
+  f(f145, f245, f(f123, f345, f245))
+= { by axiom 3 (2b) }
+  f(f145, f245, f(f123, f245, f345))
+= { by lemma 54 }
+  f(f123, f245, c2)
+= { by lemma 95 }
+  f(f123, f245, f(f245, c2, a1))
+= { by lemma 84 }
+  f(f245, c2, f(f123, a1, f245))
+= { by axiom 3 (2b) }
+  f(f245, c2, f(f123, f245, a1))
+= { by lemma 11 }
+  f(f245, c2, f(f245, f123, a1))
+= { by lemma 98 }
+  f(f245, c2, f(a1, a2, f(f245, a1, a3)))
+= { by lemma 11 }
+  f(f245, c2, f(a1, a2, f(a1, f245, a3)))
+= { by lemma 68 }
+  f(f245, c2, f(a1, a2, f(a1, f245, f(a1, a3, f(f245, c2, a3)))))
+= { by axiom 3 (2b) }
+  f(f245, c2, f(a1, a2, f(a1, f245, f(a1, a3, f(f245, a3, c2)))))
+= { by lemma 11 }
+  f(f245, c2, f(a1, a2, f(a1, f245, f(a1, a3, f(a3, f245, c2)))))
+= { by lemma 55 }
+  f(f245, c2, f(a1, a2, f(a1, f245, f(a1, a3, f(f145, f245, f(f245, f345, a3))))))
+= { by lemma 87 }
+  f(f245, c2, f(a1, a2, f(a1, f245, f(a1, a3, f(f145, f245, f(f345, a3, f(f245, a3, a4)))))))
+= { by lemma 45 }
+  f(f245, c2, f(a1, a2, f(a1, f245, f(a1, a3, f(f145, f245, f(f345, a3, f(f245, f345, a4)))))))
+= { by lemma 88 }
+  f(f245, c2, f(a1, a2, f(a1, f245, f(a1, a3, f(f145, f245, f(f245, f345, f(f345, a4, a3)))))))
+= { by axiom 3 (2b) }
+  f(f245, c2, f(a1, a2, f(a1, f245, f(a1, a3, f(f145, f245, f(f245, f345, f(f345, a3, a4)))))))
+= { by lemma 86 }
+  f(f245, c2, f(a1, a2, f(a1, f245, f(a1, a3, f(f145, f245, f(f245, f345, f345))))))
+= { by lemma 48 }
+  f(f245, c2, f(a1, a2, f(a1, f245, f(a1, a3, f(f145, f245, f345)))))
+= { by axiom 10 (rhs) }
+  f(f245, c2, f(a1, a2, f(a1, f245, f(a1, a3, c2))))
+= { by axiom 3 (2b) }
+  f(f245, c2, f(a1, a2, f(a1, f245, f(a1, c2, a3))))
+= { by lemma 11 }
+  f(f245, c2, f(a1, a2, f(f245, a1, f(a1, c2, a3))))
+= { by lemma 33 }
+  f(f245, c2, f(a1, a2, f(a3, a1, f(f245, c2, a1))))
+= { by lemma 95 }
+  f(f245, c2, f(a1, a2, f(a3, a1, c2)))
+= { by axiom 3 (2b) }
+  f(f245, c2, f(a1, a2, f(a3, c2, a1)))
+= { by lemma 11 }
+  f(f245, c2, f(a1, a2, f(c2, a3, a1)))
+= { by axiom 3 (2b) }
+  f(f245, c2, f(a1, a2, f(c2, a1, a3)))
+= { by lemma 98 }
+  f(f245, c2, f(c2, f123, a1))
+= { by lemma 11 }
+  f(f245, c2, f(f123, c2, a1))
+= { by axiom 3 (2b) }
+  f(f245, c2, f(f123, a1, c2))
+= { by lemma 53 }
+  f(c2, a1, f(c2, f123, f245))
+= { by lemma 27 }
+  f(c2, f(f245, c2, a1), f123)
+= { by axiom 3 (2b) }
+  f(c2, f123, f(f245, c2, a1))
+= { by lemma 95 }
+  f(c2, f123, c2)
+= { by lemma 22 }
+  c2
+

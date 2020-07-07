@@ -1,0 +1,1344 @@
+The conjecture is true! Here is a proof.
+
+Axiom 1 (a): X ^ Y = Y ^ X.
+Axiom 2 (a): X ^ (Y ^ Z) = Y ^ (X ^ Z).
+Axiom 3 (a): (X ^ Y) ^ Z = X ^ (Y ^ Z).
+Axiom 4 (a): v(X, Y) = v(Y, X).
+Axiom 5 (a): v(X, v(Y, Z)) = v(Y, v(X, Z)).
+Axiom 6 (a): v(v(X, Y), Z) = v(X, v(Y, Z)).
+Axiom 7 (a): v(X, X ^ Y) = X.
+Axiom 8 (a): X ^ v(X, Y) = X.
+Axiom 9 (a): upme(X, Y, Z) = X ^ v(Y, Z).
+Axiom 10 (a): lome(X, Y, Z) = v(X ^ Y, X ^ Z).
+Axiom 11 (a): upjo(X, Y, Z) = v(X, Y) ^ v(X, Z).
+Axiom 12 (a): lojo(X, Y, Z) = v(X, Y ^ Z).
+Axiom 13 (a): v(upme(a ^ X, Y, Z), Y ^ Z) = v((a ^ X) ^ Y, Z) ^ v((a ^ X) ^ Z, Y).
+Axiom 14 (a): upme(X, Y, Z) = v(upme(X, Y, a ^ Z), upme(X, Z, a ^ Y)).
+Axiom 15 (a): upme(a, x2, y2) = upme(a, x2, z2).
+
+Lemma 16: lome(Z, Y, X) = lome(Z, X, Y).
+Proof:
+  lome(Z, Y, X)
+= { by axiom 10 (a) }
+  v(Z ^ Y, Z ^ X)
+= { by axiom 4 (a) }
+  v(Z ^ X, Z ^ Y)
+= { by axiom 10 (a) }
+  lome(Z, X, Y)
+
+Lemma 17: lojo(upme(X, Y, Z), X, W) = lome(X, W, v(Y, Z)).
+Proof:
+  lojo(upme(X, Y, Z), X, W)
+= { by axiom 12 (a) }
+  v(upme(X, Y, Z), X ^ W)
+= { by axiom 9 (a) }
+  v(X ^ v(Y, Z), X ^ W)
+= { by axiom 10 (a) }
+  lome(X, v(Y, Z), W)
+= { by lemma 16 }
+  lome(X, W, v(Y, Z))
+
+Lemma 18: lojo(Z, Y, X) = lojo(Z, X, Y).
+Proof:
+  lojo(Z, Y, X)
+= { by axiom 12 (a) }
+  v(Z, Y ^ X)
+= { by axiom 1 (a) }
+  v(Z, X ^ Y)
+= { by axiom 12 (a) }
+  lojo(Z, X, Y)
+
+Lemma 19: X ^ upme(Y, X, Z) = X ^ Y.
+Proof:
+  X ^ upme(Y, X, Z)
+= { by axiom 9 (a) }
+  X ^ (Y ^ v(X, Z))
+= { by axiom 2 (a) }
+  Y ^ (X ^ v(X, Z))
+= { by axiom 8 (a) }
+  Y ^ X
+= { by axiom 1 (a) }
+  X ^ Y
+
+Lemma 20: v(Y, X ^ Y) = Y.
+Proof:
+  v(Y, X ^ Y)
+= { by axiom 1 (a) }
+  v(Y, Y ^ X)
+= { by axiom 7 (a) }
+  Y
+
+Lemma 21: lome(X, Y, v(Z, Y)) = upme(X, Y, Z).
+Proof:
+  lome(X, Y, v(Z, Y))
+= { by axiom 4 (a) }
+  lome(X, Y, v(Y, Z))
+= { by lemma 17 }
+  lojo(upme(X, Y, Z), X, Y)
+= { by lemma 18 }
+  lojo(upme(X, Y, Z), Y, X)
+= { by axiom 12 (a) }
+  v(upme(X, Y, Z), Y ^ X)
+= { by lemma 19 }
+  v(upme(X, Y, Z), Y ^ upme(X, Y, Z))
+= { by lemma 20 }
+  upme(X, Y, Z)
+
+Lemma 22: v(Y ^ Z, X) = lojo(X, Y, Z).
+Proof:
+  v(Y ^ Z, X)
+= { by axiom 4 (a) }
+  v(X, Y ^ Z)
+= { by axiom 12 (a) }
+  lojo(X, Y, Z)
+
+Lemma 23: lojo(lojo(Z, X, W), X, Y) = v(Z, lome(X, Y, W)).
+Proof:
+  lojo(lojo(Z, X, W), X, Y)
+= { by axiom 12 (a) }
+  lojo(v(Z, X ^ W), X, Y)
+= { by lemma 22 }
+  v(X ^ Y, v(Z, X ^ W))
+= { by axiom 5 (a) }
+  v(Z, v(X ^ Y, X ^ W))
+= { by axiom 10 (a) }
+  v(Z, lome(X, Y, W))
+
+Lemma 24: lojo(lojo(W, Z, X), Y, Z) = v(W, lome(Z, X, Y)).
+Proof:
+  lojo(lojo(W, Z, X), Y, Z)
+= { by lemma 18 }
+  lojo(lojo(W, Z, X), Z, Y)
+= { by lemma 23 }
+  v(W, lome(Z, Y, X))
+= { by lemma 16 }
+  v(W, lome(Z, X, Y))
+
+Lemma 25: lojo(X ^ Y, X, Z) = lome(X, Y, Z).
+Proof:
+  lojo(X ^ Y, X, Z)
+= { by axiom 12 (a) }
+  v(X ^ Y, X ^ Z)
+= { by axiom 10 (a) }
+  lome(X, Y, Z)
+
+Lemma 26: lojo(lome(X, Y, Z), X, W) = lojo(lome(X, Y, W), X, Z).
+Proof:
+  lojo(lome(X, Y, Z), X, W)
+= { by lemma 18 }
+  lojo(lome(X, Y, Z), W, X)
+= { by lemma 25 }
+  lojo(lojo(X ^ Y, X, Z), W, X)
+= { by lemma 24 }
+  v(X ^ Y, lome(X, Z, W))
+= { by lemma 23 }
+  lojo(lojo(X ^ Y, X, W), X, Z)
+= { by lemma 25 }
+  lojo(lome(X, Y, W), X, Z)
+
+Lemma 27: upme(Z, Y, X) = upme(Z, X, Y).
+Proof:
+  upme(Z, Y, X)
+= { by axiom 9 (a) }
+  Z ^ v(Y, X)
+= { by axiom 4 (a) }
+  Z ^ v(X, Y)
+= { by axiom 9 (a) }
+  upme(Z, X, Y)
+
+Lemma 28: v(W, upme(Z, X, Y)) = lojo(W, Z, v(X, Y)).
+Proof:
+  v(W, upme(Z, X, Y))
+= { by lemma 27 }
+  v(W, upme(Z, Y, X))
+= { by axiom 9 (a) }
+  v(W, Z ^ v(Y, X))
+= { by axiom 12 (a) }
+  lojo(W, Z, v(Y, X))
+= { by axiom 4 (a) }
+  lojo(W, Z, v(X, Y))
+
+Lemma 29: v(Y, Y) = Y.
+Proof:
+  v(Y, Y)
+= { by axiom 8 (a) }
+  v(Y, Y ^ v(Y, ?))
+= { by axiom 7 (a) }
+  Y
+
+Lemma 30: lojo(X, Y, Z ^ W) = lojo(X, Z, Y ^ W).
+Proof:
+  lojo(X, Y, Z ^ W)
+= { by axiom 12 (a) }
+  v(X, Y ^ (Z ^ W))
+= { by axiom 2 (a) }
+  v(X, Z ^ (Y ^ W))
+= { by axiom 12 (a) }
+  lojo(X, Z, Y ^ W)
+
+Lemma 31: lojo(W, Z ^ X, Y) = lojo(W, Z, Y ^ X).
+Proof:
+  lojo(W, Z ^ X, Y)
+= { by lemma 18 }
+  lojo(W, Y, Z ^ X)
+= { by lemma 30 }
+  lojo(W, Z, Y ^ X)
+
+Lemma 32: lojo(X, Y, upme(Z, Y, W)) = lojo(X, Y, Z).
+Proof:
+  lojo(X, Y, upme(Z, Y, W))
+= { by axiom 12 (a) }
+  v(X, Y ^ upme(Z, Y, W))
+= { by lemma 19 }
+  v(X, Y ^ Z)
+= { by axiom 12 (a) }
+  lojo(X, Y, Z)
+
+Lemma 33: v(X, lojo(Y, X, Z)) = v(X, Y).
+Proof:
+  v(X, lojo(Y, X, Z))
+= { by axiom 12 (a) }
+  v(X, v(Y, X ^ Z))
+= { by axiom 5 (a) }
+  v(Y, v(X, X ^ Z))
+= { by axiom 7 (a) }
+  v(Y, X)
+= { by axiom 4 (a) }
+  v(X, Y)
+
+Lemma 34: lojo(Y, Y, X) = Y.
+Proof:
+  lojo(Y, Y, X)
+= { by axiom 12 (a) }
+  v(Y, Y ^ X)
+= { by axiom 7 (a) }
+  Y
+
+Lemma 35: Y ^ v(X, Y) = Y.
+Proof:
+  Y ^ v(X, Y)
+= { by axiom 4 (a) }
+  Y ^ v(Y, X)
+= { by axiom 8 (a) }
+  Y
+
+Lemma 36: Z ^ lome(Z, X, Y) = lome(Z, X, Y).
+Proof:
+  Z ^ lome(Z, X, Y)
+= { by lemma 16 }
+  Z ^ lome(Z, Y, X)
+= { by axiom 1 (a) }
+  lome(Z, Y, X) ^ Z
+= { by lemma 34 }
+  lome(Z, Y, X) ^ lojo(Z, Z, X)
+= { by axiom 12 (a) }
+  lome(Z, Y, X) ^ v(Z, Z ^ X)
+= { by lemma 33 }
+  lome(Z, Y, X) ^ v(Z, lojo(Z ^ X, Z, Y))
+= { by lemma 25 }
+  lome(Z, Y, X) ^ v(Z, lome(Z, X, Y))
+= { by lemma 16 }
+  lome(Z, Y, X) ^ v(Z, lome(Z, Y, X))
+= { by lemma 35 }
+  lome(Z, Y, X)
+= { by lemma 16 }
+  lome(Z, X, Y)
+
+Lemma 37: X ^ upme(Y, Z, W) = upme(X ^ Y, Z, W).
+Proof:
+  X ^ upme(Y, Z, W)
+= { by axiom 9 (a) }
+  X ^ (Y ^ v(Z, W))
+= { by axiom 3 (a) }
+  (X ^ Y) ^ v(Z, W)
+= { by axiom 9 (a) }
+  upme(X ^ Y, Z, W)
+
+Lemma 38: v(Y, Z) ^ X = upme(X, Y, Z).
+Proof:
+  v(Y, Z) ^ X
+= { by axiom 1 (a) }
+  X ^ v(Y, Z)
+= { by axiom 9 (a) }
+  upme(X, Y, Z)
+
+Lemma 39: X ^ (Y ^ lome(X, Y, Z)) = X ^ Y.
+Proof:
+  X ^ (Y ^ lome(X, Y, Z))
+= { by axiom 3 (a) }
+  (X ^ Y) ^ lome(X, Y, Z)
+= { by axiom 10 (a) }
+  (X ^ Y) ^ v(X ^ Y, X ^ Z)
+= { by axiom 8 (a) }
+  X ^ Y
+
+Lemma 40: upme(lome(W, X, v(Y, Z)), Y, Z) = upme(W, Y, Z).
+Proof:
+  upme(lome(W, X, v(Y, Z)), Y, Z)
+= { by axiom 4 (a) }
+  upme(lome(W, X, v(Z, Y)), Y, Z)
+= { by lemma 16 }
+  upme(lome(W, v(Z, Y), X), Y, Z)
+= { by lemma 27 }
+  upme(lome(W, v(Z, Y), X), Z, Y)
+= { by lemma 36 }
+  upme(W ^ lome(W, v(Z, Y), X), Z, Y)
+= { by lemma 37 }
+  W ^ upme(lome(W, v(Z, Y), X), Z, Y)
+= { by lemma 38 }
+  W ^ (v(Z, Y) ^ lome(W, v(Z, Y), X))
+= { by lemma 39 }
+  W ^ v(Z, Y)
+= { by axiom 9 (a) }
+  upme(W, Z, Y)
+= { by lemma 27 }
+  upme(W, Y, Z)
+
+Lemma 41: upme(X, Z ^ Y, Y ^ W) = X ^ lome(Y, Z, W).
+Proof:
+  upme(X, Z ^ Y, Y ^ W)
+= { by axiom 1 (a) }
+  upme(X, Y ^ Z, Y ^ W)
+= { by axiom 9 (a) }
+  X ^ v(Y ^ Z, Y ^ W)
+= { by axiom 10 (a) }
+  X ^ lome(Y, Z, W)
+
+Lemma 42: W ^ lojo(Z, X, Y) = upme(W, Z, X ^ Y).
+Proof:
+  W ^ lojo(Z, X, Y)
+= { by lemma 18 }
+  W ^ lojo(Z, Y, X)
+= { by axiom 12 (a) }
+  W ^ v(Z, Y ^ X)
+= { by axiom 9 (a) }
+  upme(W, Z, Y ^ X)
+= { by axiom 1 (a) }
+  upme(W, Z, X ^ Y)
+
+Lemma 43: lojo(Y, Z, W) ^ X = upme(X, Y, Z ^ W).
+Proof:
+  lojo(Y, Z, W) ^ X
+= { by axiom 1 (a) }
+  X ^ lojo(Y, Z, W)
+= { by lemma 42 }
+  upme(X, Y, Z ^ W)
+
+Lemma 44: upme(v(X, Y), X, Z) = upjo(X, Y, Z).
+Proof:
+  upme(v(X, Y), X, Z)
+= { by axiom 9 (a) }
+  v(X, Y) ^ v(X, Z)
+= { by axiom 11 (a) }
+  upjo(X, Y, Z)
+
+Lemma 45: upjo(Z, Y, X) = upjo(Z, X, Y).
+Proof:
+  upjo(Z, Y, X)
+= { by lemma 44 }
+  upme(v(Z, Y), Z, X)
+= { by axiom 4 (a) }
+  upme(v(Y, Z), Z, X)
+= { by lemma 27 }
+  upme(v(Y, Z), X, Z)
+= { by axiom 9 (a) }
+  v(Y, Z) ^ v(X, Z)
+= { by lemma 38 }
+  upme(v(X, Z), Y, Z)
+= { by lemma 27 }
+  upme(v(X, Z), Z, Y)
+= { by axiom 4 (a) }
+  upme(v(Z, X), Z, Y)
+= { by lemma 44 }
+  upjo(Z, X, Y)
+
+Lemma 46: upme(v(Y, Z), Z, X) = upjo(Z, Y, X).
+Proof:
+  upme(v(Y, Z), Z, X)
+= { by axiom 4 (a) }
+  upme(v(Z, Y), Z, X)
+= { by lemma 44 }
+  upjo(Z, Y, X)
+
+Lemma 47: upme(X, Z, X ^ Y) = upjo(X ^ Y, X, Z).
+Proof:
+  upme(X, Z, X ^ Y)
+= { by lemma 27 }
+  upme(X, X ^ Y, Z)
+= { by axiom 7 (a) }
+  upme(v(X, X ^ Y), X ^ Y, Z)
+= { by lemma 46 }
+  upjo(X ^ Y, X, Z)
+
+Lemma 48: upme(X, Z, Y ^ X) = upjo(X ^ Y, X, Z).
+Proof:
+  upme(X, Z, Y ^ X)
+= { by axiom 1 (a) }
+  upme(X, Z, X ^ Y)
+= { by lemma 47 }
+  upjo(X ^ Y, X, Z)
+
+Lemma 49: W ^ upme(Z, X, Y) = Z ^ upme(W, X, Y).
+Proof:
+  W ^ upme(Z, X, Y)
+= { by lemma 27 }
+  W ^ upme(Z, Y, X)
+= { by axiom 9 (a) }
+  W ^ (Z ^ v(Y, X))
+= { by axiom 2 (a) }
+  Z ^ (W ^ v(Y, X))
+= { by axiom 9 (a) }
+  Z ^ upme(W, Y, X)
+= { by lemma 27 }
+  Z ^ upme(W, X, Y)
+
+Lemma 50: lojo(V, W, upme(Z, X, Y)) = lojo(V, Z, upme(W, X, Y)).
+Proof:
+  lojo(V, W, upme(Z, X, Y))
+= { by lemma 27 }
+  lojo(V, W, upme(Z, Y, X))
+= { by axiom 12 (a) }
+  v(V, W ^ upme(Z, Y, X))
+= { by lemma 49 }
+  v(V, Z ^ upme(W, Y, X))
+= { by axiom 12 (a) }
+  lojo(V, Z, upme(W, Y, X))
+= { by lemma 27 }
+  lojo(V, Z, upme(W, X, Y))
+
+Lemma 51: Y ^ Y = Y.
+Proof:
+  Y ^ Y
+= { by axiom 7 (a) }
+  Y ^ v(Y, Y ^ ?)
+= { by axiom 8 (a) }
+  Y
+
+Lemma 52: lojo(Y ^ X, X, Z) = lome(X, Y, Z).
+Proof:
+  lojo(Y ^ X, X, Z)
+= { by axiom 1 (a) }
+  lojo(X ^ Y, X, Z)
+= { by lemma 25 }
+  lome(X, Y, Z)
+
+Lemma 53: upme(X, Y, Y ^ Z) = X ^ Y.
+Proof:
+  upme(X, Y, Y ^ Z)
+= { by axiom 9 (a) }
+  X ^ v(Y, Y ^ Z)
+= { by axiom 7 (a) }
+  X ^ Y
+
+Lemma 54: X ^ (X ^ Y) = X ^ Y.
+Proof:
+  X ^ (X ^ Y)
+= { by lemma 51 }
+  X ^ (X ^ (Y ^ Y))
+= { by axiom 3 (a) }
+  X ^ ((X ^ Y) ^ Y)
+= { by axiom 2 (a) }
+  (X ^ Y) ^ (X ^ Y)
+= { by lemma 51 }
+  X ^ Y
+
+Lemma 55: X ^ (Y ^ X) = X ^ Y.
+Proof:
+  X ^ (Y ^ X)
+= { by axiom 1 (a) }
+  X ^ (X ^ Y)
+= { by lemma 54 }
+  X ^ Y
+
+Lemma 56: lojo(X, Y, Y ^ Z) = lojo(X, Y, Z).
+Proof:
+  lojo(X, Y, Y ^ Z)
+= { by axiom 1 (a) }
+  lojo(X, Y, Z ^ Y)
+= { by axiom 1 (a) }
+  lojo(X, Y, Y ^ Z)
+= { by lemma 31 }
+  lojo(X, Y ^ Z, Y)
+= { by lemma 32 }
+  lojo(X, Y ^ Z, upme(Y, Y ^ Z, Y ^ Z))
+= { by lemma 40 }
+  lojo(X, Y ^ Z, upme(lome(Y, Z, v(Y ^ Z, Y ^ Z)), Y ^ Z, Y ^ Z))
+= { by lemma 32 }
+  lojo(X, Y ^ Z, lome(Y, Z, v(Y ^ Z, Y ^ Z)))
+= { by lemma 22 }
+  lojo(X, Y ^ Z, lome(Y, Z, lojo(Y ^ Z, Y, Z)))
+= { by lemma 31 }
+  lojo(X, Y, lome(Y, Z, lojo(Y ^ Z, Y, Z)) ^ Z)
+= { by axiom 1 (a) }
+  lojo(X, Y, Z ^ lome(Y, Z, lojo(Y ^ Z, Y, Z)))
+= { by axiom 1 (a) }
+  lojo(X, Y, Z ^ lome(Y, Z, lojo(Z ^ Y, Y, Z)))
+= { by lemma 18 }
+  lojo(X, Y, Z ^ lome(Y, Z, lojo(Z ^ Y, Z, Y)))
+= { by axiom 12 (a) }
+  lojo(X, Y, Z ^ lome(Y, Z, v(Z ^ Y, Z ^ Y)))
+= { by lemma 29 }
+  lojo(X, Y, Z ^ lome(Y, Z, Z ^ Y))
+= { by axiom 1 (a) }
+  lojo(X, Y, Z ^ lome(Y, Z, Y ^ Z))
+= { by lemma 41 }
+  lojo(X, Y, upme(Z, Z ^ Y, Y ^ (Y ^ Z)))
+= { by axiom 1 (a) }
+  lojo(X, Y, upme(Z, Y ^ Z, Y ^ (Y ^ Z)))
+= { by lemma 43 }
+  lojo(X, Y, lojo(Y ^ Z, Y, Y ^ Z) ^ Z)
+= { by lemma 31 }
+  lojo(X, Y ^ Z, lojo(Y ^ Z, Y, Y ^ Z))
+= { by axiom 12 (a) }
+  lojo(X, Y ^ Z, v(Y ^ Z, Y ^ (Y ^ Z)))
+= { by axiom 4 (a) }
+  lojo(X, Y ^ Z, v(Y ^ (Y ^ Z), Y ^ Z))
+= { by lemma 51 }
+  lojo(X, Y ^ Z, v(Y ^ (Y ^ Z), Y ^ Z) ^ v(Y ^ (Y ^ Z), Y ^ Z))
+= { by axiom 9 (a) }
+  lojo(X, Y ^ Z, upme(v(Y ^ (Y ^ Z), Y ^ Z), Y ^ (Y ^ Z), Y ^ Z))
+= { by lemma 27 }
+  lojo(X, Y ^ Z, upme(v(Y ^ (Y ^ Z), Y ^ Z), Y ^ Z, Y ^ (Y ^ Z)))
+= { by axiom 4 (a) }
+  lojo(X, Y ^ Z, upme(v(Y ^ Z, Y ^ (Y ^ Z)), Y ^ Z, Y ^ (Y ^ Z)))
+= { by lemma 50 }
+  lojo(X, v(Y ^ Z, Y ^ (Y ^ Z)), upme(Y ^ Z, Y ^ Z, Y ^ (Y ^ Z)))
+= { by axiom 12 (a) }
+  lojo(X, lojo(Y ^ Z, Y, Y ^ Z), upme(Y ^ Z, Y ^ Z, Y ^ (Y ^ Z)))
+= { by axiom 1 (a) }
+  lojo(X, lojo(Y ^ Z, Y, Z ^ Y), upme(Y ^ Z, Y ^ Z, Y ^ (Y ^ Z)))
+= { by lemma 30 }
+  lojo(X, lojo(Y ^ Z, Z, Y ^ Y), upme(Y ^ Z, Y ^ Z, Y ^ (Y ^ Z)))
+= { by lemma 52 }
+  lojo(X, lome(Z, Y, Y ^ Y), upme(Y ^ Z, Y ^ Z, Y ^ (Y ^ Z)))
+= { by axiom 10 (a) }
+  lojo(X, v(Z ^ Y, Z ^ (Y ^ Y)), upme(Y ^ Z, Y ^ Z, Y ^ (Y ^ Z)))
+= { by axiom 2 (a) }
+  lojo(X, v(Z ^ Y, Y ^ (Z ^ Y)), upme(Y ^ Z, Y ^ Z, Y ^ (Y ^ Z)))
+= { by lemma 20 }
+  lojo(X, Z ^ Y, upme(Y ^ Z, Y ^ Z, Y ^ (Y ^ Z)))
+= { by lemma 48 }
+  lojo(X, Z ^ Y, upjo((Y ^ Z) ^ Y, Y ^ Z, Y ^ Z))
+= { by axiom 1 (a) }
+  lojo(X, Z ^ Y, upjo(Y ^ (Y ^ Z), Y ^ Z, Y ^ Z))
+= { by lemma 44 }
+  lojo(X, Z ^ Y, upme(v(Y ^ (Y ^ Z), Y ^ Z), Y ^ (Y ^ Z), Y ^ Z))
+= { by axiom 10 (a) }
+  lojo(X, Z ^ Y, upme(lome(Y, Y ^ Z, Z), Y ^ (Y ^ Z), Y ^ Z))
+= { by lemma 27 }
+  lojo(X, Z ^ Y, upme(lome(Y, Y ^ Z, Z), Y ^ Z, Y ^ (Y ^ Z)))
+= { by axiom 1 (a) }
+  lojo(X, Z ^ Y, upme(lome(Y, Y ^ Z, Z), Y ^ Z, (Y ^ Z) ^ Y))
+= { by lemma 53 }
+  lojo(X, Z ^ Y, lome(Y, Y ^ Z, Z) ^ (Y ^ Z))
+= { by axiom 1 (a) }
+  lojo(X, Z ^ Y, (Y ^ Z) ^ lome(Y, Y ^ Z, Z))
+= { by lemma 16 }
+  lojo(X, Z ^ Y, (Y ^ Z) ^ lome(Y, Z, Y ^ Z))
+= { by lemma 36 }
+  lojo(X, Z ^ Y, (Y ^ Z) ^ (Y ^ lome(Y, Z, Y ^ Z)))
+= { by axiom 10 (a) }
+  lojo(X, Z ^ Y, (Y ^ Z) ^ (Y ^ v(Y ^ Z, Y ^ (Y ^ Z))))
+= { by lemma 39 }
+  lojo(X, Z ^ Y, (Y ^ Z) ^ (Y ^ v(Y ^ (Z ^ lome(Y, Z, ?)), Y ^ (Y ^ Z))))
+= { by axiom 10 (a) }
+  lojo(X, Z ^ Y, (Y ^ Z) ^ (Y ^ lome(Y, Z ^ lome(Y, Z, ?), Y ^ Z)))
+= { by lemma 16 }
+  lojo(X, Z ^ Y, (Y ^ Z) ^ (Y ^ lome(Y, Y ^ Z, Z ^ lome(Y, Z, ?))))
+= { by axiom 1 (a) }
+  lojo(X, Z ^ Y, (Y ^ Z) ^ (lome(Y, Y ^ Z, Z ^ lome(Y, Z, ?)) ^ Y))
+= { by axiom 3 (a) }
+  lojo(X, Z ^ Y, ((Y ^ Z) ^ lome(Y, Y ^ Z, Z ^ lome(Y, Z, ?))) ^ Y)
+= { by axiom 1 (a) }
+  lojo(X, Z ^ Y, Y ^ ((Y ^ Z) ^ lome(Y, Y ^ Z, Z ^ lome(Y, Z, ?))))
+= { by lemma 39 }
+  lojo(X, Z ^ Y, Y ^ (Y ^ Z))
+= { by lemma 54 }
+  lojo(X, Z ^ Y, Y ^ Z)
+= { by lemma 31 }
+  lojo(X, Z, (Y ^ Z) ^ Y)
+= { by axiom 3 (a) }
+  lojo(X, Z, Y ^ (Z ^ Y))
+= { by lemma 55 }
+  lojo(X, Z, Y ^ Z)
+= { by axiom 1 (a) }
+  lojo(X, Z, Z ^ Y)
+= { by lemma 56 }
+  lojo(X, Z, Y)
+= { by lemma 18 }
+  lojo(X, Y, Z)
+
+Lemma 57: lojo(X, Y, Z ^ Y) = lojo(X, Y, Z).
+Proof:
+  lojo(X, Y, Z ^ Y)
+= { by axiom 1 (a) }
+  lojo(X, Y, Y ^ Z)
+= { by lemma 56 }
+  lojo(X, Y, Z)
+
+Lemma 58: upme(Y, Y, X) = Y.
+Proof:
+  upme(Y, Y, X)
+= { by axiom 9 (a) }
+  Y ^ v(Y, X)
+= { by axiom 8 (a) }
+  Y
+
+Lemma 59: lome(X, Y ^ Z, Y ^ W) = lome(X ^ Y, Z, W).
+Proof:
+  lome(X, Y ^ Z, Y ^ W)
+= { by lemma 16 }
+  lome(X, Y ^ W, Y ^ Z)
+= { by lemma 25 }
+  lojo(X ^ (Y ^ W), X, Y ^ Z)
+= { by axiom 3 (a) }
+  lojo((X ^ Y) ^ W, X, Y ^ Z)
+= { by lemma 22 }
+  v(X ^ (Y ^ Z), (X ^ Y) ^ W)
+= { by axiom 3 (a) }
+  v((X ^ Y) ^ Z, (X ^ Y) ^ W)
+= { by axiom 10 (a) }
+  lome(X ^ Y, Z, W)
+
+Lemma 60: v(X, lojo(Y, Z, W)) = lojo(v(X, Y), Z, W).
+Proof:
+  v(X, lojo(Y, Z, W))
+= { by axiom 12 (a) }
+  v(X, v(Y, Z ^ W))
+= { by axiom 6 (a) }
+  v(v(X, Y), Z ^ W)
+= { by axiom 12 (a) }
+  lojo(v(X, Y), Z, W)
+
+Lemma 61: lojo(lojo(Z, W, V), X, Y) = lojo(lojo(Z, X, Y), W, V).
+Proof:
+  lojo(lojo(Z, W, V), X, Y)
+= { by lemma 18 }
+  lojo(lojo(Z, V, W), X, Y)
+= { by lemma 18 }
+  lojo(lojo(Z, V, W), Y, X)
+= { by lemma 22 }
+  lojo(v(V ^ W, Z), Y, X)
+= { by lemma 60 }
+  v(V ^ W, lojo(Z, Y, X))
+= { by lemma 22 }
+  lojo(lojo(Z, Y, X), V, W)
+= { by lemma 18 }
+  lojo(lojo(Z, Y, X), W, V)
+= { by lemma 18 }
+  lojo(lojo(Z, X, Y), W, V)
+
+Lemma 62: upme(X, Y, lojo(Z, Y, W)) = upme(X, Y, Z).
+Proof:
+  upme(X, Y, lojo(Z, Y, W))
+= { by axiom 9 (a) }
+  X ^ v(Y, lojo(Z, Y, W))
+= { by lemma 33 }
+  X ^ v(Y, Z)
+= { by axiom 9 (a) }
+  upme(X, Y, Z)
+
+Lemma 63: upme(X, Y, v(Z, W)) = upme(X, Z, v(Y, W)).
+Proof:
+  upme(X, Y, v(Z, W))
+= { by axiom 9 (a) }
+  X ^ v(Y, v(Z, W))
+= { by axiom 5 (a) }
+  X ^ v(Z, v(Y, W))
+= { by axiom 9 (a) }
+  upme(X, Z, v(Y, W))
+
+Lemma 64: upme(V, W, lojo(Z, X, Y)) = upme(V, Z, lojo(W, X, Y)).
+Proof:
+  upme(V, W, lojo(Z, X, Y))
+= { by lemma 18 }
+  upme(V, W, lojo(Z, Y, X))
+= { by axiom 12 (a) }
+  upme(V, W, v(Z, Y ^ X))
+= { by lemma 63 }
+  upme(V, Z, v(W, Y ^ X))
+= { by axiom 12 (a) }
+  upme(V, Z, lojo(W, Y, X))
+= { by lemma 18 }
+  upme(V, Z, lojo(W, X, Y))
+
+Lemma 65: upme(lojo(X, a, Y ^ Z), a ^ (Y ^ X), Z) = lojo(upme(a ^ Y, Z, X), Z, X).
+Proof:
+  upme(lojo(X, a, Y ^ Z), a ^ (Y ^ X), Z)
+= { by lemma 22 }
+  upme(v(a ^ (Y ^ Z), X), a ^ (Y ^ X), Z)
+= { by axiom 3 (a) }
+  upme(v((a ^ Y) ^ Z, X), a ^ (Y ^ X), Z)
+= { by axiom 3 (a) }
+  upme(v((a ^ Y) ^ Z, X), (a ^ Y) ^ X, Z)
+= { by axiom 9 (a) }
+  v((a ^ Y) ^ Z, X) ^ v((a ^ Y) ^ X, Z)
+= { by axiom 13 (a) }
+  v(upme(a ^ Y, Z, X), Z ^ X)
+= { by axiom 12 (a) }
+  lojo(upme(a ^ Y, Z, X), Z, X)
+
+Lemma 66: upme(lojo(X, a, Y ^ Z), a ^ (Z ^ X), Y) = lojo(upme(Z ^ a, X, Y), X, Y).
+Proof:
+  upme(lojo(X, a, Y ^ Z), a ^ (Z ^ X), Y)
+= { by axiom 1 (a) }
+  upme(lojo(X, a, Z ^ Y), a ^ (Z ^ X), Y)
+= { by lemma 65 }
+  lojo(upme(a ^ Z, Y, X), Y, X)
+= { by lemma 18 }
+  lojo(upme(a ^ Z, Y, X), X, Y)
+= { by lemma 27 }
+  lojo(upme(a ^ Z, X, Y), X, Y)
+= { by axiom 1 (a) }
+  lojo(upme(Z ^ a, X, Y), X, Y)
+
+Lemma 67: v(Z, upme(Z, Y, X)) = Z.
+Proof:
+  v(Z, upme(Z, Y, X))
+= { by axiom 9 (a) }
+  v(Z, Z ^ v(Y, X))
+= { by axiom 7 (a) }
+  Z
+
+Lemma 68: upme(lojo(X, Z, a), Y, Z) = lojo(upme(X, Y, Z), Z, a).
+Proof:
+  upme(lojo(X, Z, a), Y, Z)
+= { by lemma 18 }
+  upme(lojo(X, a, Z), Y, Z)
+= { by lemma 27 }
+  upme(lojo(X, a, Z), Z, Y)
+= { by lemma 62 }
+  upme(lojo(X, a, Z), Z, lojo(Y, Z, a ^ X))
+= { by lemma 30 }
+  upme(lojo(X, a, Z), Z, lojo(Y, a, Z ^ X))
+= { by lemma 22 }
+  upme(lojo(X, a, Z), Z, v(a ^ (Z ^ X), Y))
+= { by lemma 63 }
+  upme(lojo(X, a, Z), a ^ (Z ^ X), v(Z, Y))
+= { by axiom 8 (a) }
+  upme(lojo(X, a, Z ^ v(Z, Y)), a ^ (Z ^ X), v(Z, Y))
+= { by lemma 65 }
+  lojo(upme(a ^ Z, v(Z, Y), X), v(Z, Y), X)
+= { by lemma 27 }
+  lojo(upme(a ^ Z, X, v(Z, Y)), v(Z, Y), X)
+= { by lemma 63 }
+  lojo(upme(a ^ Z, Z, v(X, Y)), v(Z, Y), X)
+= { by lemma 18 }
+  lojo(upme(a ^ Z, Z, v(X, Y)), X, v(Z, Y))
+= { by lemma 37 }
+  lojo(a ^ upme(Z, Z, v(X, Y)), X, v(Z, Y))
+= { by lemma 58 }
+  lojo(a ^ Z, X, v(Z, Y))
+= { by axiom 1 (a) }
+  lojo(Z ^ a, X, v(Z, Y))
+= { by lemma 28 }
+  v(Z ^ a, upme(X, Z, Y))
+= { by lemma 22 }
+  lojo(upme(X, Z, Y), Z, a)
+= { by lemma 18 }
+  lojo(upme(X, Z, Y), a, Z)
+= { by lemma 27 }
+  lojo(upme(X, Y, Z), a, Z)
+= { by lemma 18 }
+  lojo(upme(X, Y, Z), Z, a)
+
+Lemma 69: upme(Z, Y, v(X, Z)) = Z.
+Proof:
+  upme(Z, Y, v(X, Z))
+= { by axiom 4 (a) }
+  upme(Z, Y, v(Z, X))
+= { by axiom 9 (a) }
+  Z ^ v(Y, v(Z, X))
+= { by axiom 5 (a) }
+  Z ^ v(Z, v(Y, X))
+= { by axiom 8 (a) }
+  Z
+
+Lemma 70: upme(X ^ Y, X, Z) = X ^ Y.
+Proof:
+  upme(X ^ Y, X, Z)
+= { by lemma 37 }
+  X ^ upme(Y, X, Z)
+= { by lemma 19 }
+  X ^ Y
+
+Lemma 71: upme(X ^ Y, Z, X) = X ^ Y.
+Proof:
+  upme(X ^ Y, Z, X)
+= { by lemma 27 }
+  upme(X ^ Y, X, Z)
+= { by lemma 70 }
+  X ^ Y
+
+Lemma 72: lojo(X ^ Y, Z, X) = lome(X, Y, Z).
+Proof:
+  lojo(X ^ Y, Z, X)
+= { by lemma 18 }
+  lojo(X ^ Y, X, Z)
+= { by lemma 25 }
+  lome(X, Y, Z)
+
+Lemma 73: v(X, lome(Y, X, Z)) = lojo(X, Y, Z).
+Proof:
+  v(X, lome(Y, X, Z))
+= { by lemma 16 }
+  v(X, lome(Y, Z, X))
+= { by lemma 25 }
+  v(X, lojo(Y ^ Z, Y, X))
+= { by lemma 18 }
+  v(X, lojo(Y ^ Z, X, Y))
+= { by lemma 33 }
+  v(X, Y ^ Z)
+= { by axiom 12 (a) }
+  lojo(X, Y, Z)
+
+Lemma 74: upme(Z ^ a, X, Y) = lome(Z ^ a, X, Y).
+Proof:
+  upme(Z ^ a, X, Y)
+= { by lemma 27 }
+  upme(Z ^ a, Y, X)
+= { by lemma 58 }
+  upme(upme(Z ^ a, Y, X), upme(Z ^ a, Y, X), Z)
+= { by axiom 9 (a) }
+  upme(Z ^ a, Y, X) ^ v(upme(Z ^ a, Y, X), Z)
+= { by lemma 19 }
+  upme(Z ^ a, Y, X) ^ upme(v(upme(Z ^ a, Y, X), Z), upme(Z ^ a, Y, X), Y)
+= { by lemma 44 }
+  upme(Z ^ a, Y, X) ^ upjo(upme(Z ^ a, Y, X), Z, Y)
+= { by lemma 37 }
+  upme(Z ^ a, Y, X) ^ upjo(Z ^ upme(a, Y, X), Z, Y)
+= { by lemma 47 }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, Z ^ upme(a, Y, X))
+= { by lemma 37 }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, upme(Z ^ a, Y, X))
+= { by axiom 1 (a) }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, upme(a ^ Z, Y, X))
+= { by lemma 27 }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, upme(a ^ Z, X, Y))
+= { by lemma 21 }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, lome(a ^ Z, X, v(Y, X)))
+= { by lemma 16 }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, lome(a ^ Z, v(Y, X), X))
+= { by lemma 59 }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, lome(a, Z ^ v(Y, X), Z ^ X))
+= { by axiom 9 (a) }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, lome(a, upme(Z, Y, X), Z ^ X))
+= { by lemma 16 }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, lome(a, Z ^ X, upme(Z, Y, X)))
+= { by axiom 1 (a) }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, lome(a, X ^ Z, upme(Z, Y, X)))
+= { by axiom 10 (a) }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, v(a ^ (X ^ Z), a ^ upme(Z, Y, X)))
+= { by lemma 49 }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, v(a ^ (X ^ Z), Z ^ upme(a, Y, X)))
+= { by lemma 22 }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, lojo(Z ^ upme(a, Y, X), a, X ^ Z))
+= { by lemma 37 }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, lojo(upme(Z ^ a, Y, X), a, X ^ Z))
+= { by lemma 62 }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, lojo(lojo(upme(Z ^ a, Y, X), a, X ^ Z), Y, X))
+= { by lemma 61 }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, lojo(lojo(upme(Z ^ a, Y, X), Y, X), a, X ^ Z))
+= { by lemma 64 }
+  upme(Z ^ a, Y, X) ^ upme(Z, lojo(upme(Z ^ a, Y, X), Y, X), lojo(Y, a, X ^ Z))
+= { by lemma 27 }
+  upme(Z ^ a, Y, X) ^ upme(Z, lojo(Y, a, X ^ Z), lojo(upme(Z ^ a, Y, X), Y, X))
+= { by lemma 66 }
+  upme(Z ^ a, Y, X) ^ upme(Z, lojo(Y, a, X ^ Z), upme(lojo(Y, a, X ^ Z), a ^ (Z ^ Y), X))
+= { by axiom 9 (a) }
+  upme(Z ^ a, Y, X) ^ (Z ^ v(lojo(Y, a, X ^ Z), upme(lojo(Y, a, X ^ Z), a ^ (Z ^ Y), X)))
+= { by lemma 67 }
+  upme(Z ^ a, Y, X) ^ (Z ^ lojo(Y, a, X ^ Z))
+= { by lemma 42 }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, a ^ (X ^ Z))
+= { by axiom 2 (a) }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, X ^ (a ^ Z))
+= { by axiom 1 (a) }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, X ^ (Z ^ a))
+= { by axiom 2 (a) }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, Z ^ (X ^ a))
+= { by axiom 3 (a) }
+  upme(Z ^ a, Y, X) ^ upme(Z, Y, (Z ^ X) ^ a)
+= { by lemma 43 }
+  upme(Z ^ a, Y, X) ^ (lojo(Y, Z ^ X, a) ^ Z)
+= { by lemma 53 }
+  upme(Z ^ a, Y, X) ^ upme(lojo(Y, Z ^ X, a), Z, Z ^ X)
+= { by lemma 68 }
+  upme(Z ^ a, Y, X) ^ lojo(upme(Y, Z, Z ^ X), Z ^ X, a)
+= { by lemma 31 }
+  upme(Z ^ a, Y, X) ^ lojo(upme(Y, Z, Z ^ X), Z, a ^ X)
+= { by lemma 53 }
+  upme(Z ^ a, Y, X) ^ lojo(Y ^ Z, Z, a ^ X)
+= { by lemma 52 }
+  upme(Z ^ a, Y, X) ^ lome(Z, Y, a ^ X)
+= { by axiom 1 (a) }
+  upme(Z ^ a, Y, X) ^ lome(Z, Y, X ^ a)
+= { by axiom 1 (a) }
+  lome(Z, Y, X ^ a) ^ upme(Z ^ a, Y, X)
+= { by lemma 49 }
+  (Z ^ a) ^ upme(lome(Z, Y, X ^ a), Y, X)
+= { by lemma 37 }
+  upme((Z ^ a) ^ lome(Z, Y, X ^ a), Y, X)
+= { by axiom 3 (a) }
+  upme(Z ^ (a ^ lome(Z, Y, X ^ a)), Y, X)
+= { by axiom 2 (a) }
+  upme(a ^ (Z ^ lome(Z, Y, X ^ a)), Y, X)
+= { by lemma 36 }
+  upme(a ^ lome(Z, Y, X ^ a), Y, X)
+= { by lemma 16 }
+  upme(a ^ lome(Z, X ^ a, Y), Y, X)
+= { by lemma 41 }
+  upme(upme(a, (X ^ a) ^ Z, Z ^ Y), Y, X)
+= { by lemma 69 }
+  upme(upme(upme(a, (X ^ a) ^ Z, Z ^ Y), Z ^ Y, v(Z ^ Y, upme(a, (X ^ a) ^ Z, Z ^ Y))), Y, X)
+= { by axiom 9 (a) }
+  upme(upme(a ^ v((X ^ a) ^ Z, Z ^ Y), Z ^ Y, v(Z ^ Y, upme(a, (X ^ a) ^ Z, Z ^ Y))), Y, X)
+= { by lemma 37 }
+  upme(a ^ upme(v((X ^ a) ^ Z, Z ^ Y), Z ^ Y, v(Z ^ Y, upme(a, (X ^ a) ^ Z, Z ^ Y))), Y, X)
+= { by lemma 46 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(Z ^ Y, upme(a, (X ^ a) ^ Z, Z ^ Y))), Y, X)
+= { by lemma 28 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(Z ^ Y, a, v((X ^ a) ^ Z, Z ^ Y))), Y, X)
+= { by axiom 4 (a) }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(Z ^ Y, a, v(Z ^ Y, (X ^ a) ^ Z))), Y, X)
+= { by lemma 28 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(Z ^ Y, upme(a, Z ^ Y, (X ^ a) ^ Z))), Y, X)
+= { by lemma 34 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(Z ^ Y, lojo(upme(a, Z ^ Y, (X ^ a) ^ Z), upme(a, Z ^ Y, (X ^ a) ^ Z), ((X ^ a) ^ Z) ^ a))), Y, X)
+= { by axiom 12 (a) }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(Z ^ Y, v(upme(a, Z ^ Y, (X ^ a) ^ Z), upme(a, Z ^ Y, (X ^ a) ^ Z) ^ (((X ^ a) ^ Z) ^ a)))), Y, X)
+= { by axiom 8 (a) }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(Z ^ Y, v(upme(a, Z ^ Y, (X ^ a) ^ Z) ^ v(upme(a, Z ^ Y, (X ^ a) ^ Z), upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ?), upme(a, Z ^ Y, (X ^ a) ^ Z) ^ (((X ^ a) ^ Z) ^ a)))), Y, X)
+= { by axiom 10 (a) }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(Z ^ Y, lome(upme(a, Z ^ Y, (X ^ a) ^ Z), v(upme(a, Z ^ Y, (X ^ a) ^ Z), upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ?), ((X ^ a) ^ Z) ^ a))), Y, X)
+= { by axiom 7 (a) }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(Z ^ Y, lome(upme(a, Z ^ Y, (X ^ a) ^ Z), upme(a, Z ^ Y, (X ^ a) ^ Z), ((X ^ a) ^ Z) ^ a))), Y, X)
+= { by lemma 16 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(Z ^ Y, lome(upme(a, Z ^ Y, (X ^ a) ^ Z), ((X ^ a) ^ Z) ^ a, upme(a, Z ^ Y, (X ^ a) ^ Z)))), Y, X)
+= { by lemma 24 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(lojo(Z ^ Y, upme(a, Z ^ Y, (X ^ a) ^ Z), ((X ^ a) ^ Z) ^ a), upme(a, Z ^ Y, (X ^ a) ^ Z), upme(a, Z ^ Y, (X ^ a) ^ Z))), Y, X)
+= { by axiom 1 (a) }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(lojo(Z ^ Y, upme(a, Z ^ Y, (X ^ a) ^ Z), a ^ ((X ^ a) ^ Z)), upme(a, Z ^ Y, (X ^ a) ^ Z), upme(a, Z ^ Y, (X ^ a) ^ Z))), Y, X)
+= { by lemma 30 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(lojo(Z ^ Y, a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z)), upme(a, Z ^ Y, (X ^ a) ^ Z), upme(a, Z ^ Y, (X ^ a) ^ Z))), Y, X)
+= { by lemma 27 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(lojo(Z ^ Y, a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z)), upme(a, Z ^ Y, (X ^ a) ^ Z), upme(a, (X ^ a) ^ Z, Z ^ Y))), Y, X)
+= { by lemma 50 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(lojo(Z ^ Y, a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z)), a, upme(upme(a, Z ^ Y, (X ^ a) ^ Z), (X ^ a) ^ Z, Z ^ Y))), Y, X)
+= { by lemma 61 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(lojo(Z ^ Y, a, upme(upme(a, Z ^ Y, (X ^ a) ^ Z), (X ^ a) ^ Z, Z ^ Y)), a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z))), Y, X)
+= { by lemma 38 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(lojo(Z ^ Y, a, v((X ^ a) ^ Z, Z ^ Y) ^ upme(a, Z ^ Y, (X ^ a) ^ Z)), a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z))), Y, X)
+= { by lemma 31 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(lojo(Z ^ Y, a ^ upme(a, Z ^ Y, (X ^ a) ^ Z), v((X ^ a) ^ Z, Z ^ Y)), a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z))), Y, X)
+= { by lemma 28 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(v(Z ^ Y, upme(a ^ upme(a, Z ^ Y, (X ^ a) ^ Z), (X ^ a) ^ Z, Z ^ Y)), a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z))), Y, X)
+= { by lemma 33 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(v(Z ^ Y, lojo(upme(a ^ upme(a, Z ^ Y, (X ^ a) ^ Z), (X ^ a) ^ Z, Z ^ Y), Z ^ Y, (X ^ a) ^ Z)), a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z))), Y, X)
+= { by lemma 60 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(lojo(v(Z ^ Y, upme(a ^ upme(a, Z ^ Y, (X ^ a) ^ Z), (X ^ a) ^ Z, Z ^ Y)), Z ^ Y, (X ^ a) ^ Z), a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z))), Y, X)
+= { by lemma 18 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(lojo(v(Z ^ Y, upme(a ^ upme(a, Z ^ Y, (X ^ a) ^ Z), (X ^ a) ^ Z, Z ^ Y)), (X ^ a) ^ Z, Z ^ Y), a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z))), Y, X)
+= { by lemma 60 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(v(Z ^ Y, lojo(upme(a ^ upme(a, Z ^ Y, (X ^ a) ^ Z), (X ^ a) ^ Z, Z ^ Y), (X ^ a) ^ Z, Z ^ Y)), a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z))), Y, X)
+= { by lemma 60 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(Z ^ Y, lojo(lojo(upme(a ^ upme(a, Z ^ Y, (X ^ a) ^ Z), (X ^ a) ^ Z, Z ^ Y), (X ^ a) ^ Z, Z ^ Y), a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z)))), Y, X)
+= { by lemma 18 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(Z ^ Y, lojo(lojo(upme(a ^ upme(a, Z ^ Y, (X ^ a) ^ Z), (X ^ a) ^ Z, Z ^ Y), (X ^ a) ^ Z, Z ^ Y), upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z), a))), Y, X)
+= { by axiom 12 (a) }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(Z ^ Y, v(lojo(upme(a ^ upme(a, Z ^ Y, (X ^ a) ^ Z), (X ^ a) ^ Z, Z ^ Y), (X ^ a) ^ Z, Z ^ Y), (upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z)) ^ a))), Y, X)
+= { by axiom 5 (a) }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(lojo(upme(a ^ upme(a, Z ^ Y, (X ^ a) ^ Z), (X ^ a) ^ Z, Z ^ Y), (X ^ a) ^ Z, Z ^ Y), v(Z ^ Y, (upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z)) ^ a))), Y, X)
+= { by axiom 12 (a) }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(lojo(upme(a ^ upme(a, Z ^ Y, (X ^ a) ^ Z), (X ^ a) ^ Z, Z ^ Y), (X ^ a) ^ Z, Z ^ Y), lojo(Z ^ Y, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z), a))), Y, X)
+= { by lemma 18 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(lojo(upme(a ^ upme(a, Z ^ Y, (X ^ a) ^ Z), (X ^ a) ^ Z, Z ^ Y), (X ^ a) ^ Z, Z ^ Y), lojo(Z ^ Y, a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z)))), Y, X)
+= { by axiom 4 (a) }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(lojo(Z ^ Y, a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z)), lojo(upme(a ^ upme(a, Z ^ Y, (X ^ a) ^ Z), (X ^ a) ^ Z, Z ^ Y), (X ^ a) ^ Z, Z ^ Y))), Y, X)
+= { by lemma 65 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, v(lojo(Z ^ Y, a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z)), upme(lojo(Z ^ Y, a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z)), a ^ (upme(a, Z ^ Y, (X ^ a) ^ Z) ^ (Z ^ Y)), (X ^ a) ^ Z))), Y, X)
+= { by lemma 67 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(Z ^ Y, a, upme(a, Z ^ Y, (X ^ a) ^ Z) ^ ((X ^ a) ^ Z))), Y, X)
+= { by lemma 30 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(Z ^ Y, upme(a, Z ^ Y, (X ^ a) ^ Z), a ^ ((X ^ a) ^ Z))), Y, X)
+= { by axiom 1 (a) }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(Z ^ Y, upme(a, Z ^ Y, (X ^ a) ^ Z), ((X ^ a) ^ Z) ^ a)), Y, X)
+= { by lemma 18 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(Z ^ Y, ((X ^ a) ^ Z) ^ a, upme(a, Z ^ Y, (X ^ a) ^ Z))), Y, X)
+= { by lemma 50 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(Z ^ Y, a, upme(((X ^ a) ^ Z) ^ a, Z ^ Y, (X ^ a) ^ Z))), Y, X)
+= { by lemma 71 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(Z ^ Y, a, ((X ^ a) ^ Z) ^ a)), Y, X)
+= { by lemma 30 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(Z ^ Y, (X ^ a) ^ Z, a ^ a)), Y, X)
+= { by lemma 51 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(Z ^ Y, (X ^ a) ^ Z, a)), Y, X)
+= { by lemma 18 }
+  upme(a ^ upjo(Z ^ Y, (X ^ a) ^ Z, lojo(Z ^ Y, a, (X ^ a) ^ Z)), Y, X)
+= { by lemma 45 }
+  upme(a ^ upjo(Z ^ Y, lojo(Z ^ Y, a, (X ^ a) ^ Z), (X ^ a) ^ Z), Y, X)
+= { by axiom 12 (a) }
+  upme(a ^ upjo(Z ^ Y, v(Z ^ Y, a ^ ((X ^ a) ^ Z)), (X ^ a) ^ Z), Y, X)
+= { by lemma 29 }
+  upme(a ^ upjo(Z ^ Y, v(Z ^ Y, v(a ^ ((X ^ a) ^ Z), a ^ ((X ^ a) ^ Z))), (X ^ a) ^ Z), Y, X)
+= { by axiom 6 (a) }
+  upme(a ^ upjo(Z ^ Y, v(v(Z ^ Y, a ^ ((X ^ a) ^ Z)), a ^ ((X ^ a) ^ Z)), (X ^ a) ^ Z), Y, X)
+= { by lemma 44 }
+  upme(a ^ upme(v(Z ^ Y, v(v(Z ^ Y, a ^ ((X ^ a) ^ Z)), a ^ ((X ^ a) ^ Z))), Z ^ Y, (X ^ a) ^ Z), Y, X)
+= { by axiom 5 (a) }
+  upme(a ^ upme(v(v(Z ^ Y, a ^ ((X ^ a) ^ Z)), v(Z ^ Y, a ^ ((X ^ a) ^ Z))), Z ^ Y, (X ^ a) ^ Z), Y, X)
+= { by lemma 29 }
+  upme(a ^ upme(v(Z ^ Y, a ^ ((X ^ a) ^ Z)), Z ^ Y, (X ^ a) ^ Z), Y, X)
+= { by lemma 44 }
+  upme(a ^ upjo(Z ^ Y, a ^ ((X ^ a) ^ Z), (X ^ a) ^ Z), Y, X)
+= { by axiom 1 (a) }
+  upme(a ^ upjo(Z ^ Y, ((X ^ a) ^ Z) ^ a, (X ^ a) ^ Z), Y, X)
+= { by lemma 44 }
+  upme(a ^ upme(v(Z ^ Y, ((X ^ a) ^ Z) ^ a), Z ^ Y, (X ^ a) ^ Z), Y, X)
+= { by axiom 12 (a) }
+  upme(a ^ upme(lojo(Z ^ Y, (X ^ a) ^ Z, a), Z ^ Y, (X ^ a) ^ Z), Y, X)
+= { by lemma 27 }
+  upme(a ^ upme(lojo(Z ^ Y, (X ^ a) ^ Z, a), (X ^ a) ^ Z, Z ^ Y), Y, X)
+= { by axiom 9 (a) }
+  upme(a ^ (lojo(Z ^ Y, (X ^ a) ^ Z, a) ^ v((X ^ a) ^ Z, Z ^ Y)), Y, X)
+= { by lemma 33 }
+  upme(a ^ (lojo(Z ^ Y, (X ^ a) ^ Z, a) ^ v((X ^ a) ^ Z, lojo(Z ^ Y, (X ^ a) ^ Z, a))), Y, X)
+= { by lemma 35 }
+  upme(a ^ lojo(Z ^ Y, (X ^ a) ^ Z, a), Y, X)
+= { by lemma 42 }
+  upme(upme(a, Z ^ Y, ((X ^ a) ^ Z) ^ a), Y, X)
+= { by lemma 48 }
+  upme(upjo(a ^ ((X ^ a) ^ Z), a, Z ^ Y), Y, X)
+= { by lemma 55 }
+  upme(upjo(a ^ (((X ^ a) ^ Z) ^ a), a, Z ^ Y), Y, X)
+= { by lemma 47 }
+  upme(upme(a, Z ^ Y, a ^ (((X ^ a) ^ Z) ^ a)), Y, X)
+= { by lemma 27 }
+  upme(upme(a, a ^ (((X ^ a) ^ Z) ^ a), Z ^ Y), Y, X)
+= { by lemma 34 }
+  upme(upme(lojo(a, a, ((X ^ a) ^ Z) ^ (Z ^ Y)), a ^ (((X ^ a) ^ Z) ^ a), Z ^ Y), Y, X)
+= { by lemma 65 }
+  upme(lojo(upme(a ^ ((X ^ a) ^ Z), Z ^ Y, a), Z ^ Y, a), Y, X)
+= { by lemma 71 }
+  upme(lojo(a ^ ((X ^ a) ^ Z), Z ^ Y, a), Y, X)
+= { by lemma 72 }
+  upme(lome(a, (X ^ a) ^ Z, Z ^ Y), Y, X)
+= { by axiom 1 (a) }
+  upme(lome(a, Z ^ (X ^ a), Z ^ Y), Y, X)
+= { by lemma 59 }
+  upme(lome(a ^ Z, X ^ a, Y), Y, X)
+= { by lemma 16 }
+  upme(lome(a ^ Z, Y, X ^ a), Y, X)
+= { by axiom 1 (a) }
+  upme(lome(Z ^ a, Y, X ^ a), Y, X)
+= { by axiom 1 (a) }
+  upme(lome(Z ^ a, Y, a ^ X), Y, X)
+= { by lemma 58 }
+  upme(lome(Z ^ a, Y, upme(a ^ X, a ^ X, X)), Y, X)
+= { by axiom 9 (a) }
+  upme(lome(Z ^ a, Y, (a ^ X) ^ v(a ^ X, X)), Y, X)
+= { by axiom 1 (a) }
+  upme(lome(Z ^ a, Y, v(a ^ X, X) ^ (a ^ X)), Y, X)
+= { by lemma 29 }
+  upme(lome(Z ^ a, Y, v(a ^ X, X) ^ v(a ^ X, a ^ X)), Y, X)
+= { by axiom 9 (a) }
+  upme(lome(Z ^ a, Y, upme(v(a ^ X, X), a ^ X, a ^ X)), Y, X)
+= { by lemma 44 }
+  upme(lome(Z ^ a, Y, upjo(a ^ X, X, a ^ X)), Y, X)
+= { by axiom 1 (a) }
+  upme(lome(Z ^ a, Y, upjo(X ^ a, X, a ^ X)), Y, X)
+= { by lemma 48 }
+  upme(lome(Z ^ a, Y, upme(X, a ^ X, a ^ X)), Y, X)
+= { by lemma 16 }
+  upme(lome(Z ^ a, upme(X, a ^ X, a ^ X), Y), Y, X)
+= { by lemma 59 }
+  upme(lome(Z, a ^ upme(X, a ^ X, a ^ X), a ^ Y), Y, X)
+= { by lemma 37 }
+  upme(lome(Z, upme(a ^ X, a ^ X, a ^ X), a ^ Y), Y, X)
+= { by lemma 58 }
+  upme(lome(Z, a ^ X, a ^ Y), Y, X)
+= { by lemma 59 }
+  upme(lome(Z ^ a, X, Y), Y, X)
+= { by lemma 27 }
+  upme(lome(Z ^ a, X, Y), X, Y)
+= { by lemma 20 }
+  upme(lome(Z ^ a, X, Y), X, v(Y, (Z ^ a) ^ Y))
+= { by axiom 12 (a) }
+  upme(lome(Z ^ a, X, Y), X, lojo(Y, Z ^ a, Y))
+= { by lemma 64 }
+  upme(lome(Z ^ a, X, Y), Y, lojo(X, Z ^ a, Y))
+= { by lemma 73 }
+  upme(lome(Z ^ a, X, Y), Y, v(X, lome(Z ^ a, X, Y)))
+= { by lemma 69 }
+  lome(Z ^ a, X, Y)
+
+Lemma 75: lojo(X, Y, upme(Z ^ W, V, U)) = lojo(X, Z, upme(Y ^ W, V, U)).
+Proof:
+  lojo(X, Y, upme(Z ^ W, V, U))
+= { by lemma 37 }
+  lojo(X, Y, Z ^ upme(W, V, U))
+= { by lemma 30 }
+  lojo(X, Z, Y ^ upme(W, V, U))
+= { by lemma 37 }
+  lojo(X, Z, upme(Y ^ W, V, U))
+
+Lemma 76: lojo(X, Y, lome(Z ^ a, X, W)) = lojo(X, Y, Z ^ (W ^ a)).
+Proof:
+  lojo(X, Y, lome(Z ^ a, X, W))
+= { by lemma 34 }
+  lojo(lojo(X, X, W), Y, lome(Z ^ a, X, W))
+= { by axiom 12 (a) }
+  lojo(v(X, X ^ W), Y, lome(Z ^ a, X, W))
+= { by lemma 60 }
+  v(X, lojo(X ^ W, Y, lome(Z ^ a, X, W)))
+= { by lemma 74 }
+  v(X, lojo(X ^ W, Y, upme(Z ^ a, X, W)))
+= { by lemma 75 }
+  v(X, lojo(X ^ W, Z, upme(Y ^ a, X, W)))
+= { by axiom 1 (a) }
+  v(X, lojo(W ^ X, Z, upme(Y ^ a, X, W)))
+= { by axiom 1 (a) }
+  v(X, lojo(W ^ X, Z, upme(a ^ Y, X, W)))
+= { by lemma 27 }
+  v(X, lojo(W ^ X, Z, upme(a ^ Y, W, X)))
+= { by lemma 75 }
+  v(X, lojo(W ^ X, a, upme(Z ^ Y, W, X)))
+= { by axiom 1 (a) }
+  v(X, lojo(X ^ W, a, upme(Z ^ Y, W, X)))
+= { by lemma 18 }
+  v(X, lojo(X ^ W, upme(Z ^ Y, W, X), a))
+= { by axiom 12 (a) }
+  v(X, v(X ^ W, upme(Z ^ Y, W, X) ^ a))
+= { by lemma 22 }
+  v(X, lojo(upme(Z ^ Y, W, X) ^ a, X, W))
+= { by lemma 18 }
+  v(X, lojo(upme(Z ^ Y, W, X) ^ a, W, X))
+= { by axiom 1 (a) }
+  v(X, lojo(a ^ upme(Z ^ Y, W, X), W, X))
+= { by lemma 37 }
+  v(X, lojo(upme(a ^ (Z ^ Y), W, X), W, X))
+= { by axiom 12 (a) }
+  v(X, v(upme(a ^ (Z ^ Y), W, X), W ^ X))
+= { by axiom 13 (a) }
+  v(X, v((a ^ (Z ^ Y)) ^ W, X) ^ v((a ^ (Z ^ Y)) ^ X, W))
+= { by axiom 9 (a) }
+  v(X, upme(v((a ^ (Z ^ Y)) ^ W, X), (a ^ (Z ^ Y)) ^ X, W))
+= { by axiom 3 (a) }
+  v(X, upme(v(a ^ ((Z ^ Y) ^ W), X), (a ^ (Z ^ Y)) ^ X, W))
+= { by lemma 22 }
+  v(X, upme(lojo(X, a, (Z ^ Y) ^ W), (a ^ (Z ^ Y)) ^ X, W))
+= { by axiom 1 (a) }
+  v(X, upme(lojo(X, a, W ^ (Z ^ Y)), (a ^ (Z ^ Y)) ^ X, W))
+= { by axiom 3 (a) }
+  v(X, upme(lojo(X, a, W ^ (Z ^ Y)), a ^ ((Z ^ Y) ^ X), W))
+= { by lemma 66 }
+  v(X, lojo(upme((Z ^ Y) ^ a, X, W), X, W))
+= { by lemma 74 }
+  v(X, lojo(lome((Z ^ Y) ^ a, X, W), X, W))
+= { by axiom 3 (a) }
+  v(X, lojo(lome(Z ^ (Y ^ a), X, W), X, W))
+= { by axiom 2 (a) }
+  v(X, lojo(lome(Y ^ (Z ^ a), X, W), X, W))
+= { by lemma 33 }
+  v(X, lome(Y ^ (Z ^ a), X, W))
+= { by lemma 73 }
+  lojo(X, Y ^ (Z ^ a), W)
+= { by lemma 31 }
+  lojo(X, Y, W ^ (Z ^ a))
+= { by axiom 2 (a) }
+  lojo(X, Y, Z ^ (W ^ a))
+
+Lemma 77: lojo(Z, Z ^ Y, X) = Z.
+Proof:
+  lojo(Z, Z ^ Y, X)
+= { by lemma 18 }
+  lojo(Z, X, Z ^ Y)
+= { by axiom 12 (a) }
+  v(Z, X ^ (Z ^ Y))
+= { by axiom 2 (a) }
+  v(Z, Z ^ (X ^ Y))
+= { by axiom 7 (a) }
+  Z
+
+Lemma 78: lome(X, Y, lojo(Z, Y, X ^ (W ^ a))) = lome(X, Y, Z).
+Proof:
+  lome(X, Y, lojo(Z, Y, X ^ (W ^ a)))
+= { by lemma 31 }
+  lome(X, Y, lojo(Z, Y ^ (W ^ a), X))
+= { by lemma 18 }
+  lome(X, Y, lojo(Z, X, Y ^ (W ^ a)))
+= { by axiom 2 (a) }
+  lome(X, Y, lojo(Z, X, W ^ (Y ^ a)))
+= { by axiom 1 (a) }
+  lome(X, Y, lojo(Z, X, W ^ (a ^ Y)))
+= { by axiom 3 (a) }
+  lome(X, Y, lojo(Z, X, (W ^ a) ^ Y))
+= { by lemma 31 }
+  lome(X, Y, lojo(Z, X ^ Y, W ^ a))
+= { by lemma 25 }
+  lojo(X ^ Y, X, lojo(Z, X ^ Y, W ^ a))
+= { by lemma 77 }
+  lojo(X ^ Y, lojo(X, X ^ Y, W), lojo(Z, X ^ Y, W ^ a))
+= { by lemma 22 }
+  lojo(X ^ Y, v((X ^ Y) ^ W, X), lojo(Z, X ^ Y, W ^ a))
+= { by axiom 1 (a) }
+  lojo(X ^ Y, v((X ^ Y) ^ W, X), lojo(Z, X ^ Y, a ^ W))
+= { by lemma 31 }
+  lojo(X ^ Y, v((X ^ Y) ^ W, X), lojo(Z, (X ^ Y) ^ W, a))
+= { by lemma 18 }
+  lojo(X ^ Y, lojo(Z, (X ^ Y) ^ W, a), v((X ^ Y) ^ W, X))
+= { by lemma 28 }
+  v(X ^ Y, upme(lojo(Z, (X ^ Y) ^ W, a), (X ^ Y) ^ W, X))
+= { by lemma 27 }
+  v(X ^ Y, upme(lojo(Z, (X ^ Y) ^ W, a), X, (X ^ Y) ^ W))
+= { by lemma 68 }
+  v(X ^ Y, lojo(upme(Z, X, (X ^ Y) ^ W), (X ^ Y) ^ W, a))
+= { by lemma 27 }
+  v(X ^ Y, lojo(upme(Z, (X ^ Y) ^ W, X), (X ^ Y) ^ W, a))
+= { by lemma 60 }
+  lojo(v(X ^ Y, upme(Z, (X ^ Y) ^ W, X)), (X ^ Y) ^ W, a)
+= { by lemma 28 }
+  lojo(lojo(X ^ Y, Z, v((X ^ Y) ^ W, X)), (X ^ Y) ^ W, a)
+= { by lemma 61 }
+  lojo(lojo(X ^ Y, (X ^ Y) ^ W, a), Z, v((X ^ Y) ^ W, X))
+= { by lemma 77 }
+  lojo(X ^ Y, Z, v((X ^ Y) ^ W, X))
+= { by lemma 22 }
+  lojo(X ^ Y, Z, lojo(X, X ^ Y, W))
+= { by lemma 31 }
+  lojo(X ^ Y, Z, lojo(X, X, W ^ Y))
+= { by lemma 34 }
+  lojo(X ^ Y, Z, X)
+= { by lemma 72 }
+  lome(X, Y, Z)
+
+Goal 1 (a_1): upme(x2, y2, z2) = lome(x2, y2, z2).
+Proof:
+  upme(x2, y2, z2)
+= { by lemma 21 }
+  lome(x2, y2, v(z2, y2))
+= { by lemma 17 }
+  lojo(upme(x2, z2, y2), x2, y2)
+= { by lemma 27 }
+  lojo(upme(x2, y2, z2), x2, y2)
+= { by axiom 14 (a) }
+  lojo(v(upme(x2, y2, a ^ z2), upme(x2, z2, a ^ y2)), x2, y2)
+= { by axiom 1 (a) }
+  lojo(v(upme(x2, y2, z2 ^ a), upme(x2, z2, a ^ y2)), x2, y2)
+= { by axiom 4 (a) }
+  lojo(v(upme(x2, z2, a ^ y2), upme(x2, y2, z2 ^ a)), x2, y2)
+= { by lemma 28 }
+  lojo(lojo(upme(x2, z2, a ^ y2), x2, v(y2, z2 ^ a)), x2, y2)
+= { by lemma 17 }
+  lojo(lome(x2, v(y2, z2 ^ a), v(z2, a ^ y2)), x2, y2)
+= { by axiom 12 (a) }
+  lojo(lome(x2, lojo(y2, z2, a), v(z2, a ^ y2)), x2, y2)
+= { by axiom 12 (a) }
+  lojo(lome(x2, lojo(y2, z2, a), lojo(z2, a, y2)), x2, y2)
+= { by lemma 16 }
+  lojo(lome(x2, lojo(z2, a, y2), lojo(y2, z2, a)), x2, y2)
+= { by lemma 18 }
+  lojo(lome(x2, lojo(z2, y2, a), lojo(y2, z2, a)), x2, y2)
+= { by lemma 26 }
+  lojo(lome(x2, lojo(z2, y2, a), y2), x2, lojo(y2, z2, a))
+= { by lemma 16 }
+  lojo(lome(x2, y2, lojo(z2, y2, a)), x2, lojo(y2, z2, a))
+= { by lemma 18 }
+  lojo(lome(x2, y2, lojo(z2, a, y2)), x2, lojo(y2, z2, a))
+= { by lemma 57 }
+  lojo(lome(x2, y2, lojo(z2, a, y2 ^ a)), x2, lojo(y2, z2, a))
+= { by lemma 30 }
+  lojo(lome(x2, y2, lojo(z2, y2, a ^ a)), x2, lojo(y2, z2, a))
+= { by lemma 18 }
+  lojo(lome(x2, y2, lojo(z2, a ^ a, y2)), x2, lojo(y2, z2, a))
+= { by axiom 12 (a) }
+  lojo(lome(x2, y2, v(z2, (a ^ a) ^ y2)), x2, lojo(y2, z2, a))
+= { by axiom 8 (a) }
+  lojo(lome(x2, y2, v(z2, ((a ^ a) ^ y2) ^ v((a ^ a) ^ y2, (a ^ a) ^ x2))), x2, lojo(y2, z2, a))
+= { by axiom 12 (a) }
+  lojo(lome(x2, y2, lojo(z2, (a ^ a) ^ y2, v((a ^ a) ^ y2, (a ^ a) ^ x2))), x2, lojo(y2, z2, a))
+= { by axiom 10 (a) }
+  lojo(lome(x2, y2, lojo(z2, (a ^ a) ^ y2, lome(a ^ a, y2, x2))), x2, lojo(y2, z2, a))
+= { by lemma 31 }
+  lojo(lome(x2, y2, lojo(z2, a ^ a, lome(a ^ a, y2, x2) ^ y2)), x2, lojo(y2, z2, a))
+= { by axiom 1 (a) }
+  lojo(lome(x2, y2, lojo(z2, a ^ a, y2 ^ lome(a ^ a, y2, x2))), x2, lojo(y2, z2, a))
+= { by lemma 30 }
+  lojo(lome(x2, y2, lojo(z2, y2, (a ^ a) ^ lome(a ^ a, y2, x2))), x2, lojo(y2, z2, a))
+= { by lemma 36 }
+  lojo(lome(x2, y2, lojo(z2, y2, lome(a ^ a, y2, x2))), x2, lojo(y2, z2, a))
+= { by lemma 74 }
+  lojo(lome(x2, y2, lojo(z2, y2, upme(a ^ a, y2, x2))), x2, lojo(y2, z2, a))
+= { by lemma 27 }
+  lojo(lome(x2, y2, lojo(z2, y2, upme(a ^ a, x2, y2))), x2, lojo(y2, z2, a))
+= { by lemma 37 }
+  lojo(lome(x2, y2, lojo(z2, y2, a ^ upme(a, x2, y2))), x2, lojo(y2, z2, a))
+= { by axiom 15 (a) }
+  lojo(lome(x2, y2, lojo(z2, y2, a ^ upme(a, x2, z2))), x2, lojo(y2, z2, a))
+= { by lemma 37 }
+  lojo(lome(x2, y2, lojo(z2, y2, upme(a ^ a, x2, z2))), x2, lojo(y2, z2, a))
+= { by lemma 27 }
+  lojo(lome(x2, y2, lojo(z2, y2, upme(a ^ a, z2, x2))), x2, lojo(y2, z2, a))
+= { by lemma 74 }
+  lojo(lome(x2, y2, lojo(z2, y2, lome(a ^ a, z2, x2))), x2, lojo(y2, z2, a))
+= { by lemma 76 }
+  lojo(lome(x2, y2, lojo(z2, y2, a ^ (x2 ^ a))), x2, lojo(y2, z2, a))
+= { by axiom 1 (a) }
+  lojo(lome(x2, y2, lojo(z2, y2, (x2 ^ a) ^ a)), x2, lojo(y2, z2, a))
+= { by axiom 3 (a) }
+  lojo(lome(x2, y2, lojo(z2, y2, x2 ^ (a ^ a))), x2, lojo(y2, z2, a))
+= { by lemma 78 }
+  lojo(lome(x2, y2, z2), x2, lojo(y2, z2, a))
+= { by lemma 16 }
+  lojo(lome(x2, z2, y2), x2, lojo(y2, z2, a))
+= { by lemma 18 }
+  lojo(lome(x2, z2, y2), x2, lojo(y2, a, z2))
+= { by lemma 26 }
+  lojo(lome(x2, z2, lojo(y2, a, z2)), x2, y2)
+= { by lemma 18 }
+  lojo(lome(x2, z2, lojo(y2, a, z2)), y2, x2)
+= { by axiom 12 (a) }
+  v(lome(x2, z2, lojo(y2, a, z2)), y2 ^ x2)
+= { by lemma 70 }
+  v(lome(x2, z2, lojo(y2, a, z2)), upme(y2 ^ x2, y2, a ^ z2))
+= { by lemma 37 }
+  v(lome(x2, z2, lojo(y2, a, z2)), y2 ^ upme(x2, y2, a ^ z2))
+= { by lemma 40 }
+  v(lome(x2, z2, lojo(y2, a, z2)), y2 ^ upme(lome(x2, z2, v(y2, a ^ z2)), y2, a ^ z2))
+= { by lemma 19 }
+  v(lome(x2, z2, lojo(y2, a, z2)), y2 ^ lome(x2, z2, v(y2, a ^ z2)))
+= { by axiom 12 (a) }
+  v(lome(x2, z2, lojo(y2, a, z2)), y2 ^ lome(x2, z2, lojo(y2, a, z2)))
+= { by lemma 20 }
+  lome(x2, z2, lojo(y2, a, z2))
+= { by lemma 57 }
+  lome(x2, z2, lojo(y2, a, z2 ^ a))
+= { by lemma 30 }
+  lome(x2, z2, lojo(y2, z2, a ^ a))
+= { by lemma 32 }
+  lome(x2, z2, lojo(y2, z2, upme(a ^ a, z2, x2)))
+= { by lemma 27 }
+  lome(x2, z2, lojo(y2, z2, upme(a ^ a, x2, z2)))
+= { by lemma 37 }
+  lome(x2, z2, lojo(y2, z2, a ^ upme(a, x2, z2)))
+= { by axiom 15 (a) }
+  lome(x2, z2, lojo(y2, z2, a ^ upme(a, x2, y2)))
+= { by lemma 37 }
+  lome(x2, z2, lojo(y2, z2, upme(a ^ a, x2, y2)))
+= { by lemma 27 }
+  lome(x2, z2, lojo(y2, z2, upme(a ^ a, y2, x2)))
+= { by lemma 74 }
+  lome(x2, z2, lojo(y2, z2, lome(a ^ a, y2, x2)))
+= { by lemma 76 }
+  lome(x2, z2, lojo(y2, z2, a ^ (x2 ^ a)))
+= { by axiom 1 (a) }
+  lome(x2, z2, lojo(y2, z2, (x2 ^ a) ^ a))
+= { by axiom 3 (a) }
+  lome(x2, z2, lojo(y2, z2, x2 ^ (a ^ a)))
+= { by lemma 78 }
+  lome(x2, z2, y2)
+= { by lemma 16 }
+  lome(x2, y2, z2)
+
+RESULT: Theorem (the conjecture is true).
+
