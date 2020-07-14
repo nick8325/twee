@@ -41,11 +41,13 @@ data MainFlags =
     flags_formal_proof :: Bool,
     flags_explain_encoding :: Bool,
     flags_flip_ordering :: Bool,
-    flags_give_up_on_saturation :: Bool }
+    flags_give_up_on_saturation :: Bool,
+    flags_flatten_goals :: Bool,
+    flags_flatten_goals_lightly :: Bool }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp
+  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenLightly
   where
     proof =
       inGroup "Output options" $
@@ -73,7 +75,15 @@ parseMainFlags =
       expert $
       inGroup "Output options" $
       bool "give-up-on-saturation" ["Report SZS status GiveUp rather than Unsatisfiable on saturation (off by default)."] False
-        
+    flatten =
+      expert $
+      inGroup "Completion heuristics" $
+      bool "flatten-goal" ["Flatten goal by adding new axioms (off by default)."] False
+    flattenLightly =
+      expert $
+      inGroup "Completion heuristics" $
+      bool "flatten-goal-lightly" ["Flatten goal non-recursively by adding new axioms (off by default)."] False
+
     argModule = arg "<module>" "expected a Prolog module name" Just
 
 parseConfig :: OptionParser (Config Constant)
@@ -351,6 +361,40 @@ makeContext prob = run prob $ \prob -> do
     ctx_equals = equals,
     ctx_type = ty }
 
+flattenGoals :: Bool -> Problem Clause -> Problem Clause
+flattenGoals full prob = run prob (\prob -> concat <$> mapM flatten prob)
+  where
+    flatten c@Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])} = do
+      (x, cs1) <- flat x
+      (y, cs2) <- flat y
+      return
+        (map (justify c)
+          (clause [Neg (x Jukebox.:=: y)]:cs1 ++ cs2))
+    flatten c = return [c]
+
+    flat (f :@: ts)
+      | not (all isVar ts) || usort ts /= ts = do
+        name <- newName f
+        (us, css) <-
+          if full then unzip <$> mapM flat ts
+          else return (ts, [])
+        let vs  = Jukebox.vars ts
+            g = name ::: FunType (map typ vs) (typ f)
+            c = clause [Pos (g :@: map Jukebox.Var vs Jukebox.:=: f :@: us)]
+        return (g :@: map Jukebox.Var vs, c:concat css)
+    flat t = return (t, [])
+
+    isVar (Jukebox.Var _) = True
+    isVar _ = False
+
+    justify c c' =
+      Input {
+        tag = tag c,
+        kind = Jukebox.Ax NegatedConjecture,
+        what = c',
+        source =
+          Inference "flatten_goal" "esa" [toForm <$> c] }
+
 -- Encode existentials so that all goals are ground.
 addNarrowing :: TweeContext -> Problem Clause -> Problem Clause
 addNarrowing TweeContext{..} prob =
@@ -436,7 +480,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
   let
     -- Encode whatever needs encoding in the problem
     ctx = makeContext obligs
-    prob = prettyNames (addNarrowing ctx obligs)
+    prob = prettyNames (addNarrowing ctx ((if flags_flatten_goals_lightly then flattenGoals False else if flags_flatten_goals then flattenGoals True else id) obligs))
 
   (axioms0, goals0) <-
     case identifyProblem ctx prob of
