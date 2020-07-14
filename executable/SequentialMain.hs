@@ -44,11 +44,12 @@ data MainFlags =
     flags_give_up_on_saturation :: Bool,
     flags_flatten_goals :: Bool,
     flags_flatten_goals_lightly :: Bool,
+    flags_flatten_all:: Bool,
     flags_eliminate :: [String] }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenLightly <*> eliminate
+  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenLightly <*> flattenAll <*> eliminate
   where
     proof =
       inGroup "Output options" $
@@ -84,6 +85,10 @@ parseMainFlags =
       expert $
       inGroup "Completion heuristics" $
       bool "flatten-goal-lightly" ["Flatten goal non-recursively by adding new axioms (off by default)."] False
+    flattenAll =
+      expert $
+      inGroup "Completion heuristics" $
+      bool "flatten" ["Flatten all clauses by adding new axioms (off by default)."] False
     eliminate =
       inGroup "Proof presentation" $
       concat <$>
@@ -371,8 +376,8 @@ makeContext prob = run prob $ \prob -> do
     ctx_equals = equals,
     ctx_type = ty }
 
-flattenGoals :: Bool -> Problem Clause -> Problem Clause
-flattenGoals full prob =
+flattenGoals :: Bool -> Bool -> Problem Clause -> Problem Clause
+flattenGoals flattenAll full prob =
   run prob $ \prob -> do
     cs <- concat <$> mapM flatten prob
     return $
@@ -383,6 +388,9 @@ flattenGoals full prob =
   where
     flatten Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])} =
       liftM2 (++) (flat x) (flat y)
+    flatten Input{what = Clause (Bind _ [Pos (x Jukebox.:=: y)])}
+      | flattenAll =
+        liftM2 (++) (flat x) (flat y)
     flatten _ = return []
 
     flat (f :@: ts)
@@ -483,7 +491,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
   let
     -- Encode whatever needs encoding in the problem
     ctx = makeContext obligs
-    prob = prettyNames (addNarrowing ctx ((if flags_flatten_goals_lightly then flattenGoals False else if flags_flatten_goals then flattenGoals True else id) obligs))
+    prob = prettyNames (addNarrowing ctx ((if flags_flatten_goals_lightly then flattenGoals False False else if flags_flatten_all then flattenGoals True True else if flags_flatten_goals then flattenGoals False True else id) obligs))
 
   (axioms0, goals0) <-
     case identifyProblem ctx prob of
