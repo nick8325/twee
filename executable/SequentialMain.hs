@@ -362,38 +362,31 @@ makeContext prob = run prob $ \prob -> do
     ctx_type = ty }
 
 flattenGoals :: Bool -> Problem Clause -> Problem Clause
-flattenGoals full prob = run prob (\prob -> concat <$> mapM flatten prob)
+flattenGoals full prob =
+  run prob $ \prob -> do
+    cs <- concat <$> mapM flatten prob
+    return $
+      prob ++
+      [ Input{tag = "flattening", kind = Jukebox.Ax Definition,
+              what = c, source = Unknown }
+      | c <- cs ]
   where
-    flatten c@Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])} = do
-      (x, cs1) <- flat x
-      (y, cs2) <- flat y
-      return
-        (map (justify c)
-          (clause [Neg (x Jukebox.:=: y)]:cs1 ++ cs2))
-    flatten c = return [c]
+    flatten Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])} =
+      liftM2 (++) (flat x) (flat y)
+    flatten _ = return []
 
     flat (f :@: ts)
       | not (all isVar ts) || usort ts /= ts = do
         name <- newName f
-        (us, css) <-
-          if full then unzip <$> mapM flat ts
-          else return (ts, [])
         let vs  = Jukebox.vars ts
             g = name ::: FunType (map typ vs) (typ f)
-            c = clause [Pos (g :@: map Jukebox.Var vs Jukebox.:=: f :@: us)]
-        return (g :@: map Jukebox.Var vs, c:concat css)
-    flat t = return (t, [])
+            c = clause [Pos (g :@: map Jukebox.Var vs Jukebox.:=: f :@: ts)]
+        css <- if full then concat <$> mapM flat ts else return []
+        return (c:css)
+    flat _ = return []
 
     isVar (Jukebox.Var _) = True
     isVar _ = False
-
-    justify c c' =
-      Input {
-        tag = tag c,
-        kind = Jukebox.Ax NegatedConjecture,
-        what = c',
-        source =
-          Inference "flatten_goal" "esa" [toForm <$> c] }
 
 -- Encode existentials so that all goals are ground.
 addNarrowing :: TweeContext -> Problem Clause -> Problem Clause
