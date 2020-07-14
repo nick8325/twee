@@ -7,10 +7,5 @@ cnf('2b', axiom,
 cnf(associativity, axiom,
     f(f(X,W,Y),W,Z) = f(X,W,f(Y,W,Z))).
 
-cnf(a123, axiom, f(a1,a2,a3) = f123).
-cnf(a145, axiom, f(a1,a4,a5) = f145).
-cnf(a245, axiom, f(a2,a4,a5) = f245).
-cnf(a345, axiom, f(a3,a4,a5) = f345).
-cnf(lhs, axiom, f(f123,a4,a5) = c1).
-cnf(rhs, axiom, f(f145,f245,f345) = c2).
-cnf(goal, axiom, c1 != c2).
+cnf(dist_long, conjecture,
+    f(f(x,y,z),u,w) = f(f(x,u,w),f(y,u,w),f(z,u,w))).
