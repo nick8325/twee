@@ -267,10 +267,11 @@ buildTermList builder = runST $ do
           case m s mbytearray# n# 0# of
             (# s, n# #) -> (# s, I# n# #)
       if n' <= n then do
+        resizeMutableByteArray (MutableByteArray mbytearray#) (n' * sizeOf (fromSymbol undefined))
         !bytearray <- unsafeFreezeByteArray (MutableByteArray mbytearray#)
         return (TermList 0 n' bytearray)
        else loop (n'*2)
-  loop 32
+  loop 128
 
 -- Get at the term array.
 {-# INLINE getByteArray #-}
