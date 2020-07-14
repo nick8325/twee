@@ -22,7 +22,8 @@ module Twee.Index(
   lookup,
   matches,
   approxMatches,
-  elems) where
+  elems,
+  fromListWith) where
 
 import qualified Prelude
 import Prelude hiding (null, lookup)
@@ -321,3 +322,7 @@ elems idx =
   here idx ++
   concatMap elems (Prelude.map snd (toList (fun idx))) ++
   elems (var idx)
+
+-- | Create an index from a list of items
+fromListWith :: (a -> Term f) -> [a] -> Index f a
+fromListWith f xs = foldr (\x -> insert (f x) x) empty xs

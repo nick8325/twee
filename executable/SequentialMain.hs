@@ -506,6 +506,10 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
     axioms =
       [ Axiom n pre_name (toEquation pre_eqn)
       | (n, PreEquation{..}) <- zip [1..] axioms0 ]
+    defs =
+      [ axiom
+      | (axiom, PreEquation{..}) <- zip axioms axioms0,
+        Unknown <- [source pre_form] ]
 
     withGoals = foldl' (addGoal config) (initialState config) goals
     withAxioms = foldl' (addAxiom config) withGoals axioms
@@ -574,7 +578,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
           (cfg_proof_presentation config){cfg_all_lemmas = True}
         | otherwise =
           cfg_proof_presentation config
-      pres = present cfg_present (solutions state)
+      pres = present cfg_present $ map (eliminateDefinitionsFromGoal defs) $ solutions state
 
     sayTrace ""
     forM_ (pres_lemmas pres) $ \p ->

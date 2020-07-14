@@ -9,7 +9,7 @@ module Twee.Proof(
 
   -- * Analysing proofs
   simplify, usedLemmas, usedAxioms, usedLemmasAndSubsts, usedAxiomsAndSubsts,
-  groundAxiomsAndSubsts,
+  groundAxiomsAndSubsts, eliminateDefinitions, eliminateDefinitionsFromGoal,
 
   -- * Pretty-printing proofs
   Config(..), defaultConfig, Presentation(..),
@@ -19,6 +19,7 @@ module Twee.Proof(
 import Twee.Base hiding (invisible)
 import Twee.Equation
 import Twee.Utils
+import qualified Twee.Index as Index
 import Control.Monad
 import Data.Maybe
 import Data.List
@@ -28,6 +29,7 @@ import qualified Data.Set as Set
 import Data.Set(Set)
 import qualified Data.Map.Strict as Map
 import Data.Map(Map)
+import qualified Data.IntMap.Strict as IntMap
 
 ----------------------------------------------------------------------
 -- Equational proofs. Only valid proofs can be constructed.
@@ -189,6 +191,14 @@ simplify lem p = simp p
 lemma :: Proof f -> Subst f -> Derivation f
 lemma p sub = UseLemma p sub
 
+simpleLemma :: PrettyTerm f => Derivation f -> Derivation f
+simpleLemma deriv =
+  UseLemma p $
+    fromJust $
+    listToSubst [(x, build (var x)) | x <- vars (equation p)]
+  where
+    p = certify deriv
+
 axiom :: Axiom f -> Derivation f
 axiom ax@Axiom{..} =
   UseAxiom ax $
@@ -278,6 +288,62 @@ groundAxiomsAndSubsts p = ax p
     ax _ = Map.empty
 
     lem = memo $ \lemma -> ax (derivation lemma)
+
+eliminateDefinitionsFromGoal :: Function f => [Axiom f] -> ProvedGoal f -> ProvedGoal f
+eliminateDefinitionsFromGoal axioms pg =
+  pg {
+    pg_proof = certify (eliminateDefinitions axioms (derivation (pg_proof pg))) }
+
+eliminateDefinitions :: Function f => [Axiom f] -> Derivation f -> Derivation f
+eliminateDefinitions [] p = p
+eliminateDefinitions axioms p = elim p
+  where
+    elim (UseAxiom axiom sub)
+      | axiom `Set.member` axSet =
+        Refl (term (subst sub (eqn_rhs (axiom_eqn axiom))))
+      | otherwise = UseAxiom axiom (elimSubst sub)
+    elim (UseLemma lemma sub) =
+      UseLemma (lem lemma) (elimSubst sub)
+    elim (Refl t) = Refl (term t)
+    elim (Symm p) = Symm (elim p)
+    elim (Trans p q) = Trans (elim p) (elim q)
+    elim (Cong f ps) =
+      case find (build (app f (map var vs))) of
+        Nothing -> Cong f (map elim ps)
+        Just (rhs, Subst sub) ->
+          let proof (Cons (Var (V x)) Empty) = qs !! x in
+          replace (proof <$> sub) rhs
+      where
+        vs = map V [0..length ps-1]
+        qs = map (elim . simpleLemma) ps -- avoid duplicating proofs of ts
+
+    elimSubst (Subst sub) = Subst (singleton <$> term <$> unsingleton <$> sub)
+      where
+        unsingleton (Cons t Empty) = t
+
+    term = build . term'
+    term' (Var x) = var x
+    term' t@(App f ts) =
+      case find t of
+        Nothing -> app f (map term' (unpack ts))
+        Just (rhs, sub) ->
+          term' (subst sub rhs)
+
+    find t =
+      listToMaybe $ do
+        Axiom{axiom_eqn = l :=: r} <- Index.approxMatches t idx
+        sub <- maybeToList (match l t)
+        return (r, sub)
+
+    replace sub (Var (V x)) =
+      IntMap.findWithDefault undefined x sub
+    replace sub (App f ts) =
+      cong f (map (replace sub) (unpack ts))
+
+    lem = memo $ \lemma -> certify (elim (derivation lemma))
+
+    axSet = Set.fromList axioms
+    idx = Index.fromListWith (eqn_lhs . axiom_eqn) axioms
 
 -- | Applies a derivation at a particular path in a term.
 congPath :: [Int] -> Term f -> Derivation f -> Derivation f
