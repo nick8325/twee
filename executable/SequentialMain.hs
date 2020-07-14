@@ -43,11 +43,12 @@ data MainFlags =
     flags_flip_ordering :: Bool,
     flags_give_up_on_saturation :: Bool,
     flags_flatten_goals :: Bool,
-    flags_flatten_goals_lightly :: Bool }
+    flags_flatten_goals_lightly :: Bool,
+    flags_eliminate :: [String] }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenLightly
+  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenLightly <*> eliminate
   where
     proof =
       inGroup "Output options" $
@@ -83,6 +84,15 @@ parseMainFlags =
       expert $
       inGroup "Completion heuristics" $
       bool "flatten-goal-lightly" ["Flatten goal non-recursively by adding new axioms (off by default)."] False
+    eliminate =
+      inGroup "Proof presentation" $
+      concat <$>
+      manyFlags "eliminate"
+        ["Treat these axioms as definitions and eliminate them from the proof.",
+         "The axiom must have the shape f(x1...xn) = t, where x1...xn are",
+         "distinct variables. The term f must not otherwise appear in the problem!",
+         "This is not checked."]
+        (splitOn "," <$> arg "<axioms>" "expected a list of axiom names" Just)
 
     argModule = arg "<module>" "expected a Prolog module name" Just
 
@@ -509,7 +519,9 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
     defs =
       [ axiom
       | (axiom, PreEquation{..}) <- zip axioms axioms0,
-        Unknown <- [source pre_form] ]
+        isDefinition pre_form ]
+    isDefinition Input{source = Unknown} = True
+    isDefinition inp = tag inp `elem` flags_eliminate
 
     withGoals = foldl' (addGoal config) (initialState config) goals
     withAxioms = foldl' (addAxiom config) withGoals axioms
