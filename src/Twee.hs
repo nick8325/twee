@@ -63,6 +63,7 @@ data State f =
     st_rule_ids       :: !(IntMap (ActiveRule f)),
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
+    st_goal_terms     :: ![Set (Term f)],
     st_queue          :: !(Queue Params),
     st_next_active    :: {-# UNPACK #-} !Id,
     st_next_rule      :: {-# UNPACK #-} !RuleId,
@@ -106,6 +107,7 @@ initialState Config{..} =
     st_rule_ids = IntMap.empty,
     st_joinable = Index.empty,
     st_goals = [],
+    st_goal_terms = [],
     st_queue = Queue.empty,
     st_next_active = 1,
     st_next_rule = 0,
@@ -182,7 +184,7 @@ instance Queue.Params Params where
 {-# SCC makePassives #-}
 makePassives :: Function f => Config f -> State f -> ActiveRule f -> [Passive Params]
 makePassives Config{..} State{..} rule =
-  [ Passive (fromIntegral (score cfg_critical_pairs o)) (rule_rid rule1) (rule_rid rule2) (fromIntegral (overlap_pos o))
+  [ Passive (fromIntegral (score cfg_critical_pairs st_goal_terms o)) (rule_rid rule1) (rule_rid rule2) (fromIntegral (overlap_pos o))
   | (rule1, rule2, o) <- overlaps (Depth cfg_max_cp_depth) (index_oriented st_rules) rules rule ]
   where
     rules = IntMap.elems st_rule_ids
@@ -211,7 +213,7 @@ simplifyPassive Config{..} state@State{..} passive = do
   return passive {
     passive_score = fromIntegral $
       fromIntegral (passive_score passive) `intMin`
-      score cfg_critical_pairs overlap }
+      score cfg_critical_pairs st_goal_terms overlap }
 
 -- | Check if we should renormalise the queue.
 {-# INLINEABLE shouldSimplifyQueue #-}
@@ -524,13 +526,18 @@ addGoal config state@State{..} goal =
 normaliseGoals :: Function f => Config f -> State f -> State f
 normaliseGoals Config{..} state@State{..} =
   state {
-    st_goals =
-      map (goalMap (nf (rewrite reduces (index_all st_rules)))) st_goals }
+    st_goals = newGoals,
+    st_goal_terms =
+      [ Set.union
+          (Set.map result (goal_lhs g))
+          (Set.map result (goal_rhs g))
+      | g <- newGoals ] }
   where
+    newGoals = map (goalMap (nf (rewrite reducesSkolem (index_all st_rules)))) st_goals
     goalMap f goal@Goal{..} =
       goal { goal_lhs = f goal_lhs, goal_rhs = f goal_rhs }
     nf reduce
-      | cfg_set_join_goals = Rule.normalForms reduce
+      | cfg_set_join_goals = Rule.successors reduce
       | otherwise =
         Set.map $ \r ->
           Rule.reduce (reduction r `trans` reduction (Rule.normaliseWith (const True) reduce (result r)))

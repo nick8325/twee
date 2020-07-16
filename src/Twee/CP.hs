@@ -7,6 +7,7 @@ import Twee.Base
 import Twee.Rule
 import Twee.Index(Index)
 import qualified Data.Set as Set
+import Data.Set(Set)
 import Control.Monad
 import Data.List
 import qualified Data.ChurchList as ChurchList
@@ -130,7 +131,7 @@ simplifyOverlap idx overlap@Overlap{overlap_eqn = lhs :=: rhs, ..}
     rhs' = simplify idx rhs
 
 -- Put these in separate functions to avoid code blowup
-buildReplacePositionSub :: TriangleSubst f -> Int -> TermList f -> TermList f -> Term f
+buildReplacePositionSub :: (Substitution s, SubstFun s ~ f) => s -> Int -> TermList f -> TermList f -> Term f
 buildReplacePositionSub !sub !n !inner' !outer =
   build (replacePositionSub sub n inner' outer)
 
@@ -146,7 +147,8 @@ data Config =
     cfg_varweight :: !Int,
     cfg_depthweight :: !Int,
     cfg_dupcost :: !Int,
-    cfg_dupfactor :: !Int }
+    cfg_dupfactor :: !Int,
+    cfg_goal_bonus :: !Bool }
 
 -- | The default heuristic configuration.
 defaultConfig :: Config
@@ -158,7 +160,8 @@ defaultConfig =
     cfg_varweight = 6,
     cfg_depthweight = 16,
     cfg_dupcost = 7,
-    cfg_dupfactor = 0 }
+    cfg_dupfactor = 0,
+    cfg_goal_bonus = False }
 
 -- | Compute a score for a critical pair.
 
@@ -167,12 +170,14 @@ defaultConfig =
 -- where l is the biggest term and r is the smallest,
 -- and variables have weight 1 and functions have weight cfg_funweight.
 {-# INLINEABLE score #-}
-score :: Function f => Config -> Overlap f -> Int
-score Config{..} Overlap{..} =
-  fromIntegral overlap_depth * cfg_depthweight +
-  (m + n) * cfg_rhsweight +
-  intMax m n * (cfg_lhsweight - cfg_rhsweight)
-  where
+score :: Function f => Config -> [Set (Term f)] -> Overlap f -> Int
+score Config{..} goalss Overlap{..}
+  | cfg_goal_bonus && (reducesGoal l r || reducesGoal r l) = 1
+  | otherwise =
+    fromIntegral overlap_depth * cfg_depthweight +
+    (m + n) * cfg_rhsweight +
+    intMax m n * (cfg_lhsweight - cfg_rhsweight)
+    where
     l :=: r = overlap_eqn
     m = size' 0 (singleton l)
     n = size' 0 (singleton r)
@@ -193,6 +198,15 @@ score Config{..} Overlap{..} =
       size' (n+cfg_varweight) ts
     size' n ConsSym{hd = App{}, rest = ts} =
       size' (n+cfg_funweight) ts
+
+    reducesGoal t u = not $ ChurchList.null $ do
+      goals <- ChurchList.fromList goalss
+      goal <- ChurchList.fromList (Set.toList goals)
+      n <- positionsChurch (positions goal)
+      let subgoal = at n (singleton goal)
+      sub <- ChurchList.fromMaybe (match t subgoal)
+      let u' = buildReplacePositionSub sub n (singleton u) (singleton goal)
+      guard (u' `notElem` goals && u' /= goal && lessEqSkolem u' goal)
 
 ----------------------------------------------------------------------
 -- * Higher-level handling of critical pairs.

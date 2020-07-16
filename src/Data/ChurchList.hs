@@ -97,3 +97,7 @@ filter p xs =
 fromMaybe :: Maybe a -> ChurchList a
 fromMaybe Nothing = nil
 fromMaybe (Just x) = unit x
+
+{-# INLINE null #-}
+null :: ChurchList a -> Bool
+null = foldr (\_ _ -> False) True

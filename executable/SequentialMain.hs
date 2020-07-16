@@ -104,7 +104,7 @@ parseMainFlags =
 parseConfig :: OptionParser (Config Constant)
 parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*>
-    (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
+    (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor <*> matchGoals) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> show_instances <*> show_axiom_uses)
   where
@@ -164,6 +164,10 @@ parseConfig =
       expert $
       inGroup "Critical pair weighting heuristics" $
       defaultFlag "dup-factor" "Size factor of duplicate subterms" (CP.cfg_dupfactor . cfg_critical_pairs) argNum
+    matchGoals =
+      expert $
+      inGroup "Critical pair weighting heuristics" $
+      bool "match-goals" ["Prefer critical pairs that match goal terms (off by default)."] False
     ground_join =
       expert $
       inGroup "Critical pair joining heuristics" $
