@@ -101,7 +101,7 @@ asymmetricOverlaps idx depth posns r1 r2 = do
 {-# INLINE overlapAt #-}
 {-# SCC overlapAt #-}
 overlapAt :: Int -> Depth -> Rule f -> Rule f -> Maybe (Overlap f)
-overlapAt !n !depth (Rule _ !outer !outer') (Rule _ !inner !inner') = do
+overlapAt !n !depth (Rule _ _ !outer !outer') (Rule _ _ !inner !inner') = do
   let t = at n (singleton outer)
   sub <- unifyTri inner t
   let
@@ -314,7 +314,7 @@ split CriticalPair{cp_eqn = l :=: r, ..}
 -- | Make a critical pair from two rules and an overlap.
 {-# INLINEABLE makeCriticalPair #-}
 makeCriticalPair ::
-  forall f a. (Has a (Rule f), Has a (Proof f), Has a Id, Function f) =>
+  forall f a. (Has a (Rule f), Has a Id, Function f) =>
   a -> a -> Overlap f -> CriticalPair f
 makeCriticalPair r1 r2 overlap@Overlap{..} =
   CriticalPair overlap_eqn
@@ -326,7 +326,7 @@ makeCriticalPair r1 r2 overlap@Overlap{..} =
 {-# INLINEABLE overlapProof #-}
 overlapProof ::
   forall a f.
-  (Has a (Rule f), Has a (Proof f), Has a Id) =>
+  (Has a (Rule f), Has a Id) =>
   a -> a -> Overlap f -> Derivation f
 overlapProof left right Overlap{..} =
   Proof.symm (reductionProof (step left leftSub))

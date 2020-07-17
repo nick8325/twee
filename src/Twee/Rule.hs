@@ -33,12 +33,18 @@ data Rule f =
     -- Invariant:
     -- For oriented rules: vars rhs `isSubsetOf` vars lhs
     -- For unoriented rules: vars lhs == vars rhs
+    
+    rule_derivation :: !(Derivation f),
 
     -- | The left-hand side of the rule.
     lhs :: {-# UNPACK #-} !(Term f),
     -- | The right-hand side of the rule.
     rhs :: {-# UNPACK #-} !(Term f) }
-  deriving (Eq, Ord, Show)
+  deriving Show
+instance Eq (Rule f) where
+  x == y = compare x y == EQ
+instance Ord (Rule f) where
+  compare = comparing (\rule -> (lhs rule, rhs rule))
 type RuleOf a = Rule (ConstantOf a)
 
 -- | A rule's orientation.
@@ -80,8 +86,8 @@ weaklyOriented _ = False
 
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
-  termsDL (Rule or t u) = termsDL or `mplus` termsDL t `mplus` termsDL u
-  subst_ sub (Rule or t u) = Rule (subst_ sub or) (subst_ sub t) (subst_ sub u)
+  termsDL (Rule _ _ t _) = termsDL t
+  subst_ sub (Rule or d t u) = Rule (subst_ sub or) (subst_ sub d) (subst_ sub t) (subst_ sub u)
 
 instance f ~ g => Has (Rule f) (Term g) where
   the = lhs
@@ -100,7 +106,7 @@ instance Symbolic (Orientation f) where
   subst_ _   Unoriented = Unoriented
 
 instance PrettyTerm f => Pretty (Rule f) where
-  pPrint (Rule or l r) =
+  pPrint (Rule or _ l r) =
     pPrint l <+> text (showOrientation or) <+> pPrint r
     where
       showOrientation Oriented = "->"
@@ -110,7 +116,7 @@ instance PrettyTerm f => Pretty (Rule f) where
 
 -- | Turn a rule into an equation.
 unorient :: Rule f -> Equation f
-unorient (Rule _ l r) = l :=: r
+unorient (Rule _ _ l r) = l :=: r
 
 -- | Turn an equation t :=: u into a rule t -> u by computing the
 -- orientation info (e.g. oriented, permutative or unoriented).
@@ -118,8 +124,8 @@ unorient (Rule _ l r) = l :=: r
 -- Crashes if t -> u is not a valid rule, for example if there is
 -- a variable in @u@ which is not in @t@. To prevent this happening,
 -- combine with 'Twee.CP.split'.
-orient :: Function f => Equation f -> Rule f
-orient (t :=: u) = Rule o t u
+orient :: Function f => Equation f -> Derivation f -> Rule f
+orient (t :=: u) d = Rule o d t u
   where
     o | lessEq u t =
         case unify t u of
@@ -165,7 +171,7 @@ orient (t :=: u) = Rule o t u
 
 -- | Flip an unoriented rule so that it goes right-to-left.
 backwards :: Rule f -> Rule f
-backwards (Rule or t u) = Rule (back or) u t
+backwards (Rule or d t u) = Rule (back or) (Proof.symm d) u t
   where
     back (Permutative xs) = Permutative (map swap xs)
     back Unoriented = Unoriented
@@ -227,7 +233,7 @@ type Strategy f = Term f -> [Reduction f]
 -- | A multi-step rewrite proof @t ->* u@
 data Reduction f =
     -- | Apply a single rewrite rule to the root of a term
-    Step {-# UNPACK #-} !(Proof f) !(Rule f) !(Subst f)
+    Step !(Rule f) !(Subst f)
     -- | Reflexivity
   | Refl {-# UNPACK #-} !(Term f)
     -- | Transivitity
@@ -238,12 +244,12 @@ data Reduction f =
 
 instance Symbolic (Reduction f) where
   type ConstantOf (Reduction f) = f
-  termsDL (Step _ _ sub) = termsDL sub
+  termsDL (Step _ sub) = termsDL sub
   termsDL (Refl t) = termsDL t
   termsDL (Trans p q) = termsDL p `mplus` termsDL q
   termsDL (Cong _ ps) = termsDL ps
 
-  subst_ sub (Step lemma rule s) = Step lemma rule (subst_ sub s)
+  subst_ sub (Step rule s) = Step rule (subst_ sub s)
   subst_ sub (Refl t) = Refl (subst_ sub t)
   subst_ sub (Trans p q) = Trans (subst_ sub p) (subst_ sub q)
   subst_ sub (Cong f ps) = Cong f (subst_ sub ps)
@@ -279,8 +285,8 @@ steps r = aux r []
 
 -- | Turn a reduction into a proof.
 reductionProof :: Reduction f -> Derivation f
-reductionProof (Step lemma _ sub) =
-  Proof.lemma lemma sub
+reductionProof (Step rule sub) =
+  subst sub (rule_derivation rule)
 reductionProof (Refl t) = Proof.Refl t
 reductionProof (Trans p q) =
   Proof.trans (reductionProof p) (reductionProof q)
@@ -288,8 +294,8 @@ reductionProof (Cong f ps) = Proof.cong f (map reductionProof ps)
 
 -- | Construct a basic rewrite step.
 {-# INLINE step #-}
-step :: (Has a (Rule f), Has a (Proof f)) => a -> Subst f -> Reduction f
-step x sub = Step (the x) (the x) sub
+step :: Has a (Rule f) => a -> Subst f -> Reduction f
+step x sub = Step (the x) sub
 
 ----------------------------------------------------------------------
 -- | A rewrite proof with the final term attached.
@@ -324,7 +330,7 @@ reduce p =
     res (Refl t) = t
     res p = build (emitResult p)
 
-    emitResult (Step _ r sub) = Term.subst sub (rhs r)
+    emitResult (Step r sub) = Term.subst sub (rhs r)
     emitResult (Refl t) = builder t
     emitResult (Trans _ q) = emitResult q
     emitResult (Cong f ps) = app f (map emitResult ps)
@@ -420,14 +426,14 @@ parallel strat t =
 
 -- | A strategy which rewrites using an index.
 {-# INLINE rewrite #-}
-rewrite :: (Function f, Has a (Rule f), Has a (Proof f)) => (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
+rewrite :: (Function f, Has a (Rule f)) => (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
 rewrite p rules t = do
   rule <- Index.approxMatches t rules
   tryRule p rule t
 
 -- | A strategy which applies one rule only.
 {-# INLINEABLE tryRule #-}
-tryRule :: (Function f, Has a (Rule f), Has a (Proof f)) => (Rule f -> Subst f -> Bool) -> a -> Strategy f
+tryRule :: (Function f, Has a (Rule f)) => (Rule f -> Subst f -> Bool) -> a -> Strategy f
 tryRule p rule t = do
   sub <- maybeToList (match (lhs (the rule)) t)
   guard (p (the rule) sub)
@@ -436,8 +442,8 @@ tryRule p rule t = do
 -- | Check if a rule can be applied, given an ordering <= on terms.
 {-# INLINEABLE reducesWith #-}
 reducesWith :: Function f => (Term f -> Term f -> Bool) -> Rule f -> Subst f -> Bool
-reducesWith _ (Rule Oriented _ _) _ = True
-reducesWith _ (Rule (WeaklyOriented min ts) _ _) sub =
+reducesWith _ (Rule Oriented _ _ _) _ = True
+reducesWith _ (Rule (WeaklyOriented min ts) _ _ _) sub =
   -- Be a bit careful here not to build new terms
   -- (reducesWith is used in simplify).
   -- This is the same as:
@@ -449,7 +455,7 @@ reducesWith _ (Rule (WeaklyOriented min ts) _ _) sub =
 
     isMinimal (App f Empty) = f == min
     isMinimal _ = False
-reducesWith p (Rule (Permutative ts) _ _) sub =
+reducesWith p (Rule (Permutative ts) _ _ _) sub =
   aux ts
   where
     aux [] = False
@@ -459,7 +465,7 @@ reducesWith p (Rule (Permutative ts) _ _) sub =
       where
         t' = subst sub t
         u' = subst sub u
-reducesWith p (Rule Unoriented t u) sub =
+reducesWith p (Rule Unoriented _ t u) sub =
   t' /= u' && p u' t'
   where
     t' = subst sub t

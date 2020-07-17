@@ -34,7 +34,7 @@ defaultConfig =
 {-# INLINEABLE joinCriticalPair #-}
 {-# SCC joinCriticalPair #-}
 joinCriticalPair ::
-  (Function f, Has a (Rule f), Has a (Proof f)) =>
+  (Function f, Has a (Rule f)) =>
   Config ->
   Index f (Equation f) -> RuleIndex f a ->
   Maybe (Model f) -> -- A model to try before checking ground joinability
@@ -67,7 +67,7 @@ joinCriticalPair config eqns idx mmodel cp@CriticalPair{cp_eqn = t :=: u} =
 {-# INLINEABLE step3 #-}
 {-# INLINEABLE allSteps #-}
 step1, step2, step3, allSteps ::
-  (Function f, Has a (Rule f), Has a (Proof f)) =>
+  (Function f, Has a (Rule f)) =>
   Config -> Index f (Equation f) -> RuleIndex f a -> CriticalPair f -> Maybe (CriticalPair f)
 checkOrder :: Function f => CriticalPair f -> Maybe (CriticalPair f)
 allSteps config eqns idx cp =
@@ -119,7 +119,7 @@ step3 Config{..} eqns idx cp
 
 {-# INLINEABLE joinWith #-}
 joinWith ::
-  (Has a (Rule f), Has a (Proof f)) =>
+  (Has a (Rule f)) =>
   Index f (Equation f) -> RuleIndex f a -> (Term f -> Term f -> Resulting f) -> CriticalPair f -> Maybe (CriticalPair f)
 joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
   | subsumed eqns idx eqn = Nothing
@@ -137,7 +137,7 @@ joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
 
 {-# INLINEABLE subsumed #-}
 subsumed ::
-  (Has a (Rule f), Has a (Proof f)) =>
+  (Has a (Rule f)) =>
   Index f (Equation f) -> RuleIndex f a -> Equation f -> Bool
 subsumed eqns idx (t :=: u)
   | t == u = True
@@ -161,7 +161,7 @@ subsumed _ _ _ = False
 
 {-# INLINEABLE groundJoin #-}
 groundJoin ::
-  (Function f, Has a (Rule f), Has a (Proof f)) =>
+  (Function f, Has a (Rule f)) =>
   Config -> Index f (Equation f) -> RuleIndex f a -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
 groundJoin config eqns idx ctx cp@CriticalPair{cp_eqn = t :=: u, ..} =
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
@@ -173,7 +173,7 @@ groundJoin config eqns idx ctx cp@CriticalPair{cp_eqn = t :=: u, ..} =
 
 {-# INLINEABLE groundJoinFrom #-}
 groundJoinFrom ::
-  (Function f, Has a (Rule f), Has a (Proof f)) =>
+  (Function f, Has a (Rule f)) =>
   Config -> Index f (Equation f) -> RuleIndex f a -> Model f -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
 groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :=: u, ..}
   | not cfg_ground_join = Left model
@@ -217,7 +217,7 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
 
 {-# INLINEABLE groundJoinFromMaybe #-}
 groundJoinFromMaybe ::
-  (Function f, Has a (Rule f), Has a (Proof f)) =>
+  (Function f, Has a (Rule f)) =>
   Config -> Index f (Equation f) -> RuleIndex f a -> Maybe (Model f) -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
 groundJoinFromMaybe config eqns idx Nothing = groundJoin config eqns idx
 groundJoinFromMaybe config eqns idx (Just model) = groundJoinFrom config eqns idx model
@@ -226,7 +226,7 @@ groundJoinFromMaybe config eqns idx (Just model) = groundJoinFrom config eqns id
 valid :: Function f => Model f -> Reduction f -> Bool
 valid model red =
   and [ reducesInModel model rule sub
-      | Step _ rule sub <- steps red ]
+      | Step rule sub <- steps red ]
 
 optimise :: (a -> [a]) -> (a -> Bool) -> a -> a
 optimise f p x =

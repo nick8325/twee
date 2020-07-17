@@ -296,18 +296,15 @@ data ActiveRule f =
     rule_rid       :: {-# UNPACK #-} !RuleId,
     rule_depth     :: {-# UNPACK #-} !Depth,
     rule_rule      :: {-# UNPACK #-} !(Rule f),
-    rule_proof     :: {-# UNPACK #-} !(Proof f),
     rule_positions :: !(Positions f) }
 
 instance PrettyTerm f => Symbolic (ActiveRule f) where
   type ConstantOf (ActiveRule f) = f
   termsDL ActiveRule{..} =
-    termsDL rule_rule `mplus`
-    termsDL (derivation rule_proof)
+    termsDL rule_rule
   subst_ sub r@ActiveRule{..} =
     r {
       rule_rule = rule',
-      rule_proof = certify (subst_ sub (derivation rule_proof)),
       rule_positions = positions (lhs rule') }
     where
       rule' = subst_ sub rule_rule
@@ -326,7 +323,6 @@ instance Has (ActiveRule f) Id where the = rule_active
 instance Has (ActiveRule f) RuleId where the = rule_rid
 instance Has (ActiveRule f) Depth where the = rule_depth
 instance f ~ g => Has (ActiveRule f) (Rule g) where the = rule_rule
-instance f ~ g => Has (ActiveRule f) (Proof g) where the = rule_proof
 instance f ~ g => Has (ActiveRule f) (Positions g) where the = rule_positions
 
 newtype RuleId = RuleId Id deriving (Eq, Ord, Show, Num, Real, Integral, Enum)
@@ -459,15 +455,14 @@ addCP :: Function f => Config f -> Model f -> State f -> CriticalPair f -> State
 addCP config model state@State{..} CriticalPair{..} =
   let
     pf = certify cp_proof
-    rule = orient cp_eqn
+    rule = orient cp_eqn (Proof.simpleLemma pf)
 
-    makeRule n k r p =
+    makeRule n k r =
       ActiveRule {
         rule_active = n,
         rule_rid = k,
         rule_depth = cp_depth,
         rule_rule = r rule,
-        rule_proof = p pf,
         rule_positions = positions (lhs (r rule)) }
   in
   addActive config state $ \n k1 k2 ->
@@ -480,8 +475,8 @@ addCP config model state@State{..} CriticalPair{..} =
     active_proof = pf,
     active_rules =
       usortBy (comparing (canonicalise . rule_rule)) $
-        makeRule n k1 id id:
-        [ makeRule n k2 backwards (certify . symm . derivation)
+        makeRule n k1 id:
+        [ makeRule n k2 backwards
         | not (oriented (orientation rule)) ] }
 
 -- Add a new equation.

@@ -5,7 +5,7 @@ module Twee.Proof(
   Proof, Derivation(..), Axiom(..),
   certify, equation, derivation,
   -- ** Smart constructors for derivations
-  lemma, axiom, symm, trans, cong, congPath,
+  lemma, autoSubst, simpleLemma, axiom, symm, trans, cong, congPath,
 
   -- * Analysing proofs
   simplify, usedLemmas, usedAxioms, usedLemmasAndSubsts, usedAxiomsAndSubsts,
@@ -191,19 +191,18 @@ simplify lem p = simp p
 lemma :: Proof f -> Subst f -> Derivation f
 lemma p sub = UseLemma p sub
 
-simpleLemma :: PrettyTerm f => Derivation f -> Derivation f
-simpleLemma deriv =
-  UseLemma p $
-    fromJust $
-    listToSubst [(x, build (var x)) | x <- vars (equation p)]
-  where
-    p = certify deriv
+simpleLemma :: PrettyTerm f => Proof f -> Derivation f
+simpleLemma p =
+  UseLemma p (autoSubst (equation p))
 
 axiom :: Axiom f -> Derivation f
 axiom ax@Axiom{..} =
-  UseAxiom ax $
-    fromJust $
-    listToSubst [(x, build (var x)) | x <- vars axiom_eqn]
+  UseAxiom ax (autoSubst axiom_eqn)
+
+autoSubst :: Equation f -> Subst f
+autoSubst eqn =
+  fromJust $
+  listToSubst [(x, build (var x)) | x <- vars eqn]
 
 symm :: Derivation f -> Derivation f
 symm (Refl t) = Refl t
@@ -315,7 +314,7 @@ eliminateDefinitions axioms p = elim p
           replace (proof <$> sub) rhs
       where
         vs = map V [0..length ps-1]
-        qs = map (elim . simpleLemma) ps -- avoid duplicating proofs of ts
+        qs = map (elim . simpleLemma . certify) ps -- avoid duplicating proofs of ts
 
     elimSubst (Subst sub) = Subst (singleton <$> term <$> unsingleton <$> sub)
       where

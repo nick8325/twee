@@ -25,7 +25,7 @@ insert t x RuleIndex{..} =
     index_oriented = insertWhen (oriented or) index_oriented,
     index_all = insertWhen True index_all }
   where
-    Rule or _ _ = the x :: Rule f
+    Rule or _ _ _ = the x :: Rule f
 
     insertWhen False idx = idx
     insertWhen True idx = Index.insert t x idx
@@ -36,7 +36,7 @@ delete t x RuleIndex{..} =
     index_oriented = deleteWhen (oriented or) index_oriented,
     index_all = deleteWhen True index_all }
   where
-    Rule or _ _ = the x :: Rule f
+    Rule or _ _ _ = the x :: Rule f
 
     deleteWhen False idx = idx
     deleteWhen True idx = Index.delete t x idx
