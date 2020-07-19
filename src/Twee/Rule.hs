@@ -29,12 +29,13 @@ import Data.Tuple
 data Rule f =
   Rule {
     -- | Information about whether and how the rule is oriented.
-    orientation :: !(Orientation f),
+    orientation :: Orientation f,
     -- Invariant:
     -- For oriented rules: vars rhs `isSubsetOf` vars lhs
     -- For unoriented rules: vars lhs == vars rhs
     
-    rule_derivation :: !(Derivation f),
+    -- | A proof that the rule holds.
+    rule_derivation :: Derivation f,
 
     -- | The left-hand side of the rule.
     lhs :: {-# UNPACK #-} !(Term f),
