@@ -28,6 +28,8 @@ import Data.List
 import Data.Function
 import qualified Data.Set as Set
 import Data.Set(Set)
+import qualified Data.Map.Strict as Map
+import Data.Map(Map)
 import Data.Int
 import Data.Ord
 import Control.Monad
@@ -507,8 +509,8 @@ data Goal f =
     goal_name     :: String,
     goal_number   :: Int,
     goal_eqn      :: Equation f,
-    goal_lhs      :: Set (Resulting f),
-    goal_rhs      :: Set (Resulting f) }
+    goal_lhs      :: Map (Term f) (Reduction f),
+    goal_rhs      :: Map (Term f) (Reduction f) }
 
 -- Add a new goal.
 {-# INLINEABLE addGoal #-}
@@ -523,19 +525,19 @@ normaliseGoals Config{..} state@State{..} =
   state {
     st_goals = newGoals,
     st_goal_terms =
-      [ Set.union
-          (Set.map result (goal_lhs g))
-          (Set.map result (goal_rhs g))
+      [ Set.union (Map.keysSet (goal_lhs g)) (Map.keysSet (goal_rhs g))
       | g <- newGoals ] }
   where
     newGoals = map (goalMap (nf (rewrite reducesSkolem (index_all st_rules)))) st_goals
     goalMap f goal@Goal{..} =
       goal { goal_lhs = f goal_lhs, goal_rhs = f goal_rhs }
-    nf reduce
-      | cfg_set_join_goals = Rule.successors reduce
+    nf reduce goals
+      | cfg_set_join_goals = Rule.successors reduce goals
       | otherwise =
-        Set.map $ \r ->
-          Rule.reduce (reduction r `Trans` reduction (Rule.normaliseWith (const True) reduce (result r)))
+        Map.fromList $
+          [ (result q, q)
+          | (t, r) <- Map.toList goals,
+            let q = r `trans` Rule.normaliseWith (const True) reduce t ]
 
 -- Recompute all normal forms of all goals. Starts from the original goal term.
 -- Different from normalising all goals, because there may be an intermediate
@@ -553,8 +555,8 @@ recomputeGoals config state =
       normaliseGoals config (state { st_goals = map reset (st_goals state) })
 
     reset goal@Goal{goal_eqn = t :=: u, ..} =
-      goal { goal_lhs = Set.singleton (reduce (Refl t)),
-             goal_rhs = Set.singleton (reduce (Refl u)) }
+      goal { goal_lhs = Map.singleton t (Refl t),
+             goal_rhs = Map.singleton u (Refl u) }
 
     forceList [] = ()
     forceList (x:xs) = x `seq` forceList xs
@@ -567,8 +569,8 @@ goal n name (t :=: u) =
     goal_name = name,
     goal_number = n,
     goal_eqn = t :=: u,
-    goal_lhs = Set.singleton (reduce (Refl t)),
-    goal_rhs = Set.singleton (reduce (Refl u)) }
+    goal_lhs = Map.singleton t (Refl t),
+    goal_rhs = Map.singleton u (Refl u) }
 
 ----------------------------------------------------------------------
 -- Interreduction.
@@ -683,14 +685,16 @@ solved = not . null . solutions
 solutions :: Function f => State f -> [ProvedGoal f]
 solutions State{..} = do
   Goal{goal_lhs = ts, goal_rhs = us, ..} <- st_goals
-  guard (not (null (Set.intersection ts us)))
-  let t:_ = filter (`Set.member` us) (Set.toList ts)
-      u:_ = filter (== t) (Set.toList us)
+  let sols = Map.keys (Map.intersection ts us)
+  guard (not (null sols))
+  let sol:_ = sols
+  let t = ts Map.! sol
+      u = us Map.! sol
       -- Strict so that we check the proof before returning a solution
       !p =
         Proof.certify $
-          reductionProof (reduction t) `Proof.trans`
-          Proof.symm (reductionProof (reduction u))
+          reductionProof t `Proof.trans`
+          Proof.symm (reductionProof u)
   return (provedGoal goal_number goal_name p)
 
 -- Return all current rewrite rules.
@@ -711,14 +715,14 @@ completePure cfg state
     (progress, state') = complete1 cfg state
 
 {-# INLINEABLE normaliseTerm #-}
-normaliseTerm :: Function f => State f -> Term f -> Resulting f
+normaliseTerm :: Function f => State f -> Term f -> Reduction f
 normaliseTerm State{..} t =
   normaliseWith (const True) (rewrite reduces (index_all st_rules)) t
 
 {-# INLINEABLE normalForms #-}
-normalForms :: Function f => State f -> Term f -> Set (Resulting f)
+normalForms :: Function f => State f -> Term f -> Map (Term f) (Reduction f)
 normalForms State{..} t =
-  Rule.normalForms (rewrite reduces (index_all st_rules)) (Set.singleton (reduce (Refl t)))
+  Rule.normalForms (rewrite reduces (index_all st_rules)) (Map.singleton t (Refl t))
 
 {-# INLINEABLE simplifyTerm #-}
 simplifyTerm :: Function f => State f -> Term f -> Term f

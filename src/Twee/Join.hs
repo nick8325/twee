@@ -16,7 +16,7 @@ import Twee.Utils
 import Data.Maybe
 import Data.Either
 import Data.Ord
-import qualified Data.Set as Set
+import qualified Data.Map.Strict as Map
 
 data Config =
   Config {
@@ -53,9 +53,9 @@ joinCriticalPair config eqns idx mmodel cp@CriticalPair{cp_eqn = t :=: u} =
     Nothing ->
       Right (Nothing, [])
     _ | cfg_set_join config &&
-        not (null $ Set.intersection
-          (normalForms (rewrite reduces (index_all idx)) (Set.singleton (reduce (Refl t))))
-          (normalForms (rewrite reduces (index_all idx)) (Set.singleton (reduce (Refl u))))) ->
+        not (null $ Map.intersection
+          (normalForms (rewrite reduces (index_all idx)) (Map.singleton t (Refl t)))
+          (normalForms (rewrite reduces (index_all idx)) (Map.singleton u (Refl u)))) ->
       Right (Just cp, [])
     Just cp ->
       case groundJoinFromMaybe config eqns idx mmodel (branches (And [])) cp of
@@ -120,16 +120,16 @@ step3 Config{..} eqns idx cp
 {-# INLINEABLE joinWith #-}
 joinWith ::
   (Has a (Rule f)) =>
-  Index f (Equation f) -> RuleIndex f a -> (Term f -> Term f -> Resulting f) -> CriticalPair f -> Maybe (CriticalPair f)
+  Index f (Equation f) -> RuleIndex f a -> (Term f -> Term f -> Reduction f) -> CriticalPair f -> Maybe (CriticalPair f)
 joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
   | subsumed eqns idx eqn = Nothing
   | otherwise =
     Just cp {
       cp_eqn = eqn,
       cp_proof =
-        Proof.symm (reductionProof (reduction lred)) `Proof.trans`
+        Proof.symm (reductionProof lred) `Proof.trans`
         cp_proof `Proof.trans`
-        reductionProof (reduction rred) }
+        reductionProof rred }
   where
     lred = reduce lhs rhs
     rred = reduce rhs lhs
@@ -183,7 +183,7 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
         model'
           | modelOK model =
             optimise weakenModel (\m -> modelOK m && isNothing (allSteps config' eqns idx cp { cp_eqn = result (normaliseIn m t u) :=: result (normaliseIn m u t) })) $
-            optimise weakenModel (\m -> modelOK m && (valid m (reduction nt) && valid m (reduction nu))) model
+            optimise weakenModel (\m -> modelOK m && (valid m nt && valid m nu)) model
           | otherwise =
             optimise weakenModel (not . modelOK) model
 

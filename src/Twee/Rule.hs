@@ -12,8 +12,8 @@ import Control.Monad.Trans.State.Strict
 import Data.Maybe
 import Data.List
 import Twee.Utils
-import qualified Data.Set as Set
-import Data.Set(Set)
+import qualified Data.Map.Strict as Map
+import Data.Map(Map)
 import qualified Twee.Term as Term
 import Data.Ord
 import Twee.Equation
@@ -242,17 +242,19 @@ data Reduction f =
   | Cong {-# UNPACK #-} !(Fun f) ![Reduction f]
   deriving Show
 
-instance Symbolic (Reduction f) where
-  type ConstantOf (Reduction f) = f
-  termsDL (Step _ sub) = termsDL sub
-  termsDL (Refl t) = termsDL t
-  termsDL (Trans p q) = termsDL p `mplus` termsDL q
-  termsDL (Cong _ ps) = termsDL ps
+result :: Reduction f -> Term f
+result (Refl t) = t
+result (Trans _ q) = result q
+result r = build (res r)
+  where
+    res (Refl t) = builder t
+    res (Trans _ q) = res q
+    res (Step rule sub) = Term.subst sub (rhs rule)
+    res (Cong f ps) = app f (map res ps)
 
-  subst_ sub (Step rule s) = Step rule (subst_ sub s)
-  subst_ sub (Refl t) = Refl (subst_ sub t)
-  subst_ sub (Trans p q) = Trans (subst_ sub p) (subst_ sub q)
-  subst_ sub (Cong f ps) = Cong f (subst_ sub ps)
+trans :: Reduction f -> Reduction f -> Reduction f
+trans p (Trans q r) = trans (Trans p q) r
+trans p q = Trans p q
 
 instance Function f => Pretty (Reduction f) where
   pPrint = pPrint . reductionProof
@@ -278,45 +280,14 @@ reductionProof (Cong f ps) = Proof.cong f (map reductionProof ps)
 -- | Construct a basic rewrite step.
 {-# INLINE step #-}
 step :: Has a (Rule f) => a -> Subst f -> Reduction f
-step x sub = Step (the x) sub
+step x sub = Step rule sub
+  where
+    rule = the x
 
 ----------------------------------------------------------------------
 -- | A rewrite proof with the final term attached.
 -- Has an @Ord@ instance which compares the final term.
 ----------------------------------------------------------------------
-
-data Resulting f =
-  Resulting {
-    result :: {-# UNPACK #-} !(Term f),
-    reduction :: !(Reduction f) }
-  deriving Show
-
-instance Eq (Resulting f) where x == y = compare x y == EQ
-instance Ord (Resulting f) where compare = comparing result
-
-instance Symbolic (Resulting f) where
-  type ConstantOf (Resulting f) = f
-  termsDL (Resulting t red) =
-    termsDL t `mplus` termsDL red
-  subst_ sub (Resulting t red) =
-    Resulting (subst_ sub t) (subst_ sub red)
-
-instance Function f => Pretty (Resulting f) where
-  pPrint = pPrint . reduction
-
--- | Construct a 'Resulting' from a 'Reduction'.
-reduce :: Reduction f -> Resulting f
-reduce p =
-  Resulting (res p) p
-  where
-    res (Trans _ q) = res q
-    res (Refl t) = t
-    res p = build (emitResult p)
-
-    emitResult (Step r sub) = Term.subst sub (rhs r)
-    emitResult (Refl t) = builder t
-    emitResult (Trans _ q) = emitResult q
-    emitResult (Cong f ps) = app f (map emitResult ps)
 
 --------------------------------------------------------------------------------
 -- * Strategy combinators.
@@ -325,7 +296,7 @@ reduce p =
 -- | Normalise a term wrt a particular strategy.
 {-# INLINE normaliseWith #-}
 {-# SCC normaliseWith #-}
-normaliseWith :: Function f => (Term f -> Bool) -> Strategy f -> Term f -> Resulting f
+normaliseWith :: Function f => (Term f -> Bool) -> Strategy f -> Term f -> Reduction f
 normaliseWith ok strat t = res
   where
     res = aux 0 (Refl t) t
@@ -334,42 +305,42 @@ normaliseWith ok strat t = res
         "Possibly nonterminating rewrite:\n" ++ prettyShow p
     aux n p t =
       case parallel strat t of
-        (q:_) | u <- result (reduce q), ok u ->
-          aux (n+1) (p `Trans` q) u
-        _ -> Resulting t p
+        (q:_) | u <- result q, ok u ->
+          aux (n+1) (p `trans` q) u
+        _ -> p
 
 -- | Compute all normal forms of a set of terms wrt a particular strategy.
-normalForms :: Function f => Strategy f -> Set (Resulting f) -> Set (Resulting f)
+normalForms :: Function f => Strategy f -> Map (Term f) (Reduction f) -> Map (Term f) (Reduction f)
 normalForms strat ps = snd (successorsAndNormalForms strat ps)
 
 -- | Compute all successors of a set of terms (a successor of a term @t@
 -- is a term @u@ such that @t ->* u@).
-successors :: Function f => Strategy f -> Set (Resulting f) -> Set (Resulting f)
+successors :: Function f => Strategy f -> Map (Term f) (Reduction f) -> Map (Term f) (Reduction f)
 successors strat ps =
-  Set.union qs rs
+  Map.union qs rs
   where
     (qs, rs) = successorsAndNormalForms strat ps
 
 {-# INLINEABLE successorsAndNormalForms #-}
 {-# SCC successorsAndNormalForms #-}
-successorsAndNormalForms :: Function f => Strategy f -> Set (Resulting f) ->
-  (Set (Resulting f), Set (Resulting f))
+successorsAndNormalForms :: Function f => Strategy f -> Map (Term f) (Reduction f) ->
+  (Map (Term f) (Reduction f), Map (Term f) (Reduction f))
 successorsAndNormalForms strat ps =
-  go Set.empty Set.empty ps
+  go Map.empty Map.empty ps
   where
     go dead norm ps =
-      case Set.minView ps of
+      case Map.minViewWithKey ps of
         Nothing -> (dead, norm)
-        Just (p, ps)
-          | p `Set.member` dead -> go dead norm ps
-          | p `Set.member` norm -> go dead norm ps
-          | null qs -> go dead (Set.insert p norm) ps
+        Just ((t, p), ps)
+          | t `Map.member` dead -> go dead norm ps
+          | t `Map.member` norm -> go dead norm ps
+          | null qs -> go dead (Map.insert t p norm) ps
           | otherwise ->
-            go (Set.insert p dead) norm (Set.fromList qs `Set.union` ps)
+            go (Map.insert t p dead) norm (Map.fromList qs `Map.union` ps)
           where
             qs =
-              [ reduce (reduction p `Trans` q)
-              | q <- anywhere strat (result p) ]
+              [ (result q, p `trans` q)
+              | q <- anywhere strat t ]
 
 -- | Apply a strategy anywhere in a term.
 anywhere :: Strategy f -> Strategy f
