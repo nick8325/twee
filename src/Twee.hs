@@ -535,7 +535,7 @@ normaliseGoals Config{..} state@State{..} =
       | cfg_set_join_goals = Rule.successors reduce
       | otherwise =
         Set.map $ \r ->
-          Rule.reduce (reduction r `trans` reduction (Rule.normaliseWith (const True) reduce (result r)))
+          Rule.reduce (reduction r `Trans` reduction (Rule.normaliseWith (const True) reduce (result r)))
 
 -- Recompute all normal forms of all goals. Starts from the original goal term.
 -- Different from normalising all goals, because there may be an intermediate

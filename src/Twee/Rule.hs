@@ -257,23 +257,6 @@ instance Symbolic (Reduction f) where
 instance Function f => Pretty (Reduction f) where
   pPrint = pPrint . reductionProof
 
--- | A smart constructor for Trans which simplifies Refl.
-trans :: Reduction f -> Reduction f -> Reduction f
-trans Refl{} p = p
-trans p Refl{} = p
--- Make right-associative to improve performance of 'result'
-trans p (Trans q r) = Trans (Trans p q) r
-trans p q = Trans p q
-
--- | A smart constructor for Cong which simplifies Refl.
-cong :: Fun f -> [Reduction f] -> Reduction f
-cong f ps
-  | all isRefl ps = Refl (result (reduce (Cong f ps)))
-  | otherwise = Cong f ps
-  where
-    isRefl Refl{} = True
-    isRefl _ = False
-
 -- | The list of all rewrite rules used in a rewrite proof.
 steps :: Reduction f -> [Reduction f]
 steps r = aux r []
@@ -352,7 +335,7 @@ normaliseWith ok strat t = res
     aux n p t =
       case parallel strat t of
         (q:_) | u <- result (reduce q), ok u ->
-          aux (n+1) (p `trans` q) u
+          aux (n+1) (p `Trans` q) u
         _ -> Resulting t p
 
 -- | Compute all normal forms of a set of terms wrt a particular strategy.
@@ -385,7 +368,7 @@ successorsAndNormalForms strat ps =
             go (Set.insert p dead) norm (Set.fromList qs `Set.union` ps)
           where
             qs =
-              [ reduce (reduction p `trans` q)
+              [ reduce (reduction p `Trans` q)
               | q <- anywhere strat (result p) ]
 
 -- | Apply a strategy anywhere in a term.
@@ -396,7 +379,7 @@ anywhere strat t = strat t ++ nested (anywhere strat) t
 nested :: Strategy f -> Strategy f
 nested _ Var{} = []
 nested strat (App f ts) =
-  cong f <$> inner [] ts
+  Cong f <$> inner [] ts
   where
     inner _ Empty = []
     inner before (Cons t u) =
@@ -408,17 +391,22 @@ nested strat (App f ts) =
 -- Takes only the first rewrite of each strategy.
 {-# INLINE parallel #-}
 parallel :: PrettyTerm f => Strategy f -> Strategy f
-parallel strat t =
-  case par t of
-    Refl{} -> []
-    p -> [p]
+parallel strat t
+  | isRefl p = []
+  | otherwise = [p]
   where
+    p = par t
+
     par t | p:_ <- strat t = p
-    par (App f ts) = cong f (inner [] ts)
+    par (App f ts) = Cong f (inner [] ts)
     par t = Refl t
 
     inner before Empty = reverse before
     inner before (Cons t u) = inner (par t:before) u
+
+    isRefl Refl{} = True
+    isRefl (Cong _ ps) = all isRefl ps
+    isRefl _ = False
 
 --------------------------------------------------------------------------------
 -- * Basic strategies. These only apply at the root of the term.
