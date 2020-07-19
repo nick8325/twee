@@ -35,7 +35,7 @@ data Rule f =
     -- For unoriented rules: vars lhs == vars rhs
     
     -- | A proof that the rule holds.
-    rule_derivation :: Derivation f,
+    ruleDerivation :: Derivation f,
 
     -- | The left-hand side of the rule.
     lhs :: {-# UNPACK #-} !(Term f),
@@ -80,11 +80,6 @@ oriented Oriented{} = True
 oriented WeaklyOriented{} = True
 oriented _ = False
 
--- | Is a rule weakly oriented?
-weaklyOriented :: Orientation f -> Bool
-weaklyOriented WeaklyOriented{} = True
-weaklyOriented _ = False
-
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
   termsDL (Rule _ _ t _) = termsDL t
@@ -122,9 +117,8 @@ unorient (Rule _ _ l r) = l :=: r
 -- | Turn an equation t :=: u into a rule t -> u by computing the
 -- orientation info (e.g. oriented, permutative or unoriented).
 --
--- Crashes if t -> u is not a valid rule, for example if there is
--- a variable in @u@ which is not in @t@. To prevent this happening,
--- combine with 'Twee.CP.split'.
+-- Crashes if either @t < u@, or there is a variable in @u@ which is
+-- not in @t@. To avoid this problem, combine with 'Twee.CP.split'.
 orient :: Function f => Equation f -> Derivation f -> Rule f
 orient (t :=: u) d = Rule o d t u
   where
@@ -200,17 +194,6 @@ simplify !idx !t
     simp (Cons (App f ts) us) =
       app f (simp ts) `mappend` simp us
 
--- | Check if a term can be simplified.
-{-# INLINEABLE canSimplify #-}
-canSimplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Bool
-canSimplify idx t = canSimplifyList idx (singleton t)
-
-{-# INLINEABLE canSimplifyList #-}
-{-# SCC canSimplifyList #-}
-canSimplifyList :: (Function f, Has a (Rule f)) => Index f a -> TermList f -> Bool
-canSimplifyList idx t =
-  any (isJust . simpleRewrite idx) (filter isApp (subtermsList t))
-
 -- | Find a simplification step that applies to a term.
 {-# INLINEABLE simpleRewrite #-}
 {-# SCC simpleRewrite #-}
@@ -238,17 +221,17 @@ type Strategy f = Term f -> [Reduction f]
 -- matching.
 type Reduction f = [Rule f]
 
+-- | Transitivity for reduction sequences.
+trans :: Reduction f -> Reduction f -> Reduction f
+trans p q = q ++ p
+
+-- | Compute the final term resulting from a reduction, given the
+-- starting term.
 result :: Term f -> Reduction f -> Term f
 result t [] = t
 result t (r:rs) = ruleResult u r
   where
     u = result t rs
-
-ruleResult :: Term f -> Rule f -> Term f
-ruleResult t r = build (replace (lhs r) (rhs r) (singleton t))
-
-trans :: Reduction f -> Reduction f -> Reduction f
-trans p q = q ++ p
 
 -- | Turn a reduction into a proof.
 reductionProof :: PrettyTerm f => Term f -> Reduction f -> Derivation f
@@ -257,6 +240,10 @@ reductionProof t ps = red t (Proof.Refl t) (reverse ps)
     red _ p [] = p
     red t p (q:qs) =
       red (ruleResult t q) (p `Proof.trans` ruleProof t q) qs
+
+-- Helpers for result and reductionProof.
+ruleResult :: Term f -> Rule f -> Term f
+ruleResult t r = build (replace (lhs r) (rhs r) (singleton t))
 
 ruleProof :: PrettyTerm f => Term f -> Rule f -> Derivation f
 ruleProof t (Rule _ d lhs _)
@@ -267,7 +254,7 @@ ruleProof (App f ts) rule =
 ruleProof t _ = Proof.Refl t
 
 --------------------------------------------------------------------------------
--- * Strategy combinators.
+-- * Normalisation.
 --------------------------------------------------------------------------------
 
 -- | Normalise a term wrt a particular strategy.
