@@ -54,8 +54,8 @@ joinCriticalPair config eqns idx mmodel cp@CriticalPair{cp_eqn = t :=: u} =
       Right (Nothing, [])
     _ | cfg_set_join config &&
         not (null $ Map.intersection
-          (normalForms (rewrite reduces (index_all idx)) (Map.singleton t (Refl t)))
-          (normalForms (rewrite reduces (index_all idx)) (Map.singleton u (Refl u)))) ->
+          (normalForms (rewrite reduces (index_all idx)) (Map.singleton t []))
+          (normalForms (rewrite reduces (index_all idx)) (Map.singleton u []))) ->
       Right (Just cp, [])
     Just cp ->
       case groundJoinFromMaybe config eqns idx mmodel (branches (And [])) cp of
@@ -119,7 +119,7 @@ step3 Config{..} eqns idx cp
 
 {-# INLINEABLE joinWith #-}
 joinWith ::
-  (Has a (Rule f)) =>
+  (PrettyTerm f, Has a (Rule f)) =>
   Index f (Equation f) -> RuleIndex f a -> (Term f -> Term f -> Reduction f) -> CriticalPair f -> Maybe (CriticalPair f)
 joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
   | subsumed eqns idx eqn = Nothing
@@ -127,13 +127,13 @@ joinWith eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
     Just cp {
       cp_eqn = eqn,
       cp_proof =
-        Proof.symm (reductionProof lred) `Proof.trans`
+        Proof.symm (reductionProof lhs lred) `Proof.trans`
         cp_proof `Proof.trans`
-        reductionProof rred }
+        reductionProof rhs rred }
   where
     lred = reduce lhs rhs
     rred = reduce rhs lhs
-    eqn = result lred :=: result rred
+    eqn = result lhs lred :=: result rhs rred
 
 {-# INLINEABLE subsumed #-}
 subsumed ::
@@ -182,7 +182,7 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
       let
         model'
           | modelOK model =
-            optimise weakenModel (\m -> modelOK m && isNothing (allSteps config' eqns idx cp { cp_eqn = result (normaliseIn m t u) :=: result (normaliseIn m u t) })) $
+            optimise weakenModel (\m -> modelOK m && isNothing (allSteps config' eqns idx cp { cp_eqn = result t (normaliseIn m t u) :=: result u (normaliseIn m u t) })) $
             optimise weakenModel (\m -> modelOK m && (valid m nt && valid m nu)) model
           | otherwise =
             optimise weakenModel (not . modelOK) model
@@ -206,8 +206,8 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
 
     nt = normaliseIn model t u
     nu = normaliseIn model u t
-    t' = result nt
-    u' = result nu
+    t' = result t nt
+    u' = result u nu
 
     modelOK m =
       case cp_top of
@@ -225,8 +225,8 @@ groundJoinFromMaybe config eqns idx (Just model) = groundJoinFrom config eqns id
 {-# INLINEABLE valid #-}
 valid :: Function f => Model f -> Reduction f -> Bool
 valid model red =
-  and [ reducesInModel model rule sub
-      | Step rule sub <- steps red ]
+  and [ reducesInModel model rule emptySubst
+      | rule <- red ]
 
 optimise :: (a -> [a]) -> (a -> Bool) -> a -> a
 optimise f p x =

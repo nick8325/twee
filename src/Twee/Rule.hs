@@ -230,64 +230,40 @@ simpleRewrite idx t =
 -- | A strategy gives a set of possible reductions for a term.
 type Strategy f = Term f -> [Reduction f]
 
--- | A multi-step rewrite proof @t ->* u@
-data Reduction f =
-    -- | Apply a single rewrite rule to the root of a term
-    Step !(Rule f) !(Subst f)
-    -- | Reflexivity
-  | Refl {-# UNPACK #-} !(Term f)
-    -- | Transivitity
-  | Trans !(Reduction f) !(Reduction f)
-    -- | Congruence
-  | Cong {-# UNPACK #-} !(Fun f) ![Reduction f]
-  deriving Show
+-- | A reduction proof is just a sequence of rewrite steps, stored
+-- as a list in reverse order. In each rewrite step, all subterms that
+-- are exactly equal to the LHS of the rule are replaced by the RHS,
+-- i.e. the rewrite step is performed as a parallel rewrite without
+-- matching.
+type Reduction f = [Rule f]
 
-result :: Reduction f -> Term f
-result (Refl t) = t
-result (Trans _ q) = result q
-result r = build (res r)
+result :: Term f -> Reduction f -> Term f
+result t [] = t
+result t (r:rs) = ruleResult u r
   where
-    res (Refl t) = builder t
-    res (Trans _ q) = res q
-    res (Step rule sub) = Term.subst sub (rhs rule)
-    res (Cong f ps) = app f (map res ps)
+    u = result t rs
+
+ruleResult :: Term f -> Rule f -> Term f
+ruleResult t r = build (replace (lhs r) (rhs r) (singleton t))
 
 trans :: Reduction f -> Reduction f -> Reduction f
-trans p (Trans q r) = trans (Trans p q) r
-trans p q = Trans p q
-
-instance Function f => Pretty (Reduction f) where
-  pPrint = pPrint . reductionProof
-
--- | The list of all rewrite rules used in a rewrite proof.
-steps :: Reduction f -> [Reduction f]
-steps r = aux r []
-  where
-    aux step@Step{} = (step:)
-    aux (Refl _) = id
-    aux (Trans p q) = aux p . aux q
-    aux (Cong _ ps) = foldr (.) id (map aux ps)
+trans p q = q ++ p
 
 -- | Turn a reduction into a proof.
-reductionProof :: Reduction f -> Derivation f
-reductionProof (Step rule sub) =
-  subst sub (rule_derivation rule)
-reductionProof (Refl t) = Proof.Refl t
-reductionProof (Trans p q) =
-  Proof.trans (reductionProof p) (reductionProof q)
-reductionProof (Cong f ps) = Proof.cong f (map reductionProof ps)
-
--- | Construct a basic rewrite step.
-{-# INLINE step #-}
-step :: Has a (Rule f) => a -> Subst f -> Reduction f
-step x sub = Step rule sub
+reductionProof :: PrettyTerm f => Term f -> Reduction f -> Derivation f
+reductionProof t ps = red t (Proof.Refl t) (reverse ps)
   where
-    rule = the x
+    red _ p [] = p
+    red t p (q:qs) =
+      red (ruleResult t q) (p `Proof.trans` ruleProof t q) qs
 
-----------------------------------------------------------------------
--- | A rewrite proof with the final term attached.
--- Has an @Ord@ instance which compares the final term.
-----------------------------------------------------------------------
+ruleProof :: PrettyTerm f => Term f -> Rule f -> Derivation f
+ruleProof t (Rule _ d lhs _)
+  | t == lhs = d
+  | len t < len lhs = Proof.Refl t
+ruleProof (App f ts) rule =
+  Proof.cong f [ruleProof u rule | u <- unpack ts]
+ruleProof t _ = Proof.Refl t
 
 --------------------------------------------------------------------------------
 -- * Strategy combinators.
@@ -299,13 +275,13 @@ step x sub = Step rule sub
 normaliseWith :: Function f => (Term f -> Bool) -> Strategy f -> Term f -> Reduction f
 normaliseWith ok strat t = res
   where
-    res = aux 0 (Refl t) t
+    res = aux 0 [] t
     aux 1000 p _ =
       error $
         "Possibly nonterminating rewrite:\n" ++ prettyShow p
     aux n p t =
-      case parallel strat t of
-        (q:_) | u <- result q, ok u ->
+      case anywhere strat t of
+        (q:_) | u <- result t q, ok u ->
           aux (n+1) (p `trans` q) u
         _ -> p
 
@@ -339,45 +315,12 @@ successorsAndNormalForms strat ps =
             go (Map.insert t p dead) norm (Map.fromList qs `Map.union` ps)
           where
             qs =
-              [ (result q, p `trans` q)
+              [ (result t q, p `trans` q)
               | q <- anywhere strat t ]
 
 -- | Apply a strategy anywhere in a term.
 anywhere :: Strategy f -> Strategy f
-anywhere strat t = strat t ++ nested (anywhere strat) t
-
--- | Apply a strategy to some child of the root function.
-nested :: Strategy f -> Strategy f
-nested _ Var{} = []
-nested strat (App f ts) =
-  Cong f <$> inner [] ts
-  where
-    inner _ Empty = []
-    inner before (Cons t u) =
-      [ reverse before ++ [p] ++ map Refl (unpack u)
-      | p <- strat t ] ++
-      inner (Refl t:before) u
-
--- | Apply a strategy in parallel in as many places as possible.
--- Takes only the first rewrite of each strategy.
-{-# INLINE parallel #-}
-parallel :: PrettyTerm f => Strategy f -> Strategy f
-parallel strat t
-  | isRefl p = []
-  | otherwise = [p]
-  where
-    p = par t
-
-    par t | p:_ <- strat t = p
-    par (App f ts) = Cong f (inner [] ts)
-    par t = Refl t
-
-    inner before Empty = reverse before
-    inner before (Cons t u) = inner (par t:before) u
-
-    isRefl Refl{} = True
-    isRefl (Cong _ ps) = all isRefl ps
-    isRefl _ = False
+anywhere strat t = concatMap strat (subterms t)
 
 --------------------------------------------------------------------------------
 -- * Basic strategies. These only apply at the root of the term.
@@ -396,7 +339,7 @@ tryRule :: (Function f, Has a (Rule f)) => (Rule f -> Subst f -> Bool) -> a -> S
 tryRule p rule t = do
   sub <- maybeToList (match (lhs (the rule)) t)
   guard (p (the rule) sub)
-  return (step rule sub)
+  return [subst sub (the rule)]
 
 -- | Check if a rule can be applied, given an ordering <= on terms.
 {-# INLINEABLE reducesWith #-}

@@ -59,6 +59,7 @@ module Twee.Term(
   positionToPath, pathToPosition,
   replacePosition,
   replacePositionSub,
+  replace,
   -- * Miscellaneous functions
   bound, boundList, boundLists, mapFun, mapFunList, (<<)) where
 
@@ -595,6 +596,16 @@ mapFunList f ts = aux ts
     aux Empty = mempty
     aux (Cons (Var x) ts) = var x `mappend` aux ts
     aux (Cons (App ff ts) us) = app (f ff) (aux ts) `mappend` aux us
+
+{-# INLINE replace #-}
+replace :: (Build a, BuildFun a ~ f) => Term f -> a -> TermList f -> Builder f
+replace !t !u Empty = mempty
+replace t u (Cons v vs)
+  | t == v = builder u `mappend` replace t u vs
+  | otherwise =
+    case v of
+      Var x -> var x `mappend` replace t u vs
+      App f ts -> app f (replace t u ts) `mappend` replace t u vs
 
 -- | Replace the term at a given position in a term with a different term.
 {-# INLINE replacePosition #-}

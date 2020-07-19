@@ -329,9 +329,9 @@ overlapProof ::
   (Has a (Rule f), Has a Id) =>
   a -> a -> Overlap f -> Derivation f
 overlapProof left right Overlap{..} =
-  Proof.symm (reductionProof (step left leftSub))
+  Proof.symm (rule_derivation (subst leftSub (the left)))
   `Proof.trans`
-  congPath path overlap_top (reductionProof (step right rightSub))
+  congPath path overlap_top (rule_derivation (subst rightSub (the right)))
   where
     Just leftSub = match (lhs (the left)) overlap_top
     Just rightSub = match (lhs (the right)) overlap_inner
