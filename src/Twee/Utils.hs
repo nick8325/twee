@@ -71,12 +71,15 @@ isSubsequenceOf :: Ord a => [a] -> [a] -> Bool
   | otherwise = (x:xs) `isSubsequenceOf` ys
 #endif
 
-{-# INLINE fixpoint #-}
 fixpoint :: Eq a => (a -> a) -> a -> a
-fixpoint f x = fxp x
+fixpoint = fixpointOn id
+
+{-# INLINE fixpoint #-}
+fixpointOn :: Eq b => (a -> b) -> (a -> a) -> a -> a
+fixpointOn key f x = fxp x
   where
     fxp x
-      | x == y = x
+      | key x == key y = x
       | otherwise = fxp y
       where
         y = f x

@@ -546,45 +546,42 @@ groundProof ds
     f (Cong fun ps) = Cong fun (map f ps)
 
 simplifyProofs :: Function f => Config f -> [Derivation f] -> [Derivation f]
-simplifyProofs Config{..} goals = canonical
+simplifyProofs config@Config{..} goals =
+  fixpointOn key simp goals
   where
-    -- We inline a lemma if one of the following holds:
-    --   * It only has one step
-    --   * It is subsumed by an earlier lemma
-    --   * It has to do with $equals (for printing of the goal proof)
-    --   * The option cfg_no_lemmas is true
-    --   * It is only used once
-    -- A tricky situation is where:
-    --   * Lemma p is used many times, but is just a trivial use of lemma q
-    --   * Lemma q is only used by lemma p
-    -- In this case we can inline one of p and q, but not both.
-    -- To handle this situation correctly, we only compute use counts after
-    -- doing all other inlinings.
+    simp =
+      canonicaliseProof .
+      (inlineUsedOnceLemmas `onlyIf` not cfg_all_lemmas) .
+      inlineTrivialLemmas config
 
-    triv = pass inlineTrivial goals
-    uses = Map.unionsWith (+) $
-      map countUses triv ++ Map.elems (foldLemmas (const countUses) triv)
-    inlined = pass inlineOnce triv
-    canonical = pass canonicaliseLemma inlined
+    key ds =
+      (ds, [(equation p, derivation p) | p <- allLemmas ds])
 
-    pass f p = map (op (const derivation) lem) p
-      where
-        lem = foldLemmas (op f) p
-        op f lem p =
-          f lem (certify (unfoldLemmas (\lemma -> Just (lem Map.! lemma)) p))
+    pass `onlyIf` True = pass
+    _    `onlyIf` False = id
 
-    -- Present the equation left-to-right, and with variables
-    -- named canonically
-    canonicaliseLemma _ p
-      | u `lessEqSkolem` t = canon (derivation p)
-      | otherwise = symm (canon (symm (derivation p)))
-      where
-        t :=: u = equation p
-        t' :=: u' = canonicalise (t :=: u)
-        Just sub1 = matchEquation (t :=: u) (t' :=: u')
-        Just sub2 = matchEquation (t' :=: u') (t :=: u)
-        canon p = subst sub2 (simpleLemma (certify (subst sub1 p)))
+simplificationPass ::
+  Function f =>
+  -- A transformation on lemmas
+  (Map (Proof f) (Derivation f) -> Proof f -> Derivation f) ->
+  -- A transformation on goals
+  (Map (Proof f) (Derivation f) -> Derivation f -> Derivation f) ->
+  [Derivation f] -> [Derivation f]
+simplificationPass lemma goal p = map (op goal lem) p
+  where
+    lem = foldLemmas (op (\lem -> lemma lem . certify)) p
+    op f lem p =
+      f lem (unfoldLemmas (\lemma -> Just (lem Map.! lemma)) p)
 
+inlineTrivialLemmas :: Function f => Config f -> [Derivation f] -> [Derivation f]
+inlineTrivialLemmas Config{..} =
+  -- A lemma is trivial if one of the following holds:
+  --   * It only has one step
+  --   * It is subsumed by an earlier lemma
+  --   * It has to do with $equals (for printing of the goal proof)
+  --   * The option cfg_no_lemmas is true
+  simplificationPass inlineTrivial (const id)
+  where
     inlineTrivial lem p
       | shouldInline p = derivation p
       | (q:_) <- subsuming lem (equation p) = q
@@ -605,17 +602,41 @@ simplifyProofs Config{..} goals = canonical
       | (q, d) <- Map.toList lem,
         sub <- maybeToList (matchEquation (equation q) eq) ]
 
+inlineUsedOnceLemmas :: Function f => [Derivation f] -> [Derivation f]
+inlineUsedOnceLemmas ds =
+  -- Inline any lemma that's only used once in the proof
+  simplificationPass (const inlineOnce) (const id) ds
+  where
+    uses = Map.unionsWith (+) $
+      map countUses ds ++ Map.elems (foldLemmas (const countUses) ds)
+
     countUses p =
       Map.fromListWith (+) (zip (usedLemmas p) (repeat (1 :: Int)))
 
-    inlineOnce _ p
+    inlineOnce p
       | usedOnce p = derivation p
       | otherwise = simpleLemma p
       where
         usedOnce p =
           case Map.lookup p uses of
-            Just 1 | not cfg_all_lemmas -> True
+            Just 1 -> True
             _ -> False
+
+canonicaliseProof :: Function f => [Derivation f] -> [Derivation f]
+canonicaliseProof =
+  simplificationPass (const canonicaliseLemma) (const id)
+  where
+    -- Present the equation left-to-right, and with variables
+    -- named canonically
+    canonicaliseLemma p
+      | u `lessEqSkolem` t = canon (derivation p)
+      | otherwise = symm (canon (symm (derivation p)))
+      where
+        t :=: u = equation p
+        t' :=: u' = canonicalise (t :=: u)
+        Just sub1 = matchEquation (t :=: u) (t' :=: u')
+        Just sub2 = matchEquation (t' :=: u') (t :=: u)
+        canon p = subst sub2 (simpleLemma (certify (subst sub1 p)))
 
 invisible :: Function f => Equation f -> Bool
 invisible (t :=: u) = show (pPrint t) == show (pPrint u)
