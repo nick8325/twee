@@ -18,7 +18,7 @@ import qualified Twee.Term as Term
 import Data.Ord
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Derivation, Proof)
+import Twee.Proof(Derivation)
 import Data.Tuple
 
 --------------------------------------------------------------------------------

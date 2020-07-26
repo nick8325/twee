@@ -5,7 +5,6 @@ module Twee.KBO(lessEq, lessIn, lessEqSkolem, Sized(..), Weighted(..)) where
 
 import Twee.Base hiding (lessEq, lessIn, lessEqSkolem)
 import Twee.Equation
-import Data.List
 import Twee.Constraints hiding (lessEq, lessIn, lessEqSkolem)
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict(Map)

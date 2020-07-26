@@ -24,7 +24,7 @@ import Jukebox.Options
 import Jukebox.Toolbox
 import Jukebox.Name hiding (lhs, rhs, label)
 import qualified Jukebox.Form as Jukebox
-import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size, matchList)
+import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size)
 import Jukebox.Tools.EncodeTypes
 import Jukebox.TPTP.Print
 import Jukebox.Tools.HornToUnit
@@ -576,6 +576,8 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
       step "simplify_queue" []
     traceMsg Interreduce =
       step "interreduce" []
+    traceMsg (Status n) =
+      step "status" [pPrint n]
 
     traceActive Active{..} =
       traceApp "rule" [pPrint active_id, traceEqn (unorient active_rule)]

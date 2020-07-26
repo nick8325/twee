@@ -187,7 +187,7 @@ foldLemmas op ds =
 mapLemmas :: Function f => (Derivation f -> Derivation f) -> [Derivation f] -> [Derivation f]
 mapLemmas f ds = map (derivation . op lem) ds
   where
-    op lem = certify . f . unfoldLemmasOnce (\pf -> Just (simpleLemma (lem Map.! pf)))
+    op lem = certify . f . unfoldLemmas (\pf -> Just (simpleLemma (lem Map.! pf)))
     lem = foldLemmas op ds
 
 allLemmas :: PrettyTerm f => [Derivation f] -> [Proof f]
@@ -199,21 +199,18 @@ allLemmas ds =
       graphFromEdges
         [((), p, ps) | (p, ps) <- Map.toList used]
 
-unfoldLemmasOnce :: Minimal f => (Proof f -> Maybe (Derivation f)) -> Derivation f -> Derivation f
-unfoldLemmasOnce lem p@(UseLemma q sub) =
+unfoldLemmas :: Minimal f => (Proof f -> Maybe (Derivation f)) -> Derivation f -> Derivation f
+unfoldLemmas lem p@(UseLemma q sub) =
   case lem q of
     Nothing -> p
     Just r ->
       -- Get rid of any variables that are not bound by sub
       -- (e.g., ones which only occur internally in q)
       subst sub (eraseExcept (substDomain sub) r)
-unfoldLemmasOnce lem (Symm p) = symm (unfoldLemmasOnce lem p)
-unfoldLemmasOnce lem (Trans p q) = trans (unfoldLemmasOnce lem p) (unfoldLemmasOnce lem q)
-unfoldLemmasOnce lem (Cong f ps) = cong f (map (unfoldLemmasOnce lem) ps)
-unfoldLemmasOnce lem p = p
-
-unfoldLemmas :: Minimal f => (Proof f -> Maybe (Derivation f)) -> Derivation f -> Derivation f
-unfoldLemmas lem = unfoldLemmasOnce (\p -> unfoldLemmas lem <$> lem p)
+unfoldLemmas lem (Symm p) = symm (unfoldLemmas lem p)
+unfoldLemmas lem (Trans p q) = trans (unfoldLemmas lem p) (unfoldLemmas lem q)
+unfoldLemmas lem (Cong f ps) = cong f (map (unfoldLemmas lem) ps)
+unfoldLemmas _ p = p
 
 lemma :: Proof f -> Subst f -> Derivation f
 lemma p sub = UseLemma p sub
@@ -247,10 +244,6 @@ trans (Trans p q) r =
   -- constructors) but q could be.
   Trans p (trans q r)
 trans p q = Trans p q
-
-transCong :: Fun f -> [Derivation f] -> [Derivation f] -> Derivation f
-transCong f ps qs =
-  cong f (zipWith trans ps qs)
 
 cong :: Fun f -> [Derivation f] -> Derivation f
 cong f ps =
@@ -353,7 +346,7 @@ groundAxiomsAndSubsts p = ax lem p
   where
     lem = foldLemmas ax [p]
 
-    ax lem (UseAxiom axiom sub) =
+    ax _ (UseAxiom axiom sub) =
       Map.singleton axiom (Set.singleton sub)
     ax lem (UseLemma lemma sub) =
       Map.map (Set.map substAndErase) (lem Map.! lemma)
@@ -578,7 +571,7 @@ simplifyProofs Config{..} goals = canonical
       where
         lem = foldLemmas (op f) p
         op f lem p =
-          f lem (certify (unfoldLemmasOnce (\lemma -> Just (lem Map.! lemma)) p))
+          f lem (certify (unfoldLemmas (\lemma -> Just (lem Map.! lemma)) p))
 
     -- Present the equation left-to-right, and with variables
     -- named canonically

@@ -4,8 +4,6 @@
 module Data.Heap(
   Heap, empty, singleton, insert, removeMin, union, mapMaybe, size, toList) where
 
-import qualified Data.List as List
-
 -- | A heap.
 
 -- N.B.: arguments are not strict so code has to take care

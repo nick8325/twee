@@ -7,7 +7,7 @@ import Twee.Rule hiding (normalForms)
 import qualified Twee.Rule as Rule
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Axiom(..), Proof(..), ProvedGoal(..), provedGoal, certify, derivation, symm)
+import Twee.Proof(Axiom(..), Proof(..), ProvedGoal(..), provedGoal, certify, derivation)
 import Twee.CP hiding (Config)
 import qualified Twee.CP as CP
 import Twee.Join hiding (Config, defaultConfig)

@@ -5,7 +5,6 @@ module Twee.Join where
 import Twee.Base
 import Twee.Rule
 import Twee.Equation
-import Twee.Proof(Proof)
 import qualified Twee.Proof as Proof
 import Twee.CP hiding (Config)
 import Twee.Constraints

@@ -71,7 +71,6 @@ import Data.Maybe
 import Data.Semigroup(Semigroup(..))
 import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
-import Data.Int
 import Control.Arrow((&&&))
 import Twee.Utils
 
@@ -599,7 +598,7 @@ mapFunList f ts = aux ts
 
 {-# INLINE replace #-}
 replace :: (Build a, BuildFun a ~ f) => Term f -> a -> TermList f -> Builder f
-replace !t !u Empty = mempty
+replace !_ !_ Empty = mempty
 replace t u (Cons v vs)
   | t == v = builder u `mappend` replace t u vs
   | otherwise =

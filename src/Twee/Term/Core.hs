@@ -10,7 +10,7 @@
 #endif
 module Twee.Term.Core where
 
-import Data.Primitive(sizeOf, compareByteArrays)
+import Data.Primitive(sizeOf)
 #ifdef BOUNDS_CHECKS
 import Data.Primitive.ByteArray.Checked
 #else
@@ -23,7 +23,6 @@ import GHC.Types(Int(..))
 import GHC.Prim
 import GHC.ST hiding (liftST)
 import Data.Ord
-import Data.Typeable
 import Data.Semigroup(Semigroup(..))
 
 --------------------------------------------------------------------------------

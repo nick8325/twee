@@ -25,7 +25,6 @@ module Twee.Index(
   elems,
   fromListWith) where
 
-import qualified Prelude
 import Prelude hiding (null, lookup)
 import Data.Maybe
 import Twee.Base hiding (var, fun, empty, singleton, prefix, funs, lookupList, lookup)
@@ -320,7 +319,7 @@ elems :: Index f a -> [a]
 elems Nil = []
 elems idx =
   here idx ++
-  concatMap elems (Prelude.map snd (toList (fun idx))) ++
+  concatMap elems (map snd (toList (fun idx))) ++
   elems (var idx)
 
 -- | Create an index from a list of items

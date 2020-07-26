@@ -15,7 +15,7 @@ import Data.ChurchList (ChurchList(..))
 import Twee.Utils
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Derivation, Proof, congPath)
+import Twee.Proof(Derivation, congPath)
 
 -- | The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
