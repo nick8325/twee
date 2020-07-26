@@ -266,9 +266,7 @@ flattenProof = certify . flattenDerivation . derivation
 
 flattenDerivation :: Function f => Derivation f -> Derivation f
 flattenDerivation p =
-  case steps p of
-    [] -> Refl (eqn_lhs (equation (certify p)))
-    ps -> foldr1 Trans ps
+  fromSteps (equation (certify p)) (steps p)
 
 -- | Simplify a derivation so that:
 --   * Symm occurs innermost
@@ -308,6 +306,12 @@ steps = steps1 . simplify
             map Refl (take i (unpack us)) ++
             [p] ++
             map Refl (drop (i+1) (unpack ts))
+
+-- | Convert a list of steps (plus the equation it is proving)
+-- back to a derivation.
+fromSteps :: Equation f -> [Derivation f] -> Derivation f
+fromSteps (t :=: _) [] = Refl t
+fromSteps _ ps = foldr1 Trans ps
 
 -- | Find all lemmas which are used in a derivation.
 usedLemmas :: Derivation f -> [Proof f]
@@ -547,12 +551,13 @@ groundProof ds
 
 simplifyProofs :: Function f => Config f -> [Derivation f] -> [Derivation f]
 simplifyProofs config@Config{..} goals =
-  fixpointOn key simp goals
+  canonicaliseLemmas (fixpointOn key simp goals)
   where
     simp =
-      canonicaliseProof .
       (inlineUsedOnceLemmas `onlyIf` not cfg_all_lemmas) .
-      inlineTrivialLemmas config
+      inlineTrivialLemmas config .
+      tightenProof .
+      generaliseProof
 
     key ds =
       (ds, [(equation p, derivation p) | p <- allLemmas ds])
@@ -622,8 +627,73 @@ inlineUsedOnceLemmas ds =
             Just 1 -> True
             _ -> False
 
-canonicaliseProof :: Function f => [Derivation f] -> [Derivation f]
-canonicaliseProof =
+tightenProof :: Function f => [Derivation f] -> [Derivation f]
+tightenProof = mapLemmas tightenLemma
+  where
+    tightenLemma p =
+      fromSteps eq (map fst (fixpointOn length (tightenSteps eq) (zip ps eqs)))
+      where
+        eq = equation (certify p)
+        ps = steps p
+        eqs = map (equation . certify) ps
+
+    tightenSteps eq steps = head (cands ++ [steps])
+      where
+        -- Look for a segment of ps which can be removed, in the
+        -- sense that the terms at both ends of the segment are
+        -- unifiable without altering eq.
+        cands =
+          [ subst sub (before ++ after)
+          | (before, mid1) <- splits steps,
+            -- 'reverse' means we start with big segments.
+            (mid@(_:_), after) <- reverse (splits mid1),
+            let t :=: _ = snd (head mid)
+                _ :=: u = snd (last mid),
+            sub <- maybeToList (unify t u),
+            subst sub eq == eq ]
+
+generaliseProof :: Function f => [Derivation f] -> [Derivation f]
+generaliseProof =
+  simplificationPass (const generaliseLemma) (const (generaliseLemma . certify))
+  where
+    generaliseLemma p =
+      lemma (certify q) sub
+      where
+        eq = equation p
+        n = freshVar eq
+        qs = evalState (mapM generaliseStep (steps (derivation p))) n
+        Just sub1 = unifyMany (stepsConstraints qs)
+        q = canonicalise (fromSteps eq (subst sub1 qs))
+        Just sub = matchEquation (equation (certify q)) eq
+
+    generaliseStep (UseAxiom axiom _) =
+      freshen (vars (axiom_eqn axiom)) (UseAxiom axiom)
+    generaliseStep (UseLemma lemma _) =
+      freshen (vars (equation lemma)) (UseLemma lemma)
+    generaliseStep (Refl _) = do
+      n <- get
+      put (n+1)
+      return (Refl (build (var (V n))))
+    generaliseStep (Symm p) =
+      Symm <$> generaliseStep p
+    generaliseStep (Trans p q) =
+      liftM2 Trans (generaliseStep p) (generaliseStep q)
+    generaliseStep (Cong f ps) =
+      Cong f <$> mapM generaliseStep ps
+
+    freshen xs f = do
+      n <- get
+      put (n + length xs)
+      let Just sub = listToSubst [(x, build (var (V i))) | (x, i) <- zip (usort xs) [n..]]
+      return (f sub)
+
+    stepsConstraints ps = zipWith combine eqs (tail eqs)
+      where
+        eqs = map (equation . certify) ps
+        combine (_ :=: t) (u :=: _) = (t, u)
+
+canonicaliseLemmas :: Function f => [Derivation f] -> [Derivation f]
+canonicaliseLemmas =
   simplificationPass (const canonicaliseLemma) (const id)
   where
     -- Present the equation left-to-right, and with variables

@@ -51,9 +51,9 @@ module Twee.Term(
   -- * Matching
   match, matchIn, matchList, matchListIn, isInstanceOf, isVariantOf,
   -- * Unification
-  unify, unifyList,
-  unifyTri, unifyListTri, unifyListTriFrom,
-  TriangleSubst(..),
+  unify, unifyList, unifyMany,
+  unifyTri, unifyTriFrom, unifyListTri, unifyListTriFrom,
+  TriangleSubst(..), emptyTriangleSubst,
   close,
   -- * Positions in terms
   positionToPath, pathToPosition,
@@ -311,6 +311,10 @@ canonicalise (t:ts) = loop emptySubst vars t ts
 emptySubst :: Subst f
 emptySubst = Subst IntMap.empty
 
+-- | The empty triangle substitution.
+emptyTriangleSubst :: TriangleSubst f
+emptyTriangleSubst = Triangle emptySubst
+
 -- | Construct a substitution from a list.
 -- Returns @Nothing@ if a variable is bound to several different terms.
 listToSubst :: [(Var, Term f)] -> Maybe (Subst f)
@@ -405,10 +409,21 @@ unifyList t u = do
   -- Not strict so that isJust (unify t u) doesn't force the substitution
   return (close sub)
 
+-- | Unify a collection of pairs of terms.
+unifyMany :: [(Term f, Term f)] -> Maybe (Subst f)
+unifyMany ts = unifyList us vs
+  where
+    us = buildList (map fst ts)
+    vs = buildList (map snd ts)
+
 -- | Unify two terms, returning a triangle substitution.
 -- This is slightly faster than 'unify'.
 unifyTri :: Term f -> Term f -> Maybe (TriangleSubst f)
 unifyTri t u = unifyListTri (singleton t) (singleton u)
+
+-- | Unify two terms, starting from an existing substitution.
+unifyTriFrom :: Term f -> Term f -> TriangleSubst f -> Maybe (TriangleSubst f)
+unifyTriFrom t u sub = unifyListTriFrom (singleton t) (singleton u) sub
 
 -- | Unify two termlists, returning a triangle substitution.
 -- This is slightly faster than 'unify'.

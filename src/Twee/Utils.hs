@@ -140,3 +140,10 @@ reservoir k =
     is = zipWith gen ws ys
     gen w y = floor (log y / log (1-w)) + 1
     prefix = [0..k-1]
+
+-- A combined inits/tails.
+splits :: [a] -> [([a], [a])]
+splits [] = [([], [])]
+splits (x:xs) =
+  [([], x:xs)] ++
+  [(x:ys, zs) | (ys, zs) <- splits xs]

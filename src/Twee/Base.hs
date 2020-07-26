@@ -8,7 +8,7 @@ module Twee.Base(
   -- * The 'Symbolic' typeclass
   Symbolic(..), subst, terms,
   TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
-  vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding, renameManyAvoiding,
+  vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding, renameManyAvoiding, freshVar,
   -- * General-purpose functionality
   Id(..), Has(..),
   -- * Typeclasses
@@ -172,6 +172,14 @@ renameAvoiding x y
   where
     (V x1, V x2) = boundLists (terms x)
     (V y1, V y2) = boundLists (terms y)
+
+-- | Return an x such that no variable >= x occurs in the argument.
+freshVar :: Symbolic a => a -> Int
+freshVar x
+  | x1 > x2 = 0 -- x is ground
+  | otherwise = x2+1
+  where
+    (V x1, V x2) = boundLists (terms x)
 
 {-# INLINEABLE renameManyAvoiding #-}
 renameManyAvoiding :: Symbolic a => [a] -> [a]
