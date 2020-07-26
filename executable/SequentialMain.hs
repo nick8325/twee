@@ -80,7 +80,7 @@ parseMainFlags =
     flatten =
       expert $
       inGroup "Completion heuristics" $
-      bool "flatten-goal" ["Flatten goal by adding new axioms (off by default)."] False
+      bool "flatten-goal" ["Flatten goal by adding new axioms (on by default)."] True
     flattenLightly =
       expert $
       inGroup "Completion heuristics" $
