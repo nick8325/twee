@@ -8,7 +8,7 @@ module Twee.Proof(
   lemma, autoSubst, simpleLemma, axiom, symm, trans, cong, congPath,
 
   -- * Analysing proofs
-  simplify, usedLemmas, usedAxioms, usedLemmasAndSubsts, usedAxiomsAndSubsts,
+  simplify, steps, usedLemmas, usedAxioms, usedLemmasAndSubsts, usedAxiomsAndSubsts,
   groundAxiomsAndSubsts, eliminateDefinitions, eliminateDefinitionsFromGoal,
 
   -- * Pretty-printing proofs
@@ -24,12 +24,13 @@ import Control.Monad
 import Data.Maybe
 import Data.List
 import Data.Ord
-import Data.MemoUgly
 import qualified Data.Set as Set
 import Data.Set(Set)
 import qualified Data.Map.Strict as Map
 import Data.Map(Map)
 import qualified Data.IntMap.Strict as IntMap
+import Control.Monad.Trans.State.Strict
+import Data.Graph
 
 ----------------------------------------------------------------------
 -- Equational proofs. Only valid proofs can be constructed.
@@ -164,29 +165,57 @@ instance PrettyTerm f => Pretty (Axiom f) where
     text "axiom" <#>
     pPrintTuple [pPrint axiom_number, text axiom_name, pPrint axiom_eqn]
 
--- | Simplify a derivation.
---
--- After simplification, a derivation has the following properties:
---
---   * 'Symm' is pushed down next to 'Lemma' and 'Axiom'
---   * 'Refl' only occurs inside 'Cong' or at the top level
---   * 'Trans' is right-associated and is pushed inside 'Cong' if possible
-simplify :: Minimal f => (Proof f -> Maybe (Derivation f)) -> Derivation f -> Derivation f
-simplify lem p = simp p
+foldLemmas :: PrettyTerm f => (Map (Proof f) a -> Derivation f -> a) -> [Derivation f] -> Map (Proof f) a
+foldLemmas op ds =
+  execState (mapM_ foldGoal ds) Map.empty
   where
-    simp p@(UseLemma q sub) =
-      case lem q of
-        Nothing -> p
-        Just r ->
-          let
-            -- Get rid of any variables that are not bound by sub
-            -- (e.g., ones which only occur internally in q)
-            dead = usort (vars r) \\ substDomain sub
-          in simp (subst sub (erase dead r))
-    simp (Symm p) = symm (simp p)
-    simp (Trans p q) = trans (simp p) (simp q)
-    simp (Cong f ps) = cong f (map simp ps)
-    simp p = p
+    foldGoal p = mapM_ foldLemma (usedLemmas p)
+    foldLemma p = do
+      m <- get
+      case Map.lookup p m of
+        Just x -> return x
+        Nothing -> do
+          mapM_ foldLemma (usedLemmas (derivation p))
+          m <- get
+          case Map.lookup p m of
+            Just x  -> return x
+            Nothing -> do
+              let x = op m (derivation p)
+              put (Map.insert p x m)
+              return x
+
+mapLemmas :: Function f => (Derivation f -> Derivation f) -> [Derivation f] -> [Derivation f]
+mapLemmas f ds = map (derivation . op lem) ds
+  where
+    op lem = certify . f . unfoldLemmasOnce (\pf -> Just (simpleLemma (lem Map.! pf)))
+    lem = foldLemmas op ds
+
+allLemmas :: PrettyTerm f => [Derivation f] -> [Proof f]
+allLemmas ds =
+  reverse [p | (_, p, _) <- map vertex (topSort graph)]
+  where
+    used = foldLemmas (\_ p -> usedLemmas p) ds
+    (graph, vertex, _) =
+      graphFromEdges
+        [((), p, ps) | (p, ps) <- Map.toList used]
+
+unfoldLemmasOnce :: Minimal f => (Proof f -> Maybe (Derivation f)) -> Derivation f -> Derivation f
+unfoldLemmasOnce lem p@(UseLemma q sub) =
+  case lem q of
+    Nothing -> p
+    Just r ->
+      let
+        -- Get rid of any variables that are not bound by sub
+        -- (e.g., ones which only occur internally in q)
+        dead = usort (vars r) \\ substDomain sub
+      in subst sub (erase dead r)
+unfoldLemmasOnce lem (Symm p) = symm (unfoldLemmasOnce lem p)
+unfoldLemmasOnce lem (Trans p q) = trans (unfoldLemmasOnce lem p) (unfoldLemmasOnce lem q)
+unfoldLemmasOnce lem (Cong f ps) = cong f (map (unfoldLemmasOnce lem) ps)
+unfoldLemmasOnce lem p = p
+
+unfoldLemmas :: Minimal f => (Proof f -> Maybe (Derivation f)) -> Derivation f -> Derivation f
+unfoldLemmas lem = unfoldLemmasOnce (\p -> unfoldLemmas lem <$> lem p)
 
 lemma :: Proof f -> Subst f -> Derivation f
 lemma p sub = UseLemma p sub
@@ -219,11 +248,6 @@ trans (Trans p q) r =
   -- p cannot be a Trans (if it was created with the smart
   -- constructors) but q could be.
   Trans p (trans q r)
--- Collect adjacent uses of congruence.
-trans (Cong f ps) (Cong g qs) | f == g =
-  transCong f ps qs
-trans (Cong f ps) (Trans (Cong g qs) r) | f == g =
-  trans (transCong f ps qs) r
 trans p q = Trans p q
 
 transCong :: Fun f -> [Derivation f] -> [Derivation f] -> Derivation f
@@ -238,6 +262,57 @@ cong f ps =
   where
     unRefl (Refl t) = Just t
     unRefl _ = Nothing
+
+-- Transform a proof so that each step uses exactly one axiom
+-- or lemma. The proof will have the following form afterwards:
+--   * Trans only occurs at the outermost level and is right-associated
+--   * Each Cong has exactly one non-Refl argument (no parallel rewriting)
+--   * Symm only occurs innermost, i.e., next to UseLemma or UseAxiom
+--   * Refl only occurs as an argument to Cong, or outermost if the
+--     whole proof is a single reflexivity step
+flattenProof :: Function f => Proof f -> Proof f
+flattenProof = certify . flattenDerivation . derivation
+
+flattenDerivation :: Function f => Derivation f -> Derivation f
+flattenDerivation p =
+  case steps p of
+    [] -> Refl (eqn_lhs (equation (certify p)))
+    ps -> foldr1 Trans ps
+
+-- | Simplify a derivation so that:
+--   * Symm occurs innermost
+--   * Trans is right-associated
+--   * Each Cong has at least one non-Refl argument
+--   * Refl is not used unnecessarily
+simplify :: Derivation f -> Derivation f
+simplify (Symm p) = symm (simplify p)
+simplify (Trans p q) = trans (simplify p) (simplify q)
+simplify (Cong f ps) = cong f (map simplify ps)
+simplify p = p
+
+-- | Transform a derivation into a list of single steps.
+--   Each step has the following form:
+--     * Trans does not occur
+--     * Symm only occurs innermost, i.e., next to UseLemma or UseAxiom
+--     * Each Cong has exactly one non-Refl argument (no parallel rewriting)
+--     * Refl only occurs as an argument to Cong
+steps :: Function f => Derivation f -> [Derivation f]
+steps = steps1 . simplify
+  where
+    steps1 p@UseAxiom{} = [p]
+    steps1 p@UseLemma{} = [p]
+    steps1 (Refl _) = []
+    steps1 (Symm p) = map symm (reverse (steps1 p))
+    steps1 (Trans p q) = steps1 p ++ steps1 q
+    steps1 p@(Cong f qs) =
+      concat [ map (inside i) (steps1 q) | (i, q) <- zip [0..] qs ]
+      where
+        App _ ts :=: App _ us = equation (certify p)
+        inside i p =
+          Cong f $
+            map Refl (take i (unpack us)) ++
+            [p] ++
+            map Refl (drop (i+1) (unpack ts))
 
 -- | Find all lemmas which are used in a derivation.
 usedLemmas :: Derivation f -> [Proof f]
@@ -272,21 +347,21 @@ usedAxiomsAndSubsts p = ax p []
 -- | Find all ground instances of axioms which are used in the
 -- expanded form of a derivation (no lemmas).
 groundAxiomsAndSubsts :: Function f => Derivation f -> Map (Axiom f) (Set (Subst f))
-groundAxiomsAndSubsts p = ax p
+groundAxiomsAndSubsts p = ax lem p
   where
-    ax (UseAxiom axiom sub) =
+    lem = foldLemmas ax [p]
+
+    ax lem (UseAxiom axiom sub) =
       Map.singleton axiom (Set.singleton sub)
-    ax (UseLemma lemma sub) =
-      Map.map (Set.map substAndErase) (lem lemma)
+    ax lem (UseLemma lemma sub) =
+      Map.map (Set.map substAndErase) (lem Map.! lemma)
       where
         substAndErase sub' =
           erase (vars sub' \\ vars sub) (subst sub sub')
-    ax (Symm p) = ax p
-    ax (Trans p q) = Map.unionWith Set.union (ax p) (ax q)
-    ax (Cong _ ps) = Map.unionsWith Set.union (map ax ps)
-    ax _ = Map.empty
-
-    lem = memo $ \lemma -> ax (derivation lemma)
+    ax lem (Symm p) = ax lem p
+    ax lem (Trans p q) = Map.unionWith Set.union (ax lem p) (ax lem q)
+    ax lem (Cong _ ps) = Map.unionsWith Set.union (map (ax lem) ps)
+    ax _ _ = Map.empty
 
 eliminateDefinitionsFromGoal :: Function f => [Axiom f] -> ProvedGoal f -> ProvedGoal f
 eliminateDefinitionsFromGoal axioms pg =
@@ -295,14 +370,14 @@ eliminateDefinitionsFromGoal axioms pg =
 
 eliminateDefinitions :: Function f => [Axiom f] -> Derivation f -> Derivation f
 eliminateDefinitions [] p = p
-eliminateDefinitions axioms p = elim p
+eliminateDefinitions axioms p = head (mapLemmas elim [p])
   where
     elim (UseAxiom axiom sub)
       | axiom `Set.member` axSet =
         Refl (term (subst sub (eqn_rhs (axiom_eqn axiom))))
       | otherwise = UseAxiom axiom (elimSubst sub)
     elim (UseLemma lemma sub) =
-      UseLemma (lem lemma) (elimSubst sub)
+      UseLemma lemma (elimSubst sub)
     elim (Refl t) = Refl (term t)
     elim (Symm p) = Symm (elim p)
     elim (Trans p q) = Trans (elim p) (elim q)
@@ -338,8 +413,6 @@ eliminateDefinitions axioms p = elim p
       IntMap.findWithDefault undefined x sub
     replace sub (App f ts) =
       cong f (map (replace sub) (unpack ts))
-
-    lem = memo $ \lemma -> certify (elim (derivation lemma))
 
     axSet = Set.fromList axioms
     idx = Index.fromListWith (eqn_lhs . axiom_eqn) axioms
@@ -439,108 +512,95 @@ instance Function f => Pretty (Presentation f) where
 -- | Simplify and present a proof.
 present :: Function f => Config f -> [ProvedGoal f] -> Presentation f
 present config goals =
-  -- First find all the used lemmas, then hand off to presentWithGoals
-  presentWithGoals config goals
-    (snd (used Set.empty (concatMap (usedLemmas . derivation . pg_proof) goals)))
+  presentRaw [ goal{pg_proof = certify p}
+             | (goal, p) <- zip goals ps ]
   where
-    used lems [] = (lems, [])
-    used lems (x:xs)
-      | x `Set.member` lems = used lems xs
-      | otherwise =
-        let (lems1, ys) = used (Set.insert x lems) (usedLemmas (derivation x))
-            (lems2, zs) = used lems1 xs
-        in (lems2, ys ++ [x] ++ zs)
+    ps = simplifyProofs config (map (derivation . pg_proof) goals)
 
-presentWithGoals ::
-  Function f =>
-  Config f -> [ProvedGoal f] -> [Proof f] -> Presentation f
-presentWithGoals config@Config{..} goals lemmas
-  -- We inline a lemma if one of the following holds:
-  --   * It only has one step
-  --   * It is subsumed by an earlier lemma
-  --   * It is only used once
-  --   * It has to do with $equals (for printing of the goal proof)
-  --   * The option cfg_no_lemmas is true
-  -- First we compute all inlinings, then apply simplify to remove them,
-  -- then repeat if any lemma was inlined
-  | Map.null inlinings =
-    let
-      axioms = usort $
-        concatMap (usedAxioms . derivation . pg_proof) goals ++
-        concatMap (usedAxioms . derivation) lemmas
-    in
-      Presentation axioms
-        (map flattenProof lemmas)
-        [ decodeGoal (goal { pg_proof = flattenProof pg_proof })
-        | goal@ProvedGoal{..} <- goals ]
-
-  | otherwise =
-    let
-      inline lemma = Map.lookup lemma inlinings
-
-      goals' =
-        [ decodeGoal (goal { pg_proof = certify $ simplify inline (derivation pg_proof) })
-        | goal@ProvedGoal{..} <- goals ]
-      lemmas' =
-        [ certify $ simplify inline (derivation lemma)
-        | lemma <- lemmas, not (lemma `Map.member` inlinings) ]
-    in
-      presentWithGoals config goals' lemmas'
-
+presentRaw :: Function f => [ProvedGoal f] -> Presentation f
+presentRaw goals =
+  Presentation axioms
+    (map flattenProof lemmas)
+    [ decodeGoal (goal { pg_proof = flattenProof pg_proof })
+    | goal@ProvedGoal{..} <- goals ]
   where
-    inlinings =
-      Map.fromList
-        [ (lemma, p)
-        | lemma <- lemmas, Just p <- [tryInline lemma]]
+    axioms = usort $
+      concatMap (usedAxioms . derivation . pg_proof) goals ++
+      concatMap (usedAxioms . derivation) lemmas
 
-    tryInline p
-      | shouldInline p = Just (derivation p)
-    tryInline p
-      -- Check for subsumption by an earlier lemma
-      | Just (m, q) <- Map.lookup (canonicalise (t :=: u)) equations, m < n =
-        Just (subsume p (derivation q))
-      | Just (m, q) <- Map.lookup (canonicalise (u :=: t)) equations, m < n =
-        Just (subsume p (Symm (derivation q)))
+    lemmas = allLemmas (map (derivation . pg_proof) goals)
+
+simplifyProofs :: Function f => Config f -> [Derivation f] -> [Derivation f]
+simplifyProofs Config{..} goals = canonical
+  where
+    -- We inline a lemma if one of the following holds:
+    --   * It only has one step
+    --   * It is subsumed by an earlier lemma
+    --   * It has to do with $equals (for printing of the goal proof)
+    --   * The option cfg_no_lemmas is true
+    --   * It is only used once
+    -- A tricky situation is where:
+    --   * Lemma p is used many times, but is just a trivial use of lemma q
+    --   * Lemma q is only used by lemma p
+    -- In this case we can inline one of p and q, but not both.
+    -- To handle this situation correctly, we only compute use counts after
+    -- doing all other inlinings.
+
+    triv = pass inlineTrivial goals
+    uses = Map.unionsWith (+) $
+      map countUses triv ++ Map.elems (foldLemmas (const countUses) triv)
+    inlined = pass inlineOnce triv
+    canonical = pass canonicaliseLemma inlined
+
+    pass f p = map (op (const derivation) lem) p
+      where
+        lem = foldLemmas (op f) p
+        op f lem p =
+          f lem (certify (unfoldLemmasOnce (\lemma -> Just (lem Map.! lemma)) p))
+
+    -- Present the equation left-to-right, and with variables
+    -- named canonically
+    canonicaliseLemma _ p
+      | u `lessEqSkolem` t = canon (derivation p)
+      | otherwise = symm (canon (symm (derivation p)))
       where
         t :=: u = equation p
-        Just (n, _) = Map.lookup (canonicalise (equation p)) equations
-    tryInline _ = Nothing
+        t' :=: u' = canonicalise (t :=: u)
+        Just sub1 = matchEquation (t :=: u) (t' :=: u')
+        Just sub2 = matchEquation (t' :=: u') (t :=: u)
+        canon p = subst sub2 (simpleLemma (certify (subst sub1 p)))
+
+    inlineTrivial lem p
+      | shouldInline p = derivation p
+      | (q:_) <- subsuming lem (equation p) = q
+      | otherwise = simpleLemma p
 
     shouldInline p =
       cfg_no_lemmas ||
-      oneStep (derivation p) ||
+      length (steps (derivation p)) <= 1 ||
       (not cfg_all_lemmas &&
        (isJust (decodeEquality (eqn_lhs (equation p))) ||
-        isJust (decodeEquality (eqn_rhs (equation p))) ||
-        Map.lookup p uses == Just 1))
-  
-    subsume p q =
-      -- Rename q so its variables match p's
-      subst sub q
+        isJust (decodeEquality (eqn_rhs (equation p)))))
+
+    subsuming lem (t :=: u) =
+      subsuming1 lem (t :=: u) ++
+      map symm (subsuming1 lem (u :=: t))
+    subsuming1 lem eq =
+      [ subst sub d
+      | (q, d) <- Map.toList lem,
+        sub <- maybeToList (matchEquation (equation q) eq) ]
+
+    countUses p =
+      Map.fromListWith (+) (zip (usedLemmas p) (repeat (1 :: Int)))
+
+    inlineOnce _ p
+      | usedOnce p = derivation p
+      | otherwise = simpleLemma p
       where
-        t  :=: u  = equation p
-        t' :=: u' = equation (certify q)
-        Just sub  = matchList (buildList [t', u']) (buildList [t, u])
-
-    -- Record which lemma proves each equation
-    equations =
-      Map.fromList
-        [ (canonicalise (equation p), (i, p))
-        | (i, p) <- zip [0..] lemmas]
-
-    -- Count how many times each lemma is used
-    uses =
-      Map.fromListWith (+)
-        [ (p, 1)
-        | p <-
-            concatMap usedLemmas
-              (map (derivation . pg_proof) goals ++
-               map derivation lemmas) ]
-
-    -- Check if a proof only has one step.
-    -- Trans only occurs at the top level by this point.
-    oneStep Trans{} = False
-    oneStep _ = True
+        usedOnce p =
+          case Map.lookup p uses of
+            Just 1 | not cfg_all_lemmas -> True
+            _ -> False
 
 invisible :: Function f => Equation f -> Bool
 invisible (t :=: u) = show (pPrint t) == show (pPrint u)
@@ -587,68 +647,6 @@ pPrintSubst sub =
   fsep (punctuate comma
     [ pPrint x <+> text "->" <+> pPrint t
     | (x, t) <- substToList sub ])
-
--- Transform a proof so that each step uses exactly one axiom
--- or lemma. The proof will have the following form afterwards:
---   * Trans only occurs at the outermost level and is right-associated
---   * Each Cong has exactly one non-Refl argument (no parallel rewriting)
---   * Symm only occurs innermost, i.e., next to UseLemma or UseAxiom
---   * Refl only occurs as an argument to Cong, or outermost if the
---     whole proof is a single reflexivity step
-flattenProof :: Function f => Proof f -> Proof f
-flattenProof =
-  certify . flat . simplify (const Nothing) . derivation
-  where
-    flat (Trans p q) = trans (flat p) (flat q)
-    flat p@(Cong f ps) =
-      foldr trans (reflAfter p)
-        [ Cong f $
-            map reflAfter (take i ps) ++
-            [p] ++
-            map reflBefore (drop (i+1) ps)
-        | (i, q) <- zip [0..] qs,
-          p <- steps q ]
-      where
-        qs = map flat ps
-    flat p = p
-
-    reflBefore p = Refl (eqn_lhs (equation (certify p)))
-    reflAfter p  = Refl (eqn_rhs (equation (certify p)))
-
-    steps Refl{} = []
-    steps (Trans p q) = steps p ++ steps q
-    steps p = [p]
-
-    trans (Trans p q) r = trans p (trans q r)
-    trans Refl{} p = p
-    trans p Refl{} = p
-    trans p q =
-      case strip q of
-        Nothing -> Trans p q
-        Just q' -> trans p q'
-
-    strip p
-      | t == u = Just (Refl t)
-      | otherwise = strip' t p
-      where
-        t :=: u = equation (certify p)
-    strip' t (Trans _ q)
-      | eqn_lhs (equation (certify q)) == t = Just q
-      | otherwise = strip' t q
-    strip' _ _ = Nothing
-
--- Transform a derivation into a list of single steps.
--- Each step has the following form:
---   * Trans does not occur
---   * Symm only occurs innermost, i.e., next to UseLemma or UseAxiom
---   * Each Cong has exactly one non-Refl argument (no parallel rewriting)
---   * Refl only occurs as an argument to Cong
-derivSteps :: Function f => Derivation f -> [Derivation f]
-derivSteps = steps . derivation . flattenProof . certify
-  where
-    steps Refl{} = []
-    steps (Trans p q) = steps p ++ steps q
-    steps p = [p]
 
 -- | Print a presented proof.
 pPrintPresentation :: forall f. Function f => Config f -> Presentation f -> Doc
@@ -776,9 +774,9 @@ maybeDecodeGoal :: forall f. Function f =>
 maybeDecodeGoal ProvedGoal{..}
   --  N.B. presentWithGoals takes care of expanding any lemma which mentions
   --  $equals, and flattening the proof.
-  | isFalseTerm u = extract (derivSteps deriv)
+  | isFalseTerm u = extract (steps deriv)
     -- Orient the equation so that $false is the RHS.
-  | isFalseTerm t = extract (derivSteps (symm deriv))
+  | isFalseTerm t = extract (steps (symm deriv))
   | otherwise = Nothing
   where
     isFalseTerm, isTrueTerm :: Term f -> Bool

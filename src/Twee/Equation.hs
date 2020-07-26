@@ -40,6 +40,7 @@ bothSides f (t :=: u) = f t :=: f u
 trivial :: Eq f => Equation f -> Bool
 trivial (t :=: u) = t == u
 
+-- | A total order on equations. Equations with lesser terms are smaller.
 simplerThan :: Function f => Equation f -> Equation f -> Bool
 eq1 `simplerThan` eq2 =
   --traceShow (hang (pPrint eq1) 2 (text "`simplerThan`" <+> pPrint eq2 <+> text "=" <+> pPrint res)) res
@@ -47,3 +48,9 @@ eq1 `simplerThan` eq2 =
   where
     t1 :=: u1 = canonicalise (order eq1)
     t2 :=: u2 = canonicalise (order eq2)
+
+-- | Match one equation against another.
+matchEquation :: Equation f -> Equation f -> Maybe (Subst f)
+matchEquation (pat1 :=: pat2) (t1 :=: t2) = do
+  sub <- match pat1 t1
+  matchIn sub pat2 t2
