@@ -204,11 +204,9 @@ unfoldLemmasOnce lem p@(UseLemma q sub) =
   case lem q of
     Nothing -> p
     Just r ->
-      let
-        -- Get rid of any variables that are not bound by sub
-        -- (e.g., ones which only occur internally in q)
-        dead = usort (vars r) \\ substDomain sub
-      in subst sub (erase dead r)
+      -- Get rid of any variables that are not bound by sub
+      -- (e.g., ones which only occur internally in q)
+      subst sub (eraseExcept (substDomain sub) r)
 unfoldLemmasOnce lem (Symm p) = symm (unfoldLemmasOnce lem p)
 unfoldLemmasOnce lem (Trans p q) = trans (unfoldLemmasOnce lem p) (unfoldLemmasOnce lem q)
 unfoldLemmasOnce lem (Cong f ps) = cong f (map (unfoldLemmasOnce lem) ps)
@@ -284,11 +282,15 @@ flattenDerivation p =
 --   * Trans is right-associated
 --   * Each Cong has at least one non-Refl argument
 --   * Refl is not used unnecessarily
-simplify :: Derivation f -> Derivation f
+simplify :: PrettyTerm f => Derivation f -> Derivation f
 simplify (Symm p) = symm (simplify p)
 simplify (Trans p q) = trans (simplify p) (simplify q)
 simplify (Cong f ps) = cong f (map simplify ps)
-simplify p = p
+simplify p
+  | t == u = Refl t
+  | otherwise = p
+  where
+    t :=: u = equation (certify p)
 
 -- | Transform a derivation into a list of single steps.
 --   Each step has the following form:
@@ -357,7 +359,7 @@ groundAxiomsAndSubsts p = ax lem p
       Map.map (Set.map substAndErase) (lem Map.! lemma)
       where
         substAndErase sub' =
-          erase (vars sub' \\ vars sub) (subst sub sub')
+          eraseExcept (vars sub) (subst sub sub')
     ax lem (Symm p) = ax lem p
     ax lem (Trans p q) = Map.unionWith Set.union (ax lem p) (ax lem q)
     ax lem (Cong _ ps) = Map.unionsWith Set.union (map (ax lem) ps)
@@ -440,6 +442,8 @@ data Config f =
     cfg_all_lemmas :: !Bool,
     -- | Inline all lemmas.
     cfg_no_lemmas :: !Bool,
+    -- | Make the proof ground.
+    cfg_ground_proof :: !Bool,
     -- | Print out explicit substitutions.
     cfg_show_instances :: !Bool,
     -- | Print out which instances of some axioms were used.
@@ -451,6 +455,7 @@ defaultConfig =
   Config {
     cfg_all_lemmas = False,
     cfg_no_lemmas = False,
+    cfg_ground_proof = False,
     cfg_show_instances = False,
     cfg_show_uses_of_axioms = const False }
 
@@ -511,11 +516,12 @@ instance Function f => Pretty (Presentation f) where
 
 -- | Simplify and present a proof.
 present :: Function f => Config f -> [ProvedGoal f] -> Presentation f
-present config goals =
+present config@Config{..} goals =
   presentRaw [ goal{pg_proof = certify p}
              | (goal, p) <- zip goals ps ]
   where
-    ps = simplifyProofs config (map (derivation . pg_proof) goals)
+    maybeGround = if cfg_ground_proof then groundProof else id
+    ps = simplifyProofs config $ maybeGround $ map (derivation . pg_proof) goals
 
 presentRaw :: Function f => [ProvedGoal f] -> Presentation f
 presentRaw goals =
@@ -529,6 +535,22 @@ presentRaw goals =
       concatMap (usedAxioms . derivation) lemmas
 
     lemmas = allLemmas (map (derivation . pg_proof) goals)
+
+groundProof :: Function f => [Derivation f] -> [Derivation f]
+groundProof ds
+  | all (isGround . equation) (allLemmas ds) = ds
+  | otherwise = groundProof (mapLemmas f ds)
+  where
+    f (UseLemma lemma sub) =
+      simpleLemma $ certify $
+      eraseExcept (vars sub) $
+      subst sub $
+      derivation lemma
+    f p@UseAxiom{} = p
+    f p@Refl{} = p
+    f (Symm p) = Symm (f p)
+    f (Trans p q) = Trans (f p) (f q)
+    f (Cong fun ps) = Cong fun (map f ps)
 
 simplifyProofs :: Function f => Config f -> [Derivation f] -> [Derivation f]
 simplifyProofs Config{..} goals = canonical

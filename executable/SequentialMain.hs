@@ -106,7 +106,7 @@ parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor <*> matchGoals) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
-    (Proof.Config <$> all_lemmas <*> flat_proof <*> show_instances <*> show_axiom_uses)
+    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> show_axiom_uses)
   where
     maxSize =
       inGroup "Resource limits" $
@@ -207,6 +207,12 @@ parseConfig =
       inGroup "Proof presentation" $
       bool "no-lemmas"
         ["Produce a proof with no lemmas (off by default).",
+         "May lead to exponentially large proofs."]
+        False
+    ground_proof =
+      inGroup "Proof presentation" $
+      bool "ground-proof"
+        ["Produce a ground proof (off by default).",
          "May lead to exponentially large proofs."]
         False
     show_instances =

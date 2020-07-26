@@ -12,7 +12,7 @@ module Twee.Base(
   -- * General-purpose functionality
   Id(..), Has(..),
   -- * Typeclasses
-  Minimal(..), minimalTerm, isMinimal, erase, ground,
+  Minimal(..), minimalTerm, isMinimal, erase, eraseExcept, ground,
   Arity(..), Ordered(..), lessThan, orientTerms, EqualsBonus(..), Strictness(..), Function) where
 
 import Prelude hiding (lookup)
@@ -20,10 +20,12 @@ import Control.Monad
 import qualified Data.DList as DList
 import Twee.Term hiding (subst, canonicalise)
 import qualified Twee.Term as Term
+import Twee.Utils
 import Twee.Pretty
 import Twee.Constraints hiding (funs)
 import Data.DList(DList)
 import Data.Int
+import Data.List
 import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
 
@@ -195,6 +197,12 @@ erase [] t = t
 erase xs t = subst sub t
   where
     sub = fromMaybe undefined $ listToSubst [(x, minimalTerm) | x <- xs]
+
+-- | Erase all except a given set of variables from the argument, replacing them
+-- with the minimal constant.
+eraseExcept :: (Symbolic a, ConstantOf a ~ f, Minimal f) => [Var] -> a -> a
+eraseExcept xs t =
+  erase (usort (vars t) \\ xs) t
 
 -- | Replace all variables in the argument with the minimal constant.
 ground :: (Symbolic a, ConstantOf a ~ f, Minimal f) => a -> a
