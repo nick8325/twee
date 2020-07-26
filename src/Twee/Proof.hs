@@ -517,8 +517,7 @@ present config@Config{..} goals =
   presentRaw [ goal{pg_proof = certify p}
              | (goal, p) <- zip goals ps ]
   where
-    maybeGround = if cfg_ground_proof then groundProof else id
-    ps = simplifyProofs config $ maybeGround $ map (derivation . pg_proof) goals
+    ps = simplifyProof config $ map (derivation . pg_proof) goals
 
 presentRaw :: Function f => [ProvedGoal f] -> Presentation f
 presentRaw goals =
@@ -549,15 +548,19 @@ groundProof ds
     f (Trans p q) = Trans (f p) (f q)
     f (Cong fun ps) = Cong fun (map f ps)
 
-simplifyProofs :: Function f => Config f -> [Derivation f] -> [Derivation f]
-simplifyProofs config@Config{..} goals =
-  canonicaliseLemmas (fixpointOn key simp goals)
+simplifyProof :: Function f => Config f -> [Derivation f] -> [Derivation f]
+simplifyProof config@Config{..} goals =
+  canonicaliseLemmas (fixpointOn key simp' (fixpointOn key simp goals))
   where
-    simp =
+    simpCore =
       (inlineUsedOnceLemmas `onlyIf` not cfg_all_lemmas) .
       inlineTrivialLemmas config .
-      tightenProof .
-      generaliseProof
+      tightenProof
+
+    simp = simpCore . generaliseProof
+    -- generaliseProof undoes the effect of groundProof!
+    -- But we still want to run generaliseProof first, to simplify the proof
+    simp' = (simpCore . groundProof) `onlyIf` cfg_ground_proof
 
     key ds =
       (ds, [(equation p, derivation p) | p <- allLemmas ds])
