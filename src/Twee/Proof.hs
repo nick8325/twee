@@ -738,8 +738,8 @@ pPrintLemma Config{..} axiomNum lemmaNum p
 
     pp _ p | invisible (equation (certify p)) = pPrintEmpty
     pp h p =
-      ppTerm (HighlightedTerm h (eqn_lhs (equation (certify p)))) $$
-      text "=" <+> highlight "1" (text "{ by" <+> ppStep p <+> text "}")
+      ppTerm (HighlightedTerm [green] h (eqn_lhs (equation (certify p)))) $$
+      text "=" <+> highlight [bold] (text "{ by" <+> ppStep p <+> text "}")
 
     highlightStep p =
       case high p of

@@ -77,29 +77,35 @@ instance PrettyTerm f => Pretty (Term f) where
   pPrintPrec l p (App f xs) =
     pPrintTerm (termStyle (fun_value f)) l p (pPrint f) (unpack xs)
 
-data HighlightedTerm f = HighlightedTerm (Maybe [Int]) (Term f)
+data HighlightedTerm f = HighlightedTerm [ANSICode] (Maybe [Int]) (Term f)
 
-highlight :: String -> Doc -> Doc
-highlight s d = escape s <#> d <#> escape ""
+type ANSICode = String
+green, bold :: ANSICode
+green = "32"
+bold = "1"
+
+highlight :: [ANSICode] -> Doc -> Doc
+highlight cs d =
+  hsep (map escape cs) <#> d <#> escape ""
   where
     escape s = zeroWidthText ("\027[" ++ s ++ "m")
 
-maybeHighlight :: Maybe [Int] -> Doc -> Doc
-maybeHighlight (Just []) d = highlight "32" d
-maybeHighlight _ d = d
+maybeHighlight :: [ANSICode] -> Maybe [Int] -> Doc -> Doc
+maybeHighlight cs (Just []) d = highlight cs d
+maybeHighlight _ _ d = d
 
 instance PrettyTerm f => Pretty (HighlightedTerm f) where
-  pPrintPrec l p (HighlightedTerm h (Var x)) =
-    maybeHighlight h (pPrintPrec l p x)
-  pPrintPrec l p (HighlightedTerm h (App f xs)) =
-    maybeHighlight h $
+  pPrintPrec l p (HighlightedTerm cs h (Var x)) =
+    maybeHighlight cs h (pPrintPrec l p x)
+  pPrintPrec l p (HighlightedTerm cs h (App f xs)) =
+    maybeHighlight cs h $
     pPrintTerm (termStyle (fun_value f)) l p (pPrint f)
       (zipWith annotate [0..] (unpack xs))
     where
       annotate i t =
         case h of
-          Just (n:ns) | i == n -> HighlightedTerm (Just ns) t
-          _ -> HighlightedTerm Nothing t
+          Just (n:ns) | i == n -> HighlightedTerm cs (Just ns) t
+          _ -> HighlightedTerm cs Nothing t
 
 instance PrettyTerm f => Pretty (TermList f) where
   pPrintPrec _ _ = pPrint . unpack
