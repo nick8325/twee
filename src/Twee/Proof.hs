@@ -738,20 +738,15 @@ pPrintLemma Config{..} axiomNum lemmaNum p
 
     pp _ p | invisible (equation (certify p)) = pPrintEmpty
     pp h p =
-      ppTerm (HighlightedTerm [green] h (eqn_lhs (equation (certify p)))) $$
+      ppTerm (HighlightedTerm [green] (Just h) (eqn_lhs (equation (certify p)))) $$
       text "=" <+> highlight [bold] (text "{ by" <+> ppStep p <+> text "}")
 
-    highlightStep p =
-      case high p of
-        [] -> Nothing
-        x -> Just x
+    highlightStep UseAxiom{} = []
+    highlightStep UseLemma{} = []
+    highlightStep (Symm p) = highlightStep p
+    highlightStep (Cong _ ps) = i:highlightStep p
       where
-        high UseAxiom{} = []
-        high UseLemma{} = []
-        high (Symm p) = high p
-        high (Cong _ ps) = i:high p
-          where
-            [(i, p)] = filter (not . isRefl . snd) (zip [0..] ps)
+        [(i, p)] = filter (not . isRefl . snd) (zip [0..] ps)
 
     ppTerm t = text "  " <#> pPrint t
 
