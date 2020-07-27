@@ -765,7 +765,7 @@ pPrintLemma Config{..} axiomNum lemmaNum p
           where
             [p] = filter (not . isRefl) ps
 
-    ppDir True = text "L->R"
+    ppDir True = pPrintEmpty
     ppDir False = text "R->L"
 
     showSubst sub
