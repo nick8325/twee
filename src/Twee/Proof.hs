@@ -749,7 +749,7 @@ pPrintLemma Config{..} axiomNum lemmaNum p
         high UseAxiom{} = []
         high UseLemma{} = []
         high (Symm p) = high p
-        high (Cong f ps) = i:high p
+        high (Cong _ ps) = i:high p
           where
             [(i, p)] = filter (not . isRefl . snd) (zip [0..] ps)
 
@@ -763,7 +763,7 @@ pPrintLemma Config{..} axiomNum lemmaNum p
           text "lemma" <+> text (lemmaNum lemma) <+> ppDir dir <#> showSubst sub
         pp dir (Symm p) =
           pp (not dir) p
-        pp dir (Cong f ps) = pp dir p
+        pp dir (Cong _ ps) = pp dir p
           where
             [p] = filter (not . isRefl) ps
 
