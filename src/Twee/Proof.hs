@@ -727,39 +727,56 @@ invisible (t :=: u) = show (pPrint t) == show (pPrint u)
 
 -- Pretty-print the proof of a single lemma.
 pPrintLemma :: Function f => Config f -> (Axiom f -> String) -> (Proof f -> String) -> Proof f -> Doc
-pPrintLemma Config{..} axiomNum lemmaNum p =
-  ppTerm (eqn_lhs (equation q)) $$ pp (derivation q)
+pPrintLemma Config{..} axiomNum lemmaNum p
+  | null qs = text "Reflexivity."
+  | equation (certify (fromSteps (equation p) qs)) == equation p =
+    vcat (zipWith pp hl qs) $$ ppTerm (eqn_rhs (equation p))
+  | otherwise = error "lemma changed by pretty-printing!"
   where
-    q = flattenProof p
+    qs = steps (derivation p)
+    hl = map highlightStep qs
 
-    pp (Trans p q) = pp p $$ pp q
-    pp p | invisible (equation (certify p)) = pPrintEmpty
-    pp p =
-      (text "= { by" <+>
-       ppStep
-         (nub (map (show . ppLemma) (usedLemmasAndSubsts p)) ++
-          nub (map (show . ppAxiom) (usedAxiomsAndSubsts p))) <+>
-       text "}" $$
-       ppTerm (eqn_rhs (equation (certify p))))
+    pp _ p | invisible (equation (certify p)) = pPrintEmpty
+    pp h p =
+      ppTerm (HighlightedTerm h (eqn_lhs (equation (certify p)))) $$
+      text "=" <+> highlight "1" (text "{ by" <+> ppStep p <+> text "}")
+
+    highlightStep p =
+      case high p of
+        [] -> Nothing
+        x -> Just x
+      where
+        high UseAxiom{} = []
+        high UseLemma{} = []
+        high (Symm p) = high p
+        high (Cong f ps) = i:high p
+          where
+            [(i, p)] = filter (not . isRefl . snd) (zip [0..] ps)
 
     ppTerm t = text "  " <#> pPrint t
 
-    ppStep [] = text "reflexivity" -- ??
-    ppStep [x] = text x
-    ppStep xs =
-      hcat (punctuate (text ", ") (map text (init xs))) <+>
-      text "and" <+>
-      text (last xs)
+    ppStep = pp True
+      where
+        pp dir (UseAxiom axiom@Axiom{..} sub) =
+          text "axiom" <+> text (axiomNum axiom) <+> parens (text axiom_name) <+> ppDir dir <#> showSubst sub
+        pp dir (UseLemma lemma sub) =
+          text "lemma" <+> text (lemmaNum lemma) <+> ppDir dir <#> showSubst sub
+        pp dir (Symm p) =
+          pp (not dir) p
+        pp dir (Cong f ps) = pp dir p
+          where
+            [p] = filter (not . isRefl) ps
 
-    ppLemma (p, sub) =
-      text "lemma" <+> text (lemmaNum p) <#> showSubst sub
-    ppAxiom (axiom@Axiom{..}, sub) =
-      text "axiom" <+> text (axiomNum axiom) <+> parens (text axiom_name) <#> showSubst sub
+    ppDir True = text "L->R"
+    ppDir False = text "R->L"
 
     showSubst sub
       | cfg_show_instances && not (null (substToList sub)) =
         text " with " <#> pPrintSubst sub
       | otherwise = pPrintEmpty
+
+    isRefl Refl{} = True
+    isRefl _ = False
 
 -- Pretty-print a substitution.
 pPrintSubst :: Function f => Subst f -> Doc

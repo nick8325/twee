@@ -77,6 +77,30 @@ instance PrettyTerm f => Pretty (Term f) where
   pPrintPrec l p (App f xs) =
     pPrintTerm (termStyle (fun_value f)) l p (pPrint f) (unpack xs)
 
+data HighlightedTerm f = HighlightedTerm (Maybe [Int]) (Term f)
+
+highlight :: String -> Doc -> Doc
+highlight s d = escape s <#> d <#> escape ""
+  where
+    escape s = zeroWidthText ("\027[" ++ s ++ "m")
+
+maybeHighlight :: Maybe [Int] -> Doc -> Doc
+maybeHighlight (Just []) d = highlight "32" d
+maybeHighlight _ d = d
+
+instance PrettyTerm f => Pretty (HighlightedTerm f) where
+  pPrintPrec l p (HighlightedTerm h (Var x)) =
+    maybeHighlight h (pPrintPrec l p x)
+  pPrintPrec l p (HighlightedTerm h (App f xs)) =
+    maybeHighlight h $
+    pPrintTerm (termStyle (fun_value f)) l p (pPrint f)
+      (zipWith annotate [0..] (unpack xs))
+    where
+      annotate i t =
+        case h of
+          Just (n:ns) | i == n -> HighlightedTerm (Just ns) t
+          _ -> HighlightedTerm Nothing t
+
 instance PrettyTerm f => Pretty (TermList f) where
   pPrintPrec _ _ = pPrint . unpack
 
