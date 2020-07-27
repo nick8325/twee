@@ -657,10 +657,16 @@ tightenProof = mapLemmas tightenLemma
 
 generaliseProof :: Function f => [Derivation f] -> [Derivation f]
 generaliseProof =
-  simplificationPass (const generaliseLemma) (const (generaliseLemma . certify))
+  simplificationPass (const generaliseLemma) (const generaliseGoal)
   where
-    generaliseLemma p =
-      lemma (certify q) sub
+    generaliseLemma p = lemma (certify q) sub
+      where
+        (q, sub) = generalise p
+    generaliseGoal p = subst sub q
+      where
+        (q, sub) = generalise (certify p)
+
+    generalise p = (q, sub)
       where
         eq = equation p
         n = freshVar eq
@@ -697,7 +703,7 @@ generaliseProof =
 
 canonicaliseLemmas :: Function f => [Derivation f] -> [Derivation f]
 canonicaliseLemmas =
-  simplificationPass (const canonicaliseLemma) (const id)
+  simplificationPass (const canonicaliseLemma) (const canonicalise)
   where
     -- Present the equation left-to-right, and with variables
     -- named canonically
@@ -706,9 +712,14 @@ canonicaliseLemmas =
       | otherwise = symm (canon (symm (derivation p)))
       where
         t :=: u = equation p
-        t' :=: u' = canonicalise (t :=: u)
-        Just sub1 = matchEquation (t :=: u) (t' :=: u')
-        Just sub2 = matchEquation (t' :=: u') (t :=: u)
+        -- This ensures that we also renumber variables in the derivation that
+        -- do not occur in the equation, but that variables in the equation
+        -- get priority.
+        symbolic p = (equation p, derivation p)
+        before = symbolic p
+        after = canonicalise (symbolic p)
+        Just sub1 = matchManyList (terms before) (terms after)
+        Just sub2 = matchManyList (terms after) (terms before)
         canon p = subst sub2 (simpleLemma (certify (subst sub1 p)))
 
 invisible :: Function f => Equation f -> Bool

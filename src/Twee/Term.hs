@@ -49,7 +49,9 @@ module Twee.Term(
   substCompatible, substUnion, idempotent, idempotentOn,
   canonicalise,
   -- * Matching
-  match, matchIn, matchList, matchListIn, isInstanceOf, isVariantOf,
+  match, matchIn, matchList, matchListIn,
+  matchMany, matchManyIn, matchManyList, matchManyListIn,
+  isInstanceOf, isVariantOf,
   -- * Unification
   unify, unifyList, unifyMany,
   unifyTri, unifyTriFrom, unifyListTri, unifyListTriFrom,
@@ -362,6 +364,28 @@ matchListIn !sub !pat !t
         loop sub _ Empty = Just sub
         loop _ _ _ = Nothing
     in loop sub pat t
+
+-- | A variant of 'match' which works on lists of terms.
+matchMany :: [Term f] -> [Term f] -> Maybe (Subst f)
+matchMany pat t = matchManyIn emptySubst pat t
+
+-- | A variant of 'match' which works on lists of terms,
+-- and extends an existing substitution.
+matchManyIn :: Subst f -> [Term f] -> [Term f] -> Maybe (Subst f)
+matchManyIn sub ts us = matchManyListIn sub (map singleton ts) (map singleton us)
+
+-- | A variant of 'match' which works on lists of termlists.
+matchManyList :: [TermList f] -> [TermList f] -> Maybe (Subst f)
+matchManyList pat t = matchManyListIn emptySubst pat t
+
+-- | A variant of 'match' which works on lists of termlists,
+-- and extends an existing substitution.
+matchManyListIn :: Subst f -> [TermList f] -> [TermList f] -> Maybe (Subst f)
+matchManyListIn !sub [] [] = return sub
+matchManyListIn sub (t:ts) (u:us) = do
+  sub <- matchListIn sub t u
+  matchManyListIn sub ts us
+matchManyListIn _ _ _ = Nothing
 
 --------------------------------------------------------------------------------
 -- Unification.
