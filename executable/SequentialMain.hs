@@ -33,6 +33,7 @@ import System.IO
 import System.Exit
 import qualified Data.Set as Set
 import qualified Twee.Label as Label
+import System.Console.ANSI
 
 data MainFlags =
   MainFlags {
@@ -106,7 +107,7 @@ parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor <*> matchGoals) <*>
     (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
-    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> show_axiom_uses)
+    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses)
   where
     maxSize =
       inGroup "Resource limits" $
@@ -231,6 +232,21 @@ parseConfig =
         (splitOn "," <$> arg "<axioms>" "expected a list of axiom names" Just)
       where
         interpret xss ax = axiom_name ax `elem` xss || "all" `elem` xss
+    colour = fromMaybe <$> io colourSupported <*> colourFlag
+    colourFlag =
+      inGroup "Proof presentation" $
+      primFlag "(no-)colour"
+        ["Produce output in colour (on by default if writing output to a terminal)."]
+        (`elem` map fst colourFlags)
+        (\_ y -> return y)
+        Nothing
+        (pure (`lookup` colourFlags))
+    colourFlags = [("--colour", True), ("--no-colour", False),
+                   ("--color", True), ("--no-color", False)]
+    colourSupported =
+      liftM2 (&&) (hSupportsANSIColor stdout)
+        (return (setSGRCode [] /= "")) -- Check for Windows terminal not supporting ANSI
+
     defaultFlag name desc field parser =
       flag name [desc ++ " (" ++ show def ++ " by default)."] def parser
       where

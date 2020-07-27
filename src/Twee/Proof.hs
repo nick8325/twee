@@ -443,6 +443,8 @@ data Config f =
     cfg_ground_proof :: !Bool,
     -- | Print out explicit substitutions.
     cfg_show_instances :: !Bool,
+    -- | Print out proofs in colour.
+    cfg_use_colour :: !Bool,
     -- | Print out which instances of some axioms were used.
     cfg_show_uses_of_axioms :: Axiom f -> Bool }
 
@@ -454,6 +456,7 @@ defaultConfig =
     cfg_no_lemmas = False,
     cfg_ground_proof = False,
     cfg_show_instances = False,
+    cfg_use_colour = False,
     cfg_show_uses_of_axioms = const False }
 
 -- | A proof, with all axioms and lemmas explicitly listed.
@@ -738,8 +741,8 @@ pPrintLemma Config{..} axiomNum lemmaNum p
 
     pp _ p | invisible (equation (certify p)) = pPrintEmpty
     pp h p =
-      ppTerm (HighlightedTerm [green] (Just h) (eqn_lhs (equation (certify p)))) $$
-      text "=" <+> highlight [bold] (text "{ by" <+> ppStep p <+> text "}")
+      ppTerm (HighlightedTerm [green | cfg_use_colour] (Just h) (eqn_lhs (equation (certify p)))) $$
+      text "=" <+> highlight [bold | cfg_use_colour] (text "{ by" <+> ppStep p <+> text "}")
 
     highlightStep UseAxiom{} = []
     highlightStep UseLemma{} = []
