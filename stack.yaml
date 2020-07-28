@@ -5,6 +5,6 @@ packages:
 - src
 
 extra-deps:
-- jukebox-0.4.4
+- jukebox-0.4.5
 - minisat-0.1.2
 - primitive-0.7.1.0
