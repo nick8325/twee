@@ -388,7 +388,7 @@ eliminateDefinitions axioms p = head (mapLemmas elim [p])
           replace (proof <$> sub) rhs
       where
         vs = map V [0..length ps-1]
-        qs = map (elim . simpleLemma . certify) ps -- avoid duplicating proofs of ts
+        qs = map (simpleLemma . certify . elim) ps -- avoid duplicating proofs of ts
 
     elimSubst (Subst sub) = Subst (singleton <$> term <$> unsingleton <$> sub)
       where
