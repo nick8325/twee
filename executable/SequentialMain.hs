@@ -286,12 +286,16 @@ instance Arity Constant where
 
 instance Pretty Constant where
   pPrint Minimal = text "?"
-  pPrint Constant{..} = text (base con_id)
+  pPrint Constant{..} = text (removePostfix (base con_id))
+    where
+      removePostfix ('_':x:xs) | con_arity == 1 = x:xs
+      removePostfix xs = xs
 
 instance PrettyTerm Constant where
   termStyle Minimal = uncurried
   termStyle Constant{..}
     | hasLabel "type_tag" con_id = invisible
+    | "_" `isPrefixOf` base con_id && con_arity == 1 = postfix
     | any isAlphaNum (base con_id) = uncurried
     | otherwise =
       case con_arity of
