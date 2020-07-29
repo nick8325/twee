@@ -44,13 +44,7 @@ cnf(double_negation,hypothesis,
     ( negate(negate(c)) = c )).
 
 cnf(prove_huntingtons_axiom,negated_conjecture,
-    goal_lhs != b).
-
-cnf(anb, axiom, goal_anb = add(a, negate(b))).
-cnf(nanb, axiom, goal_nanb = add(negate(a), negate(b))).
-cnf(n_nanb, axiom, goal_n_nanb = negate(goal_nanb)).
-cnf(n_anb, axiom, goal_n_anb = negate(goal_anb)).
-cnf(lhs, axiom, goal_lhs = add(goal_n_anb, goal_n_nanb)).
+    add(negate(add(a,negate(b))),negate(add(negate(a),negate(b)))) != b).
 
 %--------------------------------------------------------------------------
 %----Definition of g

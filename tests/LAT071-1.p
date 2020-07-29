@@ -1,5 +1,5 @@
 %--------------------------------------------------------------------------
-% File     : LAT071-1 : TPTP v6.2.0. Released v2.6.0.
+% File     : LAT071-1 : TPTP v7.2.0. Released v2.6.0.
 % Domain   : Lattice Theory (Orthomodularlattices)
 % Problem  : Given single axiom OML-21C, prove associativity
 % Version  : [MRV03] (equality) axioms.
@@ -20,7 +20,7 @@
 %            Number of functors    :    4 (   3 constant; 0-2 arity)
 %            Number of variables   :    4 (   2 singleton)
 %            Maximal term depth    :    6 (   4 average)
-% SPC      : CNF_UNK_UEQ
+% SPC      : CNF_OPN_RFO_PEQ_UEQ
 
 % Comments :
 %--------------------------------------------------------------------------
@@ -28,17 +28,10 @@
 cnf(oml_21C,axiom,
     ( f(f(B,A),f(f(f(f(B,A),A),f(C,A)),f(f(A,A),D))) = A )).
 
-cnf(a, axiom, f(z, f(z, z)) = k).
-cnf(fbc, axiom, fbc=f(b,c)).
-cnf(fba, axiom, fba=f(b,a)).
-cnf(fbc2, axiom, fbc2=f(fbc,fbc)).
-cnf(fba2, axiom, fba2=f(fba,fba)).
-cnf(lhs, axiom, lhs=f(a,fbc2)).
-cnf(rhs, axiom, rhs=f(c,fba2)).
-cnf(comm, axiom, f(X,Y)=f(Y,X)).
-
 %----Denial of Sheffer stroke associativity
 cnf(associativity,negated_conjecture,
-    lhs != rhs).
+    (  f(a,f(f(b,c),f(b,c))) != f(c,f(f(b,a),f(b,a))) )).
+
+cnf(bonus, axiom, f(A,B)=f(B,A)).
 
 %--------------------------------------------------------------------------

@@ -1,9 +1,18 @@
-cnf(a, axiom, '*'('*'('*'(X, Y), Z), inv('*'(X, Z))) = Y).
-cnf(a, axiom, e = '*'(a, inv(a))).
-fof(a, conjecture, e = '*'(b, inv(b))).
-fof(a, conjecture, ![X]: '*'(e, X) = X).
-fof(a, conjecture, ![X]: '*'(X, e) = e).
-fof(a, conjecture, ![X]: '*'(inv(X), X) = e).
-fof(a, conjecture, ![X]: '*'(X, inv(X)) = e).
-fof(a, conjecture, ![X, Y, Z]: '*'('*'(X, Y), Z) = '*'(X, '*'(Y, Z))).
-fof(a, conjecture, ![X, Y]: '*'(X, Y) = '*'(Y, X)).
+cnf(axiom, axiom,
+    ((X + Y) + Z) + -(X+Z) = Y).
+cnf('definition of identity', axiom,
+    e = a + -a).
+fof('identity is constant', conjecture,
+    e = b + -b).
+fof('left identity', conjecture,
+    ![X]: e + X = X).
+fof('right identity', conjecture,
+    ![X]: X + e = e).
+fof('left inverse', conjecture,
+    ![X]: -X + X = e).
+fof('right inverse', conjecture,
+    ![X]: X + -X = e).
+fof(associativity, conjecture,
+    ![X, Y, Z]: (X + Y) + Z = X + (Y + Z)).
+fof(commutativity, conjecture,
+    ![X, Y]: X + Y = Y + X).
