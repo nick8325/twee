@@ -517,8 +517,13 @@ runTwee :: GlobalFlags -> TSTPFlags -> HornFlags -> [String] -> Config Constant 
 runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obligs = {-# SCC runTwee #-} do
   let
     -- Encode whatever needs encoding in the problem
-    ctx = makeContext obligs
-    prob = prettyNames (addNarrowing ctx ((if flags_flatten_goals_lightly then flattenGoals False False else if flags_flatten_all then flattenGoals True True else if flags_flatten_goals then flattenGoals False True else id) obligs))
+    obligs'
+      | flags_flatten_goals_lightly = flattenGoals False False obligs
+      | flags_flatten_all = flattenGoals True True obligs
+      | flags_flatten_goals = flattenGoals False True obligs
+      | otherwise = obligs
+    ctx = makeContext obligs'
+    prob = prettyNames (addNarrowing ctx obligs')
 
   (axioms0, goals0) <-
     case identifyProblem ctx prob of
