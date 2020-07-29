@@ -517,23 +517,21 @@ instance Function f => Pretty (Presentation f) where
 -- | Simplify and present a proof.
 present :: Function f => Config f -> [ProvedGoal f] -> Presentation f
 present config@Config{..} goals =
-  presentRaw [ goal{pg_proof = certify p}
-             | (goal, p) <- zip goals ps ]
+  Presentation axioms lemmas goals'
   where
-    ps = simplifyProof config $ map (derivation . pg_proof) goals
+    ps =
+      mapLemmas flattenDerivation $
+      simplifyProof config $ map (derivation . pg_proof) goals
 
-presentRaw :: Function f => [ProvedGoal f] -> Presentation f
-presentRaw goals =
-  Presentation axioms
-    (map flattenProof lemmas)
-    [ decodeGoal (goal { pg_proof = flattenProof pg_proof })
-    | goal@ProvedGoal{..} <- goals ]
-  where
+    goals' =
+      [ decodeGoal (goal{pg_proof = certify p})
+      | (goal, p) <- zip goals ps ]
+
     axioms = usort $
-      concatMap (usedAxioms . derivation . pg_proof) goals ++
+      concatMap (usedAxioms . derivation . pg_proof) goals' ++
       concatMap (usedAxioms . derivation) lemmas
 
-    lemmas = allLemmas (map (derivation . pg_proof) goals)
+    lemmas = allLemmas (map (derivation . pg_proof) goals')
 
 groundProof :: Function f => [Derivation f] -> [Derivation f]
 groundProof ds
