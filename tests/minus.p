@@ -3,7 +3,7 @@ cnf(plus_zero, axiom,
 cnf(plus_zero, axiom,
     X + '0' = X).
 cnf(minus_minus, axiom,
-    -(-X) = X).
+    - -X = X).
 cnf(minus_plus, axiom,
     -(X + Y) = -X + -Y).
 cnf(goal, conjecture,
