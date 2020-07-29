@@ -523,7 +523,14 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
       | flags_flatten_goals = flattenGoals False True obligs
       | otherwise = obligs
     ctx = makeContext obligs'
-    prob = prettyNames (addNarrowing ctx obligs')
+    lowercaseSkolem x
+      | hasLabel "skolem" x =
+        withRenamer x $ \s i ->
+          case defaultRenamer s i of
+            Renaming xss xs ->
+              Renaming (map (map toLower) xss) (map toLower xs)
+      | otherwise = x
+    prob = prettyNames (mapName lowercaseSkolem (addNarrowing ctx obligs'))
 
   (axioms0, goals0) <-
     case identifyProblem ctx prob of
