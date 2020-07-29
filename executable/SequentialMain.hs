@@ -34,6 +34,7 @@ import System.Exit
 import qualified Data.Set as Set
 import qualified Twee.Label as Label
 import System.Console.ANSI
+import Data.Symbol
 
 data MainFlags =
   MainFlags {
@@ -370,7 +371,7 @@ tweeTerm flags ctx prec t = build (tm t)
 
 jukeboxTerm :: TweeContext -> Term Constant -> Jukebox.Term
 jukeboxTerm TweeContext{..} (Var (V x)) =
-  Jukebox.Var (Unique (fromIntegral x) "X" Nothing defaultRenamer ::: ctx_type)
+  Jukebox.Var (Unique (fromIntegral x) (intern "X") Nothing defaultRenamer ::: ctx_type)
 jukeboxTerm ctx@TweeContext{..} (App f t) =
   jukeboxFunction ctx (fun_value f) :@: map (jukeboxTerm ctx) ts
   where

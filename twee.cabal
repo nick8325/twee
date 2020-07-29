@@ -56,8 +56,9 @@ executable twee
                        containers,
                        pretty,
                        split,
-                       jukebox == 0.4.*,
-                       ansi-terminal >= 0.9
+                       jukebox == 0.5.*,
+                       ansi-terminal >= 0.9,
+                       symbol
   ghc-options:         -W -fno-warn-incomplete-patterns
 
   if flag(static)
