@@ -581,9 +581,11 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
         h <- openFile file WriteMode
         hSetBuffering h LineBuffering
         let put msg = hPutStrLn h msg
-        put $ ":- module(" ++ mod ++ ", [step/1, lemma/1])."
+        put $ ":- module(" ++ mod ++ ", [step/1, lemma/1, axiom/1, goal/1])."
         put ":- discontiguous(step/1)."
         put ":- discontiguous(lemma/1)."
+        put ":- discontiguous(axiom/1)."
+        put ":- discontiguous(goal/1)."
         put ":- style_check(-singleton)."
         return $ \msg -> hPutStrLn h msg
   
@@ -608,8 +610,22 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
     traceMsg (Status n) =
       step "status" [pPrint n]
 
-    traceActive Active{..} =
+    traceActive Active{active_top = Nothing, ..} =
       traceApp "rule" [pPrint active_id, traceEqn (unorient active_rule)]
+    traceActive Active{active_top = Just top, ..} =
+      traceApp "rule" [pPrint active_id, traceEqn (unorient active_rule), traceEqn lemma1, traceEqn lemma2]
+      where
+        (lemma1, lemma2) =
+          find (steps (derivation active_proof))
+        find (s1:s2:_)
+          | eqn_rhs (equation (certify s1)) == top && eqn_lhs (equation (certify s2)) == top =
+            (lemmaOf s1, lemmaOf s2)
+        find (_:xs) = find xs
+        lemmaOf s =
+          case (usedLemmas s, usedAxioms s) of
+            ([p], []) -> equation p
+            ([], [ax]) -> axiom_eqn ax
+
     traceEqn (t :=: u) =
       pPrintPrec prettyNormal 6 t <+> text "=" <+> pPrintPrec prettyNormal 6 u
     traceApp f xs =
@@ -642,9 +658,15 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
       pres = present cfg_present $ map (eliminateDefinitionsFromGoal defs) $ solutions state
 
     sayTrace ""
+    forM_ (pres_axioms pres) $ \p ->
+      sayTrace $ show $
+        traceApp "axiom" [traceEqn (axiom_eqn p)] <#> text "."
     forM_ (pres_lemmas pres) $ \p ->
       sayTrace $ show $
         traceApp "lemma" [traceEqn (equation p)] <#> text "."
+    forM_ (pres_goals pres) $ \p ->
+      sayTrace $ show $
+        traceApp "goal" [traceEqn (pg_goal_hint p)] <#> text "."
 
     when (tstp && not flags_formal_proof) $ do
       putStrLn "% SZS output start Proof"
