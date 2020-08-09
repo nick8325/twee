@@ -261,9 +261,6 @@ cong f ps =
 --   * Symm only occurs innermost, i.e., next to UseLemma or UseAxiom
 --   * Refl only occurs as an argument to Cong, or outermost if the
 --     whole proof is a single reflexivity step
-flattenProof :: Function f => Proof f -> Proof f
-flattenProof = certify . flattenDerivation . derivation
-
 flattenDerivation :: Function f => Derivation f -> Derivation f
 flattenDerivation p =
   fromSteps (equation (certify p)) (steps p)

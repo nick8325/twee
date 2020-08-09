@@ -26,8 +26,6 @@ import Data.IntMap(IntMap)
 import Data.Maybe
 import Data.List
 import Data.Function
-import qualified Data.Set as Set
-import Data.Set(Set)
 import qualified Data.Map.Strict as Map
 import Data.Map(Map)
 import Data.Int
