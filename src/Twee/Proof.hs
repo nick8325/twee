@@ -651,7 +651,19 @@ tightenProof = mapLemmas tightenLemma
             let t :=: _ = snd (head mid)
                 _ :=: u = snd (last mid),
             sub <- maybeToList (unify t u),
-            subst sub eq == eq ]
+            subst sub eq == eq ] ++
+          [ subst sub before
+          | (before, after@(_:_)) <- splits steps,
+            let t :=: _ = snd (head after)
+                _ :=: u = snd (last after),
+            sub <- maybeToList (match t u),
+            subst sub (eqn_lhs eq) == eqn_lhs eq ] ++
+          [ subst sub after
+          | (before@(_:_), after) <- reverse (splits steps),
+            let t :=: _ = snd (head before)
+                _ :=: u = snd (last before),
+            sub <- maybeToList (match u t),
+            subst sub (eqn_rhs eq) == eqn_rhs eq ]
 
 generaliseProof :: Function f => [Derivation f] -> [Derivation f]
 generaliseProof =
