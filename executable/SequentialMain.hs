@@ -107,7 +107,7 @@ parseConfig :: OptionParser (Config Constant)
 parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
-    (Join.Config <$> ground_join <*> connectedness <*> set_join) <*>
+    (Join.Config <$> ground_join <*> connectedness <*> ac_handling <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses)
   where
     maxSize =
@@ -178,6 +178,12 @@ parseConfig =
       bool "connectedness"
         ["Test terms for subconnectedness (on by default)."]
         True
+    ac_handling =
+      expert $
+      inGroup "Critical pair joining heuristics" $
+      bool "ac-handling"
+        ["Special AC handling (off by default)."]
+        False
     set_join =
       expert $
       inGroup "Critical pair joining heuristics" $
