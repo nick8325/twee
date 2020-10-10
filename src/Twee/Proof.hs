@@ -595,7 +595,7 @@ inlineTrivialLemmas Config{..} =
 
     shouldInline p =
       cfg_no_lemmas ||
-      length (steps (derivation p)) <= 1 ||
+      length (filter (not . invisible) (map (equation . certify) (steps (derivation p)))) <= 1 ||
       (not cfg_all_lemmas &&
        (isJust (decodeEquality (eqn_lhs (equation p))) ||
         isJust (decodeEquality (eqn_rhs (equation p)))))
