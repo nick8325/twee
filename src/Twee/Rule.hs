@@ -274,12 +274,12 @@ normaliseWith ok strat t = res
         _ -> p
 
 -- | Compute all normal forms of a set of terms wrt a particular strategy.
-normalForms :: Function f => Strategy f -> Map (Term f) (Reduction f) -> Map (Term f) (Reduction f)
+normalForms :: Function f => Strategy f -> Map (Term f) (Reduction f) -> Map (Term f) (Term f, Reduction f)
 normalForms strat ps = snd (successorsAndNormalForms strat ps)
 
 -- | Compute all successors of a set of terms (a successor of a term @t@
 -- is a term @u@ such that @t ->* u@).
-successors :: Function f => Strategy f -> Map (Term f) (Reduction f) -> Map (Term f) (Reduction f)
+successors :: Function f => Strategy f -> Map (Term f) (Reduction f) -> Map (Term f) (Term f, Reduction f)
 successors strat ps =
   Map.union qs rs
   where
@@ -288,9 +288,9 @@ successors strat ps =
 {-# INLINEABLE successorsAndNormalForms #-}
 {-# SCC successorsAndNormalForms #-}
 successorsAndNormalForms :: Function f => Strategy f -> Map (Term f) (Reduction f) ->
-  (Map (Term f) (Reduction f), Map (Term f) (Reduction f))
+  (Map (Term f) (Term f, Reduction f), Map (Term f) (Term f, Reduction f))
 successorsAndNormalForms strat ps =
-  go Map.empty Map.empty ps
+  go Map.empty Map.empty (Map.mapWithKey (\t red -> (t, red)) ps)
   where
     go dead norm ps =
       case Map.minViewWithKey ps of
@@ -303,7 +303,7 @@ successorsAndNormalForms strat ps =
             go (Map.insert t p dead) norm (Map.fromList qs `Map.union` ps)
           where
             qs =
-              [ (result t q, p `trans` q)
+              [ (result t q, (fst p, (snd p `trans` q)))
               | q <- anywhere strat t ]
 
 -- | Apply a strategy anywhere in a term.

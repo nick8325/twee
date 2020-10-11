@@ -46,12 +46,13 @@ data MainFlags =
     flags_give_up_on_saturation :: Bool,
     flags_flatten_goals :: Bool,
     flags_flatten_goals_lightly :: Bool,
-    flags_flatten_all:: Bool,
-    flags_eliminate :: [String] }
+    flags_flatten_all :: Bool,
+    flags_eliminate :: [String],
+    flags_backwards_goal :: Int }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenLightly <*> flattenAll <*> eliminate
+  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenLightly <*> flattenAll <*> eliminate <*> backwardsGoal
   where
     proof =
       inGroup "Output options" $
@@ -91,6 +92,10 @@ parseMainFlags =
       expert $
       inGroup "Completion heuristics" $
       bool "flatten" ["Flatten all clauses by adding new axioms (off by default)."] False
+    backwardsGoal =
+      expert $
+      inGroup "Completion heuristics" $
+      flag "backwards-goal" ["Try rewriting backwards from the goal this many times (0 by default)."] 0 argNum
     eliminate =
       inGroup "Proof presentation" $
       concat <$>
@@ -578,6 +583,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
 
     withGoals = foldl' (addGoal config) (initialState config) goals
     withAxioms = foldl' (addAxiom config) withGoals axioms
+    withBackwardsGoal = foldn rewriteGoalsBackwards withAxioms flags_backwards_goal
 
   -- Set up tracing.
   sayTrace <-
@@ -651,7 +657,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
         (show goal_number) (Just goal_name) goal_eqn
   line
 
-  state <- complete output config withAxioms
+  state <- complete output config withBackwardsGoal
   line
 
   when (solved state && flags_proof) $ later $ do

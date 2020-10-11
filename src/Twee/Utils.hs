@@ -147,3 +147,8 @@ splits [] = [([], [])]
 splits (x:xs) =
   [([], x:xs)] ++
   [(x:ys, zs) | (ys, zs) <- splits xs]
+
+-- Fold over the natural numbers.
+foldn :: (a -> a) -> a -> Int -> a
+foldn _ e 0 = e
+foldn op e n | n > 0 = op (foldn op e (n-1))

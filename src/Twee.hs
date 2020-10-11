@@ -7,7 +7,7 @@ import Twee.Rule hiding (normalForms)
 import qualified Twee.Rule as Rule
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Axiom(..), Proof(..), ProvedGoal(..), provedGoal, certify, derivation)
+import Twee.Proof(Axiom(..), Proof(..), Derivation, ProvedGoal(..), provedGoal, certify, derivation)
 import Twee.CP hiding (Config)
 import qualified Twee.CP as CP
 import Twee.Join hiding (Config, defaultConfig)
@@ -502,11 +502,14 @@ addJoinable state eqn@(t :=: u) =
 -- Name and number are for information only.
 data Goal f =
   Goal {
-    goal_name     :: String,
-    goal_number   :: Int,
-    goal_eqn      :: Equation f,
-    goal_lhs      :: Map (Term f) (Reduction f),
-    goal_rhs      :: Map (Term f) (Reduction f) }
+    goal_name         :: String,
+    goal_number       :: Int,
+    goal_eqn          :: Equation f,
+    goal_expanded_lhs :: Map (Term f) (Derivation f),
+    goal_expanded_rhs :: Map (Term f) (Derivation f),
+    goal_lhs          :: Map (Term f) (Term f, Reduction f),
+    goal_rhs          :: Map (Term f) (Term f, Reduction f) }
+  deriving Show
 
 -- Add a new goal.
 {-# INLINEABLE addGoal #-}
@@ -523,14 +526,16 @@ normaliseGoals Config{..} state@State{..} =
       map (goalMap (nf (rewrite reduces (index_all st_rules)))) st_goals }
   where
     goalMap f goal@Goal{..} =
-      goal { goal_lhs = f (eqn_lhs goal_eqn) goal_lhs, goal_rhs = f (eqn_rhs goal_eqn) goal_rhs }
-    nf reduce t0 goals
-      | cfg_set_join_goals = Rule.normalForms reduce goals
+      goal { goal_lhs = f goal_lhs, goal_rhs = f goal_rhs }
+    nf reduce goals
+      | cfg_set_join_goals =
+        let pair (t, red) = (fst (goals Map.! t), red) in
+        Map.map pair $ Rule.normalForms reduce (Map.map snd goals)
       | otherwise =
         Map.fromList $
-          [ (result t0 q, q)
-          | (t, r) <- Map.toList goals,
-            let q = r `trans` Rule.normaliseWith (const True) reduce t ]
+          [ (result t q, (u, r `trans` q))
+          | (t, (u, r)) <- Map.toList goals,
+            let q = Rule.normaliseWith (const True) reduce t ]
 
 -- Recompute all normal forms of all goals. Starts from the original goal term.
 -- Different from normalising all goals, because there may be an intermediate
@@ -545,14 +550,41 @@ recomputeGoals config state =
   state'
   where
     state' =
-      normaliseGoals config (state { st_goals = map reset (st_goals state) })
-
-    reset goal@Goal{goal_eqn = t :=: u, ..} =
-      goal { goal_lhs = Map.singleton t [],
-             goal_rhs = Map.singleton u [] }
+      normaliseGoals config (state { st_goals = map resetGoal (st_goals state) })
 
     forceList [] = ()
     forceList (x:xs) = x `seq` forceList xs
+
+resetGoal :: Goal f -> Goal f
+resetGoal goal@Goal{..} =
+  goal { goal_lhs = expansions goal_expanded_lhs,
+         goal_rhs = expansions goal_expanded_rhs }
+  where
+    expansions m =
+      Map.mapWithKey (\t _ -> (t, [])) m
+
+-- Rewrite goal terms backwards using rewrite rules.
+{-# INLINEABLE rewriteGoalsBackwards #-}
+rewriteGoalsBackwards :: Function f => State f -> State f
+rewriteGoalsBackwards state =
+  state { st_goals = map backwardsGoal (st_goals state) }
+  where
+    backwardsGoal goal@Goal{..} =
+      resetGoal goal {
+        goal_expanded_lhs = backwardsMap goal_expanded_lhs,
+        goal_expanded_rhs = backwardsMap goal_expanded_rhs }
+    backwardsMap m =
+      Map.fromList $
+        Map.toList m ++
+        [ (ruleResult t r, p `Proof.trans` q)
+        | (t, p) <- Map.toList m,
+          r <- backwardsTerm t,
+          let q = ruleProof t r ]
+    backwardsTerm t = do
+      rule <- map the (Index.elems (RuleIndex.index_all (st_rules state)))
+      guard (usort (vars (lhs rule)) == usort (vars (rhs rule)))
+      [r] <- anywhere (tryRule (\_ _ -> True) (backwards rule)) t
+      return r
 
 -- Create a goal.
 {-# INLINE goal #-}
@@ -562,8 +594,10 @@ goal n name (t :=: u) =
     goal_name = name,
     goal_number = n,
     goal_eqn = t :=: u,
-    goal_lhs = Map.singleton t [],
-    goal_rhs = Map.singleton u [] }
+    goal_expanded_lhs = Map.singleton t (Proof.Refl t),
+    goal_expanded_rhs = Map.singleton u (Proof.Refl u),
+    goal_lhs = Map.singleton t (t, []),
+    goal_rhs = Map.singleton u (u, []) }
 
 ----------------------------------------------------------------------
 -- Interreduction.
@@ -686,9 +720,12 @@ solutions State{..} = do
       -- Strict so that we check the proof before returning a solution
       !p =
         Proof.certify $
-          reductionProof (eqn_lhs goal_eqn) t `Proof.trans`
-          Proof.symm (reductionProof (eqn_rhs goal_eqn) u)
+          expandedProof goal_expanded_lhs t `Proof.trans`
+          Proof.symm (expandedProof goal_expanded_rhs u)
   return (provedGoal goal_number goal_name p)
+  where
+    expandedProof m (t, red) =
+      m Map.! t `Proof.trans` reductionProof t red
 
 -- Return all current rewrite rules.
 {-# INLINEABLE rules #-}
@@ -715,6 +752,7 @@ normaliseTerm State{..} t =
 {-# INLINEABLE normalForms #-}
 normalForms :: Function f => State f -> Term f -> Map (Term f) (Reduction f)
 normalForms State{..} t =
+  Map.map snd $
   Rule.normalForms (rewrite reduces (index_all st_rules)) (Map.singleton t [])
 
 {-# INLINEABLE simplifyTerm #-}
