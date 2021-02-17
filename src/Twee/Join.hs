@@ -21,7 +21,8 @@ import Data.Map(Map)
 data Config =
   Config {
     cfg_ground_join :: !Bool,
-    cfg_use_connectedness :: !Bool,
+    cfg_use_connectedness_standalone :: !Bool,
+    cfg_use_connectedness_in_ground_joining :: !Bool,
     cfg_ac_handling :: !Bool,
     cfg_set_join :: !Bool }
 
@@ -29,7 +30,8 @@ defaultConfig :: Config
 defaultConfig =
   Config {
     cfg_ground_join = True,
-    cfg_use_connectedness = True,
+    cfg_use_connectedness_standalone = False,
+    cfg_use_connectedness_in_ground_joining = True,
     cfg_ac_handling = False,
     cfg_set_join = False }
 
@@ -93,7 +95,7 @@ step2 cfg eqns idx = joinWith cfg eqns idx (\t u -> normaliseWith (const True) (
     --ok _ _ = reduces
     ok t u rule sub = reduces rule sub && unorient rule `simplerThan` (t :=: u)
 step3 cfg@Config{..} eqns idx cp
-  | not cfg_use_connectedness = Just cp
+  | not cfg_use_connectedness_standalone = Just cp
   | otherwise =
     case cp_top cp of
       Just top ->
@@ -251,11 +253,17 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
           Right (Nothing, cps)
         res -> res
   where
-    config' = config{cfg_use_connectedness = False}
-    normaliseIn m t u = normaliseWith (const True) (rewrite (ok t u m) (index_all idx)) t
+    config' = config{cfg_use_connectedness_standalone = False}
+    normaliseIn m t u =
+      case cp_top of
+        Just top | cfg_use_connectedness_in_ground_joining ->
+          normaliseWith (connectedIn m top) (rewrite (ok t u model) (index_all idx)) t
+        _ -> normaliseWith (const True) (rewrite (ok t u m) (index_all idx)) t
     ok t u m rule sub =
       reducesInModel m rule sub &&
       unorient rule `simplerThan` (t :=: u)
+    connectedIn m top t =
+      lessIn m t top == Just Strict
 
     nt = normaliseIn model t u
     nu = normaliseIn model u t
