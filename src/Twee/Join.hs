@@ -30,8 +30,8 @@ defaultConfig :: Config
 defaultConfig =
   Config {
     cfg_ground_join = True,
-    cfg_use_connectedness_standalone = False,
-    cfg_use_connectedness_in_ground_joining = True,
+    cfg_use_connectedness_standalone = True,
+    cfg_use_connectedness_in_ground_joining = False,
     cfg_ac_handling = False,
     cfg_set_join = False }
 

@@ -181,14 +181,14 @@ parseConfig =
       expert $
       inGroup "Critical pair joining heuristics" $
       bool "connectedness-standalone"
-        ["Test terms for subconnectedness, as a separate check (off by default)."]
-        False
+        ["Test terms for subconnectedness, as a separate check (on by default)."]
+        True
     ground_connectedness =
       expert $
       inGroup "Critical pair joining heuristics" $
       bool "ground-connectedness"
-        ["Test terms for subconnectedness, as part of ground joinability testing (on by default)."]
-        True
+        ["Test terms for subconnectedness, as part of ground joinability testing (off by default)."]
+        False
     ac_handling =
       expert $
       inGroup "Critical pair joining heuristics" $
