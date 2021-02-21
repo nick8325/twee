@@ -86,7 +86,7 @@ bold = "1"
 
 highlight :: [ANSICode] -> Doc -> Doc
 highlight cs d =
-  hsep (map escape cs) <#> d <#> escape ""
+  hsep (map escape cs) <#> d <#> hsep [escape "" | not (null cs)]
   where
     escape s = zeroWidthText ("\027[" ++ s ++ "m")
 
