@@ -34,6 +34,8 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import qualified Control.Monad.Trans.State.Strict as StateM
+import qualified Data.IntSet as IntSet
+import Data.IntSet(IntSet)
 
 ----------------------------------------------------------------------
 -- * Configuration and prover state.
@@ -71,7 +73,7 @@ data State f =
     st_cp_sample      :: ![Maybe (Overlap f)],
     st_cp_next_sample :: ![(Integer, Int)],
     st_num_cps        :: !Integer,
-    st_complete_up_to :: !Int,
+    st_not_complete   :: !IntSet,
     st_complete       :: !(Index f (Rule f)),
     st_messages_rev   :: ![Message f] }
 
@@ -116,7 +118,7 @@ initialState Config{..} =
     st_cp_sample = [],
     st_cp_next_sample = reservoir cfg_cp_sample_size,
     st_num_cps = 0,
-    st_complete_up_to = minBound,
+    st_not_complete = IntSet.empty,
     st_complete = Index.empty,
     st_messages_rev = [] }
 
@@ -134,8 +136,8 @@ data Message f =
   | DeleteActive !(Active f)
     -- | The CP queue was simplified.
   | SimplifyQueue
-    -- | The first n axioms are complete (with a suitable-chosen subset of the rules).
-  | CompleteUpTo !Int
+    -- | All except these axioms are complete (with a suitable-chosen subset of the rules).
+  | NotComplete !IntSet
     -- | The rules were reduced wrt each other.
   | Interreduce
     -- | Status update: how many queued critical pairs there are.
@@ -149,8 +151,8 @@ instance Function f => Pretty (Message f) where
     text "  (delete rule " <#> pPrint (active_id rule) <#> text ")"
   pPrint SimplifyQueue =
     text "  (simplifying queued critical pairs...)"
-  pPrint (CompleteUpTo n) =
-    text "  (complete up to axiom" <+> pPrint n <#> ")"
+  pPrint (NotComplete ax) =
+    text "  (axioms" <+> text (show (IntSet.toList ax)) <+> "are not completed yet)"
   pPrint Interreduce =
     text "  (simplifying rules with respect to one another...)"
   pPrint (Status n) =
@@ -499,7 +501,7 @@ addAxiom config state axiom =
     CriticalPair {
       cp_eqn = axiom_eqn axiom,
       cp_depth = 0,
-      cp_max = Max (axiom_number axiom),
+      cp_max = Max (IntSet.singleton (axiom_number axiom)),
       cp_top = Nothing,
       cp_proof = Proof.axiom axiom }
 
@@ -518,15 +520,28 @@ addJoinable state eqn@(t :=: u) =
 checkCompleteness :: Function f => Config f -> State f -> State f
 checkCompleteness _ state@State{..} | st_simplified_at == st_next_active = state
 checkCompleteness _config state =
-  state { st_complete_up_to = n,
+  state { st_not_complete = excluded,
           st_complete = Index.fromListWith lhs rules }
   where
-    n = (minimum . map passiveMax . concatMap snd . Queue.toList $ st_queue state)-1
-    passiveMax p = fromMaybe maxBound $ do
+    maxSet s = if IntSet.null s then minBound else IntSet.findMax s
+    maxN = maximum [maxSet (unMax (active_max r)) | r <- IntMap.elems (st_active_ids state)]
+    excluded = go IntSet.empty
+    go excl
+      | m > maxN = excl
+      | otherwise = go (IntSet.insert m excl)
+      where
+        m = bound excl
+
+    bound excl = minimum . map (passiveMax excl) . concatMap snd . Queue.toList $ st_queue state
+
+    passiveMax excl p = fromMaybe maxBound $ do
       (r1, r2, _) <- findPassive state p
-      return (unMax (rule_max r1 `max` rule_max r2))
+      let s = unMax (rule_max r1) `IntSet.union` unMax (rule_max r2)
+      guard (s `IntSet.disjoint` excl)
+      (n, _) <- IntSet.maxView s
+      return n
     rules = map rule_rule (filter ok (IntMap.elems (st_rule_ids state)))
-    ok r = unMax (rule_max r) <= n
+    ok r = unMax (rule_max r) `IntSet.disjoint` excluded
 
 -- For goal terms we store the set of all their normal forms.
 -- Name and number are for information only.
@@ -695,7 +710,7 @@ complete Output{..} config@Config{..} state =
        newTask 1 0.02 $ do
          state <- StateM.get
          let !state' = checkCompleteness config state
-         lift $ output_message (CompleteUpTo (st_complete_up_to state'))
+         lift $ output_message (NotComplete (st_not_complete state'))
          StateM.put $! state',
        newTask 1 0.05 $ do
          when cfg_simplify $ do

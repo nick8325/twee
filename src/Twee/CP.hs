@@ -15,8 +15,10 @@ import Twee.Utils
 import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof(Derivation, congPath)
+import Data.IntSet(IntSet)
+import qualified Data.IntSet as IntSet
 
-newtype Max = Max { unMax :: Int }
+newtype Max = Max { unMax :: IntSet }
   deriving (Eq, Ord, Show)
 
 -- | The set of positions at which a term can have critical overlaps.
@@ -315,7 +317,7 @@ makeCriticalPair ::
 makeCriticalPair r1 r2 overlap@Overlap{..} =
   CriticalPair overlap_eqn
     overlap_depth
-    (Max (unMax (the r1) `intMax` unMax (the r2)))
+    (Max (unMax (the r1) `IntSet.union` unMax (the r2)))
     (Just overlap_top)
     (overlapProof r1 r2 overlap)
 
