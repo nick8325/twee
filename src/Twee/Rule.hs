@@ -18,7 +18,7 @@ import qualified Twee.Term as Term
 import Data.Ord
 import Twee.Equation
 import qualified Twee.Proof as Proof
-import Twee.Proof(Derivation)
+import Twee.Proof(Derivation, Proof)
 import Data.Tuple
 
 --------------------------------------------------------------------------------
@@ -35,7 +35,7 @@ data Rule f =
     -- For unoriented rules: vars lhs == vars rhs
     
     -- | A proof that the rule holds.
-    ruleDerivation :: Derivation f,
+    rule_proof :: !(Proof f),
 
     -- | The left-hand side of the rule.
     lhs :: {-# UNPACK #-} !(Term f),
@@ -47,6 +47,14 @@ instance Eq (Rule f) where
 instance Ord (Rule f) where
   compare = comparing (\rule -> (lhs rule, rhs rule))
 type RuleOf a = Rule (ConstantOf a)
+
+ruleDerivation :: Rule f -> Derivation f
+ruleDerivation r =
+  case (matchEquation (Proof.equation (rule_proof r)) (lhs r :=: rhs r),
+        matchEquation (Proof.equation (rule_proof r)) (rhs r :=: lhs r)) of
+    (Just sub, _) -> Proof.lemma (rule_proof r) sub
+    (_, Just sub) -> Proof.symm (Proof.lemma (rule_proof r) sub)
+    _ -> error "rule out of sync with proof"
 
 -- | A rule's orientation.
 --
@@ -83,7 +91,7 @@ oriented _ = False
 instance Symbolic (Rule f) where
   type ConstantOf (Rule f) = f
   termsDL (Rule _ _ t _) = termsDL t
-  subst_ sub (Rule or d t u) = Rule (subst_ sub or) (subst_ sub d) (subst_ sub t) (subst_ sub u)
+  subst_ sub (Rule or pf t u) = Rule (subst_ sub or) pf (subst_ sub t) (subst_ sub u)
 
 instance f ~ g => Has (Rule f) (Term g) where
   the = lhs
@@ -119,8 +127,8 @@ unorient (Rule _ _ l r) = l :=: r
 --
 -- Crashes if either @t < u@, or there is a variable in @u@ which is
 -- not in @t@. To avoid this problem, combine with 'Twee.CP.split'.
-orient :: Function f => Equation f -> Derivation f -> Rule f
-orient (t :=: u) d = Rule o d t u
+orient :: Function f => Equation f -> Proof f -> Rule f
+orient (t :=: u) pf = Rule o pf t u
   where
     o | lessEq u t =
         case unify t u of
@@ -166,7 +174,7 @@ orient (t :=: u) d = Rule o d t u
 
 -- | Flip an unoriented rule so that it goes right-to-left.
 backwards :: Rule f -> Rule f
-backwards (Rule or d t u) = Rule (back or) (Proof.symm d) u t
+backwards (Rule or pf t u) = Rule (back or) pf u t
   where
     back (Permutative xs) = Permutative (map swap xs)
     back Unoriented = Unoriented
@@ -246,8 +254,8 @@ ruleResult :: Term f -> Rule f -> Term f
 ruleResult t r = build (replace (lhs r) (rhs r) (singleton t))
 
 ruleProof :: PrettyTerm f => Term f -> Rule f -> Derivation f
-ruleProof t (Rule _ d lhs _)
-  | t == lhs = d
+ruleProof t r@(Rule _ _ lhs _)
+  | t == lhs = ruleDerivation r
   | len t < len lhs = Proof.Refl t
 ruleProof (App f ts) rule =
   Proof.cong f [ruleProof u rule | u <- unpack ts]

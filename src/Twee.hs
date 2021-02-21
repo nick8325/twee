@@ -453,7 +453,7 @@ addCP :: Function f => Config f -> Model f -> State f -> CriticalPair f -> State
 addCP config model state@State{..} CriticalPair{..} =
   let
     pf = certify cp_proof
-    rule = orient cp_eqn (Proof.simpleLemma pf)
+    rule = orient cp_eqn pf
 
     makeRule n k r =
       ActiveRule {
