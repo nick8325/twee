@@ -40,7 +40,7 @@ defaultConfig =
 joinCriticalPair ::
   (Function f, Has a (Rule f)) =>
   Config ->
-  Index f (Equation f) -> RuleIndex f a ->
+  (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a ->
   Maybe (Model f) -> -- A model to try before checking ground joinability
   CriticalPair f ->
   Either
@@ -72,7 +72,7 @@ joinCriticalPair config eqns idx mmodel cp@CriticalPair{cp_eqn = t :=: u} =
 {-# INLINEABLE allSteps #-}
 step1, step2, step3, allSteps ::
   (Function f, Has a (Rule f)) =>
-  Config -> Index f (Equation f) -> RuleIndex f a -> CriticalPair f -> Maybe (CriticalPair f)
+  Config -> (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a -> CriticalPair f -> Maybe (CriticalPair f)
 checkOrder :: Function f => CriticalPair f -> Maybe (CriticalPair f)
 allSteps config eqns idx cp =
   step1 config eqns idx cp >>=
@@ -124,7 +124,7 @@ step3 cfg@Config{..} eqns idx cp
 {-# INLINEABLE joinWith #-}
 joinWith ::
   (Function f, Has a (Rule f)) =>
-  Config -> Index f (Equation f) -> RuleIndex f a -> (Term f -> Term f -> Reduction f) -> CriticalPair f -> Maybe (CriticalPair f)
+  Config -> (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a -> (Term f -> Term f -> Reduction f) -> CriticalPair f -> Maybe (CriticalPair f)
 joinWith Config{..} eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
   | cfg_ac_handling && ac idx eqn = Nothing
   | subsumed eqns idx eqn = Nothing
@@ -192,9 +192,14 @@ ac idx (t :=: u) =
 
 {-# INLINEABLE subsumed #-}
 subsumed ::
-  (Has a (Rule f)) =>
-  Index f (Equation f) -> RuleIndex f a -> Equation f -> Bool
-subsumed eqns idx (t :=: u)
+  (Has a (Rule f), Function f) =>
+  (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a -> Equation f -> Bool
+subsumed (eqns, complete) idx (t :=: u)
+  | t == u = True
+  | otherwise = subsumed1 eqns idx (norm t :=: norm u)
+  where
+    norm t = result t $ normaliseWith (const True) (rewrite reducesSkolem complete) t
+subsumed1 eqns idx (t :=: u)
   | t == u = True
   | or [ rhs rule == u | rule <- Index.lookup t (index_all idx) ] = True
   | or [ rhs rule == t | rule <- Index.lookup u (index_all idx) ] = True
@@ -203,21 +208,21 @@ subsumed eqns idx (t :=: u)
   | or [ u == subst sub u'
        | t' :=: u' <- Index.approxMatches t eqns,
          sub <- maybeToList (match t' t) ] = True
-subsumed eqns idx (App f ts :=: App g us)
+subsumed1 eqns idx (App f ts :=: App g us)
   | f == g =
     let
       sub Empty Empty = True
       sub (Cons t ts) (Cons u us) =
-        subsumed eqns idx (t :=: u) && sub ts us
+        subsumed1 eqns idx (t :=: u) && sub ts us
       sub _ _ = error "Function used with multiple arities"
     in
       sub ts us
-subsumed _ _ _ = False
+subsumed1 _ _ _ = False
 
 {-# INLINEABLE groundJoin #-}
 groundJoin ::
   (Function f, Has a (Rule f)) =>
-  Config -> Index f (Equation f) -> RuleIndex f a -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
+  Config -> (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
 groundJoin config eqns idx ctx cp@CriticalPair{cp_eqn = t :=: u, ..} =
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
     ([], instances) ->
@@ -229,7 +234,7 @@ groundJoin config eqns idx ctx cp@CriticalPair{cp_eqn = t :=: u, ..} =
 {-# INLINEABLE groundJoinFrom #-}
 groundJoinFrom ::
   (Function f, Has a (Rule f)) =>
-  Config -> Index f (Equation f) -> RuleIndex f a -> Model f -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
+  Config -> (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a -> Model f -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
 groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :=: u, ..}
   | not cfg_ground_join = Left model
   | modelOK model && isJust (allSteps config' eqns idx cp { cp_eqn = t' :=: u' }) = Left model
@@ -279,7 +284,7 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
 {-# INLINEABLE groundJoinFromMaybe #-}
 groundJoinFromMaybe ::
   (Function f, Has a (Rule f)) =>
-  Config -> Index f (Equation f) -> RuleIndex f a -> Maybe (Model f) -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
+  Config -> (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a -> Maybe (Model f) -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
 groundJoinFromMaybe config eqns idx Nothing = groundJoin config eqns idx
 groundJoinFromMaybe config eqns idx (Just model) = groundJoinFrom config eqns idx model
 

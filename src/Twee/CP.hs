@@ -16,6 +16,9 @@ import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof(Derivation, congPath)
 
+newtype Max = Max { unMax :: Int }
+  deriving (Eq, Ord, Show)
+
 -- | The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
 type PositionsOf a = Positions (ConstantOf a)
@@ -205,6 +208,7 @@ data CriticalPair f =
     cp_eqn   :: {-# UNPACK #-} !(Equation f),
     -- | The depth of the critical pair.
     cp_depth :: {-# UNPACK #-} !Depth,
+    cp_max :: {-# UNPACK #-} !Max,
     -- | The critical term, if there is one.
     -- (Axioms do not have a critical term.)
     cp_top   :: !(Maybe (Term f)),
@@ -219,6 +223,7 @@ instance Symbolic (CriticalPair f) where
     CriticalPair {
       cp_eqn = subst_ sub cp_eqn,
       cp_depth = cp_depth,
+      cp_max = cp_max,
       cp_top = subst_ sub cp_top,
       cp_proof = subst_ sub cp_proof }
 
@@ -258,18 +263,21 @@ split CriticalPair{cp_eqn = l :=: r, ..}
     [ CriticalPair {
         cp_eqn   = l :=: r',
         cp_depth = cp_depth,
+        cp_max   = cp_max,
         cp_top   = eraseExcept (vars l) cp_top,
         cp_proof = eraseExcept (vars l) cp_proof }
     | ord == Just GT ] ++
     [ CriticalPair {
         cp_eqn   = r :=: l',
         cp_depth = cp_depth,
+        cp_max   = cp_max,
         cp_top   = eraseExcept (vars r) cp_top,
         cp_proof = Proof.symm (eraseExcept (vars r) cp_proof) }
     | ord == Just LT ] ++
     [ CriticalPair {
         cp_eqn   = l' :=: r',
         cp_depth = cp_depth,
+        cp_max   = cp_max,
         cp_top   = eraseExcept (vars l) $ eraseExcept (vars r) cp_top,
         cp_proof = eraseExcept (vars l) $ eraseExcept (vars r) cp_proof }
     | ord == Nothing ] ++
@@ -278,12 +286,14 @@ split CriticalPair{cp_eqn = l :=: r, ..}
     [ CriticalPair {
         cp_eqn   = l :=: l',
         cp_depth = cp_depth + 1,
+        cp_max   = cp_max,
         cp_top   = Nothing,
         cp_proof = cp_proof `Proof.trans` Proof.symm (erase ls cp_proof) }
     | not (null ls), ord /= Just GT ] ++
     [ CriticalPair {
         cp_eqn   = r :=: r',
         cp_depth = cp_depth + 1,
+        cp_max   = cp_max,
         cp_top   = Nothing,
         cp_proof = Proof.symm cp_proof `Proof.trans` erase rs cp_proof }
     | not (null rs), ord /= Just LT ]
@@ -300,11 +310,12 @@ split CriticalPair{cp_eqn = l :=: r, ..}
 -- | Make a critical pair from two rules and an overlap.
 {-# INLINEABLE makeCriticalPair #-}
 makeCriticalPair ::
-  forall f a. (Has a (Rule f), Has a Id, Function f) =>
+  forall f a. (Has a (Rule f), Has a Id, Has a Max, Function f) =>
   a -> a -> Overlap f -> CriticalPair f
 makeCriticalPair r1 r2 overlap@Overlap{..} =
   CriticalPair overlap_eqn
     overlap_depth
+    (Max (unMax (the r1) `intMax` unMax (the r2)))
     (Just overlap_top)
     (overlapProof r1 r2 overlap)
 

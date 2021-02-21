@@ -579,13 +579,20 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
       | (n, PreEquation{..}) <- zip [1..] goals0 ]
     axioms =
       [ Axiom n pre_name (toEquation pre_eqn)
-      | (n, PreEquation{..}) <- zip [1..] axioms0 ]
+      | (n, PreEquation{..}) <- zip [1..] (sortBy axiomCompare axioms0) ]
     defs =
       [ axiom
-      | (axiom, PreEquation{..}) <- zip axioms axioms0,
+      | (axiom, PreEquation{..}) <- zip axioms (sortBy axiomCompare axioms0),
         isDefinition pre_form ]
     isDefinition Input{source = Unknown} = True
     isDefinition inp = tag inp `elem` flags_eliminate
+    axiomCompare ax1 ax2
+      | ax1' `simplerThan` ax2' = LT
+      | ax2' `simplerThan` ax1' = GT
+      | otherwise = EQ
+      where
+        ax1' = toEquation (pre_eqn ax1)
+        ax2' = toEquation (pre_eqn ax2)
 
     withGoals = foldl' (addGoal config) (initialState config) goals
     withAxioms = foldl' (addAxiom config) withGoals axioms

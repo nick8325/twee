@@ -71,6 +71,8 @@ data State f =
     st_cp_sample      :: ![Maybe (Overlap f)],
     st_cp_next_sample :: ![(Integer, Int)],
     st_num_cps        :: !Integer,
+    st_complete_up_to :: !Int,
+    st_complete       :: !(Index f (Rule f)),
     st_messages_rev   :: ![Message f] }
 
 -- | The default prover configuration.
@@ -114,6 +116,8 @@ initialState Config{..} =
     st_cp_sample = [],
     st_cp_next_sample = reservoir cfg_cp_sample_size,
     st_num_cps = 0,
+    st_complete_up_to = minBound,
+    st_complete = Index.empty,
     st_messages_rev = [] }
 
 ----------------------------------------------------------------------
@@ -130,6 +134,8 @@ data Message f =
   | DeleteActive !(Active f)
     -- | The CP queue was simplified.
   | SimplifyQueue
+    -- | The first n axioms are complete (with a suitable-chosen subset of the rules).
+  | CompleteUpTo !Int
     -- | The rules were reduced wrt each other.
   | Interreduce
     -- | Status update: how many queued critical pairs there are.
@@ -143,6 +149,8 @@ instance Function f => Pretty (Message f) where
     text "  (delete rule " <#> pPrint (active_id rule) <#> text ")"
   pPrint SimplifyQueue =
     text "  (simplifying queued critical pairs...)"
+  pPrint (CompleteUpTo n) =
+    text "  (complete up to axiom" <+> pPrint n <#> ")"
   pPrint Interreduce =
     text "  (simplifying rules with respect to one another...)"
   pPrint (Status n) =
@@ -275,6 +283,7 @@ data Active f =
     active_rule  :: {-# UNPACK #-} !(Rule f),
     active_top   :: !(Maybe (Term f)),
     active_proof :: {-# UNPACK #-} !(Proof f),
+    active_max   :: {-# UNPACK #-} !Max,
     -- A model in which the rule is false (used when reorienting)
     active_model :: !(Model f),
     active_rules :: ![ActiveRule f] }
@@ -284,6 +293,7 @@ active_cp Active{..} =
   CriticalPair {
     cp_eqn = unorient active_rule,
     cp_depth = active_depth,
+    cp_max = active_max,
     cp_top = active_top,
     cp_proof = derivation active_proof }
 
@@ -293,6 +303,7 @@ data ActiveRule f =
     rule_active    :: {-# UNPACK #-} !Id,
     rule_rid       :: {-# UNPACK #-} !RuleId,
     rule_depth     :: {-# UNPACK #-} !Depth,
+    rule_max       :: {-# UNPACK #-} !Max,
     rule_rule      :: {-# UNPACK #-} !(Rule f),
     rule_positions :: !(Positions f) }
 
@@ -320,6 +331,7 @@ instance Function f => Pretty (Active f) where
 instance Has (ActiveRule f) Id where the = rule_active
 instance Has (ActiveRule f) RuleId where the = rule_rid
 instance Has (ActiveRule f) Depth where the = rule_depth
+instance Has (ActiveRule f) Max where the = rule_max
 instance f ~ g => Has (ActiveRule f) (Rule g) where the = rule_rule
 instance f ~ g => Has (ActiveRule f) (Positions g) where the = rule_positions
 
@@ -335,7 +347,7 @@ addActive config state@State{..} active0 =
     state' =
       message (NewActive active) $
       addActiveOnly state{st_next_active = st_next_active+1, st_next_rule = st_next_rule+2} active
-  in if subsumed st_joinable st_rules (unorient active_rule) then
+  in if subsumed (st_joinable, st_complete) st_rules (unorient active_rule) then
     state
   else
     normaliseGoals config $
@@ -437,7 +449,7 @@ considerUsing rules config@Config{..} state@State{..} cp0 =
   -- Important to canonicalise the rule so that we don't get
   -- bigger and bigger variable indices over time
   let cp = canonicalise cp0 in
-  case joinCriticalPair cfg_join st_joinable rules Nothing cp of
+  case joinCriticalPair cfg_join (st_joinable, st_complete) rules Nothing cp of
     Right (mcp, cps) ->
       let
         state' = foldl' (considerUsing rules config) state cps
@@ -460,6 +472,7 @@ addCP config model state@State{..} CriticalPair{..} =
         rule_active = n,
         rule_rid = k,
         rule_depth = cp_depth,
+        rule_max = cp_max,
         rule_rule = r rule,
         rule_positions = positions (lhs (r rule)) }
   in
@@ -470,6 +483,7 @@ addCP config model state@State{..} CriticalPair{..} =
     active_rule = rule,
     active_model = model,
     active_top = cp_top,
+    active_max = cp_max,
     active_proof = pf,
     active_rules =
       usortBy (comparing (canonicalise . rule_rule)) $
@@ -485,6 +499,7 @@ addAxiom config state axiom =
     CriticalPair {
       cp_eqn = axiom_eqn axiom,
       cp_depth = 0,
+      cp_max = Max (axiom_number axiom),
       cp_top = Nothing,
       cp_proof = Proof.axiom axiom }
 
@@ -497,6 +512,21 @@ addJoinable state eqn@(t :=: u) =
     st_joinable =
       Index.insert t (t :=: u) $
       Index.insert u (u :=: t) (st_joinable state) }
+
+-- Find a confluent subset of the rules.
+{-# INLINEABLE checkCompleteness #-}
+checkCompleteness :: Function f => Config f -> State f -> State f
+checkCompleteness _ state@State{..} | st_simplified_at == st_next_active = state
+checkCompleteness _config state =
+  state { st_complete_up_to = n,
+          st_complete = Index.fromListWith lhs rules }
+  where
+    n = (minimum . map passiveMax . concatMap snd . Queue.toList $ st_queue state)-1
+    passiveMax p = fromMaybe maxBound $ do
+      (r1, r2, _) <- findPassive state p
+      return (unMax (rule_max r1 `max` rule_max r2))
+    rules = map rule_rule (filter ok (IntMap.elems (st_rule_ids state)))
+    ok r = unMax (rule_max r) <= n
 
 -- For goal terms we store the set of all their normal forms.
 -- Name and number are for information only.
@@ -614,9 +644,9 @@ interreduce config@Config{..} state =
       foldl' (interreduce1 config)
         -- Clear out st_joinable, since we don't know which
         -- equations have made use of each active.
-        state { st_joinable = Index.empty }
+        state { st_joinable = Index.empty, st_complete = Index.empty }
         (IntMap.elems (st_active_ids state))
-    in state' { st_joinable = st_joinable state, st_simplified_at = st_next_active state' }
+    in state' { st_joinable = st_joinable state, st_complete = st_complete state, st_simplified_at = st_next_active state' }
 
 {-# INLINEABLE interreduce1 #-}
 interreduce1 :: Function f => Config f -> State f -> Active f -> State f
@@ -625,7 +655,7 @@ interreduce1 config@Config{..} state active =
   -- joinability, otherwise it will be trivially joinable.
   case
     joinCriticalPair cfg_join
-      Index.empty -- (st_joinable state)
+      (Index.empty, Index.empty) -- (st_joinable state)
       (st_rules (deleteActive state active))
       (Just (active_model active)) (active_cp active)
   of
@@ -662,6 +692,11 @@ complete Output{..} config@Config{..} state =
          when (shouldSimplifyQueue config state) $ do
            lift $ output_message SimplifyQueue
            StateM.put $! simplifyQueue config state,
+       newTask 1 0.02 $ do
+         state <- StateM.get
+         let !state' = checkCompleteness config state
+         lift $ output_message (CompleteUpTo (st_complete_up_to state'))
+         StateM.put $! state',
        newTask 1 0.05 $ do
          when cfg_simplify $ do
            lift $ output_message Interreduce
