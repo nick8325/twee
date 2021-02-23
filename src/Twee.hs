@@ -53,6 +53,7 @@ data Config f =
     cfg_renormalise_threshold  :: Int,
     cfg_set_join_goals         :: Bool,
     cfg_always_simplify        :: Bool,
+    cfg_complete_subsets       :: Bool,
     cfg_critical_pairs         :: CP.Config,
     cfg_join                   :: Join.Config,
     cfg_proof_presentation     :: Proof.Config f }
@@ -90,6 +91,7 @@ defaultConfig =
     cfg_cp_sample_size = 100,
     cfg_set_join_goals = True,
     cfg_always_simplify = False,
+    cfg_complete_subsets = False,
     cfg_critical_pairs = CP.defaultConfig,
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig }
@@ -285,7 +287,7 @@ data Active f =
     active_rule  :: {-# UNPACK #-} !(Rule f),
     active_top   :: !(Maybe (Term f)),
     active_proof :: {-# UNPACK #-} !(Proof f),
-    active_max   :: {-# UNPACK #-} !Max,
+    active_max   :: !Max,
     -- A model in which the rule is false (used when reorienting)
     active_model :: !(Model f),
     active_rules :: ![ActiveRule f] }
@@ -305,7 +307,7 @@ data ActiveRule f =
     rule_active    :: {-# UNPACK #-} !Id,
     rule_rid       :: {-# UNPACK #-} !RuleId,
     rule_depth     :: {-# UNPACK #-} !Depth,
-    rule_max       :: {-# UNPACK #-} !Max,
+    rule_max       :: !Max,
     rule_rule      :: {-# UNPACK #-} !(Rule f),
     rule_positions :: !(Positions f) }
 
@@ -501,7 +503,7 @@ addAxiom config state axiom =
     CriticalPair {
       cp_eqn = axiom_eqn axiom,
       cp_depth = 0,
-      cp_max = Max (IntSet.singleton (axiom_number axiom)),
+      cp_max = Max $ IntSet.fromList [axiom_number axiom | cfg_complete_subsets config],
       cp_top = Nothing,
       cp_proof = Proof.axiom axiom }
 
@@ -708,10 +710,11 @@ complete Output{..} config@Config{..} state =
            lift $ output_message SimplifyQueue
            StateM.put $! simplifyQueue config state,
        newTask 1 0.02 $ do
-         state <- StateM.get
-         let !state' = checkCompleteness config state
-         lift $ output_message (NotComplete (st_not_complete state'))
-         StateM.put $! state',
+         when cfg_complete_subsets $ do
+           state <- StateM.get
+           let !state' = checkCompleteness config state
+           lift $ output_message (NotComplete (st_not_complete state'))
+           StateM.put $! state',
        newTask 1 0.05 $ do
          when cfg_simplify $ do
            lift $ output_message Interreduce

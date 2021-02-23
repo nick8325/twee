@@ -110,9 +110,9 @@ parseMainFlags =
 
 parseConfig :: OptionParser (Config Constant)
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*>
+  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
-    (Join.Config <$> ground_join <*> connectedness_standalone <*> ground_connectedness <*> ac_handling <*> set_join) <*>
+    (Join.Config <$> ground_join <*> connectedness_standalone <*> ground_connectedness <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses)
   where
     maxSize =
@@ -189,11 +189,11 @@ parseConfig =
       bool "ground-connectedness"
         ["Test terms for subconnectedness, as part of ground joinability testing (off by default)."]
         False
-    ac_handling =
+    complete_subsets =
       expert $
       inGroup "Critical pair joining heuristics" $
-      bool "ac-handling"
-        ["Special AC handling (off by default)."]
+      bool "complete-subsets"
+        ["Identify and exploit complete subsets of the axioms in joining (off by default)."]
         False
     set_join =
       expert $

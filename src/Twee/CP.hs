@@ -210,7 +210,7 @@ data CriticalPair f =
     cp_eqn   :: {-# UNPACK #-} !(Equation f),
     -- | The depth of the critical pair.
     cp_depth :: {-# UNPACK #-} !Depth,
-    cp_max :: {-# UNPACK #-} !Max,
+    cp_max :: !Max,
     -- | The critical term, if there is one.
     -- (Axioms do not have a critical term.)
     cp_top   :: !(Maybe (Term f)),

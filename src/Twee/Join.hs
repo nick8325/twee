@@ -16,14 +16,12 @@ import Data.Maybe
 import Data.Either
 import Data.Ord
 import qualified Data.Map.Strict as Map
-import Data.Map(Map)
 
 data Config =
   Config {
     cfg_ground_join :: !Bool,
     cfg_use_connectedness_standalone :: !Bool,
     cfg_use_connectedness_in_ground_joining :: !Bool,
-    cfg_ac_handling :: !Bool,
     cfg_set_join :: !Bool }
 
 defaultConfig :: Config
@@ -32,7 +30,6 @@ defaultConfig =
     cfg_ground_join = True,
     cfg_use_connectedness_standalone = True,
     cfg_use_connectedness_in_ground_joining = False,
-    cfg_ac_handling = False,
     cfg_set_join = False }
 
 {-# INLINEABLE joinCriticalPair #-}
@@ -126,7 +123,6 @@ joinWith ::
   (Function f, Has a (Rule f)) =>
   Config -> (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a -> (Term f -> Term f -> Reduction f) -> CriticalPair f -> Maybe (CriticalPair f)
 joinWith Config{..} eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
-  | cfg_ac_handling && ac idx eqn = Nothing
   | subsumed eqns idx eqn = Nothing
   | otherwise =
     Just cp {
@@ -140,56 +136,6 @@ joinWith Config{..} eqns idx reduce cp@CriticalPair{cp_eqn = lhs :=: rhs, ..}
     rred = reduce rhs lhs
     eqn = result lhs lred :=: result rhs rred
 
-{-# INLINEABLE ac #-}
-ac ::
-  forall a f.
-  (Function f, Has a (Rule f)) =>
-  RuleIndex f a -> Equation f -> Bool
-ac idx (t :=: u) =
-  not (is commRule t u) && not (is assocRule t u) && not (is assocRule u t) && not (is funnyRule t u) &&
-  norm t == norm u
-  where
-    fs = usort (funs t ++ funs u)
-    comm = find commRule
-    assoc = find assocRule
-    funny = find funnyRule
-    all =
-      Index.fromListWith (lhs . the) $ concat $ Map.elems $
-      Map.intersectionWith (++) (fmap return comm) $
-      Map.intersectionWith (++) (fmap return assoc) (fmap return funny)
-
-    commRule f =
-      build (app f [var x, var y]) :=:
-      build (app f [var y, var x])
-    assocRule f =
-      build (app f [app f [var x, var y], var z]) :=:
-      build (app f [var x, app f [var y, var z]])
-    funnyRule f =
-      build (app f [var x, app f [var y, var z]]) :=:
-      build (app f [var y, app f [var x, var z]])
-
-    is rule t@(App f _) u =
-      isJust (matchMany [t0, u0] [t, u]) &&
-      isJust (matchMany [t, u] [t0, u0])
-      where
-        t0 :=: u0 = rule f
-    is _ _ _ = False
-
-    find :: (Fun f -> Equation f) -> Map (Fun f) (Rule f)
-    find rule =
-      Map.fromList
-        [ (f, subst sub r)
-        | f <- fs,
-          let t :=: u = rule f,
-          r <- map the (Index.approxMatches t (index_all idx)),
-          sub <- maybeToList (matchMany [lhs r, rhs r] [t, u]) ]
-
-    x = V 0
-    y = V 1
-    z = V 2
-
-    norm t = result t $ normaliseWith (const True) (rewrite reducesSkolem all) t
-
 {-# INLINEABLE subsumed #-}
 subsumed ::
   (Has a (Rule f), Function f) =>
@@ -198,7 +144,9 @@ subsumed (eqns, complete) idx (t :=: u)
   | t == u = True
   | otherwise = subsumed1 eqns idx (norm t :=: norm u)
   where
-    norm t = result t $ normaliseWith (const True) (rewrite reducesSkolem complete) t
+    norm t
+      | Index.null complete = t
+      | otherwise = result t $ normaliseWith (const True) (rewrite reducesSkolem complete) t
 subsumed1 eqns idx (t :=: u)
   | t == u = True
   | or [ rhs rule == u | rule <- Index.lookup t (index_all idx) ] = True
