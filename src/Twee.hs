@@ -154,7 +154,11 @@ instance Function f => Pretty (Message f) where
   pPrint SimplifyQueue =
     text "  (simplifying queued critical pairs...)"
   pPrint (NotComplete ax) =
-    text "  (axioms" <+> text (show (IntSet.toList ax)) <+> "are not completed yet)"
+    case IntSet.toList ax of
+      [n] ->
+        text "  (axiom" <+> pPrint n <+> "is not completed yet)"
+      xs ->
+        text "  (axioms" <+> text (show xs) <+> "are not completed yet)"
   pPrint Interreduce =
     text "  (simplifying rules with respect to one another...)"
   pPrint (Status n) =
