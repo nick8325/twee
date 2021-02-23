@@ -112,7 +112,7 @@ parseConfig :: OptionParser (Config Constant)
 parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
-    (Join.Config <$> ground_join <*> connectedness_standalone <*> ground_connectedness <*> set_join) <*>
+    (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses)
   where
     maxSize =
@@ -177,10 +177,10 @@ parseConfig =
       bool "ground-joining"
         ["Test terms for ground joinability (on by default)."]
         True
-    connectedness_standalone =
+    connectedness =
       expert $
       inGroup "Critical pair joining heuristics" $
-      bool "connectedness-standalone"
+      bool "connectedness"
         ["Test terms for subconnectedness, as a separate check (on by default)."]
         True
     ground_connectedness =
