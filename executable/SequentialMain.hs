@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards #-}
+{-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards, DerivingVia #-}
 {-# OPTIONS_GHC -flate-specialise #-}
 module SequentialMain(main) where
 
@@ -283,13 +283,10 @@ data Constant =
     con_weight :: !Integer,
     con_bonus  :: !Bool }
   deriving (Eq, Ord)
+  deriving Labelled via AutoLabel Constant
 
 data Precedence = Precedence !Bool !Bool !(Maybe Int) !Int
   deriving (Eq, Ord)
-
-instance Labelled Constant where
-  label = fromIntegral . Label.labelNum . Label.label
-  find = Label.find . Label.unsafeMkLabel . fromIntegral
 
 instance KBO.Sized Constant where
   size Minimal = 1

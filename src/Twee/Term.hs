@@ -26,7 +26,7 @@ module Twee.Term(
   pattern UnsafeCons, pattern UnsafeConsSym, uhd, utl, urest,
   empty, unpack, lenList,
   -- * Function symbols and variables
-  Fun, fun, fun_id, fun_value, pattern F, Var(..), Labelled(..),
+  Fun, fun, fun_id, fun_value, pattern F, Var(..), Labelled(..), AutoLabel(..),
   -- * Building terms
   Build(..),
   Builder,
@@ -75,6 +75,8 @@ import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Control.Arrow((&&&))
 import Twee.Utils
+import qualified Twee.Label as Label
+import Data.Typeable
 
 --------------------------------------------------------------------------------
 -- * A type class for builders
@@ -708,6 +710,12 @@ class Labelled f where
   find :: Int -> f
 
 instance (Labelled f, Show f) => Show (Fun f) where show = show . fun_value
+
+-- | For "deriving via": a Labelled instance which uses Twee.Label.
+newtype AutoLabel a = AutoLabel { unAutoLabel :: a }
+instance (Ord a, Typeable a) => Labelled (AutoLabel a) where
+  label = fromIntegral . Label.labelNum . Label.label . unAutoLabel
+  find = AutoLabel . Label.find . Label.unsafeMkLabel . fromIntegral
 
 -- | A pattern which extracts the 'fun_value' from a 'Fun'.
 pattern F :: Labelled f => Int -> f -> Fun f
