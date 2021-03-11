@@ -53,4 +53,4 @@ cnf(sos04,axiom,(
 
 %----Definition of h
 cnf(sos05,axiom,(
-    h(A) = add(A,add(A,add(A,g(A)))) )).
+    h(A) = add(A,add(A,add(A,negate(add(A,negate(A)))))))).
