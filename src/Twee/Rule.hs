@@ -109,7 +109,7 @@ instance Symbolic (Orientation f) where
   subst_ sub (Permutative ts) = Permutative (subst_ sub ts)
   subst_ _   Unoriented = Unoriented
 
-instance PrettyTerm f => Pretty (Rule f) where
+instance (Labelled f, PrettyTerm f) => Pretty (Rule f) where
   pPrint (Rule or _ l r) =
     pPrint l <+> text (showOrientation or) <+> pPrint r
     where
@@ -242,7 +242,7 @@ result t (r:rs) = ruleResult u r
     u = result t rs
 
 -- | Turn a reduction into a proof.
-reductionProof :: PrettyTerm f => Term f -> Reduction f -> Derivation f
+reductionProof :: Function f => Term f -> Reduction f -> Derivation f
 reductionProof t ps = red t (Proof.Refl t) (reverse ps)
   where
     red _ p [] = p
@@ -253,7 +253,7 @@ reductionProof t ps = red t (Proof.Refl t) (reverse ps)
 ruleResult :: Term f -> Rule f -> Term f
 ruleResult t r = build (replace (lhs r) (rhs r) (singleton t))
 
-ruleProof :: PrettyTerm f => Term f -> Rule f -> Derivation f
+ruleProof :: Function f => Term f -> Rule f -> Derivation f
 ruleProof t r@(Rule _ _ lhs _)
   | t == lhs = ruleDerivation r
   | len t < len lhs = Proof.Refl t

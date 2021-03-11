@@ -35,7 +35,7 @@ fromTerm (App f Empty) = Just (Constant f)
 fromTerm (Var x) = Just (Variable x)
 fromTerm _ = Nothing
 
-instance PrettyTerm f => Pretty (Atom f) where
+instance (Labelled f, PrettyTerm f) => Pretty (Atom f) where
   pPrint = pPrint . toTerm
 
 data Formula f =
@@ -45,7 +45,7 @@ data Formula f =
   | Or  [Formula f]
   deriving (Eq, Ord, Show)
 
-instance PrettyTerm f => Pretty (Formula f) where
+instance (Labelled f, PrettyTerm f) => Pretty (Formula f) where
   pPrintPrec _ _ (Less t u) = hang (pPrint t <+> text "<") 2 (pPrint u)
   pPrintPrec _ _ (LessEq t u) = hang (pPrint t <+> text "<=") 2 (pPrint u)
   pPrintPrec _ _ (And []) = text "true"
@@ -103,7 +103,7 @@ data Branch f =
     equals      :: [(Atom f, Atom f)] } -- sorted, greatest atom first in each pair
   deriving (Eq, Ord)
 
-instance PrettyTerm f => Pretty (Branch f) where
+instance (Labelled f, PrettyTerm f) => Pretty (Branch f) where
   pPrint Branch{..} =
     braces $ fsep $ punctuate (text ",") $
       [pPrint x <+> text "<" <+> pPrint y | (x, y) <- less ] ++
@@ -189,7 +189,7 @@ newtype Model f = Model (Map (Atom f) (Int, Int))
 -- x <  y if major x < major y
 -- x <= y if major x = major y and minor x < minor y
 
-instance PrettyTerm f => Pretty (Model f) where
+instance (Labelled f, PrettyTerm f) => Pretty (Model f) where
   pPrint (Model m)
     | Map.size m <= 1 = text "empty"
     | otherwise = fsep (go (sortBy (comparing snd) (Map.toList m)))

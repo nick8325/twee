@@ -86,7 +86,7 @@ data Axiom f =
 -- This is the trusted core of the module.
 {-# INLINEABLE certify #-}
 {-# SCC certify #-}
-certify :: PrettyTerm f => Derivation f -> Proof f
+certify :: Function f => Derivation f -> Proof f
 certify p =
   case check p of
     Nothing -> error ("Invalid proof created!\n" ++ prettyShow p)
@@ -146,7 +146,7 @@ instance Symbolic (Derivation f) where
 
 instance Function f => Pretty (Proof f) where
   pPrint = pPrintLemma defaultConfig (prettyShow . axiom_number) (prettyShow . equation)
-instance PrettyTerm f => Pretty (Derivation f) where
+instance (Labelled f, PrettyTerm f) => Pretty (Derivation f) where
   pPrint (UseLemma lemma sub) =
     text "subst" <#> pPrintTuple [text "lemma" <+> pPrint (equation lemma), pPrint sub]
   pPrint (UseAxiom axiom sub) =
@@ -160,12 +160,12 @@ instance PrettyTerm f => Pretty (Derivation f) where
   pPrint (Cong f ps) =
     text "cong" <#> pPrintTuple (pPrint f:map pPrint ps)
 
-instance PrettyTerm f => Pretty (Axiom f) where
+instance (Labelled f, PrettyTerm f) => Pretty (Axiom f) where
   pPrint Axiom{..} =
     text "axiom" <#>
     pPrintTuple [pPrint axiom_number, text axiom_name, pPrint axiom_eqn]
 
-foldLemmas :: PrettyTerm f => (Map (Proof f) a -> Derivation f -> a) -> [Derivation f] -> Map (Proof f) a
+foldLemmas :: (Labelled f, PrettyTerm f) => (Map (Proof f) a -> Derivation f -> a) -> [Derivation f] -> Map (Proof f) a
 foldLemmas op ds =
   execState (mapM_ foldGoal ds) Map.empty
   where
@@ -190,7 +190,7 @@ mapLemmas f ds = map (derivation . op lem) ds
     op lem = certify . f . unfoldLemmas (\pf -> Just (simpleLemma (lem Map.! pf)))
     lem = foldLemmas op ds
 
-allLemmas :: PrettyTerm f => [Derivation f] -> [Proof f]
+allLemmas :: Function f => [Derivation f] -> [Proof f]
 allLemmas ds =
   reverse [p | (_, p, _) <- map vertex (topSort graph)]
   where
@@ -215,7 +215,7 @@ unfoldLemmas _ p = p
 lemma :: Proof f -> Subst f -> Derivation f
 lemma p sub = UseLemma p sub
 
-simpleLemma :: PrettyTerm f => Proof f -> Derivation f
+simpleLemma :: Function f => Proof f -> Derivation f
 simpleLemma p =
   UseLemma p (autoSubst (equation p))
 
@@ -270,7 +270,7 @@ flattenDerivation p =
 --   * Trans is right-associated
 --   * Each Cong has at least one non-Refl argument
 --   * Refl is not used unnecessarily
-simplify :: PrettyTerm f => Derivation f -> Derivation f
+simplify :: Function f => Derivation f -> Derivation f
 simplify (Symm p) = symm (simplify p)
 simplify (Trans p q) = trans (simplify p) (simplify q)
 simplify (Cong f ps) = cong f (map simplify ps)
@@ -851,7 +851,7 @@ pPrintPresentation config (Presentation axioms lemmas goals) =
 --
 -- Used both here and in the main file.
 describeEquation ::
-  PrettyTerm f =>
+  Function f =>
   String -> String -> Maybe String -> Equation f -> Doc
 describeEquation kind num mname eqn =
   text kind <+> text num <#>

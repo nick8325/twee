@@ -72,7 +72,7 @@ supply names =
 instance (Pretty f, Labelled f) => Pretty (Fun f) where
   pPrintPrec l p = pPrintPrec l p . fun_value
 
-instance PrettyTerm f => Pretty (Term f) where
+instance (Labelled f, PrettyTerm f) => Pretty (Term f) where
   pPrintPrec l p (Var x) = pPrintPrec l p x
   pPrintPrec l p (App f xs) =
     pPrintTerm (termStyle (fun_value f)) l p (pPrint f) (unpack xs)
@@ -94,7 +94,7 @@ maybeHighlight :: [ANSICode] -> Maybe [Int] -> Doc -> Doc
 maybeHighlight cs (Just []) d = highlight cs d
 maybeHighlight _ _ d = d
 
-instance PrettyTerm f => Pretty (HighlightedTerm f) where
+instance (Labelled f, PrettyTerm f) => Pretty (HighlightedTerm f) where
   pPrintPrec l p (HighlightedTerm cs h (Var x)) =
     maybeHighlight cs h (pPrintPrec l p x)
   pPrintPrec l p (HighlightedTerm cs h (App f xs)) =
@@ -107,10 +107,10 @@ instance PrettyTerm f => Pretty (HighlightedTerm f) where
           Just (n:ns) | i == n -> HighlightedTerm cs (Just ns) t
           _ -> HighlightedTerm cs Nothing t
 
-instance PrettyTerm f => Pretty (TermList f) where
+instance (Labelled f, PrettyTerm f) => Pretty (TermList f) where
   pPrintPrec _ _ = pPrint . unpack
 
-instance PrettyTerm f => Pretty (Subst f) where
+instance (Labelled f, PrettyTerm f) => Pretty (Subst f) where
   pPrint sub = text "{" <#> fsep (punctuate (text ",") docs) <#> text "}"
     where
       docs =
@@ -118,7 +118,7 @@ instance PrettyTerm f => Pretty (Subst f) where
         | (x, t) <- substToList sub ]
 
 -- | A class for customising the printing of function symbols.
-class (Pretty f, Labelled f) => PrettyTerm f where
+class Pretty f => PrettyTerm f where
   -- | The style of the function symbol. Defaults to 'curried'.
   termStyle :: f -> TermStyle
   termStyle _ = curried
