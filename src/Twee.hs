@@ -549,6 +549,13 @@ checkCompleteness _config state =
     rules = map rule_rule (filter ok (IntMap.elems (st_rule_ids state)))
     ok r = unMax (rule_max r) `IntSet.disjoint` excluded
 
+-- Assume that all rules form a confluent rewrite system.
+{-# INLINEABLE assumeComplete #-}
+assumeComplete :: Function f => State f -> State f
+assumeComplete state =
+  state { st_not_complete = IntSet.empty,
+          st_complete = Index.fromListWith lhs (map rule_rule (IntMap.elems (st_rule_ids state))) }
+
 -- For goal terms we store the set of all their normal forms.
 -- Name and number are for information only.
 data Goal f =
