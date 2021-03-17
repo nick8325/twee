@@ -24,7 +24,7 @@ import Jukebox.Options
 import Jukebox.Toolbox
 import Jukebox.Name hiding (lhs, rhs, label)
 import qualified Jukebox.Form as Jukebox
-import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size)
+import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size, Subst, subst)
 import Jukebox.Tools.EncodeTypes
 import Jukebox.TPTP.Print
 import Jukebox.Tools.HornToUnit
@@ -826,28 +826,29 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
     tstp = deriv . derivation
 
     deriv :: Derivation Constant -> Input Form
-    deriv p@(Trans q r) = derivFrom (deriv r:sources q) p
-    deriv p = derivFrom (sources p) p
-
-    derivFrom :: [Input Form] -> Derivation Constant -> Input Form
-    derivFrom sources p =
+    deriv p =
       Input {
         tag = "step",
         kind = Jukebox.Ax Jukebox.Axiom,
         what = jukeboxEquation (equation (certify p)),
         source =
-          Inference "rw" "thm" sources }
+          Inference name "thm" sources }
+      where
+        (name, sources) = unpack p
+
+    unpack :: Derivation Constant -> (String, [Input Form])
+    unpack (Refl _) = ("reflexivity", [])
+    unpack (Symm p) = ("symmetry", [deriv p])
+    unpack (Trans p q) = ("transitivity", [deriv p, deriv q])
+    unpack (Cong _ ps) = ("congruence", [deriv p | p <- ps, let t :=: u = equation (certify p), t /= u])
+    unpack (UseAxiom Axiom{..} _) =
+      ("substitution", [fromJust (Map.lookup axiom_number axiom_proofs)])
+    unpack (UseLemma lemma _) =
+      ("substitution", [fromJust (Map.lookup lemma lemma_proofs)])
 
     jukeboxEquation :: Equation Constant -> Form
     jukeboxEquation (t :=: u) =
       toForm $ clause [Pos (jukeboxTerm ctx t Jukebox.:=: jukeboxTerm ctx u)]
-
-    sources :: Derivation Constant -> [Input Form]
-    sources p =
-      [ fromJust (Map.lookup lemma lemma_proofs)
-      | lemma <- usort (usedLemmas p) ] ++
-      [ fromJust (Map.lookup axiom_number axiom_proofs)
-      | Axiom{..} <- usort (usedAxioms p) ]
 
     -- An ugly hack: since Twee.Proof decodes $true = $false into a
     -- proof of the existentially quantified goal, we need to do the
