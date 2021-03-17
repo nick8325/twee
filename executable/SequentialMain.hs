@@ -546,7 +546,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
       | otherwise = x
     prob = prettyNames (mapName lowercaseSkolem (addNarrowing ctx obligs'))
 
-  (axioms0, goals0) <-
+  (unsortedAxioms0, goals0) <-
     case identifyProblem ctx prob of
       Left inp -> do
         mapM_ (hPutStrLn stderr) [
@@ -571,18 +571,6 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
     toEquation (t, u) =
       canonicalise (tweeTerm horn ctx prec t :=: tweeTerm horn ctx prec u)
 
-    goals =
-      [ goal n pre_name (toEquation pre_eqn)
-      | (n, PreEquation{..}) <- zip [1..] goals0 ]
-    axioms =
-      [ Axiom n pre_name (toEquation pre_eqn)
-      | (n, PreEquation{..}) <- zip [1..] (sortBy axiomCompare axioms0) ]
-    defs =
-      [ axiom
-      | (axiom, PreEquation{..}) <- zip axioms (sortBy axiomCompare axioms0),
-        isDefinition pre_form ]
-    isDefinition Input{source = Unknown} = True
-    isDefinition inp = tag inp `elem` flags_eliminate
     axiomCompare ax1 ax2
       | ax1' `simplerThan` ax2' = LT
       | ax2' `simplerThan` ax1' = GT
@@ -590,6 +578,20 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
       where
         ax1' = toEquation (pre_eqn ax1)
         ax2' = toEquation (pre_eqn ax2)
+    axioms0 = sortBy axiomCompare unsortedAxioms0
+
+    goals =
+      [ goal n pre_name (toEquation pre_eqn)
+      | (n, PreEquation{..}) <- zip [1..] goals0 ]
+    axioms =
+      [ Axiom n pre_name (toEquation pre_eqn)
+      | (n, PreEquation{..}) <- zip [1..] axioms0 ]
+    defs =
+      [ axiom
+      | (axiom, PreEquation{..}) <- zip axioms axioms0,
+        isDefinition pre_form ]
+    isDefinition Input{source = Unknown} = True
+    isDefinition inp = tag inp `elem` flags_eliminate
 
     withGoals = foldl' (addGoal config) (initialState config) goals
     withAxioms = foldl' (addAxiom config) withGoals axioms
