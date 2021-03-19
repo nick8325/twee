@@ -654,6 +654,7 @@ replace :: (Build a, BuildFun a ~ f) => Term f -> a -> TermList f -> Builder f
 replace !_ !_ Empty = mempty
 replace t u (Cons v vs)
   | t == v = builder u `mappend` replace t u vs
+  | len v < len t = builder v `mappend` replace t u vs
   | otherwise =
     case v of
       Var x -> var x `mappend` replace t u vs
