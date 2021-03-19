@@ -188,7 +188,11 @@ backwards (Rule or pf t u) = Rule (back or) pf u t
 {-# INLINEABLE simplify #-}
 {-# SCC simplify #-}
 simplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
-simplify !idx !t
+simplify = simplifyOutermost
+
+-- | Compute the normal form of a term wrt only oriented rules, using outermost reduction.
+simplifyOutermost :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
+simplifyOutermost !idx !t
   | t == u = t
   | otherwise = simplify idx u
   where
@@ -201,6 +205,18 @@ simplify !idx !t
         Term.subst sub (rhs rule) `mappend` simp u
     simp (Cons (App f ts) us) =
       app f (simp ts) `mappend` simp us
+
+-- | Compute the normal form of a term wrt only oriented rules, using innermost reduction.
+simplifyInnermost :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
+simplifyInnermost !idx !t = simp t
+  where
+    simp t =
+      case [rw | u <- reverseSubterms t, Just rw <- [simpleRewrite idx u]] of
+        [] -> t
+        (rule, sub):_ ->
+          let l = build (Term.subst sub (lhs rule))
+              r = build (Term.subst sub (rhs rule))
+          in simp (build (replace l r (singleton t)))
 
 -- | Find a simplification step that applies to a term.
 {-# INLINEABLE simpleRewrite #-}
@@ -316,7 +332,15 @@ successorsAndNormalForms strat ps =
 
 -- | Apply a strategy anywhere in a term.
 anywhere :: Strategy f -> Strategy f
-anywhere strat t = concatMap strat (subterms t)
+anywhere = anywhereOutermost
+
+-- | Apply a strategy anywhere in a term, preferring outermost reductions.
+anywhereOutermost :: Strategy f -> Strategy f
+anywhereOutermost strat t = concatMap strat (subterms t)
+
+-- | Apply a strategy anywhere in a term, preferring innermost reductions.
+anywhereInnermost :: Strategy f -> Strategy f
+anywhereInnermost strat t = concatMap strat (reverseSubterms t)
 
 --------------------------------------------------------------------------------
 -- * Basic strategies. These only apply at the root of the term.

@@ -79,11 +79,15 @@ data TermList f =
 
 -- | Index into a termlist.
 at :: Int -> TermList f -> Term f
-at n (TermList lo hi arr)
-  | n < 0 || lo+n >= hi = error "term index out of bounds"
-  | otherwise =
-    case TermList (lo+n) hi arr of
-      UnsafeCons t _ -> t
+at n t
+  | n < 0 || low t + n >= high t = error "term index out of bounds"
+  | otherwise = unsafeAt n t
+
+-- | Index into a termlist, without bounds checking.
+unsafeAt :: Int -> TermList f -> Term f
+unsafeAt n (TermList lo hi arr) =
+  case TermList (lo+n) hi arr of
+    UnsafeCons t _ -> t
 
 {-# INLINE lenList #-}
 -- | The length of (number of symbols in) a termlist.

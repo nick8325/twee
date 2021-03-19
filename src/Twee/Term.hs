@@ -33,7 +33,7 @@ module Twee.Term(
   build, buildList,
   con, app, var,
   -- * Access to subterms
-  children, properSubterms, subtermsList, subterms, occurs, isSubtermOf, isSubtermOfList, at,
+  children, properSubterms, subtermsList, subterms, reverseSubtermsList, reverseSubterms, occurs, isSubtermOf, isSubtermOfList, at,
   -- * Substitutions
   Substitution(..),
   subst,
@@ -597,6 +597,18 @@ subtermsList t = unfoldr op t
 {-# INLINE subterms #-}
 subterms :: Term f -> [Term f]
 subterms = subtermsList . singleton
+
+-- | Find all subterms of a term, but in reverse order.
+{-# INLINE reverseSubtermsList #-}
+reverseSubtermsList :: TermList f -> [Term f]
+reverseSubtermsList t =
+  [ unsafeAt n t | n <- [k-1,k-2..0] ]
+  where
+    k = lenList t
+
+{-# INLINE reverseSubterms #-}
+reverseSubterms :: Term f -> [Term f]
+reverseSubterms t = reverseSubtermsList (singleton t)
 
 -- | Find all proper subterms of a term.
 {-# INLINE properSubterms #-}
