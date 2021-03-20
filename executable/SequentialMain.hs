@@ -348,9 +348,8 @@ data TweeContext =
 tweeConstant :: HornFlags -> TweeContext -> Precedence -> Jukebox.Function -> Constant
 tweeConstant flags TweeContext{..} prec fun
   | fun == ctx_minimal = Minimal
-  | otherwise = Constant prec fun (Jukebox.arity fun) (sz fun) 1 (bonus fun)
+  | otherwise = Constant prec fun (Jukebox.arity fun) 1 1 (bonus fun)
   where
-    sz fun = {-if isType fun then 0 else-} 1
     bonus fun =
       (isIfeq fun && encoding flags /= Asymmetric2) ||
       SequentialMain.isEquals fun
