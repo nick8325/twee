@@ -260,7 +260,7 @@ enqueue state rule passives =
 --   * ignoring CPs that are too big
 {-# INLINEABLE dequeue #-}
 {-# SCC dequeue #-}
-dequeue :: Function f => Config f -> State f -> (Maybe (CriticalPair f, ActiveRule f, ActiveRule f), State f)
+dequeue :: Function f => Config f -> State f -> (Maybe (CriticalPair Info f, ActiveRule f, ActiveRule f), State f)
 dequeue Config{..} state@State{..} =
   case deq 0 st_queue of
     -- Explicitly make the queue empty, in case it e.g. contained a
@@ -276,9 +276,14 @@ dequeue Config{..} state@State{..} =
         Just (rule1, rule2, overlap@Overlap{overlap_eqn = t :=: u})
           | fromMaybe True (cfg_accept_term <*> pure t),
             fromMaybe True (cfg_accept_term <*> pure u),
-            cp <- makeCriticalPair rule1 rule2 overlap ->
+            cp <- makeCriticalPair (combineInfo (rule_info rule1) (rule_info rule2)) (the rule1) (the rule2) overlap ->
               return ((cp, rule1, rule2), n+1, queue)
         _ -> deq (n+1) queue
+
+    combineInfo i1 i2 =
+      Info {
+        info_depth = succ (max (info_depth i1) (info_depth i2)),
+        info_max = IntSet.union (info_max i1) (info_max i2) }
 
 ----------------------------------------------------------------------
 -- * Active rewrite rules.
@@ -287,21 +292,19 @@ dequeue Config{..} state@State{..} =
 data Active f =
   Active {
     active_id    :: {-# UNPACK #-} !Id,
-    active_depth :: {-# UNPACK #-} !Depth,
+    active_info  :: {-# UNPACK #-} !Info,
     active_rule  :: {-# UNPACK #-} !(Rule f),
     active_top   :: !(Maybe (Term f)),
     active_proof :: {-# UNPACK #-} !(Proof f),
-    active_max   :: !Max,
     -- A model in which the rule is false (used when reorienting)
     active_model :: !(Model f),
     active_rules :: ![ActiveRule f] }
 
-active_cp :: Active f -> CriticalPair f
+active_cp :: Active f -> CriticalPair Info f
 active_cp Active{..} =
   CriticalPair {
     cp_eqn = unorient active_rule,
-    cp_depth = active_depth,
-    cp_max = active_max,
+    cp_info = active_info,
     cp_top = active_top,
     cp_proof = derivation active_proof }
 
@@ -310,10 +313,14 @@ data ActiveRule f =
   ActiveRule {
     rule_active    :: {-# UNPACK #-} !Id,
     rule_rid       :: {-# UNPACK #-} !RuleId,
-    rule_depth     :: {-# UNPACK #-} !Depth,
-    rule_max       :: !Max,
+    rule_info      :: {-# UNPACK #-} !Info,
     rule_rule      :: {-# UNPACK #-} !(Rule f),
     rule_positions :: !(Positions f) }
+
+data Info =
+  Info {
+    info_depth :: {-# UNPACK #-} !Depth,
+    info_max   :: !IntSet }
 
 instance PrettyTerm f => Symbolic (ActiveRule f) where
   type ConstantOf (ActiveRule f) = f
@@ -338,8 +345,7 @@ instance Function f => Pretty (Active f) where
 
 instance Has (ActiveRule f) Id where the = rule_active
 instance Has (ActiveRule f) RuleId where the = rule_rid
-instance Has (ActiveRule f) Depth where the = rule_depth
-instance Has (ActiveRule f) Max where the = rule_max
+instance Has (ActiveRule f) Depth where the = info_depth . rule_info
 instance f ~ g => Has (ActiveRule f) (Rule g) where the = rule_rule
 instance f ~ g => Has (ActiveRule f) (Positions g) where the = rule_positions
 
@@ -442,7 +448,7 @@ deleteActive state@State{..} Active{..} =
 
 -- Try to join a critical pair.
 {-# INLINEABLE consider #-}
-consider :: Function f => Config f -> State f -> CriticalPair f -> State f
+consider :: Function f => Config f -> State f -> CriticalPair Info f -> State f
 consider config state cp =
   considerUsing (st_rules state) config state cp
 
@@ -452,7 +458,7 @@ consider config state cp =
 {-# SCC considerUsing #-}
 considerUsing ::
   Function f =>
-  RuleIndex f (ActiveRule f) -> Config f -> State f -> CriticalPair f -> State f
+  RuleIndex f (ActiveRule f) -> Config f -> State f -> CriticalPair Info f -> State f
 considerUsing rules config@Config{..} state@State{..} cp0 =
   -- Important to canonicalise the rule so that we don't get
   -- bigger and bigger variable indices over time
@@ -469,7 +475,7 @@ considerUsing rules config@Config{..} state@State{..} cp0 =
       foldl' (addCP config model) state (split cp)
 
 {-# INLINEABLE addCP #-}
-addCP :: Function f => Config f -> Model f -> State f -> CriticalPair f -> State f
+addCP :: Function f => Config f -> Model f -> State f -> CriticalPair Info f -> State f
 addCP config model state@State{..} CriticalPair{..} =
   let
     pf = certify cp_proof
@@ -479,19 +485,17 @@ addCP config model state@State{..} CriticalPair{..} =
       ActiveRule {
         rule_active = n,
         rule_rid = k,
-        rule_depth = cp_depth,
-        rule_max = cp_max,
+        rule_info = cp_info,
         rule_rule = r rule,
         rule_positions = positions (lhs (r rule)) }
   in
   addActive config state $ \n k1 k2 ->
   Active {
     active_id = n,
-    active_depth = cp_depth,
+    active_info = cp_info,
     active_rule = rule,
     active_model = model,
     active_top = cp_top,
-    active_max = cp_max,
     active_proof = pf,
     active_rules =
       usortBy (comparing (canonicalise . rule_rule)) $
@@ -506,8 +510,7 @@ addAxiom config state axiom =
   consider config state $
     CriticalPair {
       cp_eqn = axiom_eqn axiom,
-      cp_depth = 0,
-      cp_max = Max $ IntSet.fromList [axiom_number axiom | cfg_complete_subsets config],
+      cp_info = Info { info_depth = 0, info_max = IntSet.fromList [axiom_number axiom | cfg_complete_subsets config] },
       cp_top = Nothing,
       cp_proof = Proof.axiom axiom }
 
@@ -530,7 +533,7 @@ checkCompleteness _config state =
           st_complete = Index.fromListWith lhs rules }
   where
     maxSet s = if IntSet.null s then minBound else IntSet.findMax s
-    maxN = maximum [maxSet (unMax (active_max r)) | r <- IntMap.elems (st_active_ids state)]
+    maxN = maximum [maxSet (info_max (active_info r)) | r <- IntMap.elems (st_active_ids state)]
     excluded = go IntSet.empty
     go excl
       | m > maxN = excl
@@ -542,12 +545,12 @@ checkCompleteness _config state =
 
     passiveMax excl p = fromMaybe maxBound $ do
       (r1, r2, _) <- findPassive state p
-      let s = unMax (rule_max r1) `IntSet.union` unMax (rule_max r2)
+      let s = info_max (rule_info r1) `IntSet.union` info_max (rule_info r2)
       guard (s `IntSet.disjoint` excl)
       (n, _) <- IntSet.maxView s
       return n
     rules = map rule_rule (filter ok (IntMap.elems (st_rule_ids state)))
-    ok r = unMax (rule_max r) `IntSet.disjoint` excluded
+    ok r = info_max (rule_info r) `IntSet.disjoint` excluded
 
 -- Assume that all rules form a confluent rewrite system.
 {-# INLINEABLE assumeComplete #-}

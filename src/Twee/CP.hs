@@ -15,11 +15,6 @@ import Twee.Utils
 import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof(Derivation, congPath)
-import Data.IntSet(IntSet)
-import qualified Data.IntSet as IntSet
-
-newtype Max = Max { unMax :: IntSet }
-  deriving (Eq, Ord, Show)
 
 -- | The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
@@ -71,7 +66,7 @@ newtype Depth = Depth Int deriving (Eq, Ord, Num, Real, Enum, Integral, Show)
 -- | Compute all overlaps of a rule with a set of rules.
 {-# INLINEABLE overlaps #-}
 overlaps ::
-  forall a f. (Function f, Has a Id, Has a (Rule f), Has a (Positions f), Has a Depth) =>
+  forall a f. (Function f, Has a (Rule f), Has a (Positions f), Has a Depth) =>
   Depth -> Index f a -> [a] -> a -> [(a, a, Overlap f)]
 overlaps max_depth idx rules r =
   ChurchList.toList (overlapsChurch max_depth idx rules r)
@@ -204,32 +199,30 @@ score Config{..} Overlap{..} =
 ----------------------------------------------------------------------
 
 -- | A critical pair together with information about how it was derived
-data CriticalPair f =
+data CriticalPair info f =
   CriticalPair {
     -- | The critical pair itself.
     cp_eqn   :: {-# UNPACK #-} !(Equation f),
-    -- | The depth of the critical pair.
-    cp_depth :: {-# UNPACK #-} !Depth,
-    cp_max :: !Max,
+    -- | Information about the critical pair
+    cp_info  :: !info,
     -- | The critical term, if there is one.
     -- (Axioms do not have a critical term.)
     cp_top   :: !(Maybe (Term f)),
     -- | A derivation of the critical pair from the axioms.
     cp_proof :: !(Derivation f) }
 
-instance Symbolic (CriticalPair f) where
-  type ConstantOf (CriticalPair f) = f
+instance Symbolic (CriticalPair info f) where
+  type ConstantOf (CriticalPair info f) = f
   termsDL CriticalPair{..} =
     termsDL cp_eqn `mplus` termsDL cp_top `mplus` termsDL cp_proof
   subst_ sub CriticalPair{..} =
     CriticalPair {
       cp_eqn = subst_ sub cp_eqn,
-      cp_depth = cp_depth,
-      cp_max = cp_max,
+      cp_info = cp_info,
       cp_top = subst_ sub cp_top,
       cp_proof = subst_ sub cp_proof }
 
-instance (Labelled f, PrettyTerm f) => Pretty (CriticalPair f) where
+instance (Labelled f, PrettyTerm f) => Pretty (CriticalPair info f) where
   pPrint CriticalPair{..} =
     vcat [
       pPrint cp_eqn,
@@ -241,7 +234,7 @@ instance (Labelled f, PrettyTerm f) => Pretty (CriticalPair f) where
 -- the right that is not on the left.
 
 -- See the comment below.
-split :: Function f => CriticalPair f -> [CriticalPair f]
+split :: Function f => CriticalPair info f -> [CriticalPair info f]
 split CriticalPair{cp_eqn = l :=: r, ..}
   | l == r = []
   | otherwise =
@@ -264,22 +257,19 @@ split CriticalPair{cp_eqn = l :=: r, ..}
     -- The main rule l -> r' or r -> l' or l' = r'
     [ CriticalPair {
         cp_eqn   = l :=: r',
-        cp_depth = cp_depth,
-        cp_max   = cp_max,
+        cp_info  = cp_info,
         cp_top   = eraseExcept (vars l) cp_top,
         cp_proof = eraseExcept (vars l) cp_proof }
     | ord == Just GT ] ++
     [ CriticalPair {
         cp_eqn   = r :=: l',
-        cp_depth = cp_depth,
-        cp_max   = cp_max,
+        cp_info  = cp_info,
         cp_top   = eraseExcept (vars r) cp_top,
         cp_proof = Proof.symm (eraseExcept (vars r) cp_proof) }
     | ord == Just LT ] ++
     [ CriticalPair {
         cp_eqn   = l' :=: r',
-        cp_depth = cp_depth,
-        cp_max   = cp_max,
+        cp_info  = cp_info,
         cp_top   = eraseExcept (vars l) $ eraseExcept (vars r) cp_top,
         cp_proof = eraseExcept (vars l) $ eraseExcept (vars r) cp_proof }
     | ord == Nothing ] ++
@@ -287,15 +277,13 @@ split CriticalPair{cp_eqn = l :=: r, ..}
     -- Weak rules l -> l' or r -> r'
     [ CriticalPair {
         cp_eqn   = l :=: l',
-        cp_depth = cp_depth + 1,
-        cp_max   = cp_max,
+        cp_info  = cp_info,
         cp_top   = Nothing,
         cp_proof = cp_proof `Proof.trans` Proof.symm (erase ls cp_proof) }
     | not (null ls), ord /= Just GT ] ++
     [ CriticalPair {
         cp_eqn   = r :=: r',
-        cp_depth = cp_depth + 1,
-        cp_max   = cp_max,
+        cp_info  = cp_info,
         cp_top   = Nothing,
         cp_proof = Proof.symm cp_proof `Proof.trans` erase rs cp_proof }
     | not (null rs), ord /= Just LT ]
@@ -311,28 +299,22 @@ split CriticalPair{cp_eqn = l :=: r, ..}
 
 -- | Make a critical pair from two rules and an overlap.
 {-# INLINEABLE makeCriticalPair #-}
-makeCriticalPair ::
-  forall f a. (Has a (Rule f), Has a Id, Has a Max, Function f) =>
-  a -> a -> Overlap f -> CriticalPair f
-makeCriticalPair r1 r2 overlap@Overlap{..} =
+makeCriticalPair :: Function f => info -> Rule f -> Rule f -> Overlap f -> CriticalPair info f
+makeCriticalPair info r1 r2 overlap@Overlap{..} =
   CriticalPair overlap_eqn
-    overlap_depth
-    (Max (unMax (the r1) `IntSet.union` unMax (the r2)))
+    info
     (Just overlap_top)
     (overlapProof r1 r2 overlap)
 
 -- | Return a proof for a critical pair.
 {-# INLINEABLE overlapProof #-}
-overlapProof ::
-  forall a f.
-  (Has a (Rule f), Has a Id) =>
-  a -> a -> Overlap f -> Derivation f
+overlapProof :: Rule f -> Rule f -> Overlap f -> Derivation f
 overlapProof left right Overlap{..} =
-  Proof.symm (ruleDerivation (subst leftSub (the left)))
+  Proof.symm (ruleDerivation (subst leftSub left))
   `Proof.trans`
-  congPath path overlap_top (ruleDerivation (subst rightSub (the right)))
+  congPath path overlap_top (ruleDerivation (subst rightSub right))
   where
-    Just leftSub = match (lhs (the left)) overlap_top
-    Just rightSub = match (lhs (the right)) overlap_inner
+    Just leftSub = match (lhs left) overlap_top
+    Just rightSub = match (lhs right) overlap_inner
 
-    path = positionToPath (lhs (the left) :: Term f) overlap_pos
+    path = positionToPath (lhs left) overlap_pos
