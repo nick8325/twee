@@ -47,8 +47,6 @@ positionsChurch posns =
 -- | A critical overlap of one rule with another.
 data Overlap f =
   Overlap {
-    -- | The depth (1 for CPs of axioms, 2 for CPs whose rules have depth 1, etc.)
-    overlap_depth :: {-# UNPACK #-} !Depth,
     -- | The critical term.
     overlap_top   :: {-# UNPACK #-} !(Term f),
     -- | The part of the critical term which the inner rule rewrites.
@@ -66,41 +64,38 @@ newtype Depth = Depth Int deriving (Eq, Ord, Num, Real, Enum, Integral, Show)
 -- | Compute all overlaps of a rule with a set of rules.
 {-# INLINEABLE overlaps #-}
 overlaps ::
-  forall a f. (Function f, Has a (Rule f), Has a (Positions f), Has a Depth) =>
-  Depth -> Index f a -> [a] -> a -> [(a, a, Overlap f)]
-overlaps max_depth idx rules r =
-  ChurchList.toList (overlapsChurch max_depth idx rules r)
+  forall a f. (Function f, Has a (Rule f), Has a (Positions f)) =>
+  Index f a -> [a] -> a -> [(a, a, Overlap f)]
+overlaps idx rules r =
+  ChurchList.toList (overlapsChurch idx rules r)
 
 {-# INLINE overlapsChurch #-}
 overlapsChurch :: forall f a.
-  (Function f, Has a (Rule f), Has a (Positions f), Has a Depth) =>
-  Depth -> Index f a -> [a] -> a -> ChurchList (a, a, Overlap f)
-overlapsChurch max_depth idx rules r1 = do
-  guard (the r1 < max_depth)
+  (Function f, Has a (Rule f), Has a (Positions f)) =>
+  Index f a -> [a] -> a -> ChurchList (a, a, Overlap f)
+overlapsChurch idx rules r1 = do
   r2 <- ChurchList.fromList rules
-  guard (the r2 < max_depth)
-  let !depth = 1 + max (the r1) (the r2)
-  do { o <- asymmetricOverlaps idx depth (the r1) r1' (the r2); return (r1, r2, o) } `mplus`
-    do { o <- asymmetricOverlaps idx depth (the r2) (the r2) r1'; return (r2, r1, o) }
+  do { o <- asymmetricOverlaps idx (the r1) r1' (the r2); return (r1, r2, o) } `mplus`
+    do { o <- asymmetricOverlaps idx (the r2) (the r2) r1'; return (r2, r1, o) }
   where
     !r1' = renameAvoiding (map the rules :: [Rule f]) (the r1)
 
 {-# INLINE asymmetricOverlaps #-}
 asymmetricOverlaps ::
-  (Function f, Has a (Rule f), Has a Depth) =>
-  Index f a -> Depth -> Positions f -> Rule f -> Rule f -> ChurchList (Overlap f)
-asymmetricOverlaps idx depth posns r1 r2 = do
+  (Function f, Has a (Rule f)) =>
+  Index f a -> Positions f -> Rule f -> Rule f -> ChurchList (Overlap f)
+asymmetricOverlaps idx posns r1 r2 = do
   n <- positionsChurch posns
   ChurchList.fromMaybe $
-    overlapAt n depth r1 r2 >>=
+    overlapAt n r1 r2 >>=
     simplifyOverlap idx
 
 -- | Create an overlap at a particular position in a term.
 -- Doesn't simplify the overlap.
 {-# INLINE overlapAt #-}
 {-# SCC overlapAt #-}
-overlapAt :: Int -> Depth -> Rule f -> Rule f -> Maybe (Overlap f)
-overlapAt !n !depth (Rule _ _ !outer !outer') (Rule _ _ !inner !inner') = do
+overlapAt :: Int -> Rule f -> Rule f -> Maybe (Overlap f)
+overlapAt !n (Rule _ _ !outer !outer') (Rule _ _ !inner !inner') = do
   let t = at n (singleton outer)
   sub <- unifyTri inner t
   let
@@ -112,7 +107,6 @@ overlapAt !n !depth (Rule _ _ !outer !outer') (Rule _ _ !inner !inner') = do
 
   guard (lhs /= rhs)
   return Overlap {
-    overlap_depth = depth,
     overlap_top = top,
     overlap_inner = innerTerm,
     overlap_pos = n,
@@ -167,9 +161,9 @@ defaultConfig =
 -- where l is the biggest term and r is the smallest,
 -- and variables have weight 1 and functions have weight cfg_funweight.
 {-# INLINEABLE score #-}
-score :: Function f => Config -> Overlap f -> Int
-score Config{..} Overlap{..} =
-  fromIntegral overlap_depth * cfg_depthweight +
+score :: Function f => Config -> Depth -> Overlap f -> Int
+score Config{..} depth Overlap{..} =
+  fromIntegral depth * cfg_depthweight +
   (m + n) * cfg_rhsweight +
   intMax m n * (cfg_lhsweight - cfg_rhsweight)
   where

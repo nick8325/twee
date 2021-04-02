@@ -198,10 +198,13 @@ instance Queue.Params Params where
 {-# SCC makePassives #-}
 makePassives :: Function f => Config f -> State f -> ActiveRule f -> [Passive Params]
 makePassives Config{..} State{..} rule =
-  [ Passive (fromIntegral (score cfg_critical_pairs o)) (rule_rid rule1) (rule_rid rule2) (fromIntegral (overlap_pos o))
-  | (rule1, rule2, o) <- overlaps (Depth cfg_max_cp_depth) (index_oriented st_rules) rules rule ]
+-- XXX factor out depth calculation
+  [ Passive (fromIntegral (score cfg_critical_pairs (succ (the rule1 `max` the rule2)) o)) (rule_rid rule1) (rule_rid rule2) (fromIntegral (overlap_pos o))
+  | ok rule,
+    (rule1, rule2, o) <- overlaps (index_oriented st_rules) (filter ok rules) rule ]
   where
     rules = IntMap.elems st_rule_ids
+    ok rule = the rule < Depth cfg_max_cp_depth
 
 -- | Turn a Passive back into an overlap.
 -- Doesn't try to simplify it.
@@ -211,9 +214,8 @@ findPassive :: forall f. Function f => State f -> Passive Params -> Maybe (Activ
 findPassive State{..} Passive{..} = do
   rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
   rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
-  let !depth = 1 + max (the rule1) (the rule2)
   overlap <-
-    overlapAt (fromIntegral passive_pos) depth
+    overlapAt (fromIntegral passive_pos)
       (renameAvoiding (the rule2 :: Rule f) (the rule1)) (the rule2)
   return (rule1, rule2, overlap)
 
@@ -222,12 +224,13 @@ findPassive State{..} Passive{..} = do
 {-# SCC simplifyPassive #-}
 simplifyPassive :: Function f => Config f -> State f -> Passive Params -> Maybe (Passive Params)
 simplifyPassive Config{..} state@State{..} passive = do
-  (_, _, overlap) <- findPassive state passive
+  (r1, r2, overlap) <- findPassive state passive
   overlap <- simplifyOverlap (index_oriented st_rules) overlap
   return passive {
     passive_score = fromIntegral $
       fromIntegral (passive_score passive) `intMin`
-      score cfg_critical_pairs overlap }
+      -- XXX factor out depth calculation
+      score cfg_critical_pairs (succ (the r1 `max` the r2)) overlap }
 
 -- | Check if we should renormalise the queue.
 {-# INLINEABLE shouldSimplifyQueue #-}
@@ -282,6 +285,7 @@ dequeue Config{..} state@State{..} =
 
     combineInfo i1 i2 =
       Info {
+        -- XXX factor out depth calculation
         info_depth = succ (max (info_depth i1) (info_depth i2)),
         info_max = IntSet.union (info_max i1) (info_max i2) }
 
