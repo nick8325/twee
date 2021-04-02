@@ -46,6 +46,8 @@ instance Eq (Rule f) where
   x == y = compare x y == EQ
 instance Ord (Rule f) where
   compare = comparing (\rule -> (lhs rule, rhs rule))
+instance f ~ g => Has (Rule f) (Rule g) where
+  the = id
 type RuleOf a = Rule (ConstantOf a)
 
 ruleDerivation :: Rule f -> Derivation f

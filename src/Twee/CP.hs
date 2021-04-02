@@ -15,10 +15,13 @@ import Twee.Utils
 import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof(Derivation, congPath)
+import Data.Bits
 
 -- | The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
 type PositionsOf a = Positions (ConstantOf a)
+-- | Like Positions but for an equation (one set of positions per term).
+data Positions2 f = ForwardsPos !(Positions f) | BothPos !(Positions f) !(Positions f)
 
 instance Show (Positions f) where
   show = show . ChurchList.toList . positionsChurch
@@ -33,6 +36,14 @@ positions t = aux 0 Set.empty (singleton t)
     aux n m ConsSym{hd = t@App{}, rest = u}
       | t `Set.member` m = aux (n+1) m u
       | otherwise = ConsP n (aux (n+1) (Set.insert t m) u)
+
+-- | Calculate the set of positions for a rule.
+positionsRule :: Rule f -> Positions2 f
+positionsRule rule
+  | oriented (orientation rule) ||
+    canonicalise rule == canonicalise (backwards rule) =
+    ForwardsPos (positions (lhs rule))
+  | otherwise = BothPos (positions (lhs rule)) (positions (rhs rule))
 
 {-# INLINE positionsChurch #-}
 positionsChurch :: Positions f -> ChurchList Int
@@ -52,11 +63,37 @@ data Overlap f =
     -- | The part of the critical term which the inner rule rewrites.
     overlap_inner :: {-# UNPACK #-} !(Term f),
     -- | The position in the critical term which is rewritten.
-    overlap_pos   :: {-# UNPACK #-} !Int,
+    overlap_how   :: {-# UNPACK #-} !How,
     -- | The critical pair itself.
     overlap_eqn   :: {-# UNPACK #-} !(Equation f) }
   deriving Show
 type OverlapOf a = Overlap (ConstantOf a)
+
+data Direction = Forwards | Backwards deriving (Eq, Enum, Show)
+
+direct :: Rule f -> Direction -> Rule f
+direct rule Forwards = rule
+direct rule Backwards = backwards rule
+
+data How =
+  How {
+    how_dir1 :: !Direction,
+    how_dir2 :: !Direction,
+    how_pos  :: {-# UNPACK #-} !Int }
+  deriving Show
+
+packHow :: How -> Int
+packHow How{..} =
+  fromEnum how_dir1 +
+  fromEnum how_dir2 `shiftL` 1 +
+  how_pos `shiftL` 2
+
+unpackHow :: Int -> How
+unpackHow n =
+  How {
+    how_dir1 = toEnum (n .&. 1),
+    how_dir2 = toEnum ((n `shiftR` 1) .&. 1),
+    how_pos  = n `shiftR` 2 }
 
 -- | Represents the depth of a critical pair.
 newtype Depth = Depth Int deriving (Eq, Ord, Num, Real, Enum, Integral, Show)
@@ -64,38 +101,54 @@ newtype Depth = Depth Int deriving (Eq, Ord, Num, Real, Enum, Integral, Show)
 -- | Compute all overlaps of a rule with a set of rules.
 {-# INLINEABLE overlaps #-}
 overlaps ::
-  forall a f. (Function f, Has a (Rule f), Has a (Positions f)) =>
-  Index f a -> [a] -> a -> [(a, a, Overlap f)]
+  forall a b f. (Function f, Has a (Rule f), Has b (Rule f), Has b (Positions2 f)) =>
+  Index f a -> [b] -> b -> [(b, b, Overlap f)]
 overlaps idx rules r =
   ChurchList.toList (overlapsChurch idx rules r)
 
 {-# INLINE overlapsChurch #-}
-overlapsChurch :: forall f a.
-  (Function f, Has a (Rule f), Has a (Positions f)) =>
-  Index f a -> [a] -> a -> ChurchList (a, a, Overlap f)
+overlapsChurch :: forall f a b.
+  (Function f, Has a (Rule f), Has b (Rule f), Has b (Positions2 f)) =>
+  Index f a -> [b] -> b -> ChurchList (b, b, Overlap f)
 overlapsChurch idx rules r1 = do
+  (d1, pos1, eq1) <- directions r1' (the r1)
   r2 <- ChurchList.fromList rules
-  do { o <- asymmetricOverlaps idx (the r1) r1' (the r2); return (r1, r2, o) } `mplus`
-    do { o <- asymmetricOverlaps idx (the r2) (the r2) r1'; return (r2, r1, o) }
+  (d2, pos2, eq2) <- directions (the r2) (the r2)
+  do { o <- asymmetricOverlaps idx d1 d2 pos1 eq1 eq2; return (r1, r2, o) } `mplus`
+    do { o <- asymmetricOverlaps idx d2 d1 pos2 eq2 eq1; return (r2, r1, o) }
   where
     !r1' = renameAvoiding (map the rules :: [Rule f]) (the r1)
+
+{-# INLINE directions #-}
+directions :: Rule f -> Positions2 f -> ChurchList (Direction, Positions f, Equation f)
+directions rule (ForwardsPos posf) =
+  return (Forwards, posf, lhs rule :=: rhs rule)
+directions rule (BothPos posf posb) =
+  return (Forwards, posf, lhs rule :=: rhs rule) `mplus`
+  return (Backwards, posb, rhs rule :=: lhs rule)
 
 {-# INLINE asymmetricOverlaps #-}
 asymmetricOverlaps ::
   (Function f, Has a (Rule f)) =>
-  Index f a -> Positions f -> Rule f -> Rule f -> ChurchList (Overlap f)
-asymmetricOverlaps idx posns r1 r2 = do
+  Index f a -> Direction -> Direction -> Positions f -> Equation f -> Equation f -> ChurchList (Overlap f)
+asymmetricOverlaps idx d1 d2 posns eq1 eq2 = do
   n <- positionsChurch posns
   ChurchList.fromMaybe $
-    overlapAt n r1 r2 >>=
+    overlapAt' (How d1 d2 n) eq1 eq2 >>=
     simplifyOverlap idx
 
 -- | Create an overlap at a particular position in a term.
 -- Doesn't simplify the overlap.
 {-# INLINE overlapAt #-}
 {-# SCC overlapAt #-}
-overlapAt :: Int -> Rule f -> Rule f -> Maybe (Overlap f)
-overlapAt !n (Rule _ _ !outer !outer') (Rule _ _ !inner !inner') = do
+overlapAt :: How -> Rule f -> Rule f -> Maybe (Overlap f)
+overlapAt how@(How d1 d2 _) r1 r2 =
+  overlapAt' how (unorient (direct r1 d1)) (unorient (direct r2 d2))
+
+{-# INLINE overlapAt' #-}
+{-# SCC overlapAt' #-}
+overlapAt' :: How -> Equation f -> Equation f -> Maybe (Overlap f)
+overlapAt' how@How{how_pos = n} (!outer :=: (!outer')) (!inner :=: (!inner')) = do
   let t = at n (singleton outer)
   sub <- unifyTri inner t
   let
@@ -109,7 +162,7 @@ overlapAt !n (Rule _ _ !outer !outer') (Rule _ _ !inner !inner') = do
   return Overlap {
     overlap_top = top,
     overlap_inner = innerTerm,
-    overlap_pos = n,
+    overlap_how = how,
     overlap_eqn = lhs :=: rhs }
 
 -- | Simplify an overlap and remove it if it's trivial.
@@ -303,7 +356,7 @@ makeCriticalPair info r1 r2 overlap@Overlap{..} =
 -- | Return a proof for a critical pair.
 {-# INLINEABLE overlapProof #-}
 overlapProof :: Rule f -> Rule f -> Overlap f -> Derivation f
-overlapProof left right Overlap{..} =
+overlapProof left0 right0 Overlap{..} =
   Proof.symm (ruleDerivation (subst leftSub left))
   `Proof.trans`
   congPath path overlap_top (ruleDerivation (subst rightSub right))
@@ -311,4 +364,6 @@ overlapProof left right Overlap{..} =
     Just leftSub = match (lhs left) overlap_top
     Just rightSub = match (lhs right) overlap_inner
 
-    path = positionToPath (lhs left) overlap_pos
+    path = positionToPath (lhs left) (how_pos overlap_how)
+    left = direct left0 (how_dir1 overlap_how)
+    right = direct right0 (how_dir2 overlap_how)

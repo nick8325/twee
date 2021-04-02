@@ -61,14 +61,12 @@ data Config f =
 -- | The prover state.
 data State f =
   State {
-    st_rules          :: !(RuleIndex f (ActiveRule f)),
+    st_rules          :: !(RuleIndex f (Rule f)),
     st_active_ids     :: !(IntMap (Active f)),
-    st_rule_ids       :: !(IntMap (ActiveRule f)),
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
     st_queue          :: !(Queue Params),
     st_next_active    :: {-# UNPACK #-} !Id,
-    st_next_rule      :: {-# UNPACK #-} !RuleId,
     st_considered     :: {-# UNPACK #-} !Int64,
     st_simplified_at  :: {-# UNPACK #-} !Id,
     st_cp_sample      :: ![Maybe (Overlap f)],
@@ -109,12 +107,10 @@ initialState Config{..} =
   State {
     st_rules = RuleIndex.empty,
     st_active_ids = IntMap.empty,
-    st_rule_ids = IntMap.empty,
     st_joinable = Index.empty,
     st_goals = [],
     st_queue = Queue.empty,
     st_next_active = 1,
-    st_next_rule = 0,
     st_considered = 0,
     st_simplified_at = 1,
     st_cp_sample = [],
@@ -185,7 +181,7 @@ messages state = reverse (st_messages_rev state)
 data Params
 instance Queue.Params Params where
   type Score Params = Int
-  type Id Params = RuleId
+  type Id Params = Id
   type PackedId Params = Int32
   type PackedScore Params = Int32
   packScore _ = fromIntegral
@@ -196,26 +192,26 @@ instance Queue.Params Params where
 -- | Compute all critical pairs from a rule.
 {-# INLINEABLE makePassives #-}
 {-# SCC makePassives #-}
-makePassives :: Function f => Config f -> State f -> ActiveRule f -> [Passive Params]
+makePassives :: Function f => Config f -> State f -> Active f -> [Passive Params]
 makePassives Config{..} State{..} rule =
 -- XXX factor out depth calculation
-  [ Passive (fromIntegral (score cfg_critical_pairs (succ (the rule1 `max` the rule2)) o)) (rule_rid rule1) (rule_rid rule2) (fromIntegral (overlap_pos o))
+  [ Passive (fromIntegral (score cfg_critical_pairs (succ (the rule1 `max` the rule2)) o)) (active_id rule1) (active_id rule2) (packHow (overlap_how o))
   | ok rule,
     (rule1, rule2, o) <- overlaps (index_oriented st_rules) (filter ok rules) rule ]
   where
-    rules = IntMap.elems st_rule_ids
+    rules = IntMap.elems st_active_ids
     ok rule = the rule < Depth cfg_max_cp_depth
 
 -- | Turn a Passive back into an overlap.
 -- Doesn't try to simplify it.
 {-# INLINEABLE findPassive #-}
 {-# SCC findPassive #-}
-findPassive :: forall f. Function f => State f -> Passive Params -> Maybe (ActiveRule f, ActiveRule f, Overlap f)
+findPassive :: forall f. Function f => State f -> Passive Params -> Maybe (Active f, Active f, Overlap f)
 findPassive State{..} Passive{..} = do
-  rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
-  rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
+  rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_active_ids
+  rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_active_ids
   overlap <-
-    overlapAt (fromIntegral passive_pos)
+    overlapAt (unpackHow passive_pos)
       (renameAvoiding (the rule2 :: Rule f) (the rule1)) (the rule2)
   return (rule1, rule2, overlap)
 
@@ -251,7 +247,7 @@ simplifyQueue config state =
 -- | Enqueue a set of critical pairs.
 {-# INLINEABLE enqueue #-}
 {-# SCC enqueue #-}
-enqueue :: Function f => State f -> RuleId -> [Passive Params] -> State f
+enqueue :: Function f => State f -> Id -> [Passive Params] -> State f
 enqueue state rule passives =
   state { st_queue = Queue.insert rule passives (st_queue state) }
 
@@ -263,7 +259,7 @@ enqueue state rule passives =
 --   * ignoring CPs that are too big
 {-# INLINEABLE dequeue #-}
 {-# SCC dequeue #-}
-dequeue :: Function f => Config f -> State f -> (Maybe (CriticalPair Info f, ActiveRule f, ActiveRule f), State f)
+dequeue :: Function f => Config f -> State f -> (Maybe (CriticalPair Info f, Active f, Active f), State f)
 dequeue Config{..} state@State{..} =
   case deq 0 st_queue of
     -- Explicitly make the queue empty, in case it e.g. contained a
@@ -279,7 +275,7 @@ dequeue Config{..} state@State{..} =
         Just (rule1, rule2, overlap@Overlap{overlap_eqn = t :=: u})
           | fromMaybe True (cfg_accept_term <*> pure t),
             fromMaybe True (cfg_accept_term <*> pure u),
-            cp <- makeCriticalPair (combineInfo (rule_info rule1) (rule_info rule2)) (the rule1) (the rule2) overlap ->
+            cp <- makeCriticalPair (combineInfo (active_info rule1) (active_info rule2)) (the rule1) (the rule2) overlap ->
               return ((cp, rule1, rule2), n+1, queue)
         _ -> deq (n+1) queue
 
@@ -302,7 +298,7 @@ data Active f =
     active_proof :: {-# UNPACK #-} !(Proof f),
     -- A model in which the rule is false (used when reorienting)
     active_model :: !(Model f),
-    active_rules :: ![ActiveRule f] }
+    active_positions :: !(Positions2 f) }
 
 active_cp :: Active f -> CriticalPair Info f
 active_cp Active{..} =
@@ -312,64 +308,44 @@ active_cp Active{..} =
     cp_top = active_top,
     cp_proof = derivation active_proof }
 
--- An active oriented in a particular direction.
-data ActiveRule f =
-  ActiveRule {
-    rule_active    :: {-# UNPACK #-} !Id,
-    rule_rid       :: {-# UNPACK #-} !RuleId,
-    rule_info      :: {-# UNPACK #-} !Info,
-    rule_rule      :: {-# UNPACK #-} !(Rule f),
-    rule_positions :: !(Positions f) }
+activeRules :: Active f -> [Rule f]
+activeRules Active{..} =
+  case active_positions of
+    ForwardsPos _ -> [active_rule]
+    BothPos _ _ -> [active_rule, backwards active_rule]
 
 data Info =
   Info {
     info_depth :: {-# UNPACK #-} !Depth,
     info_max   :: !IntSet }
 
-instance PrettyTerm f => Symbolic (ActiveRule f) where
-  type ConstantOf (ActiveRule f) = f
-  termsDL ActiveRule{..} =
-    termsDL rule_rule
-  subst_ sub r@ActiveRule{..} =
-    r {
-      rule_rule = rule',
-      rule_positions = positions (lhs rule') }
-    where
-      rule' = subst_ sub rule_rule
-
 instance Eq (Active f) where
   (==) = (==) `on` active_id
-
-instance Eq (ActiveRule f) where
-  (==) = (==) `on` rule_rid
 
 instance Function f => Pretty (Active f) where
   pPrint Active{..} =
     pPrint active_id <#> text "." <+> pPrint (canonicalise active_rule)
 
-instance Has (ActiveRule f) Id where the = rule_active
-instance Has (ActiveRule f) RuleId where the = rule_rid
-instance Has (ActiveRule f) Depth where the = info_depth . rule_info
-instance f ~ g => Has (ActiveRule f) (Rule g) where the = rule_rule
-instance f ~ g => Has (ActiveRule f) (Positions g) where the = rule_positions
-
-newtype RuleId = RuleId Id deriving (Eq, Ord, Show, Num, Real, Integral, Enum)
+instance Has (Active f) Id where the = active_id
+instance Has (Active f) Depth where the = info_depth . active_info
+instance f ~ g => Has (Active f) (Rule g) where the = active_rule
+instance f ~ g => Has (Active f) (Positions2 g) where the = active_positions
 
 -- Add a new active.
 {-# INLINEABLE addActive #-}
 {-# SCC addActive #-}
-addActive :: Function f => Config f -> State f -> (Id -> RuleId -> RuleId -> Active f) -> State f
+addActive :: Function f => Config f -> State f -> (Id -> Active f) -> State f
 addActive config state@State{..} active0 =
   let
-    active@Active{..} = active0 st_next_active st_next_rule (succ st_next_rule)
+    active@Active{..} = active0 st_next_active
     state' =
       message (NewActive active) $
-      addActiveOnly state{st_next_active = st_next_active+1, st_next_rule = st_next_rule+2} active
+      addActiveOnly state{st_next_active = st_next_active+1} active
   in if subsumed (st_joinable, st_complete) st_rules (unorient active_rule) then
     state
   else
     normaliseGoals config $
-    foldl' enqueueRule state' active_rules
+    enqueueRule state' active
   where
     enqueueRule state rule =
       sample config (length passives) passives $
@@ -427,28 +403,22 @@ simplifySample state@State{..} =
 addActiveOnly :: Function f => State f -> Active f -> State f
 addActiveOnly state@State{..} active@Active{..} =
   state {
-    st_rules = foldl' insertRule st_rules active_rules,
-    st_active_ids = IntMap.insert (fromIntegral active_id) active st_active_ids,
-    st_rule_ids = foldl' insertRuleId st_rule_ids active_rules }
+    st_rules = foldl' insertRule st_rules (activeRules active),
+    st_active_ids = IntMap.insert (fromIntegral active_id) active st_active_ids }
   where
-    insertRule rules rule@ActiveRule{..} =
-      RuleIndex.insert (lhs rule_rule) rule rules
-    insertRuleId rules rule@ActiveRule{..} =
-      IntMap.insert (fromIntegral rule_rid) rule rules
+    insertRule rules rule =
+      RuleIndex.insert (lhs rule) rule rules
 
 -- Delete an active. Used in interreduction, not suitable for general use.
 {-# INLINE deleteActive #-}
 deleteActive :: Function f => State f -> Active f -> State f
-deleteActive state@State{..} Active{..} =
+deleteActive state@State{..} active@Active{..} =
   state {
-    st_rules = foldl' deleteRule st_rules active_rules,
-    st_active_ids = IntMap.delete (fromIntegral active_id) st_active_ids,
-    st_rule_ids = foldl' deleteRuleId st_rule_ids active_rules }
+    st_rules = foldl' deleteRule st_rules (activeRules active),
+    st_active_ids = IntMap.delete (fromIntegral active_id) st_active_ids }
   where
     deleteRule rules rule =
-      RuleIndex.delete (lhs (rule_rule rule)) rule rules
-    deleteRuleId rules ActiveRule{..} =
-      IntMap.delete (fromIntegral rule_rid) rules
+      RuleIndex.delete (lhs rule) rule rules
 
 -- Try to join a critical pair.
 {-# INLINEABLE consider #-}
@@ -462,7 +432,7 @@ consider config state cp =
 {-# SCC considerUsing #-}
 considerUsing ::
   Function f =>
-  RuleIndex f (ActiveRule f) -> Config f -> State f -> CriticalPair Info f -> State f
+  RuleIndex f (Rule f) -> Config f -> State f -> CriticalPair Info f -> State f
 considerUsing rules config@Config{..} state@State{..} cp0 =
   -- Important to canonicalise the rule so that we don't get
   -- bigger and bigger variable indices over time
@@ -484,16 +454,8 @@ addCP config model state@State{..} CriticalPair{..} =
   let
     pf = certify cp_proof
     rule = orient cp_eqn pf
-
-    makeRule n k r =
-      ActiveRule {
-        rule_active = n,
-        rule_rid = k,
-        rule_info = cp_info,
-        rule_rule = r rule,
-        rule_positions = positions (lhs (r rule)) }
   in
-  addActive config state $ \n k1 k2 ->
+  addActive config state $ \n ->
   Active {
     active_id = n,
     active_info = cp_info,
@@ -501,11 +463,7 @@ addCP config model state@State{..} CriticalPair{..} =
     active_model = model,
     active_top = cp_top,
     active_proof = pf,
-    active_rules =
-      usortBy (comparing (canonicalise . rule_rule)) $
-        makeRule n k1 id:
-        [ makeRule n k2 backwards
-        | not (oriented (orientation rule)) ] }
+    active_positions = positionsRule rule }
 
 -- Add a new equation.
 {-# INLINEABLE addAxiom #-}
@@ -549,19 +507,19 @@ checkCompleteness _config state =
 
     passiveMax excl p = fromMaybe maxBound $ do
       (r1, r2, _) <- findPassive state p
-      let s = info_max (rule_info r1) `IntSet.union` info_max (rule_info r2)
+      let s = info_max (active_info r1) `IntSet.union` info_max (active_info r2)
       guard (s `IntSet.disjoint` excl)
       (n, _) <- IntSet.maxView s
       return n
-    rules = map rule_rule (filter ok (IntMap.elems (st_rule_ids state)))
-    ok r = info_max (rule_info r) `IntSet.disjoint` excluded
+    rules = concatMap activeRules (filter ok (IntMap.elems (st_active_ids state)))
+    ok r = info_max (active_info r) `IntSet.disjoint` excluded
 
 -- Assume that all rules form a confluent rewrite system.
 {-# INLINEABLE assumeComplete #-}
 assumeComplete :: Function f => State f -> State f
 assumeComplete state =
   state { st_not_complete = IntSet.empty,
-          st_complete = Index.fromListWith lhs (map rule_rule (IntMap.elems (st_rule_ids state))) }
+          st_complete = Index.fromListWith lhs (concatMap activeRules (IntMap.elems (st_active_ids state))) }
 
 -- For goal terms we store the set of all their normal forms.
 -- Name and number are for information only.
