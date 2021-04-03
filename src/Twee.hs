@@ -69,9 +69,7 @@ data State f =
     st_next_active    :: {-# UNPACK #-} !Id,
     st_considered     :: {-# UNPACK #-} !Int64,
     st_simplified_at  :: {-# UNPACK #-} !Id,
-    st_cp_sample      :: ![Maybe (Overlap (Active f) f)],
-    st_cp_next_sample :: ![(Integer, Int)],
-    st_num_cps        :: !Integer,
+    st_cp_sample      :: !(Sample (Maybe (Overlap (Active f) f))),
     st_not_complete   :: !IntSet,
     st_complete       :: !(Index f (Rule f)),
     st_messages_rev   :: ![Message f] }
@@ -113,9 +111,7 @@ initialState Config{..} =
     st_next_active = 1,
     st_considered = 0,
     st_simplified_at = 1,
-    st_cp_sample = [],
-    st_cp_next_sample = reservoir cfg_cp_sample_size,
-    st_num_cps = 0,
+    st_cp_sample = emptySample cfg_cp_sample_size,
     st_not_complete = IntSet.empty,
     st_complete = Index.empty,
     st_messages_rev = [] }
@@ -232,7 +228,7 @@ simplifyPassive Config{..} state@State{..} passive = do
 {-# INLINEABLE shouldSimplifyQueue #-}
 shouldSimplifyQueue :: Function f => Config f -> State f -> Bool
 shouldSimplifyQueue Config{..} State{..} =
-  length (filter isNothing st_cp_sample) * 100 >= cfg_renormalise_threshold * cfg_cp_sample_size
+  length (filter isNothing (sampleValue st_cp_sample)) * 100 >= cfg_renormalise_threshold * cfg_cp_sample_size
 
 -- | Renormalise the entire queue.
 {-# INLINEABLE simplifyQueue #-}
@@ -347,25 +343,17 @@ addActive config state@State{..} active0 =
     enqueueRule state' active
   where
     enqueueRule state rule =
-      sample config (length passives) passives $
+      sample (length passives) passives $
       enqueue state (the rule) passives
       where
         passives = makePassives config state rule
 
 -- Update the list of sampled critical pairs.
 {-# INLINEABLE sample #-}
-sample :: Function f => Config f -> Int -> [Passive Params] -> State f -> State f
-sample cfg m passives state@State{st_cp_next_sample = ((n, pos):rest), ..}
-  | idx < fromIntegral m =
-    sample cfg m passives state {
-      st_cp_next_sample = rest,
-      st_cp_sample =
-        take pos st_cp_sample ++
-        [find (passives !! fromIntegral idx)] ++
-        drop (pos+1) st_cp_sample }
-  | otherwise = state{st_num_cps = st_num_cps + fromIntegral m}
+sample :: Function f => Int -> [Passive Params] -> State f -> State f
+sample m passives state@State{..} =
+  state{st_cp_sample = addSample (m, map find passives) st_cp_sample}
   where
-    idx = n - st_num_cps
     find passive = do
       overlap <- findPassive state passive
       simplifyOverlap (index_oriented st_rules) overlap
@@ -373,16 +361,14 @@ sample cfg m passives state@State{st_cp_next_sample = ((n, pos):rest), ..}
 -- Reset the list of sampled critical pairs.
 {-# INLINEABLE resetSample #-}
 resetSample :: Function f => Config f -> State f -> State f
-resetSample cfg@Config{..} state@State{..} =
+resetSample Config{..} state@State{..} =
   foldl' sample1 state' (Queue.toList st_queue)
   where
     state' =
       state {
-        st_num_cps = 0,
-        st_cp_next_sample = reservoir cfg_cp_sample_size,
-        st_cp_sample = [] }
+        st_cp_sample = emptySample cfg_cp_sample_size }
 
-    sample1 state (n, passives) = sample cfg n passives state
+    sample1 state (n, passives) = sample n passives state
 
 -- Simplify the sampled critical pairs.
 -- (A sampled critical pair is replaced with Nothing if it can be
@@ -390,7 +376,7 @@ resetSample cfg@Config{..} state@State{..} =
 {-# INLINEABLE simplifySample #-}
 simplifySample :: Function f => State f -> State f
 simplifySample state@State{..} =
-  state{st_cp_sample = map (>>= simp) st_cp_sample}
+  state{st_cp_sample = mapSample (>>= simp) st_cp_sample}
   where
     simp overlap = do
       overlap' <- simplifyOverlap (index_oriented st_rules) overlap
