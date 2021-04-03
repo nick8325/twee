@@ -259,7 +259,7 @@ enqueue state rule passives =
 --   * ignoring CPs that are too big
 {-# INLINEABLE dequeue #-}
 {-# SCC dequeue #-}
-dequeue :: Function f => Config f -> State f -> (Maybe (CriticalPair Info f, Active f, Active f), State f)
+dequeue :: Function f => Config f -> State f -> (Maybe (Info, CriticalPair f, Active f, Active f), State f)
 dequeue Config{..} state@State{..} =
   case deq 0 st_queue of
     -- Explicitly make the queue empty, in case it e.g. contained a
@@ -275,8 +275,8 @@ dequeue Config{..} state@State{..} =
         Just (rule1, rule2, overlap@Overlap{overlap_eqn = t :=: u})
           | fromMaybe True (cfg_accept_term <*> pure t),
             fromMaybe True (cfg_accept_term <*> pure u),
-            cp <- makeCriticalPair (combineInfo (active_info rule1) (active_info rule2)) (the rule1) (the rule2) overlap ->
-              return ((cp, rule1, rule2), n+1, queue)
+            cp <- makeCriticalPair (the rule1) (the rule2) overlap ->
+              return ((combineInfo (active_info rule1) (active_info rule2), cp, rule1, rule2), n+1, queue)
         _ -> deq (n+1) queue
 
     combineInfo i1 i2 =
@@ -300,11 +300,10 @@ data Active f =
     active_model :: !(Model f),
     active_positions :: !(Positions2 f) }
 
-active_cp :: Active f -> CriticalPair Info f
+active_cp :: Active f -> CriticalPair f
 active_cp Active{..} =
   CriticalPair {
     cp_eqn = unorient active_rule,
-    cp_info = active_info,
     cp_top = active_top,
     cp_proof = derivation active_proof }
 
@@ -422,9 +421,9 @@ deleteActive state@State{..} active@Active{..} =
 
 -- Try to join a critical pair.
 {-# INLINEABLE consider #-}
-consider :: Function f => Config f -> State f -> CriticalPair Info f -> State f
-consider config state cp =
-  considerUsing (st_rules state) config state cp
+consider :: Function f => Config f -> State f -> Info -> CriticalPair f -> State f
+consider config state info cp =
+  considerUsing (st_rules state) config state info cp
 
 -- Try to join a critical pair, but using a different set of critical
 -- pairs for normalisation.
@@ -432,25 +431,25 @@ consider config state cp =
 {-# SCC considerUsing #-}
 considerUsing ::
   Function f =>
-  RuleIndex f (Rule f) -> Config f -> State f -> CriticalPair Info f -> State f
-considerUsing rules config@Config{..} state@State{..} cp0 =
+  RuleIndex f (Rule f) -> Config f -> State f -> Info -> CriticalPair f -> State f
+considerUsing rules config@Config{..} state@State{..} info cp0 =
   -- Important to canonicalise the rule so that we don't get
   -- bigger and bigger variable indices over time
   let cp = canonicalise cp0 in
   case joinCriticalPair cfg_join (st_joinable, st_complete) rules Nothing cp of
     Right (mcp, cps) ->
       let
-        state' = foldl' (considerUsing rules config) state cps
+        state' = foldl' (\state cp -> considerUsing rules config state info cp) state cps
       in case mcp of
         Just cp -> addJoinable state' (cp_eqn cp)
         Nothing -> state'
 
     Left (cp, model) ->
-      foldl' (addCP config model) state (split cp)
+      foldl' (\state cp -> addCP config model state info cp) state (split cp)
 
 {-# INLINEABLE addCP #-}
-addCP :: Function f => Config f -> Model f -> State f -> CriticalPair Info f -> State f
-addCP config model state@State{..} CriticalPair{..} =
+addCP :: Function f => Config f -> Model f -> State f -> Info -> CriticalPair f -> State f
+addCP config model state@State{..} info CriticalPair{..} =
   let
     pf = certify cp_proof
     rule = orient cp_eqn pf
@@ -458,7 +457,7 @@ addCP config model state@State{..} CriticalPair{..} =
   addActive config state $ \n ->
   Active {
     active_id = n,
-    active_info = cp_info,
+    active_info = info,
     active_rule = rule,
     active_model = model,
     active_top = cp_top,
@@ -469,10 +468,10 @@ addCP config model state@State{..} CriticalPair{..} =
 {-# INLINEABLE addAxiom #-}
 addAxiom :: Function f => Config f -> State f -> Axiom f -> State f
 addAxiom config state axiom =
-  consider config state $
+  consider config state
+    Info { info_depth = 0, info_max = IntSet.fromList [axiom_number axiom | cfg_complete_subsets config] }
     CriticalPair {
       cp_eqn = axiom_eqn axiom,
-      cp_info = Info { info_depth = 0, info_max = IntSet.fromList [axiom_number axiom | cfg_complete_subsets config] },
       cp_top = Nothing,
       cp_proof = Proof.axiom axiom }
 
@@ -643,25 +642,25 @@ interreduce config@Config{..} state =
 
 {-# INLINEABLE interreduce1 #-}
 interreduce1 :: Function f => Config f -> State f -> Active f -> State f
-interreduce1 config@Config{..} state active =
+interreduce1 config@Config{..} state active@Active{..} =
   -- Exclude the active from the rewrite rules when testing
   -- joinability, otherwise it will be trivially joinable.
   case
     joinCriticalPair cfg_join
       (Index.empty, Index.empty) -- (st_joinable state)
       (st_rules (deleteActive state active))
-      (Just (active_model active)) (active_cp active)
+      (Just active_model) (active_cp active)
   of
     Right (_, cps) ->
-      flip (foldl' (consider config)) cps $
+      flip (foldl' (\state cp -> consider config state active_info cp)) cps $
       message (DeleteActive active) $
       deleteActive state active
     Left (cp, model)
       | cp_eqn cp `simplerThan` cp_eqn (active_cp active) ->
-        flip (foldl' (consider config)) (split cp) $
+        flip (foldl' (\state cp -> consider config state active_info cp)) (split cp) $
         message (DeleteActive active) $
         deleteActive state active
-      | model /= active_model active ->
+      | model /= active_model ->
         flip addActiveOnly active { active_model = model } $
         deleteActive state active
       | otherwise ->
@@ -728,8 +727,8 @@ complete1 config@Config{..} state
   | otherwise =
     case dequeue config state of
       (Nothing, state) -> (False, state)
-      (Just (overlap, _, _), state) ->
-        (True, consider config state overlap)
+      (Just (info, overlap, _, _), state) ->
+        (True, consider config state info overlap)
 
 {-# INLINEABLE solved #-}
 solved :: Function f => State f -> Bool

@@ -246,30 +246,27 @@ score Config{..} depth Overlap{..} =
 ----------------------------------------------------------------------
 
 -- | A critical pair together with information about how it was derived
-data CriticalPair info f =
+data CriticalPair f =
   CriticalPair {
     -- | The critical pair itself.
     cp_eqn   :: {-# UNPACK #-} !(Equation f),
-    -- | Information about the critical pair
-    cp_info  :: !info,
     -- | The critical term, if there is one.
     -- (Axioms do not have a critical term.)
     cp_top   :: !(Maybe (Term f)),
     -- | A derivation of the critical pair from the axioms.
     cp_proof :: !(Derivation f) }
 
-instance Symbolic (CriticalPair info f) where
-  type ConstantOf (CriticalPair info f) = f
+instance Symbolic (CriticalPair f) where
+  type ConstantOf (CriticalPair f) = f
   termsDL CriticalPair{..} =
     termsDL cp_eqn `mplus` termsDL cp_top `mplus` termsDL cp_proof
   subst_ sub CriticalPair{..} =
     CriticalPair {
       cp_eqn = subst_ sub cp_eqn,
-      cp_info = cp_info,
       cp_top = subst_ sub cp_top,
       cp_proof = subst_ sub cp_proof }
 
-instance (Labelled f, PrettyTerm f) => Pretty (CriticalPair info f) where
+instance (Labelled f, PrettyTerm f) => Pretty (CriticalPair f) where
   pPrint CriticalPair{..} =
     vcat [
       pPrint cp_eqn,
@@ -281,7 +278,7 @@ instance (Labelled f, PrettyTerm f) => Pretty (CriticalPair info f) where
 -- the right that is not on the left.
 
 -- See the comment below.
-split :: Function f => CriticalPair info f -> [CriticalPair info f]
+split :: Function f => CriticalPair f -> [CriticalPair f]
 split CriticalPair{cp_eqn = l :=: r, ..}
   | l == r = []
   | otherwise =
@@ -304,19 +301,16 @@ split CriticalPair{cp_eqn = l :=: r, ..}
     -- The main rule l -> r' or r -> l' or l' = r'
     [ CriticalPair {
         cp_eqn   = l :=: r',
-        cp_info  = cp_info,
         cp_top   = eraseExcept (vars l) cp_top,
         cp_proof = eraseExcept (vars l) cp_proof }
     | ord == Just GT ] ++
     [ CriticalPair {
         cp_eqn   = r :=: l',
-        cp_info  = cp_info,
         cp_top   = eraseExcept (vars r) cp_top,
         cp_proof = Proof.symm (eraseExcept (vars r) cp_proof) }
     | ord == Just LT ] ++
     [ CriticalPair {
         cp_eqn   = l' :=: r',
-        cp_info  = cp_info,
         cp_top   = eraseExcept (vars l) $ eraseExcept (vars r) cp_top,
         cp_proof = eraseExcept (vars l) $ eraseExcept (vars r) cp_proof }
     | ord == Nothing ] ++
@@ -324,13 +318,11 @@ split CriticalPair{cp_eqn = l :=: r, ..}
     -- Weak rules l -> l' or r -> r'
     [ CriticalPair {
         cp_eqn   = l :=: l',
-        cp_info  = cp_info,
         cp_top   = Nothing,
         cp_proof = cp_proof `Proof.trans` Proof.symm (erase ls cp_proof) }
     | not (null ls), ord /= Just GT ] ++
     [ CriticalPair {
         cp_eqn   = r :=: r',
-        cp_info  = cp_info,
         cp_top   = Nothing,
         cp_proof = Proof.symm cp_proof `Proof.trans` erase rs cp_proof }
     | not (null rs), ord /= Just LT ]
@@ -346,10 +338,9 @@ split CriticalPair{cp_eqn = l :=: r, ..}
 
 -- | Make a critical pair from two rules and an overlap.
 {-# INLINEABLE makeCriticalPair #-}
-makeCriticalPair :: Function f => info -> Rule f -> Rule f -> Overlap f -> CriticalPair info f
-makeCriticalPair info r1 r2 overlap@Overlap{..} =
+makeCriticalPair :: Function f => Rule f -> Rule f -> Overlap f -> CriticalPair f
+makeCriticalPair r1 r2 overlap@Overlap{..} =
   CriticalPair overlap_eqn
-    info
     (Just overlap_top)
     (overlapProof r1 r2 overlap)
 
