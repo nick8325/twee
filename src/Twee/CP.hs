@@ -56,18 +56,19 @@ positionsChurch posns =
       pos posns
 
 -- | A critical overlap of one rule with another.
-data Overlap f =
+data Overlap a f =
   Overlap {
-    -- | The critical term.
-    overlap_top   :: {-# UNPACK #-} !(Term f),
-    -- | The part of the critical term which the inner rule rewrites.
-    overlap_inner :: {-# UNPACK #-} !(Term f),
+    -- | The rule which applies at the root.
+    overlap_rule1 :: !a,
+    -- | The rule which applies at some subterm.
+    overlap_rule2 :: !a,
     -- | The position in the critical term which is rewritten.
     overlap_how   :: {-# UNPACK #-} !How,
+    -- | The top term of the critical pair
+    overlap_top   :: {-# UNPACK #-} !(Term f),
     -- | The critical pair itself.
     overlap_eqn   :: {-# UNPACK #-} !(Equation f) }
   deriving Show
-type OverlapOf a = Overlap (ConstantOf a)
 
 data Direction = Forwards | Backwards deriving (Eq, Enum, Show)
 
@@ -102,20 +103,20 @@ newtype Depth = Depth Int deriving (Eq, Ord, Num, Real, Enum, Integral, Show)
 {-# INLINEABLE overlaps #-}
 overlaps ::
   forall a b f. (Function f, Has a (Rule f), Has b (Rule f), Has b (Positions2 f)) =>
-  Index f a -> [b] -> b -> [(b, b, Overlap f)]
+  Index f a -> [b] -> b -> [Overlap b f]
 overlaps idx rules r =
   ChurchList.toList (overlapsChurch idx rules r)
 
 {-# INLINE overlapsChurch #-}
 overlapsChurch :: forall f a b.
   (Function f, Has a (Rule f), Has b (Rule f), Has b (Positions2 f)) =>
-  Index f a -> [b] -> b -> ChurchList (b, b, Overlap f)
+  Index f a -> [b] -> b -> ChurchList (Overlap b f)
 overlapsChurch idx rules r1 = do
   (d1, pos1, eq1) <- directions r1' (the r1)
   r2 <- ChurchList.fromList rules
   (d2, pos2, eq2) <- directions (the r2) (the r2)
-  do { o <- asymmetricOverlaps idx d1 d2 pos1 eq1 eq2; return (r1, r2, o) } `mplus`
-    do { o <- asymmetricOverlaps idx d2 d1 pos2 eq2 eq1; return (r2, r1, o) }
+  asymmetricOverlaps idx r1 r2 d1 d2 pos1 eq1 eq2 `mplus`
+    asymmetricOverlaps idx r2 r1 d2 d1 pos2 eq2 eq1
   where
     !r1' = renameAvoiding (map the rules :: [Rule f]) (the r1)
 
@@ -130,44 +131,44 @@ directions rule (BothPos posf posb) =
 {-# INLINE asymmetricOverlaps #-}
 asymmetricOverlaps ::
   (Function f, Has a (Rule f)) =>
-  Index f a -> Direction -> Direction -> Positions f -> Equation f -> Equation f -> ChurchList (Overlap f)
-asymmetricOverlaps idx d1 d2 posns eq1 eq2 = do
+  Index f a -> b -> b -> Direction -> Direction -> Positions f -> Equation f -> Equation f -> ChurchList (Overlap b f)
+asymmetricOverlaps idx r1 r2 d1 d2 posns eq1 eq2 = do
   n <- positionsChurch posns
   ChurchList.fromMaybe $
-    overlapAt' (How d1 d2 n) eq1 eq2 >>=
+    overlapAt' (How d1 d2 n) r1 r2 eq1 eq2 >>=
     simplifyOverlap idx
 
 -- | Create an overlap at a particular position in a term.
 -- Doesn't simplify the overlap.
 {-# INLINE overlapAt #-}
 {-# SCC overlapAt #-}
-overlapAt :: How -> Rule f -> Rule f -> Maybe (Overlap f)
-overlapAt how@(How d1 d2 _) r1 r2 =
-  overlapAt' how (unorient (direct r1 d1)) (unorient (direct r2 d2))
+overlapAt :: How -> a -> a -> Rule f -> Rule f -> Maybe (Overlap a f)
+overlapAt how@(How d1 d2 _) x1 x2 r1 r2 =
+  overlapAt' how x1 x2 (unorient (direct r1 d1)) (unorient (direct r2 d2))
 
 {-# INLINE overlapAt' #-}
 {-# SCC overlapAt' #-}
-overlapAt' :: How -> Equation f -> Equation f -> Maybe (Overlap f)
-overlapAt' how@How{how_pos = n} (!outer :=: (!outer')) (!inner :=: (!inner')) = do
+overlapAt' :: How -> a -> a -> Equation f -> Equation f -> Maybe (Overlap a f)
+overlapAt' how@How{how_pos = n} r1 r2 (!outer :=: (!outer')) (!inner :=: (!inner')) = do
   let t = at n (singleton outer)
   sub <- unifyTri inner t
   let
-    top = termSubst sub outer
-    innerTerm = termSubst sub inner
     -- Make sure to keep in sync with overlapProof
+    top = termSubst sub outer
     lhs = termSubst sub outer'
     rhs = buildReplacePositionSub sub n (singleton inner') (singleton outer)
 
   guard (lhs /= rhs)
   return Overlap {
-    overlap_top = top,
-    overlap_inner = innerTerm,
+    overlap_rule1 = r1,
+    overlap_rule2 = r2,
     overlap_how = how,
+    overlap_top = top,
     overlap_eqn = lhs :=: rhs }
 
 -- | Simplify an overlap and remove it if it's trivial.
 {-# INLINE simplifyOverlap #-}
-simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap f -> Maybe (Overlap f)
+simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap b f -> Maybe (Overlap b f)
 simplifyOverlap idx overlap@Overlap{overlap_eqn = lhs :=: rhs, ..}
   | lhs == rhs   = Nothing
   | lhs' == rhs' = Nothing
@@ -214,7 +215,7 @@ defaultConfig =
 -- where l is the biggest term and r is the smallest,
 -- and variables have weight 1 and functions have weight cfg_funweight.
 {-# INLINEABLE score #-}
-score :: Function f => Config -> Depth -> Overlap f -> Int
+score :: Function f => Config -> Depth -> Overlap a f -> Int
 score Config{..} depth Overlap{..} =
   fromIntegral depth * cfg_depthweight +
   (m + n) * cfg_rhsweight +
@@ -338,23 +339,22 @@ split CriticalPair{cp_eqn = l :=: r, ..}
 
 -- | Make a critical pair from two rules and an overlap.
 {-# INLINEABLE makeCriticalPair #-}
-makeCriticalPair :: Function f => Rule f -> Rule f -> Overlap f -> CriticalPair f
-makeCriticalPair r1 r2 overlap@Overlap{..} =
+makeCriticalPair :: (Function f, Has a (Rule f)) => Overlap a f -> CriticalPair f
+makeCriticalPair Overlap{..} =
   CriticalPair overlap_eqn
     (Just overlap_top)
-    (overlapProof r1 r2 overlap)
-
--- | Return a proof for a critical pair.
-{-# INLINEABLE overlapProof #-}
-overlapProof :: Rule f -> Rule f -> Overlap f -> Derivation f
-overlapProof left0 right0 Overlap{..} =
-  Proof.symm (ruleDerivation (subst leftSub left))
-  `Proof.trans`
-  congPath path overlap_top (ruleDerivation (subst rightSub right))
+    proof
   where
+    left = direct (the overlap_rule1) (how_dir1 overlap_how)
+    right = direct (the overlap_rule2) (how_dir2 overlap_how)
+
     Just leftSub = match (lhs left) overlap_top
-    Just rightSub = match (lhs right) overlap_inner
+    Just rightSub = match (lhs right) inner
 
     path = positionToPath (lhs left) (how_pos overlap_how)
-    left = direct left0 (how_dir1 overlap_how)
-    right = direct right0 (how_dir2 overlap_how)
+    inner = at (pathToPosition overlap_top path) (singleton overlap_top)
+
+    proof =
+      Proof.symm (ruleDerivation (subst leftSub left))
+      `Proof.trans`
+      congPath path overlap_top (ruleDerivation (subst rightSub right))
