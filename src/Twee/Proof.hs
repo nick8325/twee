@@ -78,6 +78,7 @@ data Axiom f =
     axiom_eqn :: !(Equation f) }
   deriving (Eq, Ord, Show)
 
+-- XXX remove this!
 instance Symbolic (Axiom f) where
   type ConstantOf (Axiom f) = f
   termsDL Axiom{..} = termsDL axiom_eqn
