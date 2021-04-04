@@ -189,14 +189,25 @@ instance Queue.Params Params where
 {-# INLINEABLE makePassives #-}
 {-# SCC makePassives #-}
 makePassives :: Function f => Config f -> State f -> Active f -> [Passive Params]
-makePassives Config{..} State{..} rule =
+makePassives config@Config{..} State{..} rule =
 -- XXX factor out depth calculation
-  [ Passive (fromIntegral (score cfg_critical_pairs (succ (the rule1 `max` the rule2)) o)) (active_id rule1) (active_id rule2) (packHow (overlap_how o))
+  [ makePassive config overlap
   | ok rule,
-    o@Overlap{overlap_rule1 = rule1, overlap_rule2 = rule2} <- overlaps (index_oriented st_rules) (filter ok rules) rule ]
+    overlap <- overlaps (index_oriented st_rules) (filter ok rules) rule ]
   where
     rules = IntMap.elems st_active_set
     ok rule = the rule < Depth cfg_max_cp_depth
+
+{-# INLINEABLE makePassive #-}
+makePassive :: Function f => Config f -> Overlap (Active f) f -> Passive Params
+makePassive Config{..} overlap@Overlap{..} =
+  Passive {
+    passive_score = fromIntegral (score cfg_critical_pairs depth overlap),
+    passive_rule1 = active_id overlap_rule1,
+    passive_rule2 = active_id overlap_rule2,
+    passive_pos   = packHow overlap_how }
+  where
+    depth = succ (the overlap_rule1 `max` the overlap_rule2)
 
 -- | Turn a Passive back into an overlap.
 -- Doesn't try to simplify it.
