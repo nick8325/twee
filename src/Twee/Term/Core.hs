@@ -240,11 +240,11 @@ instance Ord (TermList f) where
 newtype Builder f =
   Builder {
     unBuilder ::
-      -- Takes: the term array and size, and current position in the term.
-      -- Returns the final position, which may be out of bounds.
+      -- Takes: the term array, and current position in the term.
+      -- Returns the final array and position.
       forall s. Builder1 s f }
 
-type Builder1 s f = State# s -> MutableByteArray# s -> Int# -> Int# -> (# State# s, Int# #)
+type Builder1 s f = State# s -> MutableByteArray# s -> Int# -> (# State# s, MutableByteArray# s, Int# #)
 
 instance Semigroup (Builder f) where
   {-# INLINE (<>) #-}
@@ -256,89 +256,98 @@ instance Monoid (Builder f) where
   mappend = (<>)
 
 -- Build a termlist from a Builder.
--- Works by guessing an appropriate size, and retrying if that was too small.
 {-# INLINE buildTermList #-}
 buildTermList :: Builder f -> TermList f
-buildTermList builder = runST $ do
-  let
-    Builder m = builder
-    loop n@(I# n#) = do
-      MutableByteArray mbytearray# <-
-        newByteArray (n * sizeOf (fromSymbol undefined))
-      n' <-
-        ST $ \s ->
-          case m s mbytearray# n# 0# of
-            (# s, n# #) -> (# s, I# n# #)
-      if n' <= n then do
-        resizeMutableByteArray (MutableByteArray mbytearray#) (n' * sizeOf (fromSymbol undefined))
-        !bytearray <- unsafeFreezeByteArray (MutableByteArray mbytearray#)
-        return (TermList 0 n' bytearray)
-       else loop (n'*2)
-  loop 128
+buildTermList (Builder m) = runST $ do
+  MutableByteArray mbytearray# <-
+    -- Start with a capacity of 16 symbols (arbitrary choice)
+    newByteArray (16 * sizeOf (fromSymbol undefined))
+  (mbytearray, n) <-
+    ST $ \s ->
+      case m s mbytearray# 0# of
+        (# s, mbytearray#, n# #) -> (# s, (MutableByteArray mbytearray#, I# n#) #)
+  shrinkMutableByteArray mbytearray (n * sizeOf (fromSymbol undefined))
+  !bytearray <- unsafeFreezeByteArray mbytearray
+  return (TermList 0 n bytearray)
 
 -- Get at the term array.
+-- Note: the returned value becomes invalid after a call to 'reserve'.
 {-# INLINE getByteArray #-}
 getByteArray :: (MutableByteArray s -> Builder1 s f) -> Builder1 s f
-getByteArray k = \s bytearray n i -> k (MutableByteArray bytearray) s bytearray n i
-
--- Get at the array size.
-{-# INLINE getSize #-}
-getSize :: (Int -> Builder1 s f) -> Builder1 s f
-getSize k = \s bytearray n i -> k (I# n) s bytearray n i
+getByteArray k = \s bytearray i -> k (MutableByteArray bytearray) s bytearray i
 
 -- Get at the current array index.
 {-# INLINE getIndex #-}
 getIndex :: (Int -> Builder1 s f) -> Builder1 s f
-getIndex k = \s bytearray n i -> k (I# i) s bytearray n i
+getIndex k = \s bytearray i -> k (I# i) s bytearray i
 
 -- Change the current array index.
 {-# INLINE putIndex #-}
 putIndex :: Int -> Builder1 s f
-putIndex (I# i) = \s _ _ _ -> (# s, i #)
+putIndex (I# i) = \s bytearray _ -> (# s, bytearray, i #)
 
 -- Lift an ST computation into a builder.
 {-# INLINE liftST #-}
 liftST :: ST s () -> Builder1 s f
 liftST (ST m) =
-  \s _ _ i ->
+  \s bytearray i ->
   case m s of
-    (# s, () #) -> (# s, i #)
+    (# s, () #) -> (# s, bytearray, i #)
 
 -- Finish building.
 {-# INLINE built #-}
 built :: Builder1 s f
-built = \s _ _ i -> (# s, i #)
+built = \s bytearray i -> (# s, bytearray, i #)
 
 -- Sequence two builder operations.
 {-# INLINE then_ #-}
 then_ :: Builder1 s f -> Builder1 s f -> Builder1 s f
 then_ m1 m2 =
-  \s bytearray n i ->
-    case m1 s bytearray n i of
-      (# s, i #) -> m2 s bytearray n i
+  \s bytearray i ->
+    case m1 s bytearray i of
+      (# s, bytearray, i #) -> m2 s bytearray i
 
--- checked j m executes m only if the array has room for j more symbols.
-{-# INLINE checked #-}
-checked :: Int -> Builder1 s f -> Builder1 s f
-checked j m =
-  getSize $ \n ->
-  getIndex $ \i ->
-  if i + j <= n then m else putIndex (i + j)
+-- reserve k makes sure that there's room to add k symbols to the array.
+{-# INLINE reserve #-}
+reserve :: Int -> Builder1 s f
+reserve (I# j) =
+  \s bytearray i ->
+  case maybeExpand s bytearray (i +# j) of
+    (# s, bytearray #) ->
+      (# s, bytearray, i #)
+
+{-# NOINLINE maybeExpand #-}
+maybeExpand :: State# s -> MutableByteArray# s -> Int# -> (# State# s, MutableByteArray# s #)
+maybeExpand s bytearray n =
+  case maybeExpand' (MutableByteArray bytearray) (I# n) of
+    ST m ->
+      case m s of
+        (# s', MutableByteArray bytearray' #) -> (# s', bytearray' #)
+  where
+    {-# INLINE maybeExpand' #-}
+    maybeExpand' bytearray n = do
+      let !m = n*sizeOf (fromSymbol undefined)
+      size <- getSizeofMutableByteArray bytearray
+      if size >= m then return bytearray else expand bytearray (size*2) m
+    expand bytearray size m
+      | size >= m = resizeMutableByteArray bytearray size
+      | otherwise = expand bytearray (size*2) m
 
 -- Emit an arbitrary symbol, with given arguments.
 {-# INLINE emitSymbolBuilder #-}
 emitSymbolBuilder :: Symbol -> Builder f -> Builder f
 emitSymbolBuilder x inner =
-  Builder $ checked 1 $
-    getByteArray $ \bytearray ->
+  Builder $
+    reserve 1 `then_`
     -- Skip the symbol itself, then fill it in at the end, when we know the size
     -- of the symbol's arguments.
-    getIndex $ \n ->
+    getIndex (\n ->
     putIndex (n+1) `then_`
     unBuilder inner `then_`
     -- Fill in the symbol.
     getIndex (\m ->
-      liftST $ writeByteArray bytearray n (fromSymbol x { size = m - n }))
+    getByteArray $ \bytearray ->
+      liftST $ writeByteArray bytearray n (fromSymbol x { size = m - n })))
 
 -- Emit a function application.
 {-# INLINE emitApp #-}
@@ -354,12 +363,13 @@ emitVar x = emitSymbolBuilder (Symbol False (var_id x) 1) mempty
 {-# INLINE emitTermList #-}
 emitTermList :: TermList f -> Builder f
 emitTermList (TermList lo hi array) =
-  Builder $ checked (hi-lo) $
-    getByteArray $ \mbytearray ->
+  Builder $
+    reserve (hi-lo) `then_`
+    getByteArray (\mbytearray ->
     getIndex $ \n ->
     let k = sizeOf (fromSymbol undefined) in
     liftST (copyByteArray mbytearray (n*k) array (lo*k) ((hi-lo)*k)) `then_`
-    putIndex (n + hi-lo)
+    putIndex (n + hi-lo))
 
 ----------------------------------------------------------------------
 -- Efficient subterm testing.
