@@ -5,7 +5,7 @@
 -- the search term is an instance of the key, and return the corresponding
 -- values.
 
-{-# LANGUAGE BangPatterns, RecordWildCards, OverloadedStrings, FlexibleContexts, CPP #-}
+{-# LANGUAGE BangPatterns, RecordWildCards, OverloadedStrings, FlexibleContexts, CPP, TupleSections, TypeFamilies #-}
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
@@ -21,7 +21,6 @@ module Twee.Index(
   delete,
   lookup,
   matches,
-  approxMatches,
   elems,
   fromListWith) where
 
@@ -75,7 +74,7 @@ data Index f a =
     -- The array is indexed by function number.
     fun    :: {-# UNPACK #-} !(Array (Index f a)),
     -- Variable edge.
-    var    :: !(Index f a) } |
+    var    :: {-# UNPACK #-} !(Array (Index f a)) } |
   -- An empty index.
   Nil
   deriving Show
@@ -88,55 +87,58 @@ data Stack f a =
   -- A normal stack frame: records the current index node and term.
   Frame {
     frame_term  :: {-# UNPACK #-} !(TermList f),
+    frame_subst :: !(Subst f),
     frame_index :: !(Index f a),
     frame_rest  :: !(Stack f a) }
   -- A stack frame which is used when we have found a match.
   | Yield {
     yield_found :: [a],
+    yield_subst :: !(Subst f),
     yield_rest  :: !(Stack f a) }
   -- End of stack.
   | Stop
 
 -- Turn a stack into a list of results.
 {-# SCC run #-}
-run :: Stack f a -> [a]
+run :: Stack f a -> [(Subst f, a)]
 run Stop = []
-run Frame{..} = run (step frame_term frame_index frame_rest)
-run Yield{..} = yield_found ++ run yield_rest
+run Frame{..} = run (step frame_term frame_subst frame_index frame_rest)
+run Yield{..} = map (yield_subst,) yield_found ++ run yield_rest
 
 -- Execute a single stack frame.
 {-# INLINE step #-}
 {-# SCC step #-}
-step :: TermList f -> Index f a -> Stack f a -> Stack f a
-step !_ _ _ | False = undefined
-step t idx rest =
+step :: TermList f -> Subst f -> Index f a -> Stack f a -> Stack f a
+step !_ !_ _ _ | False = undefined
+step t sub idx rest =
   case idx of
     Nil -> rest
     Index{..}
       | lenList t < size ->
         rest -- the search term is smaller than any in this index
       | otherwise ->
-        pref t prefix here fun var rest
+        pref sub t prefix here fun var rest
 
 -- The main work of 'step' goes on here.
 -- It is carefully tweaked to generate nice code,
 -- in particular casing on each term list exactly once.
-pref :: TermList f -> TermList f -> [a] -> Array (Index f a) -> Index f a -> Stack f a -> Stack f a
-pref !_ !_ _ !_ !_ _ | False = undefined
-pref search prefix here fun var rest =
+pref :: Subst f -> TermList f -> TermList f -> [a] -> Array (Index f a) -> Array (Index f a) -> Stack f a -> Stack f a
+pref !_ !_ !_ _ !_ !_ _ | False = undefined
+pref sub search prefix here fun var rest =
   case search of
     ConsSym{hd = t, tl = ts, rest = ts1} ->
       case prefix of
         ConsSym{hd = u, tl = us, rest = us1} ->
           -- Check the search term against the prefix.
           case (t, u) of
-            (_, Var _) ->
-              -- Prefix contains a variable - if there is a match, the
-              -- variable will be bound to t.
-              pref ts us here fun var rest
+            (_, Var x) ->
+              case extend x t sub of
+                Nothing -> rest
+                Just sub ->
+                  pref sub ts us here fun var rest
             (App f _, App g _) | f == g ->
-              -- Term and prefix start with same symbol, chop them off.
-               pref ts1 us1 here fun var rest
+               -- Term and prefix start with same symbol, chop them off.
+               pref sub ts1 us1 here fun var rest
             _ ->
               -- Term and prefix don't match.
               rest
@@ -145,29 +147,40 @@ pref search prefix here fun var rest =
           -- Seems to work better to explore the function node first.
           case t of
             App f _ ->
-              case (fun ! fun_id f, var) of
-                (Nil, Nil) ->
+              case (fun ! fun_id f, arraySize var) of
+                (Nil, 0) ->
                   rest
-                (Nil, Index{}) ->
-                  step ts var rest
-                (idx, Nil) ->
-                  step ts1 idx rest
-                (idx, Index{}) ->
-                  step ts1 idx (Frame ts var rest)
+                (Nil, _) ->
+                  varFrame sub t ts var rest
+                (idx, 0) ->
+                  step ts1 sub idx rest
+                (idx, _) ->
+                  step ts1 sub idx (varFrame sub t ts var rest)
             _ ->
-              case var of
-                Nil -> rest
-                _ -> step ts var rest
+              case arraySize var of
+                0 -> rest
+                _ -> varFrame sub t ts var rest
     Empty ->
       case prefix of
         Empty ->
           -- The search term matches this node.
           case here of
             [] -> rest
-            _ -> Yield here rest
+            _ -> Yield here sub rest
         _ ->
           -- We've run out of search term - it doesn't match this node.
           rest
+
+{-# INLINE varFrame #-}
+varFrame :: Subst f -> Term f -> TermList f -> Array (Index f a) -> Stack f a -> Stack f a
+varFrame !_ !_ !_ !_ _ | False = undefined
+varFrame sub t ts var rest = foldr frame rest (toList var)
+  where
+    frame (_, Nil) rest = rest
+    frame (x, idx@Index{}) rest =
+      case extend (V x) t sub of
+        Nothing -> rest
+        Just sub -> Frame ts sub idx rest
 
 -- | An empty index.
 empty :: Index f a
@@ -185,19 +198,17 @@ singleton !t x = singletonList (Term.singleton t) x
 -- An index with one entry, giving a termlist instead of a term.
 {-# INLINE singletonList #-}
 singletonList :: TermList f -> a -> Index f a
-singletonList t x = Index 0 t [x] newArray Nil
+singletonList t x = Index 0 t [x] newArray newArray
 
 -- | Insert an entry into the index.
 {-# SCC insert #-}
-insert :: Term f -> a -> Index f a -> Index f a
-insert !t x !idx = aux (Term.singleton t) idx
+insert :: (Symbolic a, ConstantOf a ~ f) => Term f -> a -> Index f a -> Index f a
+insert !t0 !x0 !idx = aux (Term.singleton t) idx
   where
+    (!t, !x) = canonicalise (t0, x0) 
     aux t Nil = singletonList t x
-    aux (Cons t ts) idx@Index{prefix = Cons u us}
-      | skeleton t == skeleton u =
-        withPrefix t (aux ts idx{prefix = us})
     aux (ConsSym{hd = t, rest = ts}) idx@Index{prefix = ConsSym{hd = u, rest = us}}
-      | t `sameSymbolAs` u =
+      | t == u =
         withPrefix (build (atom t)) (aux ts idx{prefix = us})
     aux t idx@Index{prefix = Cons{}} = aux t (expand idx)
 
@@ -209,16 +220,10 @@ insert !t x !idx = aux (Term.singleton t) idx
         fun  = update (fun_id f) idx' (fun idx) }
       where
         idx' = aux u (fun idx ! fun_id f)
-    aux t@ConsSym{hd = Var _, rest = u} idx =
+    aux t@ConsSym{hd = Var x, rest = u} idx =
       idx {
         size = lenList t `min` size idx,
-        var  = aux u (var idx) }
-
-    Var _ `sameSymbolAs` Var _ = True
-    App f _ `sameSymbolAs` App g _ = f == g
-    _ `sameSymbolAs` _ = False
-
-    skeleton t = build (subst (const (Term.var (V 0))) t)
+        var  = update (var_id x) (aux u (var idx ! var_id x)) (var idx) }
 
     atom (Var x) = Term.var x
     atom (App f _) = con f
@@ -236,27 +241,28 @@ withPrefix t idx@Index{..} =
 expand :: Index f a -> Index f a
 expand idx@Index{size = size, prefix = ConsSym{hd = t, rest = ts}} =
   case t of
-    Var _ ->
+    Var x ->
       Index {
         size = size,
         prefix = Term.empty,
         here = [],
         fun = newArray,
-        var = idx { prefix = ts, size = size - 1 } }
+        var = update (var_id x) idx { prefix = ts, size = size - 1 } newArray }
     App f _ ->
       Index {
         size = size,
         prefix = Term.empty,
         here = [],
         fun = update (fun_id f) idx { prefix = ts, size = size - 1 } newArray,
-        var = Nil }
+        var = newArray }
 
 -- | Delete an entry from the index.
 {-# INLINEABLE delete #-}
 {-# SCC delete #-}
-delete :: Eq a => Term f -> a -> Index f a -> Index f a
-delete !t x !idx = aux (Term.singleton t) idx
+delete :: (Symbolic a, ConstantOf a ~ f, Eq a) => Term f -> a -> Index f a -> Index f a
+delete !t0 !x0 !idx = aux (Term.singleton t) idx
   where
+    (!t, !x) = canonicalise (t0, x0) 
     aux _ Nil = Nil
     aux (ConsSym{rest = ts}) idx@Index{prefix = u@ConsSym{rest = us}} =
       -- The prefix must match, since the term ought to be in the index
@@ -273,8 +279,8 @@ delete !t x !idx = aux (Term.singleton t) idx
         error "deleted term not found in index"
     aux ConsSym{hd = App f _, rest = t} idx =
       idx { fun = update (fun_id f) (aux t (fun idx ! fun_id f)) (fun idx) }
-    aux ConsSym{hd = Var _, rest = t} idx =
-      idx { var = aux t (var idx) }
+    aux ConsSym{hd = Var x, rest = t} idx =
+      idx { var = update (var_id x) (aux t (var idx ! var_id x)) (var idx) }
 
 -- | Look up a term in the index. Finds all key-value such that the search term
 -- is an instance of the key, and returns an instance of the the value which
@@ -286,33 +292,20 @@ lookup t idx = lookupList (Term.singleton t) idx
 {-# INLINEABLE lookupList #-}
 lookupList :: (Has a b, Symbolic b, Has b (TermOf b)) => TermListOf b -> Index (ConstantOf b) a -> [b]
 lookupList t idx =
-  [ subst sub x
-  | x <- List.map the (approxMatchesList t idx),
-    sub <- maybeToList (matchList (Term.singleton (the x)) t)]
+  [ subst sub (the x)
+  | (sub, x) <- matchesList t idx ]
 
 -- | Look up a term in the index. Like 'lookup', but returns the exact value
 -- that was inserted into the index, not an instance. Also returns a substitution
 -- which when applied to the value gives you the matching instance.
 {-# INLINE matches #-}
-matches :: Has a (Term f) => Term f -> Index f a -> [(Subst f, a)]
+matches :: Term f -> Index f a -> [(Subst f, a)]
 matches t idx = matchesList (Term.singleton t) idx
 
-{-# INLINEABLE matchesList #-}
-matchesList :: Has a (Term f) => TermList f -> Index f a -> [(Subst f, a)]
+{-# SCC matchesList #-}
+matchesList :: TermList f -> Index f a -> [(Subst f, a)]
 matchesList t idx =
-  [ (sub, x)
-  | x <- approxMatchesList t idx,
-    sub <- maybeToList (matchList (Term.singleton (the x)) t)]
-
--- | Look up a term in the index, possibly returning spurious extra results.
-{-# INLINE approxMatches #-}
-approxMatches :: Term f -> Index f a -> [a]
-approxMatches t idx = approxMatchesList (Term.singleton t) idx
-
-{-# SCC approxMatchesList #-}
-approxMatchesList :: TermList f -> Index f a -> [a]
-approxMatchesList t idx =
-  run (Frame t idx Stop)
+  run (Frame t emptySubst idx Stop)
 
 -- | Return all elements of the index.
 elems :: Index f a -> [a]
@@ -320,8 +313,8 @@ elems Nil = []
 elems idx =
   here idx ++
   concatMap elems (map snd (toList (fun idx))) ++
-  elems (var idx)
+  concatMap elems (map snd (toList (var idx)))
 
 -- | Create an index from a list of items
-fromListWith :: (a -> Term f) -> [a] -> Index f a
+fromListWith :: (Symbolic a, ConstantOf a ~ f) => (a -> Term f) -> [a] -> Index f a
 fromListWith f xs = foldr (\x -> insert (f x) x) empty xs

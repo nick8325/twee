@@ -78,6 +78,11 @@ data Axiom f =
     axiom_eqn :: !(Equation f) }
   deriving (Eq, Ord, Show)
 
+instance Symbolic (Axiom f) where
+  type ConstantOf (Axiom f) = f
+  termsDL Axiom{..} = termsDL axiom_eqn
+  subst_ sub axiom = axiom { axiom_eqn = subst_ sub (axiom_eqn axiom) }
+
 -- | Checks a 'Derivation' and, if it is correct, returns a
 -- certified 'Proof'.
 --
@@ -401,8 +406,7 @@ eliminateDefinitions axioms p = head (mapLemmas elim [p])
 
     find t =
       listToMaybe $ do
-        Axiom{axiom_eqn = l :=: r} <- Index.approxMatches t idx
-        sub <- maybeToList (match l t)
+        (sub, Axiom{axiom_eqn = l :=: r}) <- Index.matches t idx
         return (r, sub)
 
     replace sub (Var (V x)) =

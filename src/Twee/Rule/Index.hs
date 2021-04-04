@@ -1,8 +1,8 @@
-{-# LANGUAGE RecordWildCards, ScopedTypeVariables, FlexibleContexts #-}
+{-# LANGUAGE RecordWildCards, ScopedTypeVariables, FlexibleContexts, TypeFamilies #-}
 module Twee.Rule.Index(
   RuleIndex(..),
   empty, insert, delete,
-  approxMatches, matches, lookup) where
+  matches, lookup) where
 
 import Prelude hiding (lookup)
 import Twee.Base hiding (lookup, empty)
@@ -19,7 +19,7 @@ data RuleIndex f a =
 empty :: RuleIndex f a
 empty = RuleIndex Index.empty Index.empty
 
-insert :: forall f a. Has a (Rule f) => Term f -> a -> RuleIndex f a -> RuleIndex f a
+insert :: forall f a. (Symbolic a, ConstantOf a ~ f, Has a (Rule f)) => Term f -> a -> RuleIndex f a -> RuleIndex f a
 insert t x RuleIndex{..} =
   RuleIndex {
     index_oriented = insertWhen (oriented or) index_oriented,
@@ -30,7 +30,7 @@ insert t x RuleIndex{..} =
     insertWhen False idx = idx
     insertWhen True idx = Index.insert t x idx
 
-delete :: forall f a. (Eq a, Has a (Rule f)) => Term f -> a -> RuleIndex f a -> RuleIndex f a
+delete :: forall f a. (Symbolic a, ConstantOf a ~ f, Eq a, Has a (Rule f)) => Term f -> a -> RuleIndex f a -> RuleIndex f a
 delete t x RuleIndex{..} =
   RuleIndex {
     index_oriented = deleteWhen (oriented or) index_oriented,

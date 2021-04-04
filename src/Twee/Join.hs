@@ -154,8 +154,7 @@ subsumed1 eqns idx (t :=: u)
     -- No need to do this symmetrically because addJoinable adds
     -- both orientations of each equation
   | or [ u == subst sub u'
-       | t' :=: u' <- Index.approxMatches t eqns,
-         sub <- maybeToList (match t' t) ] = True
+       | (sub, t' :=: u') <- Index.matches t eqns ] = True
 subsumed1 eqns idx (App f ts :=: App g us)
   | f == g =
     let
