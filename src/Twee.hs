@@ -62,7 +62,7 @@ data Config f =
 data State f =
   State {
     st_rules          :: !(RuleIndex f (Rule f)),
-    st_active_ids     :: !(IntMap (Active f)),
+    st_active_set     :: !(IntMap (Active f)),
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
     st_queue          :: !(Queue Params),
@@ -104,7 +104,7 @@ initialState :: Config f -> State f
 initialState Config{..} =
   State {
     st_rules = RuleIndex.empty,
-    st_active_ids = IntMap.empty,
+    st_active_set = IntMap.empty,
     st_joinable = Index.empty,
     st_goals = [],
     st_queue = Queue.empty,
@@ -195,7 +195,7 @@ makePassives Config{..} State{..} rule =
   | ok rule,
     o@Overlap{overlap_rule1 = rule1, overlap_rule2 = rule2} <- overlaps (index_oriented st_rules) (filter ok rules) rule ]
   where
-    rules = IntMap.elems st_active_ids
+    rules = IntMap.elems st_active_set
     ok rule = the rule < Depth cfg_max_cp_depth
 
 -- | Turn a Passive back into an overlap.
@@ -204,8 +204,8 @@ makePassives Config{..} State{..} rule =
 {-# SCC findPassive #-}
 findPassive :: forall f. Function f => State f -> Passive Params -> Maybe (Overlap (Active f) f)
 findPassive State{..} Passive{..} = do
-  rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_active_ids
-  rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_active_ids
+  rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_active_set
+  rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_active_set
   overlapAt (unpackHow passive_pos) rule1 rule2
     (renameAvoiding (the rule2 :: Rule f) (the rule1)) (the rule2)
 
@@ -389,7 +389,7 @@ addActiveOnly :: Function f => State f -> Active f -> State f
 addActiveOnly state@State{..} active@Active{..} =
   state {
     st_rules = foldl' insertRule st_rules (activeRules active),
-    st_active_ids = IntMap.insert (fromIntegral active_id) active st_active_ids }
+    st_active_set = IntMap.insert (fromIntegral active_id) active st_active_set }
   where
     insertRule rules rule =
       RuleIndex.insert (lhs rule) rule rules
@@ -400,7 +400,7 @@ deleteActive :: Function f => State f -> Active f -> State f
 deleteActive state@State{..} active@Active{..} =
   state {
     st_rules = foldl' deleteRule st_rules (activeRules active),
-    st_active_ids = IntMap.delete (fromIntegral active_id) st_active_ids }
+    st_active_set = IntMap.delete (fromIntegral active_id) st_active_set }
   where
     deleteRule rules rule =
       RuleIndex.delete (lhs rule) rule rules
@@ -480,7 +480,7 @@ checkCompleteness _config state =
           st_complete = Index.fromListWith lhs rules }
   where
     maxSet s = if IntSet.null s then minBound else IntSet.findMax s
-    maxN = maximum [maxSet (info_max (active_info r)) | r <- IntMap.elems (st_active_ids state)]
+    maxN = maximum [maxSet (info_max (active_info r)) | r <- IntMap.elems (st_active_set state)]
     excluded = go IntSet.empty
     go excl
       | m > maxN = excl
@@ -496,7 +496,7 @@ checkCompleteness _config state =
       guard (s `IntSet.disjoint` excl)
       (n, _) <- IntSet.maxView s
       return n
-    rules = concatMap activeRules (filter ok (IntMap.elems (st_active_ids state)))
+    rules = concatMap activeRules (filter ok (IntMap.elems (st_active_set state)))
     ok r = info_max (active_info r) `IntSet.disjoint` excluded
 
 -- Assume that all rules form a confluent rewrite system.
@@ -504,7 +504,7 @@ checkCompleteness _config state =
 assumeComplete :: Function f => State f -> State f
 assumeComplete state =
   state { st_not_complete = IntSet.empty,
-          st_complete = Index.fromListWith lhs (concatMap activeRules (IntMap.elems (st_active_ids state))) }
+          st_complete = Index.fromListWith lhs (concatMap activeRules (IntMap.elems (st_active_set state))) }
 
 -- For goal terms we store the set of all their normal forms.
 -- Name and number are for information only.
@@ -623,7 +623,7 @@ interreduce config@Config{..} state =
         -- Clear out st_joinable, since we don't know which
         -- equations have made use of each active.
         state { st_joinable = Index.empty, st_complete = Index.empty }
-        (IntMap.elems (st_active_ids state))
+        (IntMap.elems (st_active_set state))
     in state' { st_joinable = st_joinable state, st_complete = st_complete state, st_simplified_at = st_next_active state' }
 
 {-# INLINEABLE interreduce1 #-}
@@ -744,7 +744,7 @@ solutions State{..} = do
 -- Return all current rewrite rules.
 {-# INLINEABLE rules #-}
 rules :: Function f => State f -> [Rule f]
-rules = map active_rule . IntMap.elems . st_active_ids
+rules = map active_rule . IntMap.elems . st_active_set
 
 ----------------------------------------------------------------------
 -- For code which uses twee as a library.
