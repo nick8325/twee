@@ -141,6 +141,31 @@ reservoir k =
     gen w y = floor (log y / log (1-w)) + 1
     prefix = [0..k-1]
 
+data Sample a = Sample Integer [(Integer, Int)] [a]
+
+emptySample :: Int -> Sample a
+emptySample k = Sample 0 (reservoir k) []
+
+addSample :: (Int, [a]) -> Sample a -> Sample a
+addSample (m, xs) (Sample total ((n, pos):ps) sample)
+  | idx < fromIntegral m =
+    addSample (m, xs) $
+      Sample total ps $
+        take pos sample ++
+        [xs !! fromIntegral idx] ++
+        drop (pos+1) sample
+  where
+    idx = n - total
+addSample (m, _) (Sample total ps sample) =
+  Sample (total+fromIntegral m) ps sample
+
+sampleValue :: Sample a -> [a]
+sampleValue (Sample _ _ sample) = sample
+
+mapSample :: (a -> b) -> Sample a -> Sample b
+mapSample f (Sample total ps sample) =
+  Sample total ps (map f sample)
+
 -- A combined inits/tails.
 splits :: [a] -> [([a], [a])]
 splits [] = [([], [])]

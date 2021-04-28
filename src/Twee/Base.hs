@@ -121,9 +121,6 @@ class Has a b where
   -- | Get at the thing.
   the :: a -> b
 
-instance Has a a where
-  the = id
-
 -- | Find the variables occurring in the argument.
 {-# INLINE vars #-}
 vars :: Symbolic a => a -> [Var]

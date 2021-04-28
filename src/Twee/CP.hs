@@ -15,15 +15,13 @@ import Twee.Utils
 import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof(Derivation, congPath)
-import Data.IntSet(IntSet)
-import qualified Data.IntSet as IntSet
-
-newtype Max = Max { unMax :: IntSet }
-  deriving (Eq, Ord, Show)
+import Data.Bits
 
 -- | The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
 type PositionsOf a = Positions (ConstantOf a)
+-- | Like Positions but for an equation (one set of positions per term).
+data Positions2 f = ForwardsPos !(Positions f) | BothPos !(Positions f) !(Positions f)
 
 instance Show (Positions f) where
   show = show . ChurchList.toList . positionsChurch
@@ -39,6 +37,14 @@ positions t = aux 0 Set.empty (singleton t)
       | t `Set.member` m = aux (n+1) m u
       | otherwise = ConsP n (aux (n+1) (Set.insert t m) u)
 
+-- | Calculate the set of positions for a rule.
+positionsRule :: Rule f -> Positions2 f
+positionsRule rule
+  | oriented (orientation rule) ||
+    canonicalise rule == canonicalise (backwards rule) =
+    ForwardsPos (positions (lhs rule))
+  | otherwise = BothPos (positions (lhs rule)) (positions (rhs rule))
+
 {-# INLINE positionsChurch #-}
 positionsChurch :: Positions f -> ChurchList Int
 positionsChurch posns =
@@ -50,20 +56,45 @@ positionsChurch posns =
       pos posns
 
 -- | A critical overlap of one rule with another.
-data Overlap f =
+data Overlap a f =
   Overlap {
-    -- | The depth (1 for CPs of axioms, 2 for CPs whose rules have depth 1, etc.)
-    overlap_depth :: {-# UNPACK #-} !Depth,
-    -- | The critical term.
-    overlap_top   :: {-# UNPACK #-} !(Term f),
-    -- | The part of the critical term which the inner rule rewrites.
-    overlap_inner :: {-# UNPACK #-} !(Term f),
+    -- | The rule which applies at the root.
+    overlap_rule1 :: !a,
+    -- | The rule which applies at some subterm.
+    overlap_rule2 :: !a,
     -- | The position in the critical term which is rewritten.
-    overlap_pos   :: {-# UNPACK #-} !Int,
+    overlap_how   :: {-# UNPACK #-} !How,
+    -- | The top term of the critical pair
+    overlap_top   :: {-# UNPACK #-} !(Term f),
     -- | The critical pair itself.
     overlap_eqn   :: {-# UNPACK #-} !(Equation f) }
   deriving Show
-type OverlapOf a = Overlap (ConstantOf a)
+
+data Direction = Forwards | Backwards deriving (Eq, Enum, Show)
+
+direct :: Rule f -> Direction -> Rule f
+direct rule Forwards = rule
+direct rule Backwards = backwards rule
+
+data How =
+  How {
+    how_dir1 :: !Direction,
+    how_dir2 :: !Direction,
+    how_pos  :: {-# UNPACK #-} !Int }
+  deriving Show
+
+packHow :: How -> Int
+packHow How{..} =
+  fromEnum how_dir1 +
+  fromEnum how_dir2 `shiftL` 1 +
+  how_pos `shiftL` 2
+
+unpackHow :: Int -> How
+unpackHow n =
+  How {
+    how_dir1 = toEnum (n .&. 1),
+    how_dir2 = toEnum ((n `shiftR` 1) .&. 1),
+    how_pos  = n `shiftR` 2 }
 
 -- | Represents the depth of a critical pair.
 newtype Depth = Depth Int deriving (Eq, Ord, Num, Real, Enum, Integral, Show)
@@ -71,61 +102,73 @@ newtype Depth = Depth Int deriving (Eq, Ord, Num, Real, Enum, Integral, Show)
 -- | Compute all overlaps of a rule with a set of rules.
 {-# INLINEABLE overlaps #-}
 overlaps ::
-  forall a f. (Function f, Has a Id, Has a (Rule f), Has a (Positions f), Has a Depth) =>
-  Depth -> Index f a -> [a] -> a -> [(a, a, Overlap f)]
-overlaps max_depth idx rules r =
-  ChurchList.toList (overlapsChurch max_depth idx rules r)
+  forall a b f. (Function f, Has a (Rule f), Has b (Rule f), Has b (Positions2 f)) =>
+  Index f a -> [b] -> b -> [Overlap b f]
+overlaps idx rules r =
+  ChurchList.toList (overlapsChurch idx rules r)
 
 {-# INLINE overlapsChurch #-}
-overlapsChurch :: forall f a.
-  (Function f, Has a (Rule f), Has a (Positions f), Has a Depth) =>
-  Depth -> Index f a -> [a] -> a -> ChurchList (a, a, Overlap f)
-overlapsChurch max_depth idx rules r1 = do
-  guard (the r1 < max_depth)
+overlapsChurch :: forall f a b.
+  (Function f, Has a (Rule f), Has b (Rule f), Has b (Positions2 f)) =>
+  Index f a -> [b] -> b -> ChurchList (Overlap b f)
+overlapsChurch idx rules r1 = do
+  (d1, pos1, eq1) <- directions r1' (the r1)
   r2 <- ChurchList.fromList rules
-  guard (the r2 < max_depth)
-  let !depth = 1 + max (the r1) (the r2)
-  do { o <- asymmetricOverlaps idx depth (the r1) r1' (the r2); return (r1, r2, o) } `mplus`
-    do { o <- asymmetricOverlaps idx depth (the r2) (the r2) r1'; return (r2, r1, o) }
+  (d2, pos2, eq2) <- directions (the r2) (the r2)
+  asymmetricOverlaps idx r1 r2 d1 d2 pos1 eq1 eq2 `mplus`
+    asymmetricOverlaps idx r2 r1 d2 d1 pos2 eq2 eq1
   where
     !r1' = renameAvoiding (map the rules :: [Rule f]) (the r1)
 
+{-# INLINE directions #-}
+directions :: Rule f -> Positions2 f -> ChurchList (Direction, Positions f, Equation f)
+directions rule (ForwardsPos posf) =
+  return (Forwards, posf, lhs rule :=: rhs rule)
+directions rule (BothPos posf posb) =
+  return (Forwards, posf, lhs rule :=: rhs rule) `mplus`
+  return (Backwards, posb, rhs rule :=: lhs rule)
+
 {-# INLINE asymmetricOverlaps #-}
 asymmetricOverlaps ::
-  (Function f, Has a (Rule f), Has a Depth) =>
-  Index f a -> Depth -> Positions f -> Rule f -> Rule f -> ChurchList (Overlap f)
-asymmetricOverlaps idx depth posns r1 r2 = do
+  (Function f, Has a (Rule f)) =>
+  Index f a -> b -> b -> Direction -> Direction -> Positions f -> Equation f -> Equation f -> ChurchList (Overlap b f)
+asymmetricOverlaps idx r1 r2 d1 d2 posns eq1 eq2 = do
   n <- positionsChurch posns
   ChurchList.fromMaybe $
-    overlapAt n depth r1 r2 >>=
+    overlapAt' (How d1 d2 n) r1 r2 eq1 eq2 >>=
     simplifyOverlap idx
 
 -- | Create an overlap at a particular position in a term.
 -- Doesn't simplify the overlap.
 {-# INLINE overlapAt #-}
 {-# SCC overlapAt #-}
-overlapAt :: Int -> Depth -> Rule f -> Rule f -> Maybe (Overlap f)
-overlapAt !n !depth (Rule _ _ !outer !outer') (Rule _ _ !inner !inner') = do
+overlapAt :: How -> a -> a -> Rule f -> Rule f -> Maybe (Overlap a f)
+overlapAt how@(How d1 d2 _) x1 x2 r1 r2 =
+  overlapAt' how x1 x2 (unorient (direct r1 d1)) (unorient (direct r2 d2))
+
+{-# INLINE overlapAt' #-}
+{-# SCC overlapAt' #-}
+overlapAt' :: How -> a -> a -> Equation f -> Equation f -> Maybe (Overlap a f)
+overlapAt' how@How{how_pos = n} r1 r2 (!outer :=: (!outer')) (!inner :=: (!inner')) = do
   let t = at n (singleton outer)
   sub <- unifyTri inner t
   let
-    top = termSubst sub outer
-    innerTerm = termSubst sub inner
     -- Make sure to keep in sync with overlapProof
+    top = termSubst sub outer
     lhs = termSubst sub outer'
     rhs = buildReplacePositionSub sub n (singleton inner') (singleton outer)
 
   guard (lhs /= rhs)
   return Overlap {
-    overlap_depth = depth,
+    overlap_rule1 = r1,
+    overlap_rule2 = r2,
+    overlap_how = how,
     overlap_top = top,
-    overlap_inner = innerTerm,
-    overlap_pos = n,
     overlap_eqn = lhs :=: rhs }
 
 -- | Simplify an overlap and remove it if it's trivial.
 {-# INLINE simplifyOverlap #-}
-simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap f -> Maybe (Overlap f)
+simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap b f -> Maybe (Overlap b f)
 simplifyOverlap idx overlap@Overlap{overlap_eqn = lhs :=: rhs, ..}
   | lhs == rhs   = Nothing
   | lhs' == rhs' = Nothing
@@ -172,9 +215,9 @@ defaultConfig =
 -- where l is the biggest term and r is the smallest,
 -- and variables have weight 1 and functions have weight cfg_funweight.
 {-# INLINEABLE score #-}
-score :: Function f => Config -> Overlap f -> Int
-score Config{..} Overlap{..} =
-  fromIntegral overlap_depth * cfg_depthweight +
+score :: Function f => Config -> Depth -> Overlap a f -> Int
+score Config{..} depth Overlap{..} =
+  fromIntegral depth * cfg_depthweight +
   (m + n) * cfg_rhsweight +
   intMax m n * (cfg_lhsweight - cfg_rhsweight)
   where
@@ -208,9 +251,6 @@ data CriticalPair f =
   CriticalPair {
     -- | The critical pair itself.
     cp_eqn   :: {-# UNPACK #-} !(Equation f),
-    -- | The depth of the critical pair.
-    cp_depth :: {-# UNPACK #-} !Depth,
-    cp_max :: !Max,
     -- | The critical term, if there is one.
     -- (Axioms do not have a critical term.)
     cp_top   :: !(Maybe (Term f)),
@@ -224,8 +264,6 @@ instance Symbolic (CriticalPair f) where
   subst_ sub CriticalPair{..} =
     CriticalPair {
       cp_eqn = subst_ sub cp_eqn,
-      cp_depth = cp_depth,
-      cp_max = cp_max,
       cp_top = subst_ sub cp_top,
       cp_proof = subst_ sub cp_proof }
 
@@ -264,22 +302,16 @@ split CriticalPair{cp_eqn = l :=: r, ..}
     -- The main rule l -> r' or r -> l' or l' = r'
     [ CriticalPair {
         cp_eqn   = l :=: r',
-        cp_depth = cp_depth,
-        cp_max   = cp_max,
         cp_top   = eraseExcept (vars l) cp_top,
         cp_proof = eraseExcept (vars l) cp_proof }
     | ord == Just GT ] ++
     [ CriticalPair {
         cp_eqn   = r :=: l',
-        cp_depth = cp_depth,
-        cp_max   = cp_max,
         cp_top   = eraseExcept (vars r) cp_top,
         cp_proof = Proof.symm (eraseExcept (vars r) cp_proof) }
     | ord == Just LT ] ++
     [ CriticalPair {
         cp_eqn   = l' :=: r',
-        cp_depth = cp_depth,
-        cp_max   = cp_max,
         cp_top   = eraseExcept (vars l) $ eraseExcept (vars r) cp_top,
         cp_proof = eraseExcept (vars l) $ eraseExcept (vars r) cp_proof }
     | ord == Nothing ] ++
@@ -287,15 +319,11 @@ split CriticalPair{cp_eqn = l :=: r, ..}
     -- Weak rules l -> l' or r -> r'
     [ CriticalPair {
         cp_eqn   = l :=: l',
-        cp_depth = cp_depth + 1,
-        cp_max   = cp_max,
         cp_top   = Nothing,
         cp_proof = cp_proof `Proof.trans` Proof.symm (erase ls cp_proof) }
     | not (null ls), ord /= Just GT ] ++
     [ CriticalPair {
         cp_eqn   = r :=: r',
-        cp_depth = cp_depth + 1,
-        cp_max   = cp_max,
         cp_top   = Nothing,
         cp_proof = Proof.symm cp_proof `Proof.trans` erase rs cp_proof }
     | not (null rs), ord /= Just LT ]
@@ -311,28 +339,22 @@ split CriticalPair{cp_eqn = l :=: r, ..}
 
 -- | Make a critical pair from two rules and an overlap.
 {-# INLINEABLE makeCriticalPair #-}
-makeCriticalPair ::
-  forall f a. (Has a (Rule f), Has a Id, Has a Max, Function f) =>
-  a -> a -> Overlap f -> CriticalPair f
-makeCriticalPair r1 r2 overlap@Overlap{..} =
+makeCriticalPair :: (Function f, Has a (Rule f)) => Overlap a f -> CriticalPair f
+makeCriticalPair Overlap{..} =
   CriticalPair overlap_eqn
-    overlap_depth
-    (Max (unMax (the r1) `IntSet.union` unMax (the r2)))
     (Just overlap_top)
-    (overlapProof r1 r2 overlap)
-
--- | Return a proof for a critical pair.
-{-# INLINEABLE overlapProof #-}
-overlapProof ::
-  forall a f.
-  (Has a (Rule f), Has a Id) =>
-  a -> a -> Overlap f -> Derivation f
-overlapProof left right Overlap{..} =
-  Proof.symm (ruleDerivation (subst leftSub (the left)))
-  `Proof.trans`
-  congPath path overlap_top (ruleDerivation (subst rightSub (the right)))
+    proof
   where
-    Just leftSub = match (lhs (the left)) overlap_top
-    Just rightSub = match (lhs (the right)) overlap_inner
+    left = direct (the overlap_rule1) (how_dir1 overlap_how)
+    right = direct (the overlap_rule2) (how_dir2 overlap_how)
 
-    path = positionToPath (lhs (the left) :: Term f) overlap_pos
+    Just leftSub = match (lhs left) overlap_top
+    Just rightSub = match (lhs right) inner
+
+    path = positionToPath (lhs left) (how_pos overlap_how)
+    inner = at (pathToPosition overlap_top path) (singleton overlap_top)
+
+    proof =
+      Proof.symm (ruleDerivation (subst leftSub left))
+      `Proof.trans`
+      congPath path overlap_top (ruleDerivation (subst rightSub right))

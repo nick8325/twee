@@ -758,7 +758,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
          KBO.size (rhs rule), rhs rule)
       actives =
         sortBy (comparing (score . active_rule)) $
-        IntMap.elems (st_active_ids state')
+        IntMap.elems (st_active_set state')
 
     when (tstp && configIsComplete config) $ do
       putStrLn "% SZS output start Saturation"

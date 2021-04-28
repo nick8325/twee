@@ -62,6 +62,10 @@ fromSymbol Symbol{..} =
   fromIntegral index `unsafeShiftL` 32 +
   fromIntegral (fromEnum isFun) `unsafeShiftL` 31
 
+{-# INLINE symbolSize #-}
+symbolSize :: Int
+symbolSize = sizeOf (fromSymbol undefined)
+
 --------------------------------------------------------------------------------
 -- Flatterms, or rather lists of terms.
 --------------------------------------------------------------------------------
@@ -229,7 +233,7 @@ instance Ord (TermList f) where
     compareByteArrays (array t) (low t * k)
       (array u) (low u * k) ((high t - low t) * k)
     where
-      k = sizeOf (fromSymbol undefined)
+      k = symbolSize
 
 --------------------------------------------------------------------------------
 -- Building terms.
@@ -240,11 +244,11 @@ instance Ord (TermList f) where
 newtype Builder f =
   Builder {
     unBuilder ::
-      -- Takes: the term array and size, and current position in the term.
-      -- Returns the final position, which may be out of bounds.
+      -- Takes: the term array, and current position in the term.
+      -- Returns the final array and position.
       forall s. Builder1 s f }
 
-type Builder1 s f = State# s -> MutableByteArray# s -> Int# -> Int# -> (# State# s, Int# #)
+type Builder1 s f = State# s -> MutableByteArray# s -> Int# -> (# State# s, MutableByteArray# s, Int# #)
 
 instance Semigroup (Builder f) where
   {-# INLINE (<>) #-}
@@ -256,89 +260,53 @@ instance Monoid (Builder f) where
   mappend = (<>)
 
 -- Build a termlist from a Builder.
--- Works by guessing an appropriate size, and retrying if that was too small.
 {-# INLINE buildTermList #-}
 buildTermList :: Builder f -> TermList f
-buildTermList builder = runST $ do
-  let
-    Builder m = builder
-    loop n@(I# n#) = do
-      MutableByteArray mbytearray# <-
-        newByteArray (n * sizeOf (fromSymbol undefined))
-      n' <-
-        ST $ \s ->
-          case m s mbytearray# n# 0# of
-            (# s, n# #) -> (# s, I# n# #)
-      if n' <= n then do
-        resizeMutableByteArray (MutableByteArray mbytearray#) (n' * sizeOf (fromSymbol undefined))
-        !bytearray <- unsafeFreezeByteArray (MutableByteArray mbytearray#)
-        return (TermList 0 n' bytearray)
-       else loop (n'*2)
-  loop 128
+buildTermList (Builder m) = runST $ do
+  MutableByteArray marr# <-
+    -- Start with a capacity of 16 symbols (arbitrary choice)
+    newByteArray (16 * symbolSize)
+  (marr, n) <-
+    ST $ \s ->
+      case m s marr# 0# of
+        (# s, marr#, n# #) ->
+          (# s, (MutableByteArray marr#, I# n#) #)
+  shrinkMutableByteArray marr (n * symbolSize)
+  !arr <- unsafeFreezeByteArray marr
+  return (TermList 0 n arr)
 
--- Get at the term array.
-{-# INLINE getByteArray #-}
-getByteArray :: (MutableByteArray s -> Builder1 s f) -> Builder1 s f
-getByteArray k = \s bytearray n i -> k (MutableByteArray bytearray) s bytearray n i
-
--- Get at the array size.
-{-# INLINE getSize #-}
-getSize :: (Int -> Builder1 s f) -> Builder1 s f
-getSize k = \s bytearray n i -> k (I# n) s bytearray n i
-
--- Get at the current array index.
-{-# INLINE getIndex #-}
-getIndex :: (Int -> Builder1 s f) -> Builder1 s f
-getIndex k = \s bytearray n i -> k (I# i) s bytearray n i
-
--- Change the current array index.
-{-# INLINE putIndex #-}
-putIndex :: Int -> Builder1 s f
-putIndex (I# i) = \s _ _ _ -> (# s, i #)
-
--- Lift an ST computation into a builder.
-{-# INLINE liftST #-}
-liftST :: ST s () -> Builder1 s f
-liftST (ST m) =
-  \s _ _ i ->
-  case m s of
-    (# s, () #) -> (# s, i #)
-
--- Finish building.
+-- A builder which does nothing.
 {-# INLINE built #-}
 built :: Builder1 s f
-built = \s _ _ i -> (# s, i #)
+built s arr# n# = (# s, arr#, n# #)
 
 -- Sequence two builder operations.
 {-# INLINE then_ #-}
 then_ :: Builder1 s f -> Builder1 s f -> Builder1 s f
-then_ m1 m2 =
-  \s bytearray n i ->
-    case m1 s bytearray n i of
-      (# s, i #) -> m2 s bytearray n i
-
--- checked j m executes m only if the array has room for j more symbols.
-{-# INLINE checked #-}
-checked :: Int -> Builder1 s f -> Builder1 s f
-checked j m =
-  getSize $ \n ->
-  getIndex $ \i ->
-  if i + j <= n then m else putIndex (i + j)
+m1 `then_` m2 = \s arr# n# ->
+  case m1 s arr# n# of
+    (# s, arr#, n# #) ->
+      m2 s arr# n#
 
 -- Emit an arbitrary symbol, with given arguments.
 {-# INLINE emitSymbolBuilder #-}
 emitSymbolBuilder :: Symbol -> Builder f -> Builder f
-emitSymbolBuilder x inner =
-  Builder $ checked 1 $
-    getByteArray $ \bytearray ->
-    -- Skip the symbol itself, then fill it in at the end, when we know the size
-    -- of the symbol's arguments.
-    getIndex $ \n ->
-    putIndex (n+1) `then_`
-    unBuilder inner `then_`
-    -- Fill in the symbol.
-    getIndex (\m ->
-      liftST $ writeByteArray bytearray n (fromSymbol x { size = m - n }))
+emitSymbolBuilder x (Builder inner) =
+  Builder $ \s arr# n# ->
+    let n = I# n# in
+    -- Reserve space for the symbol
+    case reserve s arr# (unInt (n + 1)) of
+      (# s, arr# #) ->
+        -- Fill in the argument list
+        case inner s arr# (unInt (n + 1)) of
+          (# s, arr#, m# #) ->
+            let arr = MutableByteArray arr#
+                m = I# m# in
+            -- Check the length of the argument list in symbols,
+            -- then write the symbol, with the correct size
+            case unST (writeByteArray arr n (fromSymbol x { size = m - n })) s of
+              (# s, () #) ->
+                (# s, arr#, m# #)
 
 -- Emit a function application.
 {-# INLINE emitApp #-}
@@ -354,12 +322,42 @@ emitVar x = emitSymbolBuilder (Symbol False (var_id x) 1) mempty
 {-# INLINE emitTermList #-}
 emitTermList :: TermList f -> Builder f
 emitTermList (TermList lo hi array) =
-  Builder $ checked (hi-lo) $
-    getByteArray $ \mbytearray ->
-    getIndex $ \n ->
-    let k = sizeOf (fromSymbol undefined) in
-    liftST (copyByteArray mbytearray (n*k) array (lo*k) ((hi-lo)*k)) `then_`
-    putIndex (n + hi-lo)
+  Builder $ \s arr# n# ->
+    let n = I# n# in
+    -- Reserve space for the termlist
+    case reserve s arr# (unInt (n + hi - lo)) of
+      (# s, arr# #) ->
+        let k = symbolSize
+            arr = MutableByteArray arr# in
+        case unST (copyByteArray arr (n*k) array (lo*k) ((hi - lo)*k)) s of
+          (# s, () #) ->
+            (# s, arr#, unInt (n + hi - lo) #)
+
+-- Make sure that the term array has enough space to hold the given
+-- number of additional symbols.
+{-# NOINLINE reserve #-}
+reserve :: State# s -> MutableByteArray# s -> Int# -> (# State# s, MutableByteArray# s #)
+reserve s arr# n# =
+  case reserve' (MutableByteArray arr#) (I# n#) of
+    ST m ->
+      case m s of
+        (# s, MutableByteArray arr# #) ->
+          (# s, arr# #)
+  where
+    {-# INLINE reserve' #-}
+    reserve' arr n = do
+      let !m = n*symbolSize
+      size <- getSizeofMutableByteArray arr
+      if size >= m then return arr else expand arr (size*2) m
+    expand arr size m
+      | size >= m = resizeMutableByteArray arr size
+      | otherwise = expand arr (size*2) m
+
+unST :: ST s a -> State# s -> (# State# s, a #)
+unST (ST m) = m
+
+unInt :: Int -> Int#
+unInt (I# n) = n
 
 ----------------------------------------------------------------------
 -- Efficient subterm testing.

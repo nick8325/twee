@@ -46,6 +46,8 @@ instance Eq (Rule f) where
   x == y = compare x y == EQ
 instance Ord (Rule f) where
   compare = comparing (\rule -> (lhs rule, rhs rule))
+instance f ~ g => Has (Rule f) (Rule g) where
+  the = id
 type RuleOf a = Rule (ConstantOf a)
 
 ruleDerivation :: Rule f -> Derivation f
@@ -225,9 +227,9 @@ simpleRewrite :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Maybe (R
 simpleRewrite idx t =
   -- Use instead of maybeToList to make fusion work
   foldr (\x _ -> Just x) Nothing $ do
-    rule <- the <$> Index.approxMatches t idx
+    (sub, rule0) <- Index.matches t idx
+    let rule = the rule0
     guard (oriented (orientation rule))
-    sub <- maybeToList (match (lhs rule) t)
     guard (reducesOriented rule sub)
     return (rule, sub)
 
@@ -350,8 +352,9 @@ anywhereInnermost strat t = concatMap strat (reverseSubterms t)
 {-# INLINE rewrite #-}
 rewrite :: (Function f, Has a (Rule f)) => (Rule f -> Subst f -> Bool) -> Index f a -> Strategy f
 rewrite p rules t = do
-  rule <- Index.approxMatches t rules
-  tryRule p rule t
+  (sub, rule) <- Index.matches t rules
+  guard (p (the rule) sub)
+  return [subst sub (the rule)]
 
 -- | A strategy which applies one rule only.
 {-# INLINEABLE tryRule #-}

@@ -61,19 +61,15 @@ data Config f =
 -- | The prover state.
 data State f =
   State {
-    st_rules          :: !(RuleIndex f (ActiveRule f)),
-    st_active_ids     :: !(IntMap (Active f)),
-    st_rule_ids       :: !(IntMap (ActiveRule f)),
+    st_rules          :: !(RuleIndex f (Rule f)),
+    st_active_set     :: !(IntMap (Active f)),
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
     st_queue          :: !(Queue Params),
     st_next_active    :: {-# UNPACK #-} !Id,
-    st_next_rule      :: {-# UNPACK #-} !RuleId,
     st_considered     :: {-# UNPACK #-} !Int64,
     st_simplified_at  :: {-# UNPACK #-} !Id,
-    st_cp_sample      :: ![Maybe (Overlap f)],
-    st_cp_next_sample :: ![(Integer, Int)],
-    st_num_cps        :: !Integer,
+    st_cp_sample      :: !(Sample (Maybe (Overlap (Active f) f))),
     st_not_complete   :: !IntSet,
     st_complete       :: !(Index f (Rule f)),
     st_messages_rev   :: ![Message f] }
@@ -108,18 +104,14 @@ initialState :: Config f -> State f
 initialState Config{..} =
   State {
     st_rules = RuleIndex.empty,
-    st_active_ids = IntMap.empty,
-    st_rule_ids = IntMap.empty,
+    st_active_set = IntMap.empty,
     st_joinable = Index.empty,
     st_goals = [],
     st_queue = Queue.empty,
     st_next_active = 1,
-    st_next_rule = 0,
     st_considered = 0,
     st_simplified_at = 1,
-    st_cp_sample = [],
-    st_cp_next_sample = reservoir cfg_cp_sample_size,
-    st_num_cps = 0,
+    st_cp_sample = emptySample cfg_cp_sample_size,
     st_not_complete = IntSet.empty,
     st_complete = Index.empty,
     st_messages_rev = [] }
@@ -185,7 +177,7 @@ messages state = reverse (st_messages_rev state)
 data Params
 instance Queue.Params Params where
   type Score Params = Int
-  type Id Params = RuleId
+  type Id Params = Id
   type PackedId Params = Int32
   type PackedScore Params = Int32
   packScore _ = fromIntegral
@@ -196,44 +188,58 @@ instance Queue.Params Params where
 -- | Compute all critical pairs from a rule.
 {-# INLINEABLE makePassives #-}
 {-# SCC makePassives #-}
-makePassives :: Function f => Config f -> State f -> ActiveRule f -> [Passive Params]
-makePassives Config{..} State{..} rule =
-  [ Passive (fromIntegral (score cfg_critical_pairs o)) (rule_rid rule1) (rule_rid rule2) (fromIntegral (overlap_pos o))
-  | (rule1, rule2, o) <- overlaps (Depth cfg_max_cp_depth) (index_oriented st_rules) rules rule ]
+makePassives :: Function f => Config f -> State f -> Active f -> [Passive Params]
+makePassives config@Config{..} State{..} rule =
+-- XXX factor out depth calculation
+  [ makePassive config overlap
+  | ok rule,
+    overlap <- overlaps (index_oriented st_rules) (filter ok rules) rule ]
   where
-    rules = IntMap.elems st_rule_ids
+    rules = IntMap.elems st_active_set
+    ok rule = the rule < Depth cfg_max_cp_depth
+
+{-# INLINEABLE makePassive #-}
+makePassive :: Function f => Config f -> Overlap (Active f) f -> Passive Params
+makePassive Config{..} overlap@Overlap{..} =
+  Passive {
+    passive_score = fromIntegral (score cfg_critical_pairs depth overlap),
+    passive_rule1 = active_id overlap_rule1,
+    passive_rule2 = active_id overlap_rule2,
+    passive_pos   = packHow overlap_how }
+  where
+    depth = succ (the overlap_rule1 `max` the overlap_rule2)
 
 -- | Turn a Passive back into an overlap.
 -- Doesn't try to simplify it.
 {-# INLINEABLE findPassive #-}
 {-# SCC findPassive #-}
-findPassive :: forall f. Function f => State f -> Passive Params -> Maybe (ActiveRule f, ActiveRule f, Overlap f)
+findPassive :: forall f. Function f => State f -> Passive Params -> Maybe (Overlap (Active f) f)
 findPassive State{..} Passive{..} = do
-  rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
-  rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
-  let !depth = 1 + max (the rule1) (the rule2)
-  overlap <-
-    overlapAt (fromIntegral passive_pos) depth
-      (renameAvoiding (the rule2 :: Rule f) (the rule1)) (the rule2)
-  return (rule1, rule2, overlap)
+  rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_active_set
+  rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_active_set
+  overlapAt (unpackHow passive_pos) rule1 rule2
+    (renameAvoiding (the rule2 :: Rule f) (the rule1)) (the rule2)
 
 -- | Renormalise a queued Passive.
 {-# INLINEABLE simplifyPassive #-}
 {-# SCC simplifyPassive #-}
 simplifyPassive :: Function f => Config f -> State f -> Passive Params -> Maybe (Passive Params)
 simplifyPassive Config{..} state@State{..} passive = do
-  (_, _, overlap) <- findPassive state passive
+  overlap <- findPassive state passive
   overlap <- simplifyOverlap (index_oriented st_rules) overlap
+  let r1 = overlap_rule1 overlap
+      r2 = overlap_rule2 overlap
   return passive {
     passive_score = fromIntegral $
       fromIntegral (passive_score passive) `intMin`
-      score cfg_critical_pairs overlap }
+      -- XXX factor out depth calculation
+      score cfg_critical_pairs (succ (the r1 `max` the r2)) overlap }
 
 -- | Check if we should renormalise the queue.
 {-# INLINEABLE shouldSimplifyQueue #-}
 shouldSimplifyQueue :: Function f => Config f -> State f -> Bool
 shouldSimplifyQueue Config{..} State{..} =
-  length (filter isNothing st_cp_sample) * 100 >= cfg_renormalise_threshold * cfg_cp_sample_size
+  length (filter isNothing (sampleValue st_cp_sample)) * 100 >= cfg_renormalise_threshold * cfg_cp_sample_size
 
 -- | Renormalise the entire queue.
 {-# INLINEABLE simplifyQueue #-}
@@ -248,7 +254,7 @@ simplifyQueue config state =
 -- | Enqueue a set of critical pairs.
 {-# INLINEABLE enqueue #-}
 {-# SCC enqueue #-}
-enqueue :: Function f => State f -> RuleId -> [Passive Params] -> State f
+enqueue :: Function f => State f -> Id -> [Passive Params] -> State f
 enqueue state rule passives =
   state { st_queue = Queue.insert rule passives (st_queue state) }
 
@@ -260,7 +266,7 @@ enqueue state rule passives =
 --   * ignoring CPs that are too big
 {-# INLINEABLE dequeue #-}
 {-# SCC dequeue #-}
-dequeue :: Function f => Config f -> State f -> (Maybe (CriticalPair f, ActiveRule f, ActiveRule f), State f)
+dequeue :: Function f => Config f -> State f -> (Maybe (Info, CriticalPair f, Active f, Active f), State f)
 dequeue Config{..} state@State{..} =
   case deq 0 st_queue of
     -- Explicitly make the queue empty, in case it e.g. contained a
@@ -273,12 +279,18 @@ dequeue Config{..} state@State{..} =
     deq !n queue = do
       (passive, queue) <- Queue.removeMin queue
       case findPassive state passive of
-        Just (rule1, rule2, overlap@Overlap{overlap_eqn = t :=: u})
+        Just (overlap@Overlap{overlap_eqn = t :=: u, overlap_rule1 = rule1, overlap_rule2 = rule2})
           | fromMaybe True (cfg_accept_term <*> pure t),
             fromMaybe True (cfg_accept_term <*> pure u),
-            cp <- makeCriticalPair rule1 rule2 overlap ->
-              return ((cp, rule1, rule2), n+1, queue)
+            cp <- makeCriticalPair overlap ->
+              return ((combineInfo (active_info rule1) (active_info rule2), cp, rule1, rule2), n+1, queue)
         _ -> deq (n+1) queue
+
+    combineInfo i1 i2 =
+      Info {
+        -- XXX factor out depth calculation
+        info_depth = succ (max (info_depth i1) (info_depth i2)),
+        info_max = IntSet.union (info_max i1) (info_max i2) }
 
 ----------------------------------------------------------------------
 -- * Active rewrite rules.
@@ -287,117 +299,87 @@ dequeue Config{..} state@State{..} =
 data Active f =
   Active {
     active_id    :: {-# UNPACK #-} !Id,
-    active_depth :: {-# UNPACK #-} !Depth,
+    active_info  :: {-# UNPACK #-} !Info,
     active_rule  :: {-# UNPACK #-} !(Rule f),
     active_top   :: !(Maybe (Term f)),
     active_proof :: {-# UNPACK #-} !(Proof f),
-    active_max   :: !Max,
     -- A model in which the rule is false (used when reorienting)
     active_model :: !(Model f),
-    active_rules :: ![ActiveRule f] }
+    active_positions :: !(Positions2 f) }
 
 active_cp :: Active f -> CriticalPair f
 active_cp Active{..} =
   CriticalPair {
     cp_eqn = unorient active_rule,
-    cp_depth = active_depth,
-    cp_max = active_max,
     cp_top = active_top,
     cp_proof = derivation active_proof }
 
--- An active oriented in a particular direction.
-data ActiveRule f =
-  ActiveRule {
-    rule_active    :: {-# UNPACK #-} !Id,
-    rule_rid       :: {-# UNPACK #-} !RuleId,
-    rule_depth     :: {-# UNPACK #-} !Depth,
-    rule_max       :: !Max,
-    rule_rule      :: {-# UNPACK #-} !(Rule f),
-    rule_positions :: !(Positions f) }
+activeRules :: Active f -> [Rule f]
+activeRules Active{..} =
+  case active_positions of
+    ForwardsPos _ -> [active_rule]
+    BothPos _ _ -> [active_rule, backwards active_rule]
 
-instance PrettyTerm f => Symbolic (ActiveRule f) where
-  type ConstantOf (ActiveRule f) = f
-  termsDL ActiveRule{..} =
-    termsDL rule_rule
-  subst_ sub r@ActiveRule{..} =
-    r {
-      rule_rule = rule',
-      rule_positions = positions (lhs rule') }
-    where
-      rule' = subst_ sub rule_rule
+data Info =
+  Info {
+    info_depth :: {-# UNPACK #-} !Depth,
+    info_max   :: !IntSet }
 
 instance Eq (Active f) where
   (==) = (==) `on` active_id
-
-instance Eq (ActiveRule f) where
-  (==) = (==) `on` rule_rid
 
 instance Function f => Pretty (Active f) where
   pPrint Active{..} =
     pPrint active_id <#> text "." <+> pPrint (canonicalise active_rule)
 
-instance Has (ActiveRule f) Id where the = rule_active
-instance Has (ActiveRule f) RuleId where the = rule_rid
-instance Has (ActiveRule f) Depth where the = rule_depth
-instance Has (ActiveRule f) Max where the = rule_max
-instance f ~ g => Has (ActiveRule f) (Rule g) where the = rule_rule
-instance f ~ g => Has (ActiveRule f) (Positions g) where the = rule_positions
-
-newtype RuleId = RuleId Id deriving (Eq, Ord, Show, Num, Real, Integral, Enum)
+instance Has (Active f) Id where the = active_id
+instance Has (Active f) Depth where the = info_depth . active_info
+instance f ~ g => Has (Active f) (Rule g) where the = active_rule
+instance f ~ g => Has (Active f) (Positions2 g) where the = active_positions
 
 -- Add a new active.
 {-# INLINEABLE addActive #-}
 {-# SCC addActive #-}
-addActive :: Function f => Config f -> State f -> (Id -> RuleId -> RuleId -> Active f) -> State f
+addActive :: Function f => Config f -> State f -> (Id -> Active f) -> State f
 addActive config state@State{..} active0 =
   let
-    active@Active{..} = active0 st_next_active st_next_rule (succ st_next_rule)
+    active@Active{..} = active0 st_next_active
     state' =
       message (NewActive active) $
-      addActiveOnly state{st_next_active = st_next_active+1, st_next_rule = st_next_rule+2} active
+      addActiveOnly state{st_next_active = st_next_active+1} active
   in if subsumed (st_joinable, st_complete) st_rules (unorient active_rule) then
     state
   else
     normaliseGoals config $
-    foldl' enqueueRule state' active_rules
+    enqueueRule state' active
   where
     enqueueRule state rule =
-      sample config (length passives) passives $
+      sample (length passives) passives $
       enqueue state (the rule) passives
       where
         passives = makePassives config state rule
 
 -- Update the list of sampled critical pairs.
 {-# INLINEABLE sample #-}
-sample :: Function f => Config f -> Int -> [Passive Params] -> State f -> State f
-sample cfg m passives state@State{st_cp_next_sample = ((n, pos):rest), ..}
-  | idx < fromIntegral m =
-    sample cfg m passives state {
-      st_cp_next_sample = rest,
-      st_cp_sample =
-        take pos st_cp_sample ++
-        [find (passives !! fromIntegral idx)] ++
-        drop (pos+1) st_cp_sample }
-  | otherwise = state{st_num_cps = st_num_cps + fromIntegral m}
+sample :: Function f => Int -> [Passive Params] -> State f -> State f
+sample m passives state@State{..} =
+  state{st_cp_sample = addSample (m, map find passives) st_cp_sample}
   where
-    idx = n - st_num_cps
     find passive = do
-      (_, _, overlap) <- findPassive state passive
+      overlap <- findPassive state passive
       simplifyOverlap (index_oriented st_rules) overlap
 
 -- Reset the list of sampled critical pairs.
 {-# INLINEABLE resetSample #-}
 resetSample :: Function f => Config f -> State f -> State f
-resetSample cfg@Config{..} state@State{..} =
+resetSample Config{..} state@State{..} =
   foldl' sample1 state' (Queue.toList st_queue)
   where
     state' =
       state {
-        st_num_cps = 0,
-        st_cp_next_sample = reservoir cfg_cp_sample_size,
-        st_cp_sample = [] }
+        st_cp_sample = emptySample cfg_cp_sample_size }
 
-    sample1 state (n, passives) = sample cfg n passives state
+    sample1 state (n, passives) = sample n passives state
 
 -- Simplify the sampled critical pairs.
 -- (A sampled critical pair is replaced with Nothing if it can be
@@ -405,7 +387,7 @@ resetSample cfg@Config{..} state@State{..} =
 {-# INLINEABLE simplifySample #-}
 simplifySample :: Function f => State f -> State f
 simplifySample state@State{..} =
-  state{st_cp_sample = map (>>= simp) st_cp_sample}
+  state{st_cp_sample = mapSample (>>= simp) st_cp_sample}
   where
     simp overlap = do
       overlap' <- simplifyOverlap (index_oriented st_rules) overlap
@@ -417,34 +399,28 @@ simplifySample state@State{..} =
 addActiveOnly :: Function f => State f -> Active f -> State f
 addActiveOnly state@State{..} active@Active{..} =
   state {
-    st_rules = foldl' insertRule st_rules active_rules,
-    st_active_ids = IntMap.insert (fromIntegral active_id) active st_active_ids,
-    st_rule_ids = foldl' insertRuleId st_rule_ids active_rules }
+    st_rules = foldl' insertRule st_rules (activeRules active),
+    st_active_set = IntMap.insert (fromIntegral active_id) active st_active_set }
   where
-    insertRule rules rule@ActiveRule{..} =
-      RuleIndex.insert (lhs rule_rule) rule rules
-    insertRuleId rules rule@ActiveRule{..} =
-      IntMap.insert (fromIntegral rule_rid) rule rules
+    insertRule rules rule =
+      RuleIndex.insert (lhs rule) rule rules
 
 -- Delete an active. Used in interreduction, not suitable for general use.
 {-# INLINE deleteActive #-}
 deleteActive :: Function f => State f -> Active f -> State f
-deleteActive state@State{..} Active{..} =
+deleteActive state@State{..} active@Active{..} =
   state {
-    st_rules = foldl' deleteRule st_rules active_rules,
-    st_active_ids = IntMap.delete (fromIntegral active_id) st_active_ids,
-    st_rule_ids = foldl' deleteRuleId st_rule_ids active_rules }
+    st_rules = foldl' deleteRule st_rules (activeRules active),
+    st_active_set = IntMap.delete (fromIntegral active_id) st_active_set }
   where
     deleteRule rules rule =
-      RuleIndex.delete (lhs (rule_rule rule)) rule rules
-    deleteRuleId rules ActiveRule{..} =
-      IntMap.delete (fromIntegral rule_rid) rules
+      RuleIndex.delete (lhs rule) rule rules
 
 -- Try to join a critical pair.
 {-# INLINEABLE consider #-}
-consider :: Function f => Config f -> State f -> CriticalPair f -> State f
-consider config state cp =
-  considerUsing (st_rules state) config state cp
+consider :: Function f => Config f -> State f -> Info -> CriticalPair f -> State f
+consider config state info cp =
+  considerUsing (st_rules state) config state info cp
 
 -- Try to join a critical pair, but using a different set of critical
 -- pairs for normalisation.
@@ -452,62 +428,47 @@ consider config state cp =
 {-# SCC considerUsing #-}
 considerUsing ::
   Function f =>
-  RuleIndex f (ActiveRule f) -> Config f -> State f -> CriticalPair f -> State f
-considerUsing rules config@Config{..} state@State{..} cp0 =
+  RuleIndex f (Rule f) -> Config f -> State f -> Info -> CriticalPair f -> State f
+considerUsing rules config@Config{..} state@State{..} info cp0 =
   -- Important to canonicalise the rule so that we don't get
   -- bigger and bigger variable indices over time
   let cp = canonicalise cp0 in
   case joinCriticalPair cfg_join (st_joinable, st_complete) rules Nothing cp of
     Right (mcp, cps) ->
       let
-        state' = foldl' (considerUsing rules config) state cps
+        state' = foldl' (\state cp -> considerUsing rules config state info cp) state cps
       in case mcp of
         Just cp -> addJoinable state' (cp_eqn cp)
         Nothing -> state'
 
     Left (cp, model) ->
-      foldl' (addCP config model) state (split cp)
+      foldl' (\state cp -> addCP config model state info cp) state (split cp)
 
 {-# INLINEABLE addCP #-}
-addCP :: Function f => Config f -> Model f -> State f -> CriticalPair f -> State f
-addCP config model state@State{..} CriticalPair{..} =
+addCP :: Function f => Config f -> Model f -> State f -> Info -> CriticalPair f -> State f
+addCP config model state@State{..} info CriticalPair{..} =
   let
     pf = certify cp_proof
     rule = orient cp_eqn pf
-
-    makeRule n k r =
-      ActiveRule {
-        rule_active = n,
-        rule_rid = k,
-        rule_depth = cp_depth,
-        rule_max = cp_max,
-        rule_rule = r rule,
-        rule_positions = positions (lhs (r rule)) }
   in
-  addActive config state $ \n k1 k2 ->
+  addActive config state $ \n ->
   Active {
     active_id = n,
-    active_depth = cp_depth,
+    active_info = info,
     active_rule = rule,
     active_model = model,
     active_top = cp_top,
-    active_max = cp_max,
     active_proof = pf,
-    active_rules =
-      usortBy (comparing (canonicalise . rule_rule)) $
-        makeRule n k1 id:
-        [ makeRule n k2 backwards
-        | not (oriented (orientation rule)) ] }
+    active_positions = positionsRule rule }
 
 -- Add a new equation.
 {-# INLINEABLE addAxiom #-}
 addAxiom :: Function f => Config f -> State f -> Axiom f -> State f
 addAxiom config state axiom =
-  consider config state $
+  consider config state
+    Info { info_depth = 0, info_max = IntSet.fromList [axiom_number axiom | cfg_complete_subsets config] }
     CriticalPair {
       cp_eqn = axiom_eqn axiom,
-      cp_depth = 0,
-      cp_max = Max $ IntSet.fromList [axiom_number axiom | cfg_complete_subsets config],
       cp_top = Nothing,
       cp_proof = Proof.axiom axiom }
 
@@ -530,7 +491,7 @@ checkCompleteness _config state =
           st_complete = Index.fromListWith lhs rules }
   where
     maxSet s = if IntSet.null s then minBound else IntSet.findMax s
-    maxN = maximum [maxSet (unMax (active_max r)) | r <- IntMap.elems (st_active_ids state)]
+    maxN = maximum [maxSet (info_max (active_info r)) | r <- IntMap.elems (st_active_set state)]
     excluded = go IntSet.empty
     go excl
       | m > maxN = excl
@@ -541,20 +502,20 @@ checkCompleteness _config state =
     bound excl = minimum . map (passiveMax excl) . concatMap snd . Queue.toList $ st_queue state
 
     passiveMax excl p = fromMaybe maxBound $ do
-      (r1, r2, _) <- findPassive state p
-      let s = unMax (rule_max r1) `IntSet.union` unMax (rule_max r2)
+      Overlap{overlap_rule1 = r1, overlap_rule2 = r2} <- findPassive state p
+      let s = info_max (active_info r1) `IntSet.union` info_max (active_info r2)
       guard (s `IntSet.disjoint` excl)
       (n, _) <- IntSet.maxView s
       return n
-    rules = map rule_rule (filter ok (IntMap.elems (st_rule_ids state)))
-    ok r = unMax (rule_max r) `IntSet.disjoint` excluded
+    rules = concatMap activeRules (filter ok (IntMap.elems (st_active_set state)))
+    ok r = info_max (active_info r) `IntSet.disjoint` excluded
 
 -- Assume that all rules form a confluent rewrite system.
 {-# INLINEABLE assumeComplete #-}
 assumeComplete :: Function f => State f -> State f
 assumeComplete state =
   state { st_not_complete = IntSet.empty,
-          st_complete = Index.fromListWith lhs (map rule_rule (IntMap.elems (st_rule_ids state))) }
+          st_complete = Index.fromListWith lhs (concatMap activeRules (IntMap.elems (st_active_set state))) }
 
 -- For goal terms we store the set of all their normal forms.
 -- Name and number are for information only.
@@ -673,30 +634,30 @@ interreduce config@Config{..} state =
         -- Clear out st_joinable, since we don't know which
         -- equations have made use of each active.
         state { st_joinable = Index.empty, st_complete = Index.empty }
-        (IntMap.elems (st_active_ids state))
+        (IntMap.elems (st_active_set state))
     in state' { st_joinable = st_joinable state, st_complete = st_complete state, st_simplified_at = st_next_active state' }
 
 {-# INLINEABLE interreduce1 #-}
 interreduce1 :: Function f => Config f -> State f -> Active f -> State f
-interreduce1 config@Config{..} state active =
+interreduce1 config@Config{..} state active@Active{..} =
   -- Exclude the active from the rewrite rules when testing
   -- joinability, otherwise it will be trivially joinable.
   case
     joinCriticalPair cfg_join
       (Index.empty, Index.empty) -- (st_joinable state)
       (st_rules (deleteActive state active))
-      (Just (active_model active)) (active_cp active)
+      (Just active_model) (active_cp active)
   of
     Right (_, cps) ->
-      flip (foldl' (consider config)) cps $
+      flip (foldl' (\state cp -> consider config state active_info cp)) cps $
       message (DeleteActive active) $
       deleteActive state active
     Left (cp, model)
       | cp_eqn cp `simplerThan` cp_eqn (active_cp active) ->
-        flip (foldl' (consider config)) (split cp) $
+        flip (foldl' (\state cp -> consider config state active_info cp)) (split cp) $
         message (DeleteActive active) $
         deleteActive state active
-      | model /= active_model active ->
+      | model /= active_model ->
         flip addActiveOnly active { active_model = model } $
         deleteActive state active
       | otherwise ->
@@ -763,8 +724,8 @@ complete1 config@Config{..} state
   | otherwise =
     case dequeue config state of
       (Nothing, state) -> (False, state)
-      (Just (overlap, _, _), state) ->
-        (True, consider config state overlap)
+      (Just (info, overlap, _, _), state) ->
+        (True, consider config state info overlap)
 
 {-# INLINEABLE solved #-}
 solved :: Function f => State f -> Bool
@@ -794,7 +755,7 @@ solutions State{..} = do
 -- Return all current rewrite rules.
 {-# INLINEABLE rules #-}
 rules :: Function f => State f -> [Rule f]
-rules = map active_rule . IntMap.elems . st_active_ids
+rules = map active_rule . IntMap.elems . st_active_set
 
 ----------------------------------------------------------------------
 -- For code which uses twee as a library.
