@@ -78,12 +78,6 @@ data Axiom f =
     axiom_eqn :: !(Equation f) }
   deriving (Eq, Ord, Show)
 
--- XXX remove this!
-instance Symbolic (Axiom f) where
-  type ConstantOf (Axiom f) = f
-  termsDL Axiom{..} = termsDL axiom_eqn
-  subst_ sub axiom = axiom { axiom_eqn = subst_ sub (axiom_eqn axiom) }
-
 -- | Checks a 'Derivation' and, if it is correct, returns a
 -- certified 'Proof'.
 --
@@ -407,7 +401,8 @@ eliminateDefinitions axioms p = head (mapLemmas elim [p])
 
     find t =
       listToMaybe $ do
-        (sub, Axiom{axiom_eqn = l :=: r}) <- Index.matches t idx
+        (_, UseAxiom Axiom{axiom_eqn = l :=: r} _) <- Index.matches t idx
+        let Just sub = match l t
         return (r, sub)
 
     replace sub (Var (V x)) =
@@ -416,7 +411,7 @@ eliminateDefinitions axioms p = head (mapLemmas elim [p])
       cong f (map (replace sub) (unpack ts))
 
     axSet = Set.fromList axioms
-    idx = Index.fromListWith (eqn_lhs . axiom_eqn) axioms
+    idx = Index.fromList [(eqn_lhs (axiom_eqn ax), axiom ax) | ax <- axioms]
 
 -- | Applies a derivation at a particular path in a term.
 congPath :: [Int] -> Term f -> Derivation f -> Derivation f
