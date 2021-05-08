@@ -48,11 +48,12 @@ data MainFlags =
     flags_flatten_goals_lightly :: Bool,
     flags_flatten_all :: Bool,
     flags_eliminate :: [String],
-    flags_backwards_goal :: Int }
+    flags_backwards_goal :: Int,
+    flags_flatten_backwards_goal :: Int }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenLightly <*> flattenAll <*> eliminate <*> backwardsGoal
+  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenLightly <*> flattenAll <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal
   where
     proof =
       inGroup "Output options" $
@@ -96,6 +97,10 @@ parseMainFlags =
       expert $
       inGroup "Completion heuristics" $
       flag "backwards-goal" ["Try rewriting backwards from the goal this many times (0 by default)."] 0 argNum
+    flattenBackwardsGoal =
+      expert $
+      inGroup "Completion heuristics" $
+      flag "flatten-backwards-goal" ["Try rewriting backwards from the goal this many times when flattening (0 by default)."] 0 argNum
     eliminate =
       inGroup "Proof presentation" $
       concat <$>
@@ -416,35 +421,48 @@ makeContext prob = run prob $ \prob -> do
     ctx_equals = equals,
     ctx_type = ty }
 
-flattenGoals :: Bool -> Bool -> Problem Clause -> Problem Clause
-flattenGoals flattenAll full prob =
+flattenGoals :: Int -> Bool -> Bool -> Problem Clause -> Problem Clause
+flattenGoals backwardsGoal flattenAll full prob =
   run prob $ \prob -> do
-    cs <- concat <$> mapM flatten prob
-    return $
-      prob ++
-      [ Input{tag = "flattening", kind = Jukebox.Ax Definition,
-              what = c, source = Unknown }
-      | c <- cs ]
+    let ts = usort $ extraTerms prob
+    cs <- mapM define ts
+    return (prob ++ cs)
   where
-    flatten Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])} =
-      liftM2 (++) (flat x) (flat y)
-    flatten Input{what = Clause (Bind _ [Pos (x Jukebox.:=: y)])}
-      | flattenAll =
-        liftM2 (++) (flat x) (flat y)
-    flatten _ = return []
+    extraTerms prob = concatMap (input prob) prob
+    input prob Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])} =
+      concatMap term (backwards backwardsGoal prob x) ++
+      concatMap term (backwards backwardsGoal prob y)
+    input _ Input{what = Clause (Bind _ [Pos (x Jukebox.:=: y)])}
+      | flattenAll = term x ++ term y
+    input _ _ = []
 
-    flat (f :@: ts)
-      | not (all isVar ts) || usort ts /= ts = do
-        name <- newName f
-        let vs  = Jukebox.vars ts
-            g = name ::: FunType (map typ vs) (typ f)
-            c = clause [Pos (g :@: map Jukebox.Var vs Jukebox.:=: f :@: ts)]
-        css <- if full then concat <$> mapM flat ts else return []
-        return (c:css)
-    flat _ = return []
+    term t@(_f :@: ts)
+      | not (all isVar ts) || usort ts /= sort ts =
+        t:if full then concatMap term ts else []
+    term _ = []
 
     isVar (Jukebox.Var _) = True
     isVar _ = False
+
+    define (f :@: ts) = do
+      name <- newName f
+      let vs  = Jukebox.vars ts
+          g = name ::: FunType (map typ vs) (typ f)
+          c = clause [Pos (g :@: map Jukebox.Var vs Jukebox.:=: f :@: ts)]
+      return Input{tag = "flattening", kind = Jukebox.Ax Definition,
+                   what = c, source = Unknown }
+
+    backwards 0 _ t = [t]
+    backwards n cs t =
+      t:
+      [ v
+      | Input{what = Clause (Bind _ [Pos (x0 Jukebox.:=: y0)])} <- cs,
+        (x, y) <- [(x0, y0), (y0, x0)],
+        (s, k) <- contexts t,
+        sub <- maybeToList (Jukebox.match x s),
+        let u = k (Jukebox.subst sub y),
+        ground u,
+        v <- backwards (n-1) cs u ]
 
 -- Encode existentials so that all goals are ground.
 addNarrowing :: TweeContext -> Problem Clause -> Problem Clause
@@ -531,9 +549,9 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
   let
     -- Encode whatever needs encoding in the problem
     obligs'
-      | flags_flatten_goals_lightly = flattenGoals False False obligs
-      | flags_flatten_all = flattenGoals True True obligs
-      | flags_flatten_goals = flattenGoals False True obligs
+      | flags_flatten_goals_lightly = flattenGoals flags_flatten_backwards_goal False False obligs
+      | flags_flatten_all = flattenGoals flags_flatten_backwards_goal True True obligs
+      | flags_flatten_goals = flattenGoals flags_flatten_backwards_goal False True obligs
       | otherwise = obligs
     ctx = makeContext obligs'
     lowercaseSkolem x
