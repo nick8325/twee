@@ -45,15 +45,17 @@ data MainFlags =
     flags_flip_ordering :: Bool,
     flags_give_up_on_saturation :: Bool,
     flags_flatten_goals :: Bool,
+    flags_flatten_nonground :: Bool,
     flags_flatten_goals_lightly :: Bool,
     flags_flatten_all :: Bool,
     flags_eliminate :: [String],
     flags_backwards_goal :: Int,
-    flags_flatten_backwards_goal :: Int }
+    flags_flatten_backwards_goal :: Int,
+    flags_equals_transformation :: Bool }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenLightly <*> flattenAll <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal
+  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation
   where
     proof =
       inGroup "Output options" $
@@ -85,6 +87,10 @@ parseMainFlags =
       expert $
       inGroup "Completion heuristics" $
       bool "flatten-goal" ["Flatten goal by adding new axioms (on by default)."] True
+    flattenNonGround =
+      expert $
+      inGroup "Completion heuristics" $
+      bool "flatten-nonground" ["Flatten even non-ground clauses (off by default)."] False
     flattenLightly =
       expert $
       inGroup "Completion heuristics" $
@@ -101,6 +107,10 @@ parseMainFlags =
       expert $
       inGroup "Completion heuristics" $
       flag "flatten-backwards-goal" ["Try rewriting backwards from the goal this many times when flattening (0 by default)."] 0 argNum
+    equalsTransformation =
+      expert $
+      inGroup "Completion heuristics" $
+      bool "equals-transformation" ["Apply the 'equals transformation' even to ground goals (off by default)."] False
     eliminate =
       inGroup "Proof presentation" $
       concat <$>
@@ -421,8 +431,8 @@ makeContext prob = run prob $ \prob -> do
     ctx_equals = equals,
     ctx_type = ty }
 
-flattenGoals :: Int -> Bool -> Bool -> Problem Clause -> Problem Clause
-flattenGoals backwardsGoal flattenAll full prob =
+flattenGoals :: Int -> Bool -> Bool -> Bool -> Problem Clause -> Problem Clause
+flattenGoals backwardsGoal flattenNonGround flattenAll full prob =
   run prob $ \prob -> do
     let ts = usort $ extraTerms prob
     cs <- mapM define ts
@@ -436,9 +446,11 @@ flattenGoals backwardsGoal flattenAll full prob =
       | flattenAll = term x ++ term y
     input _ _ = []
 
-    term t@(_f :@: ts)
-      | not (all isVar ts) || usort ts /= sort ts =
-        t:if full then concatMap term ts else []
+    term t@(_f :@: ts) =
+      [ t
+      | ground t || flattenNonGround,
+        not (all isVar ts) || usort ts /= sort ts ] ++
+      if full then concatMap term ts else []
     term _ = []
 
     isVar (Jukebox.Var _) = True
@@ -465,14 +477,14 @@ flattenGoals backwardsGoal flattenAll full prob =
         v <- backwards (n-1) cs u ]
 
 -- Encode existentials so that all goals are ground.
-addNarrowing :: TweeContext -> Problem Clause -> Problem Clause
-addNarrowing TweeContext{..} prob =
+addNarrowing :: Bool -> TweeContext -> Problem Clause -> Problem Clause
+addNarrowing alwaysNarrow TweeContext{..} prob =
   unchanged ++ equalityClauses
   where
     (unchanged, nonGroundGoals) = partitionEithers (map f prob)
       where
         f inp@Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])}
-          | not (ground x) || not (ground y) =
+          | not (ground x) || not (ground y) || alwaysNarrow =
             Right (inp, (x, y))
         f inp = Left inp
 
@@ -549,9 +561,9 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
   let
     -- Encode whatever needs encoding in the problem
     obligs'
-      | flags_flatten_goals_lightly = flattenGoals flags_flatten_backwards_goal False False obligs
-      | flags_flatten_all = flattenGoals flags_flatten_backwards_goal True True obligs
-      | flags_flatten_goals = flattenGoals flags_flatten_backwards_goal False True obligs
+      | flags_flatten_goals_lightly = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground False False obligs
+      | flags_flatten_all = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground True True obligs
+      | flags_flatten_goals = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground False True obligs
       | otherwise = obligs
     ctx = makeContext obligs'
     lowercaseSkolem x
@@ -561,7 +573,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
             Renaming xss xs ->
               Renaming (map (map toLower) xss) (map toLower xs)
       | otherwise = x
-    prob = prettyNames (mapName lowercaseSkolem (addNarrowing ctx obligs'))
+    prob = prettyNames (mapName lowercaseSkolem (addNarrowing flags_equals_transformation ctx obligs'))
 
   (unsortedAxioms0, goals0) <-
     case identifyProblem ctx prob of

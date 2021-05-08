@@ -29,7 +29,6 @@ import Data.Function
 import qualified Data.Map.Strict as Map
 import Data.Map(Map)
 import Data.Int
-import Data.Ord
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class

@@ -53,7 +53,7 @@ module Twee.Term(
   matchMany, matchManyIn, matchManyList, matchManyListIn,
   isInstanceOf, isVariantOf,
   -- * Unification
-  unify, unifyList, unifyMany,
+  unify, unifyList, unifyMany, unifyManyTri,
   unifyTri, unifyTriFrom, unifyListTri, unifyListTriFrom,
   TriangleSubst(..), emptyTriangleSubst,
   close,
@@ -437,10 +437,16 @@ unifyList t u = do
 
 -- | Unify a collection of pairs of terms.
 unifyMany :: [(Term f, Term f)] -> Maybe (Subst f)
-unifyMany ts = unifyList us vs
+unifyMany ts = close <$> unifyManyTri ts
+
+-- | Unify a collection of pairs of terms, returning a triangle substitution.
+unifyManyTri :: [(Term f, Term f)] -> Maybe (TriangleSubst f)
+unifyManyTri ts = loop ts (Triangle emptySubst)
   where
-    us = buildList (map fst ts)
-    vs = buildList (map snd ts)
+    loop [] sub = Just sub
+    loop ((t, u):ts) sub = do
+      sub <- unifyTriFrom t u sub
+      loop ts sub
 
 -- | Unify two terms, returning a triangle substitution.
 -- This is slightly faster than 'unify'.
