@@ -47,14 +47,15 @@ raceStdout xs = do
 
 variants :: [[String]]
 variants =
-  [["--normalise-queue-percent", "10", "--cp-renormalise-threshold", "10", "--flip-ordering", "--lhs-weight", "4"],
-   ["--normalise-queue-percent", "10", "--cp-renormalise-threshold", "10", "--flip-ordering", "--lhs-weight", "9"],
-   ["--lhs-weight", "1", "--flip-ordering"],
-   ["--lhs-weight", "4"],
-   ["--lhs-weight", "5"],
-   ["--normalise-queue-percent", "10", "--cp-renormalise-threshold", "10", "--dup-cost", "0", "--dup-factor", "7"],
-   ["--no-simplify"],
-   ["--normalise-queue-percent", "10", "--cp-renormalise-threshold", "10", "--depth-weight", "0"]]
+  map words
+  ["--lhs-weight 1 --flip-ordering --normalise-queue-percent 10 --cp-renormalise-threshold 10",
+   "--lhs-weight 9 --no-flatten-goal --normalise-queue-percent 10 --cp-renormalise-threshold 10",
+   "--lhs-weight 5",
+   "--flip-ordering --lhs-weight 1 --dup-cost 0 --dup-factor 7",
+   "--lhs-weight 9 --flip-ordering --no-flatten-goal",
+   "--lhs-weight 5 --flip-ordering --normalise-queue-percent 10 --cp-renormalise-threshold 10",
+   "--flip-ordering --lhs-weight 1 --no-simplify",
+   "--flatten-goal-lightly --normalise-queue-percent 10 --cp-renormalise-threshold 10"]
 
 main = do
   hSetBuffering stdout LineBuffering
