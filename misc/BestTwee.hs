@@ -59,9 +59,8 @@ ratings =
 
 problemBonus :: (Int, Int, Int, Int, Int, Int) -> String -> Int
 problemBonus (b0, b1, b2, b3, b4, b5) p =
-  --ebonus *
-  --case Map.lookup p ratings of
-  case lookup p notE of
+  ebonus *
+  case Map.lookup p ratings of
     Nothing -> b0
     Just x
       | x < 0.7 ->   b1
@@ -72,7 +71,7 @@ problemBonus (b0, b1, b2, b3, b4, b5) p =
   where
     ebonus =
       case lookup p notE of
-        Nothing -> 3
+        Nothing -> 1
         Just _ -> 1
 
 greatProblemsBonus :: (Int, Int, Int, Int, Int, Int) -> String -> [String]
@@ -81,10 +80,10 @@ greatProblemsBonus b p =
 
 bonuses :: [(String, (Int, Int, Int, Int, Int, Int))]
 bonuses =
-  [("no bonus", (1, 1, 1, 1, 1, 1)),
-   ("low bonus", (1, 1, 2, 3, 4, 5)),
-   ("medium bonus", (1, 2, 4, 6, 8, 10)),
-   ("high bonus", (0, 1, 2, 3, 4, 5))]
+  [("no bonus", (1, 1, 1, 1, 1, 1))]
+   --("low bonus", (1, 1, 2, 3, 4, 5))]
+   --("medium bonus", (1, 2, 4, 6, 8, 10))]
+   --("high bonus", (0, 1, 2, 3, 4, 5))]
    --("big fish", (0, 0, 0, 0, 1, 1))]
 
 readResults ok = do
@@ -133,11 +132,11 @@ main = do
         best = greedy results1
 
       putStrLn (option ++ "/" ++ bonus ++ ":")
-      forM_ (take 15 $ zip3 [1..] best (inits best)) $ \(i, name, names) -> do
+      forM_ (take 8 $ zip3 [1..] best (inits best)) $ \(i, name, names) -> do
         putStrLn (show i ++ ". " ++ name ++ " " ++ show (score results1 (name:names)) ++ ", useful at levels " ++ show (drop (length fixed) $ levels results1 name names))
 
       putStrLn ""
---
+
 --      putStrLn "\nBest:"
 --      forM_ [1..8] $ \i -> do
 --        cover <- maxCover i results1
@@ -160,6 +159,16 @@ greedy results =
 fixed :: [String]
 fixed = [
   "twee-210508-twee-bench-lhs1-flip-aggrnorm",
+  "twee-210508-twee-bench-lhs4-nogoal",
+  "twee-210508-twee-bench-lhs9-flip",
+  "twee-210509-twee-bench-flattenlightly-aggrnorm",
+  "twee-210509-twee-bench-no-dup",
+  "twee-210508-twee-bench-lhs9-nogoal-aggrnorm",
+  "twee-210508-twee-bench-lhs9-flip-nogoal",
+  "twee-210508-twee-bench-lhs4-aggrnorm"]
+
+fixed1 = [
+  "twee-210508-twee-bench-lhs1-flip-aggrnorm",
   "twee-210508-twee-bench-lhs9-nogoal-aggrnorm",
   "twee-210508-twee-bench-lhs5",
   "twee-210509-twee-bench-no-dup",
@@ -167,6 +176,17 @@ fixed = [
   "twee-210508-twee-bench-lhs5-flip-aggrnorm",
   "twee-210508-twee-bench-no-simplify",
   "twee-210509-twee-bench-lhsnormal-flattenlightly-aggrnorm"]
+
+fixed2 = take 2 [
+  "twee-210508-twee-bench-lhs1-flip-aggrnorm",
+  "twee-210508-twee-bench-lhs4-nogoal",
+  "twee-210508-twee-bench-lhs9-flip",
+  "twee-210508-twee-bench-lhs9-flip-nogoal",
+  "twee-210509-twee-bench-flattenlightly",
+  "twee-210509-twee-bench-no-dup",
+  "twee-210508-twee-bench-lhs4-aggrnorm",
+  "twee-210508-twee-bench-lhs9-nogoal-aggrnorm"]
+
 
 -- with bonus only for e-unsolvable problems:
 -- 1. twee-210508-twee-bench-lhs1-flip-aggrnorm 1059, useful at levels [(0,1059)]
