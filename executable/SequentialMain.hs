@@ -939,5 +939,5 @@ main = do
             isUnitEquality [Neg (_ Jukebox.:=: _)] = True
             isUnitEquality _ = False
             isUnit = all isUnitEquality (map (toLiterals . what) prob0)
-            main' = if isUnit then main else main{flags_formal_proof = False}
+            main' = if isUnit then main{flags_explain_encoding = False} else main{flags_formal_proof = False}
           encode prob >>= prove config main' later
