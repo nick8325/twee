@@ -75,7 +75,7 @@ import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Control.Arrow((&&&))
 import Twee.Utils
-import qualified Twee.Label as Label
+import qualified Data.Label as Label
 import Data.Typeable
 
 --------------------------------------------------------------------------------
@@ -730,7 +730,7 @@ class Labelled f where
 
 instance (Labelled f, Show f) => Show (Fun f) where show = show . fun_value
 
--- | For "deriving via": a Labelled instance which uses Twee.Label.
+-- | For "deriving via": a Labelled instance which uses Data.Label.
 newtype AutoLabel a = AutoLabel { unAutoLabel :: a }
 instance (Ord a, Typeable a) => Labelled (AutoLabel a) where
   label = fromIntegral . Label.labelNum . Label.label . unAutoLabel

@@ -32,7 +32,7 @@ import qualified Data.IntMap.Strict as IntMap
 import System.IO
 import System.Exit
 import qualified Data.Set as Set
-import qualified Twee.Label as Label
+import qualified Data.Label as Label
 import System.Console.ANSI
 import Data.Symbol
 

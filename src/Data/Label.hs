@@ -2,7 +2,7 @@
 -- Inspired by the 'intern' package.
 
 {-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns #-}
-module Twee.Label(Label, unsafeMkLabel, labelNum, label, find) where
+module Data.Label(Label, unsafeMkLabel, labelNum, label, find) where
 
 import Data.IORef
 import System.IO.Unsafe

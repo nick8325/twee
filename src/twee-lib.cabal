@@ -47,7 +47,6 @@ library
     Twee.Index
     Twee.Join
     Twee.KBO
-    Twee.Label
     Twee.PassiveQueue
     Twee.Pretty
     Twee.Proof
@@ -56,6 +55,7 @@ library
     Twee.Term
     Twee.Task
     Twee.Utils
+    Data.Label
   other-modules:
     Data.ChurchList
     Data.DynamicArray
