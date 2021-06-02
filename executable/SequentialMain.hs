@@ -51,11 +51,12 @@ data MainFlags =
     flags_eliminate :: [String],
     flags_backwards_goal :: Int,
     flags_flatten_backwards_goal :: Int,
-    flags_equals_transformation :: Bool }
+    flags_equals_transformation :: Bool,
+    flags_distributivity_heuristic :: Bool }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation
+  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic
   where
     proof =
       inGroup "Output options" $
@@ -111,6 +112,10 @@ parseMainFlags =
       expert $
       inGroup "Completion heuristics" $
       bool "equals-transformation" ["Apply the 'equals transformation' even to ground goals (off by default)."] False
+    distributivityHeuristic =
+      expert $
+      inGroup "Completion heuristics" $
+      bool "distributivity-heuristic" ["Treat distributive operators specially (off by default)."] False
     eliminate =
       inGroup "Proof presentation" $
       concat <$>
@@ -476,6 +481,39 @@ flattenGoals backwardsGoal flattenNonGround flattenAll full prob =
         ground u,
         v <- backwards (n-1) cs u ]
 
+addDistributivityHeuristic :: Problem Clause -> Problem Clause
+addDistributivityHeuristic prob =
+  run prob $ \prob -> do
+    cs <- mapM add prob
+    return (prob ++ catMaybes cs)
+
+  where
+    add Input{what = Clause (Bind _ [Pos (t Jukebox.:=: u)])}
+      | isDistributivity t u = Just <$> define t
+      | isDistributivity u t = Just <$> define u
+    add _ = return Nothing
+
+    isDistributivity (f1 :@: [Jukebox.Var x1, g1 :@: [Jukebox.Var y1, Jukebox.Var z1]])
+          (g2 :@: [f2 :@: [Jukebox.Var x2, Jukebox.Var y2],
+                   f3 :@: [Jukebox.Var x3, Jukebox.Var z2]]) =
+      f1 == f2 && f2 == f3 && g1 == g2 &&
+      x1 == x2 && x2 == x3 && y1 == y2 && z1 == z2
+      
+    isDistributivity (f1 :@: [g1 :@: [Jukebox.Var x1, Jukebox.Var y1], Jukebox.Var z1])
+          (g2 :@: [f2 :@: [Jukebox.Var x2, Jukebox.Var z2],
+                   f3 :@: [Jukebox.Var y2, Jukebox.Var z3]]) =
+      f1 == f2 && f2 == f3 && g1 == g2 &&
+      x1 == x2 && y1 == y2 && z1 == z2 && z2 == z3
+    isDistributivity _ _ = False
+
+    define (f :@: ts) = do
+      name <- newName f
+      let vs  = Jukebox.vars ts
+          g = name ::: FunType (map typ vs) (typ f)
+          c = clause [Pos (g :@: map Jukebox.Var vs Jukebox.:=: f :@: ts)]
+      return Input{tag = "distributivity_heuristic", kind = Jukebox.Ax Definition,
+                   what = c, source = Unknown }
+
 -- Encode existentials so that all goals are ground.
 addNarrowing :: Bool -> TweeContext -> Problem Clause -> Problem Clause
 addNarrowing alwaysNarrow TweeContext{..} prob =
@@ -560,12 +598,15 @@ runTwee :: GlobalFlags -> TSTPFlags -> HornFlags -> [String] -> Config Constant 
 runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obligs = {-# SCC runTwee #-} do
   let
     -- Encode whatever needs encoding in the problem
-    obligs'
+    obligs1
       | flags_flatten_goals_lightly = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground False False obligs
       | flags_flatten_all = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground True True obligs
       | flags_flatten_goals = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground False True obligs
       | otherwise = obligs
-    ctx = makeContext obligs'
+    obligs2
+      | flags_distributivity_heuristic = addDistributivityHeuristic obligs1
+      | otherwise = obligs1
+    ctx = makeContext obligs2
     lowercaseSkolem x
       | hasLabel "skolem" x =
         withRenamer x $ \s i ->
@@ -573,7 +614,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
             Renaming xss xs ->
               Renaming (map (map toLower) xss) (map toLower xs)
       | otherwise = x
-    prob = prettyNames (mapName lowercaseSkolem (addNarrowing flags_equals_transformation ctx obligs'))
+    prob = prettyNames (mapName lowercaseSkolem (addNarrowing flags_equals_transformation ctx obligs2))
 
   (unsortedAxioms0, goals0) <-
     case identifyProblem ctx prob of
