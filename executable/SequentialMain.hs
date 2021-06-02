@@ -488,29 +488,38 @@ addDistributivityHeuristic prob =
     return (prob ++ catMaybes cs)
 
   where
-    add Input{what = Clause (Bind _ [Pos (t Jukebox.:=: u)])}
-      | isDistributivity t u = Just <$> define t
-      | isDistributivity u t = Just <$> define u
+    add Input{what = Clause (Bind _ [Pos (t Jukebox.:=: u)])} =
+      case checkDistributivity t u `mplus` checkDistributivity u t of
+        Just (f, g, ty) -> do
+          name <- newName (base f ++ "_" ++ base g)
+          x <- Jukebox.Var <$> newSymbol "X" ty
+          y <- Jukebox.Var <$> newSymbol "Y" ty
+          z <- Jukebox.Var <$> newSymbol "Z" ty
+          Just <$> define name (g :@: [f :@: [x, y], z])
+        _ -> return Nothing
     add _ = return Nothing
 
-    isDistributivity (f1 :@: [Jukebox.Var x1, g1 :@: [Jukebox.Var y1, Jukebox.Var z1]])
-          (g2 :@: [f2 :@: [Jukebox.Var x2, Jukebox.Var y2],
-                   f3 :@: [Jukebox.Var x3, Jukebox.Var z2]]) =
-      f1 == f2 && f2 == f3 && g1 == g2 &&
-      x1 == x2 && x2 == x3 && y1 == y2 && z1 == z2
+    checkDistributivity
+      (f1 :@: [Jukebox.Var x1, g1 :@: [Jukebox.Var y1, Jukebox.Var z1]])
+      (g2 :@: [f2 :@: [Jukebox.Var x2, Jukebox.Var y2],
+               f3 :@: [Jukebox.Var x3, Jukebox.Var z2]])
+      | f1 == f2 && f2 == f3 && g1 == g2 &&
+        x1 == x2 && x2 == x3 && y1 == y2 && z1 == z2 =
+        Just (f1, g1, Jukebox.typ x1)
       
-    isDistributivity (f1 :@: [g1 :@: [Jukebox.Var x1, Jukebox.Var y1], Jukebox.Var z1])
-          (g2 :@: [f2 :@: [Jukebox.Var x2, Jukebox.Var z2],
-                   f3 :@: [Jukebox.Var y2, Jukebox.Var z3]]) =
-      f1 == f2 && f2 == f3 && g1 == g2 &&
-      x1 == x2 && y1 == y2 && z1 == z2 && z2 == z3
-    isDistributivity _ _ = False
+    checkDistributivity
+      (f1 :@: [g1 :@: [Jukebox.Var x1, Jukebox.Var y1], Jukebox.Var z1])
+      (g2 :@: [f2 :@: [Jukebox.Var x2, Jukebox.Var z2],
+       f3 :@: [Jukebox.Var y2, Jukebox.Var z3]])
+      | f1 == f2 && f2 == f3 && g1 == g2 &&
+        x1 == x2 && y1 == y2 && z1 == z2 && z2 == z3 =
+        Just (f1, g1, Jukebox.typ x1)
+    checkDistributivity _ _ = Nothing
 
-    define (f :@: ts) = do
-      name <- newName f
-      let vs  = Jukebox.vars ts
-          g = name ::: FunType (map typ vs) (typ f)
-          c = clause [Pos (g :@: map Jukebox.Var vs Jukebox.:=: f :@: ts)]
+    define name t = do
+      let vs  = Jukebox.vars t
+          g = name ::: FunType (map typ vs) (typ t)
+          c = clause [Pos (g :@: map Jukebox.Var vs Jukebox.:=: t)]
       return Input{tag = "distributivity_heuristic", kind = Jukebox.Ax Definition,
                    what = c, source = Unknown }
 
