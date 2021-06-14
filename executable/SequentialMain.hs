@@ -52,11 +52,12 @@ data MainFlags =
     flags_backwards_goal :: Int,
     flags_flatten_backwards_goal :: Int,
     flags_equals_transformation :: Bool,
-    flags_distributivity_heuristic :: Bool }
+    flags_distributivity_heuristic :: Bool,
+    flags_kbo_weight0 :: Bool }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic
+  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic <*> kboWeight0
   where
     proof =
       inGroup "Output options" $
@@ -80,6 +81,10 @@ parseMainFlags =
       expert $
       inGroup "Term order options" $
       bool "flip-ordering" ["Make more common function symbols smaller (off by default)."] False
+    kboWeight0 =
+      expert $
+      inGroup "Term order options" $
+      bool "kbo-weight0" ["Give functions of arity >= 2 a weight of 0."] False
     giveUp =
       expert $
       inGroup "Output options" $
@@ -365,10 +370,17 @@ data TweeContext =
     ctx_type    :: Type }
 
 -- Convert back and forth between Twee and Jukebox.
-tweeConstant :: HornFlags -> TweeContext -> Precedence -> Jukebox.Function -> Constant
-tweeConstant flags TweeContext{..} prec fun
+tweeConstant :: MainFlags -> HornFlags -> TweeContext -> Precedence -> Jukebox.Function -> Constant
+tweeConstant MainFlags{..} flags TweeContext{..} prec fun
   | fun == ctx_minimal = Minimal
-  | otherwise = Constant prec fun (Jukebox.arity fun) 1 1 (bonus fun)
+  | otherwise =
+    Constant {
+      con_prec = prec,
+      con_id = fun,
+      con_arity = Jukebox.arity fun,
+      con_size = if flags_kbo_weight0 && Jukebox.arity fun >= 2 then 0 else 1,
+      con_weight = 1,
+      con_bonus = bonus fun }
   where
     bonus fun =
       (isIfeq fun && encoding flags /= Asymmetric2) ||
@@ -398,13 +410,13 @@ jukeboxFunction :: TweeContext -> Constant -> Jukebox.Function
 jukeboxFunction _ Constant{..} = con_id
 jukeboxFunction TweeContext{..} Minimal = ctx_minimal
 
-tweeTerm :: HornFlags -> TweeContext -> (Jukebox.Function -> Precedence) -> Jukebox.Term -> Term Constant
-tweeTerm flags ctx prec t = build (tm t)
+tweeTerm :: MainFlags -> HornFlags -> TweeContext -> (Jukebox.Function -> Precedence) -> Jukebox.Term -> Term Constant
+tweeTerm flags horn ctx prec t = build (tm t)
   where
     tm (Jukebox.Var (x ::: _)) =
       var (V (fromIntegral (Label.labelNum (Label.label x))))
     tm (f :@: ts) =
-      app (fun (tweeConstant flags ctx (prec f) f)) (map tm ts)
+      app (fun (tweeConstant flags horn ctx (prec f) f)) (map tm ts)
 
 jukeboxTerm :: TweeContext -> Term Constant -> Jukebox.Term
 jukeboxTerm TweeContext{..} (Var (V x)) =
@@ -604,7 +616,7 @@ identifyProblem TweeContext{..} prob =
     identify inp = Left inp
 
 runTwee :: GlobalFlags -> TSTPFlags -> HornFlags -> [String] -> Config Constant -> MainFlags -> (IO () -> IO ()) -> Problem Clause -> IO Answer
-runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obligs = {-# SCC runTwee #-} do
+runTwee globals (TSTPFlags tstp) horn precedence config flags@MainFlags{..} later obligs = {-# SCC runTwee #-} do
   let
     -- Encode whatever needs encoding in the problem
     obligs1
@@ -648,7 +660,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obli
 
     -- Translate everything to Twee.
     toEquation (t, u) =
-      canonicalise (tweeTerm horn ctx prec t :=: tweeTerm horn ctx prec u)
+      canonicalise (tweeTerm flags horn ctx prec t :=: tweeTerm flags horn ctx prec u)
 
     axiomCompare ax1 ax2
       | ax1' `simplerThan` ax2' = LT
