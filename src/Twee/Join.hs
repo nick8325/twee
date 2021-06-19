@@ -174,7 +174,7 @@ groundJoin config eqns idx ctx cp@CriticalPair{cp_eqn = t :=: u, ..} =
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
     ([], instances) ->
       let cps = [ subst sub cp | sub <- instances ] in
-      Right (Just cp, usortBy (comparing (canonicalise . order . cp_eqn)) cps)
+      Right (Just cp, usortBy (comparing (order . cp_eqn)) cps)
     (model:_, _) ->
       groundJoinFrom config eqns idx model ctx cp
 
