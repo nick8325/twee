@@ -83,10 +83,11 @@ greatProblemsBonus b p =
 bonuses :: [(String, (Int, Int, Int, Int, Int, Int))]
 bonuses =
   [("no bonus", (1, 1, 1, 1, 1, 1)),
-   ("low bonus", (1, 2, 3, 4, 5, 6))]
+   ("low bonus", (1, 1, 2, 3, 5, 8)),
    --("medium bonus", (1, 2, 4, 6, 8, 10)),
-   --("high bonus", (0, 1, 2, 3, 4, 5))]
-   --("big fish", (0, 0, 0, 0, 1, 1))]
+   --("high bonus", (0, 1, 2, 3, 4, 5)),
+   ("big fish", (0, 0, 0, 0, 1, 1)),
+   ("rating 1", (0, 0, 0, 0, 0, 1))]
 
 readResults ok = do
   filenames <- glob "/home/nick/writing/twee/times/*-twee-casc-extra-*"
@@ -120,10 +121,10 @@ main = do
   results <- readResults (`elem` probs)
   let
     options =
-      [("fast", \(fast, _, _) -> (fast, [], [])),
-       ("med", \(_, med, _) -> ([], med, []))]
+      [--("fast", \(fast, _, _) -> (fast, [], [])),
+       --("med", \(_, med, _) -> ([], med, [])),
        --("slow", \(_, _, slow) -> ([], [], slow))]
-       --("fast and slow", id)]
+       ("fast and med", \(fast, med, _) -> (fast, med, []))]
 
   forM_ bonuses $ \(bonus, b) -> do
     forM_ options $ \(option, f) -> do
@@ -144,13 +145,13 @@ main = do
 
       putStrLn ""
 
-      {-
-      putStrLn "\nBest:"
-      forM_ [1..6] $ \i -> do
+{-
+      putStrLn "Best:"
+      forM_ [6..6] $ \i -> do
         cover <- maxCover i results1
         putStrLn (show i ++ ": " ++ show (score results1 cover))
         forM_ cover $ \name -> putStrLn ("  " ++ name)
-      -}
+-}
 
 greedy [] = []
 greedy results =
@@ -166,13 +167,25 @@ greedy results =
         Nothing -> Left (length probs)
 
 fixed :: [String]
-fixed = [
+fixed = take 6 [
+  "twee-210619-twee-casc-extra-lhs5-flip-aggrnorm",
+  "twee-210619-twee-casc-extra-lhs9-nogoal-aggrnorm",
+  "twee-210621-twee-casc-extra-complete-subsets-flatten",
+  --"twee-210619-twee-casc-extra-lhs9-flip-nogoal-kbo0",
+  "twee-210621-twee-casc-extra-depth-60-kbo0",
+  "twee-210619-twee-casc-extra-no-dup",
+  "twee-210619-twee-casc-extra-no-dup-nogoal"]
+
+
+{- attempt 2:
+fixed = take 0 [
   "twee-210619-twee-casc-extra-lhs5-flip-aggrnorm-kbo0",
   "twee-210621-twee-casc-extra-depth-60-kbo0",
   "twee-210619-twee-casc-extra-complete-subsets",
   "twee-210621-twee-casc-extra-flatten-lhs9-kbo0",
   "twee-210619-twee-casc-extra-lhs9-nogoal-aggrnorm",
   "twee-210619-twee-casc-extra-lhs9-flip-nogoal-kbo0"]
+  -}
 
 {- attempt 1:
   "twee-210621-twee-casc-extra-flatten-lhs9-kbo0",
