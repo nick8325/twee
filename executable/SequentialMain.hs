@@ -572,7 +572,7 @@ addNarrowing alwaysNarrow TweeContext{..} prob =
                 let form = And (map (Literal . snd) equalityLiterals) in
                 ForAll (Bind (Set.fromList (vars form)) form),
               source =
-                Inference "encode_existential" "esa"
+                inference "encode_existential" "esa"
                   (map (fmap toForm . fst) nonGroundGoals) }
 
           input tag form =
@@ -581,7 +581,7 @@ addNarrowing alwaysNarrow TweeContext{..} prob =
               kind = Conj Conjecture,
               what = clause [form],
               source =
-                Inference "split_conjunct" "thm" [justification] }
+                inference "split_conjunct" "thm" [justification] }
 
         in [input tag form | (tag, form) <- equalityLiterals]
 
@@ -799,7 +799,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config flags@MainFlags{..} late
             Just inp -> go inp
            where
             go Input{source = Unknown} = []
-            go Input{source = Inference _ _ inps} = concatMap go inps
+            go Input{source = Inference _ _ inps} = concatMap (go . inputValue) inps
             go inp@Input{source = FromFile _ _} = [inp]
 
       when flags_explain_encoding $ do
@@ -894,7 +894,7 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
       kind = Jukebox.Ax Jukebox.Axiom,
       what = false,
       source =
-        Inference "resolution" "thm"
+        inference "resolution" "thm"
           [-- A proof of t != u
            existentialHack pg_goal_hint (fromJust (lookup pg_number goals)),
            -- A proof of t = u
@@ -923,7 +923,7 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
         kind = Jukebox.Ax Jukebox.Axiom,
         what = jukeboxEquation (equation (certify p)),
         source =
-          Inference name "thm" sources }
+          inference name "thm" sources }
       where
         (name, sources) = unpack p
 
@@ -953,7 +953,7 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
           -- if not, try its ancestors.
           find inp | ok inp = [inp]
           find Input{source = Inference _ _ inps} =
-            concatMap find inps
+            concatMap (find . inputValue) inps
           find _ = []
 
           ok inp =

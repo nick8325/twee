@@ -56,7 +56,7 @@ executable twee
                        containers,
                        pretty,
                        split,
-                       jukebox == 0.5.*,
+                       jukebox >= 0.5.4,
                        ansi-terminal >= 0.9,
                        symbol
   ghc-options:         -W -fno-warn-incomplete-patterns
