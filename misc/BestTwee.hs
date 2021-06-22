@@ -83,10 +83,10 @@ greatProblemsBonus b p =
 bonuses :: [(String, (Int, Int, Int, Int, Int, Int))]
 bonuses =
   [("no bonus", (1, 1, 1, 1, 1, 1)),
-   ("low bonus", (1, 1, 2, 3, 5, 8)),
+   ("low bonus", (1, 1, 2, 3, 5, 10)),
    --("medium bonus", (1, 2, 4, 6, 8, 10)),
    --("high bonus", (0, 1, 2, 3, 4, 5)),
-   ("big fish", (0, 0, 0, 0, 1, 1)),
+   --("big fish", (0, 0, 0, 0, 1, 1)),
    ("rating 1", (0, 0, 0, 0, 0, 1))]
 
 readResults ok = do
@@ -99,8 +99,8 @@ readResults ok = do
 --    fast <- filterM (solvedInTime 120 directory) solved
 --    med  <- filterM (solvedInTime 240 directory) solved
 --    slow <- filterM (solvedInTime 600 directory) solved
-    let fast = solvedInTime 240
-    let med  = solvedInTime 360
+    let fast = solvedInTime 210
+    let med  = solvedInTime 300
     let slow = solvedInTime (1/0)
     
     return (name, (fast, med, slow))
@@ -121,10 +121,10 @@ main = do
   results <- readResults (`elem` probs)
   let
     options =
-      [--("fast", \(fast, _, _) -> (fast, [], [])),
-       --("med", \(_, med, _) -> ([], med, [])),
+      [("fast", \(fast, _, _) -> (fast, [], [])),
+       ("med", \(_, med, _) -> ([], med, []))]
        --("slow", \(_, _, slow) -> ([], [], slow))]
-       ("fast and med", \(fast, med, _) -> (fast, med, []))]
+       --("fast and med", \(fast, med, _) -> (fast, med, []))]
 
   forM_ bonuses $ \(bonus, b) -> do
     forM_ options $ \(option, f) -> do
@@ -147,7 +147,7 @@ main = do
 
 {-
       putStrLn "Best:"
-      forM_ [6..6] $ \i -> do
+      forM_ [1..6] $ \i -> do
         cover <- maxCover i results1
         putStrLn (show i ++ ": " ++ show (score results1 cover))
         forM_ cover $ \name -> putStrLn ("  " ++ name)
@@ -167,15 +167,23 @@ greedy results =
         Nothing -> Left (length probs)
 
 fixed :: [String]
-fixed = take 6 [
-  "twee-210619-twee-casc-extra-lhs5-flip-aggrnorm",
-  "twee-210619-twee-casc-extra-lhs9-nogoal-aggrnorm",
-  "twee-210621-twee-casc-extra-complete-subsets-flatten",
-  --"twee-210619-twee-casc-extra-lhs9-flip-nogoal-kbo0",
-  "twee-210621-twee-casc-extra-depth-60-kbo0",
+fixed = fixed_new
+fixed_new = take 6 [
+  "twee-210619-twee-casc-extra-lhsnormal-flatten",
+  "twee-210619-twee-casc-extra-lhs9-flip-nogoal-kbo0",
+  "twee-210619-twee-casc-extra-depth-60",
   "twee-210619-twee-casc-extra-no-dup",
-  "twee-210619-twee-casc-extra-no-dup-nogoal"]
+  "twee-210619-twee-casc-extra-lhs9-nogoal-aggrnorm-kbo0",
+  "twee-210619-twee-casc-extra-lhs5-flip-aggrnorm-kbo0"]
 
+fixed_old = take 2 [
+  "twee-210619-twee-casc-extra-no-dup",
+  "twee-210621-twee-casc-extra-depth-60-kbo0",
+  "twee-210619-twee-casc-extra-lhs5-flip-aggrnorm",
+  "twee-210619-twee-casc-extra-lhs9-nogoal-aggrnorm-kbo0",
+  "twee-210621-twee-casc-extra-complete-subsets-flatten",
+  "twee-210619-twee-casc-extra-lhs9-flip-nogoal",
+  "twee-210619-twee-casc-extra-no-dup-nogoal"]
 
 {- attempt 2:
 fixed = take 0 [
