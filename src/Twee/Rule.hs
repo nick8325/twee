@@ -10,7 +10,7 @@ import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
 import Data.Maybe
-import Data.List
+import Data.List hiding (singleton)
 import Twee.Utils
 import qualified Data.Map.Strict as Map
 import Data.Map(Map)

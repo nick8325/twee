@@ -25,7 +25,7 @@ import Twee.Pretty
 import Twee.Constraints hiding (funs)
 import Data.DList(DList)
 import Data.Int
-import Data.List
+import Data.List hiding (singleton)
 import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
 

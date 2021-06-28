@@ -8,7 +8,7 @@ import Twee.Rule
 import Twee.Index(Index)
 import qualified Data.Set as Set
 import Control.Monad
-import Data.List
+import Data.List hiding (singleton)
 import qualified Data.ChurchList as ChurchList
 import Data.ChurchList (ChurchList(..))
 import Twee.Utils
