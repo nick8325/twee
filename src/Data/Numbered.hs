@@ -1,6 +1,6 @@
 module Data.Numbered(
   Numbered,
-  empty, fromList, toList, size, (!),
+  empty, fromList, singleton, toList, size, (!),
   lookup, put, modify, filter, delete) where
 
 import Prelude hiding (filter, lookup)
@@ -19,6 +19,9 @@ instance Show a => Show (Numbered a) where show = show . toList
 
 empty :: Numbered a
 empty = fromList []
+
+singleton :: Int -> a -> Numbered a
+singleton i x = fromList [(i, x)]
 
 fromList :: [(Int, a)] -> Numbered a
 fromList xs =

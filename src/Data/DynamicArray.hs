@@ -50,6 +50,11 @@ newArray = runST $ do
   arr  <- P.unsafeFreezeSmallArray marr
   return (Array maxBound arr)
 
+{-# INLINE singleton #-}
+-- | Create an array with one element.
+singleton :: Default a => Int -> a -> Array a
+singleton i x = update i x newArray
+
 -- | Index into an array. O(1) time.
 {-# INLINE (!) #-}
 (!) :: Default a => Array a -> Int -> a

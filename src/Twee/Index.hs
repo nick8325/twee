@@ -24,16 +24,19 @@ module Twee.Index(
   matches,
   elems,
   fromList,
-  fromListWith) where
+  fromListWith,
+  invariant) where
 
 import Prelude hiding (null, lookup)
 import Twee.Base hiding (var, fun, empty, singleton, prefix, funs, lookupList, lookup, at)
 import qualified Twee.Term as Term
-import Data.DynamicArray
+import Data.DynamicArray hiding (singleton)
+import qualified Data.DynamicArray as Array
 import qualified Data.List as List
 import Data.Numbered(Numbered)
 import qualified Data.Numbered as Numbered
 import qualified Data.IntMap.Strict as IntMap
+import qualified Twee.Term.Core as Core
 
 -- The term index in this module is a _perfect discrimination tree_.
 -- This is a trie whose keys are terms, represented as flat lists of symbols
@@ -77,27 +80,61 @@ data Index f a =
   -- A non-empty index.
   Index {
     -- The size of the smallest term in the index.
-    size   :: {-# UNPACK #-} !Int,
+    minSize_ :: {-# UNPACK #-} !Int,
     -- When all keys in the index start with the same sequence of symbols, we
     -- compress them into this prefix; the "fun" and "var" fields below refer to
     -- the first symbol _after_ the prefix, and the "here" field contains values
     -- whose remaining key is exactly this prefix.
-    prefix :: {-# UNPACK #-} !(TermList f),
+    prefix   :: {-# UNPACK #-} !(TermList f),
     -- The values that are found at this node.
-    here   :: [a],
+    here     :: [a],
     -- Function symbol edges.
     -- The array is indexed by function number.
-    fun    :: {-# UNPACK #-} !(Array (Index f a)),
+    fun      :: {-# UNPACK #-} !(Array (Index f a)),
     -- List of variable edges indexed by variable number.
     -- Invariant: all edges present in the list are non-Nil.
     --
     -- Invariant: variables in terms are introduced in ascending
     -- order, with no gaps (i.e. if the term so far has the variables
     -- x1..xn, then the edges here must be drawn from x1...x{n+1}).
-    var    :: {-# UNPACK #-} !(Numbered (Index f a)) } |
+    var      :: {-# UNPACK #-} !(Numbered (Index f a)) } |
   -- An empty index.
   Nil
   deriving Show
+
+minSize :: Index f a -> Int
+minSize Nil = maxBound
+minSize idx = minSize_ idx
+
+-- | Check the invariant of an index. For debugging purposes.
+invariant :: Index f a -> Bool
+invariant Nil = True
+invariant Index{..} =
+  nonEmpty &&
+  noNilVars &&
+  maxPrefix &&
+  sizeCorrect &&
+  all invariant (map snd (toList fun)) &&
+  all invariant (map snd (Numbered.toList var))
+  where
+    nonEmpty = -- Index should not be empty
+      not (List.null here) ||
+      not (List.null (filter (not . null . snd) (toList fun))) ||
+      not (List.null (Numbered.toList var))
+    noNilVars = -- the var field should not contain any Nils
+      all (not . null . snd) (Numbered.toList var)
+    maxPrefix -- prefix should be used if possible
+      | List.null here =
+        length (filter (not . null . snd) (toList fun)) +
+        length (Numbered.toList var) > 1
+      | otherwise = True
+    sizeCorrect -- size field must be correct
+      | List.null here =
+        (minSize_ - lenList prefix - 1) `elem`
+        map (minSize . snd) (toList fun) ++
+        map (minSize . snd) (Numbered.toList var)
+      | otherwise =
+        minSize_ == lenList prefix
 
 instance Default (Index f a) where def = Nil
 
@@ -112,97 +149,113 @@ null _ = False
 
 -- | An index with one entry.
 singleton :: Term f -> a -> Index f a
-singleton !t x = singletonList (Term.singleton t) x
+singleton !t x = leaf (Term.singleton t) [x]
 
--- An index with one entry, taking a termlist instead of a term.
-{-# INLINE singletonList #-}
-singletonList :: TermList f -> a -> Index f a
-singletonList t x = Index 0 t [x] newArray Numbered.empty
+-- A leaf node, perhaps with a prefix.
+leaf :: TermList f -> [a] -> Index f a
+leaf !_ [] = Nil
+leaf t xs = Index (lenList t) t xs newArray Numbered.empty
+
+-- Smart constructor for Index.
+index :: [a] -> Array (Index f a) -> Numbered (Index f a) -> Index f a
+index here fun var =
+  case (here, fun', Numbered.toList var') of
+    ([], [], []) ->
+      Nil
+    ([], [(f, idx)], []) ->
+      idx{minSize_ = succ (minSize_ idx),
+          prefix = buildList (con (Core.F f) `mappend` builder (prefix idx))}
+    ([], [], [(x, idx)]) ->
+      idx{minSize_ = succ (minSize_ idx),
+          prefix = buildList (Term.var (V x) `mappend` builder (prefix idx))}
+    _ ->
+      Index {
+        minSize_ = size,
+        prefix = Term.empty,
+        here = here,
+        fun = fun,
+        var = var' }
+  where
+    var' = Numbered.filter (not . null) var
+    fun' = filter (not . null . snd) (toList fun)
+    size =
+      minimum $
+        [0 | not (List.null here)] ++
+        map (succ . minSize . snd) fun' ++
+        map (succ . minSize . snd) (Numbered.toList var')
 
 -- | Insert an entry into the index.
 {-# SCC insert #-}
 insert :: (Symbolic a, ConstantOf a ~ f) => Term f -> a -> Index f a -> Index f a
-insert !t0 !x0 !idx = aux (Term.singleton t) idx
+insert = modify (:)
+
+-- | Delete an entry from the index.
+delete :: (Eq a, Symbolic a, ConstantOf a ~ f) => Term f -> a -> Index f a -> Index f a
+delete =
+  modify $ \x xs ->
+    if x `List.elem` xs then List.delete x xs
+    else error "deleted term not found in index"
+
+-- General-purpose function for modifying the index.
+{-# INLINE modify #-}
+modify :: (Symbolic a, ConstantOf a ~ f) =>
+  (a -> [a] -> [a]) ->
+  Term f -> a -> Index f a -> Index f a
+modify f !t0 !v0 !idx = aux (Term.singleton t) idx
   where
-    (!t, !x) = canonicalise (t0, x0) 
-    aux t Nil = singletonList t x
+    (!t, !v) = canonicalise (t0, v0) 
+
+    aux t Nil = leaf t (f v [])
 
     -- Non-empty prefix
-    aux (ConsSym{hd = t, rest = ts}) idx@Index{prefix = ConsSym{hd = u, rest = us}}
-      | t == u =
-        addPrefix t (aux ts idx{prefix = us, size = size idx - 1})
+    aux (ConsSym{hd = Var x, rest = ts})
+      idx@Index{prefix = ConsSym{hd = Var y, rest = us}}
+      | x == y =
+        index [] newArray
+          (Numbered.singleton (var_id x) 
+            (aux ts idx{prefix = us, minSize_ = minSize_ idx-1}))
+    aux (ConsSym{hd = App f _, rest = ts})
+      idx@Index{prefix = ConsSym{hd = App g _, rest = us}}
+      | f == g =
+        index []
+          (Array.singleton (fun_id f)
+            (aux ts idx{prefix = us, minSize_ = minSize_ idx-1}))
+          Numbered.empty
     aux t idx@Index{prefix = Cons{}} = aux t (expand idx)
 
     -- Empty prefix
     aux Empty idx =
-      idx { size = 0, here = x:here idx }
-    aux t@ConsSym{hd = App f _, rest = u} idx =
-      idx {
-        size = lenList t `min` size idx,
-        fun  = update (fun_id f) idx' (fun idx) }
+      index (f v (here idx)) (fun idx) (var idx)
+    aux ConsSym{hd = App f _, rest = u} idx =
+      index (here idx)
+        (update (fun_id f) idx' (fun idx))
+        (var idx)
       where
         idx' = aux u (fun idx ! fun_id f)
-    aux t@ConsSym{hd = Var x, rest = u} idx =
-      idx {
-        size = lenList t `min` size idx,
-        var  = Numbered.modify (var_id x) Nil (aux u) (var idx) }
+    aux ConsSym{hd = Var x, rest = u} idx =
+      index (here idx) (fun idx)
+        (Numbered.modify (var_id x) Nil (aux u) (var idx))
 
-    -- Add the root symbol of t to the prefix
-    addPrefix t idx =
-      idx{prefix = buildList (atom t `mappend` builder (prefix idx)),
-          size = size idx + 1}
-    atom (Var x) = Term.var x
-    atom (App f _) = con f
-
--- | Delete an entry from the index.
-{-# INLINEABLE delete #-}
-{-# SCC delete #-}
-delete :: (Symbolic a, ConstantOf a ~ f, Eq a) => Term f -> a -> Index f a -> Index f a
-delete !t0 !x0 !idx = aux (Term.singleton t) idx
-  where
-    (!t, !x) = canonicalise (t0, x0) 
-    aux _ Nil = Nil
-
-    -- Non-empty prefix
-    aux (ConsSym{rest = ts}) idx@Index{prefix = u@ConsSym{rest = us}} =
-      -- The prefix must match, since the term ought to be in the index
-      -- (which is checked in the Empty case below).
-      case aux ts idx{prefix = us} of
-        Nil -> Nil
-        idx -> idx{prefix = u}
-    aux _ idx@Index{prefix = Cons{}} = idx
-
-    -- Empty prefix
-    aux Empty idx
-      | x `List.elem` here idx =
-        idx { here = List.delete x (here idx) }
-      | otherwise =
-        error "deleted term not found in index"
-    aux ConsSym{hd = App f _, rest = t} idx =
-      idx { fun = update (fun_id f) (aux t (fun idx ! fun_id f)) (fun idx) }
-    aux ConsSym{hd = Var x, rest = t} idx =
-      idx { var = Numbered.filter (not . null) (Numbered.modify (var_id x) Nil (aux t) (var idx)) }
-
--- Helper for insert and delete:
+-- Helper for modify:
 -- Take an index with a prefix and pull out the first symbol of the prefix,
 -- giving an index which doesn't start with a prefix.
 {-# INLINE expand #-}
 expand :: Index f a -> Index f a
-expand idx@Index{size = size, prefix = ConsSym{hd = t, rest = ts}} =
+expand idx@Index{minSize_ = size, prefix = ConsSym{hd = t, rest = ts}} =
   case t of
     Var x ->
       Index {
-        size = size,
+        minSize_ = size,
         prefix = Term.empty,
         here = [],
         fun = newArray,
-        var = Numbered.fromList [(var_id x, idx { prefix = ts, size = size - 1 })] }
+        var = Numbered.singleton (var_id x) idx { prefix = ts, minSize_ = size - 1 }}
     App f _ ->
       Index {
-        size = size,
+        minSize_ = size,
         prefix = Term.empty,
         here = [],
-        fun = update (fun_id f) idx { prefix = ts, size = size - 1 } newArray,
+        fun = Array.singleton (fun_id f) idx { prefix = ts, minSize_ = size - 1 },
         var = Numbered.empty }
 
 -- | Look up a term in the index. Finds all key-value such that the search term
@@ -339,7 +392,7 @@ search t binds idx rest =
   case idx of
     Nil -> rest
     Index{..}
-      | lenList t < size ->
+      | lenList t < minSize idx ->
         rest -- the search term is smaller than any in this index
       | otherwise ->
         searchLoop binds t prefix here fun var rest
