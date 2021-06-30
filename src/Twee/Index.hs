@@ -156,6 +156,18 @@ leaf :: TermList f -> [a] -> Index f a
 leaf !_ [] = Nil
 leaf t xs = Index (lenList t) t xs newArray Numbered.empty
 
+-- Add a prefix (given as a list of symbols) to all terms in an index.
+addPrefix :: [Term f] -> Index f a -> Index f a
+addPrefix _ Nil = Nil
+addPrefix [] idx = idx
+addPrefix ts idx =
+  idx {
+    minSize_ = minSize_ idx + length ts,
+    prefix = buildList (mconcat (map atom ts) `mappend` builder (prefix idx)) }
+  where
+    atom (Var x) = Term.var x
+    atom (App f _) = con f
+
 -- Smart constructor for Index.
 index :: [a] -> Array (Index f a) -> Numbered (Index f a) -> Index f a
 index here fun var =
@@ -201,40 +213,39 @@ delete =
 modify :: (Symbolic a, ConstantOf a ~ f) =>
   (a -> [a] -> [a]) ->
   Term f -> a -> Index f a -> Index f a
-modify f !t0 !v0 !idx = aux (Term.singleton t) idx
+modify f !t0 !v0 !idx = aux [] (Term.singleton t) idx
   where
     (!t, !v) = canonicalise (t0, v0) 
 
-    aux t Nil = leaf t (f v [])
+    aux [] t Nil =
+      leaf t (f v [])
 
     -- Non-empty prefix
-    aux (ConsSym{hd = Var x, rest = ts})
+    aux syms (ConsSym{hd = t@(Var x), rest = ts})
       idx@Index{prefix = ConsSym{hd = Var y, rest = us}}
       | x == y =
-        index [] newArray
-          (Numbered.singleton (var_id x) 
-            (aux ts idx{prefix = us, minSize_ = minSize_ idx-1}))
-    aux (ConsSym{hd = App f _, rest = ts})
+        aux (t:syms) ts idx{prefix = us, minSize_ = minSize_ idx-1}
+    aux syms (ConsSym{hd = t@(App f _), rest = ts})
       idx@Index{prefix = ConsSym{hd = App g _, rest = us}}
       | f == g =
-        index []
-          (Array.singleton (fun_id f)
-            (aux ts idx{prefix = us, minSize_ = minSize_ idx-1}))
-          Numbered.empty
-    aux t idx@Index{prefix = Cons{}} = aux t (expand idx)
+        aux (t:syms) ts idx{prefix = us, minSize_ = minSize_ idx-1}
+    aux [] t idx@Index{prefix = Cons{}} =
+      aux [] t (expand idx)
+    aux syms@(_:_) t idx =
+      addPrefix (reverse syms) $ aux [] t idx
 
     -- Empty prefix
-    aux Empty idx =
+    aux [] Empty idx =
       index (f v (here idx)) (fun idx) (var idx)
-    aux ConsSym{hd = App f _, rest = u} idx =
+    aux [] ConsSym{hd = App f _, rest = u} idx =
       index (here idx)
         (update (fun_id f) idx' (fun idx))
         (var idx)
       where
-        idx' = aux u (fun idx ! fun_id f)
-    aux ConsSym{hd = Var x, rest = u} idx =
+        idx' = aux [] u (fun idx ! fun_id f)
+    aux [] ConsSym{hd = Var x, rest = u} idx =
       index (here idx) (fun idx)
-        (Numbered.modify (var_id x) Nil (aux u) (var idx))
+        (Numbered.modify (var_id x) Nil (aux [] u) (var idx))
 
 -- Helper for modify:
 -- Take an index with a prefix and pull out the first symbol of the prefix,
