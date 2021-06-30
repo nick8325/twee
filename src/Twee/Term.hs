@@ -68,7 +68,7 @@ module Twee.Term(
 import Prelude hiding (lookup)
 import Twee.Term.Core hiding (F)
 import qualified Twee.Term.Core as Core
-import Data.List hiding (lookup, find)
+import Data.List hiding (lookup, find, singleton)
 import Data.Maybe
 import Data.Semigroup(Semigroup(..))
 import Data.IntMap.Strict(IntMap)

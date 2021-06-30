@@ -22,7 +22,7 @@ import Twee.Utils
 import qualified Twee.Index as Index
 import Control.Monad
 import Data.Maybe
-import Data.List
+import Data.List hiding (singleton)
 import Data.Ord
 import qualified Data.Set as Set
 import Data.Set(Set)

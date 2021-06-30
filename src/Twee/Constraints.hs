@@ -8,7 +8,7 @@ import qualified Data.Map.Strict as Map
 import Twee.Pretty hiding (equals)
 import Twee.Utils
 import Data.Maybe
-import Data.List
+import Data.List hiding (singleton)
 import Data.Function
 import Data.Graph
 import Data.Map.Strict(Map)
