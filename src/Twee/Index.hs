@@ -9,6 +9,7 @@
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
+{-# OPTIONS_GHC -funfolding-use-threshold=1000 #-}
 #ifdef USE_LLVM
 {-# OPTIONS_GHC -fllvm #-}
 #endif
@@ -227,7 +228,7 @@ matches t idx = matchesList (Term.singleton t) idx
 {-# SCC matchesList #-}
 matchesList :: TermList f -> Index f a -> [(Subst f, a)]
 matchesList t idx =
-  run (searchNode t emptyBindings idx Stop)
+  run (search t emptyBindings idx Stop)
 
 -- | Return all elements of the index.
 elems :: Index f a -> [a]
@@ -327,15 +328,14 @@ data Stack f a =
 {-# SCC run #-}
 run :: Stack f a -> [(Subst f, a)]
 run Stop = []
-run Frame{..} = run (searchVarsFrom frame_term frame_terms frame_bind frame_indexes frame_var frame_rest)
+run Frame{..} = run (searchVars frame_term frame_terms frame_bind frame_indexes frame_var frame_rest)
 run Yield{..} = map (toSubst yield_binds,) yield_found ++ run yield_rest
 
--- Search starting with a given node and substitution.
-{-# INLINE searchNode #-}
-{-# SCC searchNode #-}
-searchNode :: TermList f -> Bindings f -> Index f a -> Stack f a -> Stack f a
-searchNode !_ !_ !_ !_ | False = undefined
-searchNode t binds idx rest =
+-- Search starting with a given substitution.
+{-# INLINE search #-}
+search :: TermList f -> Bindings f -> Index f a -> Stack f a -> Stack f a
+search !_ !_ !_ _ | False = undefined
+search t binds idx rest =
   case idx of
     Nil -> rest
     Index{..}
@@ -347,43 +347,46 @@ searchNode t binds idx rest =
 -- The main work of 'search' goes on here.
 -- It is carefully tweaked to generate nice code,
 -- in particular casing on each term list exactly once.
-searchLoop :: Bindings f -> TermList f -> TermList f -> [a] -> Array (Index f a) -> Numbered (Index f a) -> Stack f a -> Stack f a
+searchLoop ::
+  -- Search term and substitution
+  Bindings f -> TermList f ->
+  -- Contents of the relevant node of the index
+  TermList f -> [a] -> Array (Index f a) -> Numbered (Index f a) ->
+  Stack f a -> Stack f a
 searchLoop !_ !_ !_ _ !_ !_ _ | False = undefined
-searchLoop binds search prefix here fun var rest =
-  case search of
-    ConsSym{hd = t, tl = ts, rest = ts1} ->
+searchLoop binds t prefix here fun var rest =
+  case t of
+    ConsSym{hd = thd, tl = ttl, rest = trest} ->
       case prefix of
-        ConsSym{hd = u, tl = us, rest = us1} ->
+        ConsSym{hd = phd, tl = ptl, rest = prest} ->
           -- Check the search term against the prefix.
-          case (t, u) of
+          case (thd, phd) of
             (_, Var x) ->
-              case extendBindings x t binds of
+              case extendBindings x thd binds of
                 Just binds' ->
-                  searchLoop binds' ts us here fun var rest
+                  searchLoop binds' ttl ptl here fun var rest
                 Nothing ->
                   rest
             (App f _, App g _) | f == g ->
                -- Term and prefix start with same symbol, chop them off.
-               searchLoop binds ts1 us1 here fun var rest
+               searchLoop binds trest prest here fun var rest
             _ ->
               -- Term and prefix don't match.
               rest
         _ ->
           -- We've exhausted the prefix, so let's descend into the tree.
           -- Seems to work better to explore the function node first.
-          case t of
-            App f _ ->
-              case fun ! fun_id f of
-                Nil ->
-                  searchVars t ts binds var rest
-                idx@Index{} ->
-                  -- Avoid creating a frame unnecessarily.
-                  case Numbered.size var of
-                    0 -> searchNode ts1 binds idx rest
-                    _ -> searchNode ts1 binds idx $! Frame t ts binds var 0 rest
-            _ ->
-              searchVars t ts binds var rest
-    Empty ->
+          case thd of
+            App f _ | idx@Index{} <- fun ! fun_id f ->
+              -- Avoid creating a frame unnecessarily.
+              case Numbered.size var of
+                0 -> search trest binds idx rest
+                _ -> search trest binds idx $! Frame thd ttl binds var 0 rest
+            _ -> -- no function match
+              case Numbered.size var of
+                0 -> rest
+                _ -> searchVars thd ttl binds var 0 rest
+    _ ->
       case prefix of
         Empty ->
           -- The search term matches this node.
@@ -394,26 +397,24 @@ searchLoop binds search prefix here fun var rest =
           -- We've run out of search term - it doesn't match this node.
           rest
 
--- Search the variable-labelled edges of a node.
-{-# INLINE searchVars #-}
-searchVars :: Term f -> TermList f -> Bindings f -> Numbered (Index f a) -> Stack f a -> Stack f a
-searchVars t ts bind var rest
-  | Numbered.size var == 0 = rest
-  | otherwise = searchVarsFrom t ts bind var 0 rest
-
 -- Search the variable-labelled edges of a node,
 -- starting with a particular variable.
-searchVarsFrom :: Term f -> TermList f -> Bindings f -> Numbered (Index f a) -> Int -> Stack f a -> Stack f a
-searchVarsFrom !_ !_ !_ !_ !_ _ | False = undefined
-searchVarsFrom t ts binds var start rest
+searchVars ::
+  -- Term (with head separate) and substitution
+  Term f -> TermList f -> Bindings f ->
+  -- Variable edges and starting variable
+  Numbered (Index f a) -> Int ->
+  Stack f a -> Stack f a
+searchVars !_ !_ !_ !_ !_ _ | False = undefined
+searchVars t ts binds var start rest
   | start >= Numbered.size var = rest
   | otherwise =
     let (x, idx) = var Numbered.! start in
     case extendBindings (V x) t binds of
       Just binds' ->
-        searchNode ts binds' idx $!
+        search ts binds' idx $!
         if start + 1 == Numbered.size var then rest
         else Frame t ts binds var (start+1) rest
       Nothing ->
-        searchVarsFrom t ts binds var (start+1) rest
+        searchVars t ts binds var (start+1) rest
 

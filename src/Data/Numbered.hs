@@ -1,7 +1,7 @@
 module Data.Numbered(
   Numbered,
   empty, fromList, toList, size, (!),
-  lookup, put, modify, filter) where
+  lookup, put, modify, filter, delete) where
 
 import Prelude hiding (filter, lookup)
 import qualified Data.List as List
@@ -49,6 +49,9 @@ put i x num =
     xs = toList num
     lt = List.filter ((< i) . fst) xs
     gt = List.filter ((> i) . fst) xs
+
+delete :: Int -> Numbered a -> Numbered a
+delete i = fromList . List.filter ((/= i) . fst) . toList
 
 modify :: Int -> a -> (a -> a) -> Numbered a -> Numbered a
 modify i def f num =

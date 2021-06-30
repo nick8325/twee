@@ -224,16 +224,23 @@ singleton :: Term f -> TermList f
 singleton Term{..} = termlist
 
 instance Eq (TermList f) where
-  t == u = compare t u == EQ
+  t == u =
+    lenList t == lenList u &&
+    compareSameLength t u == EQ
 
 instance Ord (TermList f) where
   {-# INLINE compare #-}
   compare t u =
     compare (lenList t) (lenList u) `mappend`
-    compareByteArrays (array t) (low t * k)
-      (array u) (low u * k) ((high t - low t) * k)
-    where
-      k = symbolSize
+    compareSameLength t u
+
+{-# INLINE compareSameLength #-}
+compareSameLength :: TermList f -> TermList f -> Ordering
+compareSameLength t u =
+  compareByteArrays (array t) (low t * k)
+    (array u) (low u * k) ((high t - low t) * k)
+  where
+    k = symbolSize
 
 --------------------------------------------------------------------------------
 -- Building terms.
