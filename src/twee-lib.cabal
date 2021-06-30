@@ -60,6 +60,7 @@ library
     Data.ChurchList
     Data.DynamicArray
     Data.Heap
+    Data.Numbered
     Twee.Term.Core
 
   build-depends:
