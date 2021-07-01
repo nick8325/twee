@@ -31,14 +31,17 @@ source-repository head
 flag static
   description: Build a static binary.
   default: False
+  manual: True
 
 flag static-cxx
   description: Build a binary which statically links against libstdc++.
   default: False
+  manual: True
 
 flag parallel
   description: Build a special parallel version of Twee.
   default: False
+  manual: True
 
 executable twee
   if flag(parallel)

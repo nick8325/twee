@@ -35,6 +35,7 @@ import qualified Data.Set as Set
 import qualified Data.Label as Label
 import System.Console.ANSI
 import Data.Symbol
+import Twee.Profile
 
 data MainFlags =
   MainFlags {
@@ -969,7 +970,7 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
 
 main = do
   hSetBuffering stdout LineBuffering
-  join . parseCommandLineWithExtraArgs
+  stampM (intern "twee") . join . parseCommandLineWithExtraArgs
     ["--no-conjunctive-conjectures", "--no-split"]
 #ifdef VERSION_twee
     "Twee, an equational theorem prover" . version ("twee version " ++ VERSION_twee) $
@@ -990,6 +991,7 @@ main = do
               expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
               expert clausifyBox =>>= expert oneConjectureBox) <*>
              (runTwee <$> globalFlags <*> tstpFlags <*> expert hornFlags <*> parsePrecedence)))
+  profile
   where
     combine horn config main encode prove later prob0 = do
       res <- horn prob0

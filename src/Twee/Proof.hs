@@ -1,5 +1,5 @@
 -- | Equational proofs which are checked for correctedness.
-{-# LANGUAGE TypeFamilies, PatternGuards, RecordWildCards, ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies, PatternGuards, RecordWildCards, ScopedTypeVariables, OverloadedStrings #-}
 module Twee.Proof(
   -- * Constructing proofs
   Proof, Derivation(..), Axiom(..),
@@ -31,6 +31,7 @@ import Data.Map(Map)
 import qualified Data.IntMap.Strict as IntMap
 import Control.Monad.Trans.State.Strict
 import Data.Graph
+import Twee.Profile
 
 ----------------------------------------------------------------------
 -- Equational proofs. Only valid proofs can be constructed.
@@ -85,9 +86,9 @@ data Axiom f =
 
 -- This is the trusted core of the module.
 {-# INLINEABLE certify #-}
-{-# SCC certify #-}
 certify :: Function f => Derivation f -> Proof f
 certify p =
+  stamp "certify proof" $
   case check p of
     Nothing -> error ("Invalid proof created!\n" ++ prettyShow p)
     Just eqn -> Proof eqn p

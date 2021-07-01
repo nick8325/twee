@@ -37,6 +37,7 @@ import Data.Numbered(Numbered)
 import qualified Data.Numbered as Numbered
 import qualified Data.IntMap.Strict as IntMap
 import qualified Twee.Term.Core as Core
+import Twee.Profile
 
 -- The term index in this module is a _perfect discrimination tree_.
 -- This is a trie whose keys are terms, represented as flat lists of symbols
@@ -197,7 +198,6 @@ index here fun var =
         map (succ . minSize . snd) (Numbered.toList var')
 
 -- | Insert an entry into the index.
-{-# SCC insert #-}
 insert :: (Symbolic a, ConstantOf a ~ f) => Term f -> a -> Index f a -> Index f a
 insert = modify (:)
 
@@ -288,9 +288,9 @@ lookupList t idx =
 matches :: Term f -> Index f a -> [(Subst f, a)]
 matches t idx = matchesList (Term.singleton t) idx
 
-{-# SCC matchesList #-}
 matchesList :: TermList f -> Index f a -> [(Subst f, a)]
 matchesList t idx =
+  stampWith "index lookup" length $
   run (search t emptyBindings idx Stop)
 
 -- | Return all elements of the index.
@@ -388,7 +388,6 @@ data Stack f a =
   | Stop
 
 -- Turn a stack into a list of results.
-{-# SCC run #-}
 run :: Stack f a -> [(Subst f, a)]
 run Stop = []
 run Frame{..} = run (searchVars frame_term frame_terms frame_bind frame_indexes frame_var frame_rest)

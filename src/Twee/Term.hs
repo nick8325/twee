@@ -117,7 +117,6 @@ build x =
 
 -- | Build a termlist.
 {-# INLINE buildList #-}
-{-# SCC buildList #-}
 buildList :: Build a => a -> TermList (BuildFun a)
 buildList x = buildTermList (builder x)
 
@@ -348,7 +347,6 @@ matchList pat t = matchListIn emptySubst pat t
 
 -- | A variant of 'match' which works on termlists
 -- and extends an existing substitution.
-{-# SCC matchListIn #-}
 matchListIn :: Subst f -> TermList f -> TermList f -> Maybe (Subst f)
 matchListIn !sub !pat !t
   | lenList t < lenList pat = Nothing
@@ -462,7 +460,6 @@ unifyTriFrom t u sub = unifyListTriFrom (singleton t) (singleton u) sub
 unifyListTri :: TermList f -> TermList f -> Maybe (TriangleSubst f)
 unifyListTri t u = unifyListTriFrom t u (Triangle emptySubst)
 
-{-# SCC unifyListTriFrom #-}
 unifyListTriFrom :: TermList f -> TermList f -> TriangleSubst f -> Maybe (TriangleSubst f)
 unifyListTriFrom !t !u (Triangle !sub) =
   fmap Triangle (loop sub t u)

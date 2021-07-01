@@ -141,13 +141,11 @@ asymmetricOverlaps idx r1 r2 d1 d2 posns eq1 eq2 = do
 -- | Create an overlap at a particular position in a term.
 -- Doesn't simplify the overlap.
 {-# INLINE overlapAt #-}
-{-# SCC overlapAt #-}
 overlapAt :: How -> a -> a -> Rule f -> Rule f -> Maybe (Overlap a f)
 overlapAt how@(How d1 d2 _) x1 x2 r1 r2 =
   overlapAt' how x1 x2 (unorient (direct r1 d1)) (unorient (direct r2 d2))
 
 {-# INLINE overlapAt' #-}
-{-# SCC overlapAt' #-}
 overlapAt' :: How -> a -> a -> Equation f -> Equation f -> Maybe (Overlap a f)
 overlapAt' how@How{how_pos = n} r1 r2 (!outer :=: (!outer')) (!inner :=: (!inner')) = do
   let t = at n (singleton outer)

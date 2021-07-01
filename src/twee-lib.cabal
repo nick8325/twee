@@ -32,10 +32,17 @@ source-repository head
 flag llvm
   description: Build using LLVM backend for faster code.
   default: False
+  manual: True
 
 flag bounds-checks
   description: Use bounds checks for all array operations.
   default: False
+  manual: True
+
+flag profile
+  description: Print a profiling report after every prover run.
+  default: False
+  manual: True
 
 library
   exposed-modules:
@@ -49,6 +56,7 @@ library
     Twee.KBO
     Twee.PassiveQueue
     Twee.Pretty
+    Twee.Profile
     Twee.Proof
     Twee.Rule
     Twee.Rule.Index
@@ -86,3 +94,6 @@ library
       Data.Primitive.SmallArray.Checked
       Data.Primitive.ByteArray.Checked
       Data.Primitive.Checked
+  if flag(profile)
+    cpp-options: -DPROFILE
+    build-depends: symbol, hashable, unordered-containers, rdtsc

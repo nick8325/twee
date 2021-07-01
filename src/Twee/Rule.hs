@@ -188,7 +188,6 @@ backwards (Rule or pf t u) = Rule (back or) pf u t
 
 -- | Compute the normal form of a term wrt only oriented rules.
 {-# INLINEABLE simplify #-}
-{-# SCC simplify #-}
 simplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
 simplify = simplifyOutermost
 
@@ -222,7 +221,6 @@ simplifyInnermost !idx !t = simp t
 
 -- | Find a simplification step that applies to a term.
 {-# INLINEABLE simpleRewrite #-}
-{-# SCC simpleRewrite #-}
 simpleRewrite :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Maybe (Rule f, Subst f)
 simpleRewrite idx t =
   -- Use instead of maybeToList to make fusion work
@@ -285,7 +283,6 @@ ruleProof t _ = Proof.Refl t
 
 -- | Normalise a term wrt a particular strategy.
 {-# INLINE normaliseWith #-}
-{-# SCC normaliseWith #-}
 normaliseWith :: Function f => (Term f -> Bool) -> Strategy f -> Term f -> Reduction f
 normaliseWith ok strat t = res
   where
@@ -312,7 +309,6 @@ successors strat ps =
     (qs, rs) = successorsAndNormalForms strat ps
 
 {-# INLINEABLE successorsAndNormalForms #-}
-{-# SCC successorsAndNormalForms #-}
 successorsAndNormalForms :: Function f => Strategy f -> Map (Term f) (Reduction f) ->
   (Map (Term f) (Term f, Reduction f), Map (Term f) (Term f, Reduction f))
 successorsAndNormalForms strat ps =

@@ -33,7 +33,6 @@ defaultConfig =
     cfg_set_join = False }
 
 {-# INLINEABLE joinCriticalPair #-}
-{-# SCC joinCriticalPair #-}
 joinCriticalPair ::
   (Function f, Has a (Rule f)) =>
   Config ->

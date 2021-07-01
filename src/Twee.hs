@@ -35,6 +35,7 @@ import Control.Monad.Trans.Class
 import qualified Control.Monad.Trans.State.Strict as StateM
 import qualified Data.IntSet as IntSet
 import Data.IntSet(IntSet)
+import Twee.Profile
 
 ----------------------------------------------------------------------
 -- * Configuration and prover state.
@@ -186,10 +187,10 @@ instance Queue.Params Params where
 
 -- | Compute all critical pairs from a rule.
 {-# INLINEABLE makePassives #-}
-{-# SCC makePassives #-}
 makePassives :: Function f => Config f -> State f -> Active f -> [Passive Params]
 makePassives config@Config{..} State{..} rule =
 -- XXX factor out depth calculation
+  stampWith "make critical pair" length
   [ makePassive config overlap
   | ok rule,
     overlap <- overlaps (index_oriented st_rules) (filter ok rules) rule ]
@@ -211,7 +212,6 @@ makePassive Config{..} overlap@Overlap{..} =
 -- | Turn a Passive back into an overlap.
 -- Doesn't try to simplify it.
 {-# INLINEABLE findPassive #-}
-{-# SCC findPassive #-}
 findPassive :: forall f. Function f => State f -> Passive Params -> Maybe (Overlap (Active f) f)
 findPassive State{..} Passive{..} = do
   rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_active_set
@@ -221,7 +221,6 @@ findPassive State{..} Passive{..} = do
 
 -- | Renormalise a queued Passive.
 {-# INLINEABLE simplifyPassive #-}
-{-# SCC simplifyPassive #-}
 simplifyPassive :: Function f => Config f -> State f -> Passive Params -> Maybe (Passive Params)
 simplifyPassive Config{..} state@State{..} passive = do
   overlap <- findPassive state passive
@@ -242,7 +241,6 @@ shouldSimplifyQueue Config{..} State{..} =
 
 -- | Renormalise the entire queue.
 {-# INLINEABLE simplifyQueue #-}
-{-# SCC simplifyQueue #-}
 simplifyQueue :: Function f => Config f -> State f -> State f
 simplifyQueue config state =
   resetSample config state { st_queue = simp (st_queue state) }
@@ -252,7 +250,6 @@ simplifyQueue config state =
 
 -- | Enqueue a set of critical pairs.
 {-# INLINEABLE enqueue #-}
-{-# SCC enqueue #-}
 enqueue :: Function f => State f -> Id -> [Passive Params] -> State f
 enqueue state rule passives =
   state { st_queue = Queue.insert rule passives (st_queue state) }
@@ -264,7 +261,6 @@ enqueue state rule passives =
 --   * removing any orphans from the head of the queue
 --   * ignoring CPs that are too big
 {-# INLINEABLE dequeue #-}
-{-# SCC dequeue #-}
 dequeue :: Function f => Config f -> State f -> (Maybe (Info, CriticalPair f, Active f, Active f), State f)
 dequeue Config{..} state@State{..} =
   case deq 0 st_queue of
@@ -338,7 +334,6 @@ instance f ~ g => Has (Active f) (Positions2 g) where the = active_positions
 
 -- Add a new active.
 {-# INLINEABLE addActive #-}
-{-# SCC addActive #-}
 addActive :: Function f => Config f -> State f -> (Id -> Active f) -> State f
 addActive config state@State{..} active0 =
   let
@@ -424,11 +419,11 @@ consider config state info cp =
 -- Try to join a critical pair, but using a different set of critical
 -- pairs for normalisation.
 {-# INLINEABLE considerUsing #-}
-{-# SCC considerUsing #-}
 considerUsing ::
   Function f =>
   RuleIndex f (Rule f) -> Config f -> State f -> Info -> CriticalPair f -> State f
 considerUsing rules config@Config{..} state@State{..} info cp0 =
+  stamp "consider critical pair" $
   -- Important to canonicalise the rule so that we don't get
   -- bigger and bigger variable indices over time
   let cp = canonicalise cp0 in
@@ -623,7 +618,6 @@ goal n name (t :=: u) =
 
 -- Simplify all rules.
 {-# INLINEABLE interreduce #-}
-{-# SCC interreduce #-}
 interreduce :: Function f => Config f -> State f -> State f
 interreduce _ state@State{..} | st_simplified_at == st_next_active = state
 interreduce config@Config{..} state =
@@ -732,7 +726,6 @@ solved = not . null . solutions
 
 -- Return whatever goals we have proved and their proofs.
 {-# INLINEABLE solutions #-}
-{-# SCC solutions #-}
 solutions :: Function f => State f -> [ProvedGoal f]
 solutions State{..} = do
   Goal{goal_lhs = ts, goal_rhs = us, ..} <- st_goals
