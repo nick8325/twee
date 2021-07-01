@@ -31,17 +31,15 @@ instance (Labelled f, PrettyTerm f) => Pretty (Equation f) where
 -- There is no guarantee that the result is oriented.
 order :: Function f => Equation f -> Equation f
 order (l :=: r)
-  | l == r = l :=: r
-  | otherwise =
-    minimumBy cmp $
-    filter (\(t :=: u) -> ground u `lessEq` ground t) $
-    map canonicalise
-    [l :=: r, r :=: l]
+  | gl == gr =
+    let eq1 = canonicalise (l :=: r)
+        eq2 = canonicalise (r :=: l) in
+    if eq1 == eq2 || orderedSimplerThan eq1 eq2 then eq1 else eq2
+  | gl `lessEq` gr = r :=: l
+  | otherwise = l :=: r
   where
-    cmp eq1 eq2
-      | eq1 == eq2 = EQ
-      | orderedSimplerThan eq1 eq2 = LT
-      | otherwise = GT
+    gl = ground l
+    gr = ground r
 
 -- Helper for 'order' and 'simplerThan'
 orderedSimplerThan :: Function f => Equation f -> Equation f -> Bool
