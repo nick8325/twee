@@ -209,7 +209,6 @@ delete =
     else error "deleted term not found in index"
 
 -- General-purpose function for modifying the index.
-{-# INLINE modify #-}
 modify :: (Symbolic a, ConstantOf a ~ f) =>
   (a -> [a] -> [a]) ->
   Term f -> a -> Index f a -> Index f a
@@ -330,7 +329,7 @@ data BindList f = NilB | ConsB {-# UNPACK #-} !(TermList f) !(BindList f)
 emptyBindings :: Bindings f
 emptyBindings = Bindings (-1) NilB
 
-{- INLINE extendBindings #-}
+{-# INLINE extendBindings #-}
 -- Extend a substitution.
 -- The variable bound must either be present in the substitution,
 -- or the current highest-numbered variable plus one.
