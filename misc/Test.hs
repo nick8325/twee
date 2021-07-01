@@ -1,4 +1,6 @@
-{-# LANGUAGE TemplateHaskell, FlexibleInstances, FlexibleContexts, UndecidableInstances, StandaloneDeriving, ScopedTypeVariables, TupleSections, DeriveGeneric #-}
+{-# LANGUAGE TemplateHaskell, FlexibleInstances, FlexibleContexts, UndecidableInstances, StandaloneDeriving, ScopedTypeVariables, TupleSections, DeriveGeneric, DerivingVia, DeriveAnyClass #-}
+module Test where
+
 import Twee.Constraints
 import Twee.Term hiding (subst, canonicalise, F)
 import Twee.Term.Core hiding (F)
@@ -21,29 +23,31 @@ import Data.Typeable
 import qualified Twee.Index as Index
 import Data.Int
 import GHC.Generics
+import Twee.Utils
 
-newtype Func = F Int deriving (Eq, Ord, Show)
+data Func = F Int Integer deriving (Eq, Ord, Show)
+  deriving Labelled via (AutoLabel Func)
 
-instance Pretty Func where pPrint (F f) = text "f" <> int f
+instance Pretty Func where pPrint (F f _) = text "f" <#> int f
 instance PrettyTerm Func
 instance Arbitrary (Subst Func) where
   arbitrary = fmap fromJust (fmap listToSubst (liftM2 zip (fmap nub arbitrary) (infiniteListOf arbitrary)))
 instance Arbitrary Func where
-  arbitrary = F <$> choose (1, 1)
+  arbitrary = F <$> choose (1, 1) <*> choose (1, 3)
 instance Minimal Func where
-  minimal = fun (F 0)
-instance Sized Func where size _ = 1
+  minimal = fun (F 0 1)
+instance Ord.Sized Func where size (F _ n) = n
+instance Ord.Weighted Func where argWeight _ = 1
 instance Arity Func where
-  arity (F 0) = 0
-  arity (F 1) = 2
-instance Skolem Func
+  arity (F 0 _) = 0
+  arity (F 1 _) = 2
 instance EqualsBonus Func
 
 instance Arbitrary Var where arbitrary = fmap V (choose (0, 3))
-instance (Ord f, Typeable f, Arbitrary f) => Arbitrary (Fun f) where
+instance (Labelled f, Ord f, Typeable f, Arbitrary f) => Arbitrary (Fun f) where
   arbitrary = fmap fun arbitrary
 
-instance (Ord f, Typeable f, Arbitrary f, Sized f, Arity f) => Arbitrary (Term f) where
+instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Term f) where
   arbitrary =
     sized $ \n ->
       oneof $
@@ -61,21 +65,29 @@ instance (Ord f, Typeable f, Arbitrary f, Sized f, Arity f) => Arbitrary (Term f
 
 data Pair f = Pair (Term f) (Term f) deriving Show
 
-instance (Ord f, Typeable f, Arbitrary f, Arity f, Sized f) => Arbitrary (Pair f) where
+instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Pair f) where
   arbitrary = liftM2 Pair arbitrary arbitrary
   shrink (Pair x y) =
     [ Pair x' y  | x' <- shrink x ] ++
     [ Pair x y'  | y' <- shrink y ] ++
     [ Pair x' y' | x' <- shrink x, y' <- shrink y ]
 
+instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Equation f) where
+  arbitrary = do
+    Pair t u <- arbitrary
+    return (t :=: u)
+  shrink (t :=: u) = [t' :=: u' | Pair t' u' <- shrink (Pair t u)]
+
 instance Ordered Func where
   lessIn = Ord.lessIn
   lessEq = Ord.lessEq
+  lessEqSkolem = Ord.lessEqSkolem
 
 instance Function f => Arbitrary (Model f) where
   arbitrary = fmap (modelFromOrder . map Variable . nub) arbitrary
   shrink = weakenModel
 
+{-
 prop_1 :: Model Func -> Pair Func -> Subst Func -> Property
 prop_1 model (Pair t u) sub =
   counterexample ("Model: " ++ prettyShow model) $
@@ -90,6 +102,7 @@ prop_1 model (Pair t u) sub =
       counterexample ("Inst:  " ++ prettyShow (Rule Oriented (subst sub t') (subst sub u'))) $
       counterexample ("Res:   " ++ show (lessIn model (subst sub u') (subst sub t'))) $
       not (reducesInModel model r sub) || isJust (lessIn model (subst sub u') (subst sub t'))
+-}
 
 prop_2 :: Model Func -> Pair Func -> Bool
 prop_2 model (Pair t u) =
@@ -114,16 +127,50 @@ prop_paths t =
     counterexample (show (positionToPath t n)) $
     pathToPosition t (positionToPath t n) === n
 
-deriving instance Ord f => Ord (Subst f)
-
 prop_index :: [Term Func] -> Term Func -> Property
 prop_index ts u =
-  counterexample (show ts) $
+  counterexample (show ts') $
   counterexample (show idx) $
-  sort (catMaybes [fmap (,t) (match t u) | t <- ts]) ===
+  sort (catMaybes [fmap (,t) (match t u) | t <- ts']) ===
   sort (Index.matches u idx)
   where
     idx = foldr (\t -> Index.insert t t) Index.empty ts
+    ts' = map canonicalise ts
+
+newtype Terms f = Terms [Term f] deriving Show
+instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Terms f) where
+  arbitrary = Terms <$> arbitrary
+  shrink (Terms ts) =
+    map Terms $
+      filter (/= ts) $
+      shrink ts ++ [canonicalise ts] ++ shrinkList (return . canonicalise) ts
+
+newtype IndexOps f = IndexOps [IndexOp f] deriving Show
+data IndexOp f = Add (Term f) | Delete (Term f) deriving Show
+
+instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (IndexOps f) where
+  arbitrary =
+    sized $ \n -> IndexOps <$> take n <$> arbOps []
+    where
+      arbOps ts =
+        frequency $
+          [(2, do { t <- arbitrary; ops <- arbOps (t:ts); return (Add t:ops) })] ++
+          [(1, do { t <- elements ts; ops <- arbOps (delete t ts); return (Delete t:ops) }) | not (null ts)]
+  shrink (IndexOps ops) =
+    IndexOps <$> shrinkList shr ops
+    where
+      shr (Add t) = Add <$> shrink t
+      shr (Delete t) = Delete <$> shrink t
+
+
+prop_index_invariant :: IndexOps Func -> Property
+prop_index_invariant (IndexOps ops) =
+  flip (foldr (counterexample . show)) idxs $
+  property $ Index.invariant (last idxs)
+  where
+    idxs = scanl (\idx op -> applyIndex op idx) Index.empty ops
+    applyIndex (Add t) = Index.insert t t
+    applyIndex (Delete t) = Index.delete t t
 
 deriving instance Eq Symbol
 deriving instance Generic Symbol
@@ -154,8 +201,28 @@ prop_symbol_2 n =
   withMaxSuccess 100000 $
   fromSymbol (toSymbol n) === n
 
+prop_canonorder :: Equation Func -> Property
+prop_canonorder eqn@(t :=: u) =
+  let vs = usort (vars eqn) in
+  forAll (shuffle vs) $ \ws swap (NonNegative n) ->
+    let
+      Just sub = listToSubst (zip vs [build (var (V (w + n))) | V w <- ws])
+      eqn' = subst sub (if swap then u :=: t else t :=: u)
+    in
+      canonicalise (order eqn) === canonicalise (order eqn')
+
+prop_canonorder2 :: Equation Func -> Equation Func -> Bool
+prop_canonorder2 eqn1 eqn2 =
+  eqn1 `simplerThan` eqn2 || eqn2 `simplerThan` eqn1 || order eqn1 == order eqn2
+
+prop_canonorder3 :: Equation Func -> Property
+prop_canonorder3 eq =
+  let eq' = order eq in
+  counterexample (show eq) $
+  Ord.size (eqn_lhs eq') >= Ord.size (eqn_rhs eq')
+
 return []
 main = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000000 })
 
-t :: Term Func
-t = build (app (fun (F 0)) [app (fun (F 1)) [var (V 0), var (V 1)], var (V 2)])
+--t :: Term Func
+--t = build (app (fun (F 0)) [app (fun (F 1)) [var (V 0), var (V 1)], var (V 2)])
