@@ -3,7 +3,8 @@
 -- and provides primitives for building higher-level stuff.
 {-# LANGUAGE CPP, PatternSynonyms, ViewPatterns,
     MagicHash, UnboxedTuples, BangPatterns,
-    RankNTypes, RecordWildCards, GeneralizedNewtypeDeriving, CPP #-}
+    RankNTypes, RecordWildCards, GeneralizedNewtypeDeriving,
+    OverloadedStrings #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
 #ifdef USE_LLVM
 {-# OPTIONS_GHC -fllvm #-}
@@ -24,6 +25,7 @@ import GHC.Prim
 import GHC.ST hiding (liftST)
 import Data.Ord
 import Data.Semigroup(Semigroup(..))
+import Twee.Profile
 
 --------------------------------------------------------------------------------
 -- Symbols. A symbol is a single function or variable in a flatterm.
@@ -269,7 +271,7 @@ instance Monoid (Builder f) where
 -- Build a termlist from a Builder.
 {-# INLINE buildTermList #-}
 buildTermList :: Builder f -> TermList f
-buildTermList (Builder m) = runST $ do
+buildTermList (Builder m) = stamp "build term" $ runST $ do
   MutableByteArray marr# <-
     -- Start with a capacity of 16 symbols (arbitrary choice)
     newByteArray (16 * symbolSize)

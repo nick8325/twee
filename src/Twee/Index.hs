@@ -290,7 +290,6 @@ matches t idx = matchesList (Term.singleton t) idx
 
 matchesList :: TermList f -> Index f a -> [(Subst f, a)]
 matchesList t idx =
-  stampWith "index lookup" length $
   run (search t emptyBindings idx Stop)
 
 -- | Return all elements of the index.
@@ -389,9 +388,13 @@ data Stack f a =
 
 -- Turn a stack into a list of results.
 run :: Stack f a -> [(Subst f, a)]
-run Stop = []
-run Frame{..} = run (searchVars frame_term frame_terms frame_bind frame_indexes frame_var frame_rest)
-run Yield{..} = map (toSubst yield_binds,) yield_found ++ run yield_rest
+run stack = stamp "index lookup" (run1 stack) 
+  where
+    run1 Stop = []
+    run1 Frame{..} =
+      run1 (searchVars frame_term frame_terms frame_bind frame_indexes frame_var frame_rest)
+    run1 Yield{..} =
+      map (toSubst yield_binds,) yield_found ++ run yield_rest
 
 -- Search starting with a given substitution.
 {-# INLINE search #-}
