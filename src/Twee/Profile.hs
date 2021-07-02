@@ -125,16 +125,15 @@ profile = do
   putStrLn "Cumulative time:"
   report rec_cumulative log
 #else
-import Data.Symbol
 import Control.Monad.IO.Class
 
-stamp :: Symbol -> a -> a
+stamp :: symbol -> a -> a
 stamp _ = id
 
-stampWith :: Symbol -> (a -> b) -> a -> a
+stampWith :: symbol -> (a -> b) -> a -> a
 stampWith _ _ = id
 
-stampM :: MonadIO m => Symbol -> m a -> m a
+stampM :: MonadIO m => symbol -> m a -> m a
 stampM _ = id
 
 profile :: IO ()
