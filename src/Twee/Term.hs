@@ -737,11 +737,11 @@ pattern F x y <- (fun_id &&& fun_value -> (x, y))
 f << g = fun_value f < fun_value g
 
 -- | Construct a 'Fun' from a function symbol.
-{-# INLINEABLE fun #-}
+{-# NOINLINE fun #-}
 fun :: Labelled f => f -> Fun f
 fun f = Core.F (fromIntegral (Label.labelNum (label f)))
 
 -- | The underlying function symbol of a 'Fun'.
-{-# INLINEABLE fun_value #-}
+{-# INLINE fun_value #-}
 fun_value :: Labelled f => Fun f -> f
 fun_value x = Label.find (Label.unsafeMkLabel (fromIntegral (fun_id x)))

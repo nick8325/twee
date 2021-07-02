@@ -1,7 +1,7 @@
 -- | Assignment of unique IDs to values.
 -- Inspired by the 'intern' package.
 
-{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns #-}
+{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash #-}
 module Data.Label(Label, unsafeMkLabel, labelNum, label, find) where
 
 import Data.IORef
@@ -12,8 +12,8 @@ import qualified Data.DynamicArray as DynamicArray
 import Data.DynamicArray(Array)
 import Data.Typeable
 import GHC.Exts
+import GHC.Int
 import Unsafe.Coerce
-import Data.Int
 
 -- | A value of type @a@ which has been given a unique ID.
 newtype Label a =
@@ -119,7 +119,13 @@ find :: Label a -> a
 -- the form
 --   find (label x)
 -- doesn't work.
-find (Label !n) = unsafeDupablePerformIO $ do
-  Caches{..} <- readIORef cachesRef
-  x <- return $! fromAny (DynamicArray.getWithDefault undefined (fromIntegral n) caches_to)
-  return x
+find (Label !(I32# n#)) = findWorker n#
+
+{-# NOINLINE findWorker #-}
+findWorker :: Int# -> a
+findWorker n# =
+  unsafeDupablePerformIO $ do
+    let n = I32# n#
+    Caches{..} <- readIORef cachesRef
+    x <- return $! fromAny (DynamicArray.getWithDefault undefined (fromIntegral n) caches_to)
+    return x
