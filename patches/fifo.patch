@@ -1,0 +1,117 @@
+diff -r 2b455414fc71 executable/SequentialMain.hs
+--- a/executable/SequentialMain.hs	Mon Jun 14 10:28:47 2021 +0200
++++ b/executable/SequentialMain.hs	Fri Jun 18 14:25:40 2021 +0200
+@@ -135,7 +135,7 @@
+ 
+ parseConfig :: OptionParser (Config Constant)
+ parseConfig =
+-  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
++  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*> fifo_rate <*>
+     (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
+     (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join) <*>
+     (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses)
+@@ -220,6 +220,10 @@
+       bool "complete-subsets"
+         ["Identify and exploit complete subsets of the axioms in joining (off by default)."]
+         False
++    fifo_rate =
++      expert $
++      inGroup "Critical pair weighting heuristics" $
++      defaultFlag "fifo-rate" "CP ratio best-first to breadth-first" cfg_fifo_rate argNum
+     set_join =
+       expert $
+       inGroup "Critical pair joining heuristics" $
+diff -r 2b455414fc71 src/Twee.hs
+--- a/src/Twee.hs	Mon Jun 14 10:28:47 2021 +0200
++++ b/src/Twee.hs	Fri Jun 18 14:25:40 2021 +0200
+@@ -53,6 +53,7 @@
+     cfg_set_join_goals         :: Bool,
+     cfg_always_simplify        :: Bool,
+     cfg_complete_subsets       :: Bool,
++    cfg_fifo_rate              :: Int,
+     cfg_critical_pairs         :: CP.Config,
+     cfg_join                   :: Join.Config,
+     cfg_proof_presentation     :: Proof.Config f }
+@@ -65,6 +66,9 @@
+     st_joinable       :: !(Index f (Equation f)),
+     st_goals          :: ![Goal f],
+     st_queue          :: !(Queue Params),
++    st_fifo           :: !(Queue Params),
++    st_schedule       :: [QueueType],
++    st_fifo_score     :: {-# UNPACK #-} !Int,
+     st_next_active    :: {-# UNPACK #-} !Id,
+     st_considered     :: {-# UNPACK #-} !Int64,
+     st_simplified_at  :: {-# UNPACK #-} !Id,
+@@ -73,6 +77,8 @@
+     st_complete       :: !(Index f (Rule f)),
+     st_messages_rev   :: ![Message f] }
+ 
++data QueueType = Best | FIFO
++
+ -- | The default prover configuration.
+ defaultConfig :: Config f
+ defaultConfig =
+@@ -87,6 +93,7 @@
+     cfg_set_join_goals = True,
+     cfg_always_simplify = False,
+     cfg_complete_subsets = False,
++    cfg_fifo_rate = 10,
+     cfg_critical_pairs = CP.defaultConfig,
+     cfg_join = Join.defaultConfig,
+     cfg_proof_presentation = Proof.defaultConfig }
+@@ -107,6 +114,9 @@
+     st_joinable = Index.empty,
+     st_goals = [],
+     st_queue = Queue.empty,
++    st_fifo = Queue.empty,
++    st_schedule = cycle (replicate cfg_fifo_rate Best ++ [FIFO]),
++    st_fifo_score = 0,
+     st_next_active = 1,
+     st_considered = 0,
+     st_simplified_at = 1,
+@@ -255,7 +265,16 @@
+ {-# SCC enqueue #-}
+ enqueue :: Function f => State f -> Id -> [Passive Params] -> State f
+ enqueue state rule passives =
+-  state { st_queue = Queue.insert rule passives (st_queue state) }
++  state { st_queue = Queue.insert rule passives (st_queue state),
++          st_fifo = Queue.insert rule ps' (st_fifo state),
++          st_fifo_score = score' }
++  where
++    (score', ps') = unscore (st_fifo_score state) [] passives
++
++    unscore !n xs [] = (n :: Int, xs)
++    unscore n xs (p:ps) =
++      let !p' = p{passive_score = n} in
++      unscore (n+1) (p':xs) ps
+ 
+ -- | Dequeue a critical pair.
+ --
+@@ -267,14 +286,24 @@
+ {-# SCC dequeue #-}
+ dequeue :: Function f => Config f -> State f -> (Maybe (Info, CriticalPair f, Active f, Active f), State f)
+ dequeue Config{..} state@State{..} =
+-  case deq 0 st_queue of
++  case deq 0 theQueue of
+     -- Explicitly make the queue empty, in case it e.g. contained a
+     -- lot of orphans
+-    Nothing -> (Nothing, state { st_queue = Queue.empty })
++    Nothing -> (Nothing, updateQueue Queue.empty state)
+     Just (overlap, n, queue) ->
+       (Just overlap,
+-       state { st_queue = queue, st_considered = st_considered + n })
++       updateQueue queue state { st_considered = st_considered + n })
+   where
++    theQueue =
++      case st_schedule of
++        FIFO:_ -> st_fifo
++        Best:_ -> st_queue
++
++    updateQueue queue state@State{..} =
++      case st_schedule of
++        FIFO:sched -> state{st_fifo = queue, st_schedule = sched}
++        Best:sched -> state{st_queue = queue, st_schedule = sched}
++
+     deq !n queue = do
+       (passive, queue) <- Queue.removeMin queue
+       case findPassive state passive of

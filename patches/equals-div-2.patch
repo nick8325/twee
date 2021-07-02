@@ -1,0 +1,21 @@
+diff -r 2b455414fc71 src/Twee/CP.hs
+--- a/src/Twee/CP.hs	Mon Jun 14 10:28:47 2021 +0200
++++ b/src/Twee/CP.hs	Fri Jun 18 14:24:45 2021 +0200
+@@ -233,10 +233,13 @@
+       | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
+         not (isVar a),
+         not (isVar b),
+-        hasEqualsBonus (fun_value f),
+-        Just sub <- unify a b =
+-        size' (n+cfg_funweight) ws `min`
+-        size' (size' (n+1) (subst sub us)) (subst sub vs)
++        hasEqualsBonus (fun_value f) =
++        case unify a b of
++          Just sub ->
++            size' (n+cfg_funweight) ws `min`
++            size' (size' (n+1) (subst sub us)) (subst sub vs)
++          Nothing ->
++            size' (cfg_funweight + size' n us + size' (size' 0 (singleton a)) (singleton b) `div` 2) vs
+     size' n (Cons (Var _) ts) =
+       size' (n+cfg_varweight) ts
+     size' n ConsSym{hd = App{}, rest = ts} =

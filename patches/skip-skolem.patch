@@ -1,0 +1,79 @@
+diff -r 2b455414fc71 executable/SequentialMain.hs
+--- a/executable/SequentialMain.hs	Mon Jun 14 10:28:47 2021 +0200
++++ b/executable/SequentialMain.hs	Fri Jun 18 14:25:14 2021 +0200
+@@ -359,6 +359,8 @@
+   isTrue c = SequentialMain.isTrue (con_id c)
+   isFalse Minimal = False
+   isFalse c = SequentialMain.isFalse (con_id c)
++  isSkolem Minimal = False
++  isSkolem c = SequentialMain.isSkolem (con_id c)
+ 
+ data TweeContext =
+   TweeContext {
+@@ -406,6 +408,10 @@
+ isFalse fun =
+   hasLabel "false" (name fun) && Jukebox.arity fun == 0
+ 
++isSkolem :: Jukebox.Function -> Bool
++isSkolem fun =
++  hasLabel "skolem" (name fun)
++
+ jukeboxFunction :: TweeContext -> Constant -> Jukebox.Function
+ jukeboxFunction _ Constant{..} = con_id
+ jukeboxFunction TweeContext{..} Minimal = ctx_minimal
+diff -r 2b455414fc71 src/Twee/Base.hs
+--- a/src/Twee/Base.hs	Mon Jun 14 10:28:47 2021 +0200
++++ b/src/Twee/Base.hs	Fri Jun 18 14:25:14 2021 +0200
+@@ -231,13 +231,15 @@
+ class EqualsBonus f where
+   hasEqualsBonus :: f -> Bool
+   hasEqualsBonus _ = False
+-  isEquals, isTrue, isFalse :: f -> Bool
++  isEquals, isTrue, isFalse, isSkolem :: f -> Bool
+   isEquals _ = False
+   isTrue _ = False
+   isFalse _ = False
++  isSkolem _ = False
+ 
+ instance (Labelled f, EqualsBonus f) => EqualsBonus (Fun f) where
+   hasEqualsBonus = hasEqualsBonus . fun_value
+   isEquals = isEquals . fun_value
+   isTrue = isTrue . fun_value
+   isFalse = isFalse . fun_value
++  isSkolem = isSkolem . fun_value
+diff -r 2b455414fc71 src/Twee/CP.hs
+--- a/src/Twee/CP.hs	Mon Jun 14 10:28:47 2021 +0200
++++ b/src/Twee/CP.hs	Fri Jun 18 14:25:14 2021 +0200
+@@ -16,6 +16,7 @@
+ import qualified Twee.Proof as Proof
+ import Twee.Proof(Derivation, congPath)
+ import Data.Bits
++import Debug.Trace
+ 
+ -- | The set of positions at which a term can have critical overlaps.
+ data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
+@@ -27,18 +28,19 @@
+   show = show . ChurchList.toList . positionsChurch
+ 
+ -- | Calculate the set of positions for a term.
+-positions :: Term f -> Positions f
++positions :: Function f => Term f -> Positions f
+ positions t = aux 0 Set.empty (singleton t)
+   where
+     -- Consider only general superpositions.
+     aux !_ !_ Empty = NilP
+     aux n m (Cons (Var _) t) = aux (n+1) m t
+-    aux n m ConsSym{hd = t@App{}, rest = u}
+-      | t `Set.member` m = aux (n+1) m u
+-      | otherwise = ConsP n (aux (n+1) (Set.insert t m) u)
++    aux n m ConsSym{hd = t@(App f _), tl = u, rest = v}
++      | t `Set.member` m = aux (n+1) m v
++      | isSkolem f = trace ("skipping over " ++ prettyShow f) $ ConsP n (aux (n+len t) (Set.insert t m) u)
++      | otherwise = ConsP n (aux (n+1) (Set.insert t m) v)
+ 
+ -- | Calculate the set of positions for a rule.
+-positionsRule :: Rule f -> Positions2 f
++positionsRule :: Function f => Rule f -> Positions2 f
+ positionsRule rule
+   | oriented (orientation rule) ||
+     canonicalise rule == canonicalise (backwards rule) =

@@ -1,0 +1,84 @@
+diff -r 51bc7fdc8899 src/Twee/CP.hs
+--- a/src/Twee/CP.hs	Fri Mar 19 20:01:11 2021 +0100
++++ b/src/Twee/CP.hs	Sat Mar 20 10:28:30 2021 +0100
+@@ -14,7 +14,7 @@
+ import Twee.Utils
+ import Twee.Equation
+ import qualified Twee.Proof as Proof
+-import Twee.Proof(Derivation, congPath)
++import Twee.Proof(Derivation)
+ import Data.IntSet(IntSet)
+ import qualified Data.IntSet as IntSet
+ 
+@@ -113,7 +113,7 @@
+     innerTerm = termSubst sub inner
+     -- Make sure to keep in sync with overlapProof
+     lhs = termSubst sub outer'
+-    rhs = buildReplacePositionSub sub n (singleton inner') (singleton outer)
++    rhs = buildReplaceSub sub (termSubst sub inner) (termSubst sub inner') (singleton outer)
+ 
+   guard (lhs /= rhs)
+   return Overlap {
+@@ -135,9 +135,9 @@
+     rhs' = simplify idx rhs
+ 
+ -- Put these in separate functions to avoid code blowup
+-buildReplacePositionSub :: TriangleSubst f -> Int -> TermList f -> TermList f -> Term f
+-buildReplacePositionSub !sub !n !inner' !outer =
+-  build (replacePositionSub sub n inner' outer)
++buildReplaceSub :: TriangleSubst f -> Term f -> Term f -> TermList f -> Term f
++buildReplaceSub !sub !from !to !t =
++  build (replace from to (subst sub t))
+ 
+ termSubst :: TriangleSubst f -> Term f -> Term f
+ termSubst sub t = build (Term.subst sub t)
+@@ -330,9 +330,7 @@
+ overlapProof left right Overlap{..} =
+   Proof.symm (ruleDerivation (subst leftSub (the left)))
+   `Proof.trans`
+-  congPath path overlap_top (ruleDerivation (subst rightSub (the right)))
++  ruleProof overlap_top (subst rightSub (the right))
+   where
+     Just leftSub = match (lhs (the left)) overlap_top
+     Just rightSub = match (lhs (the right)) overlap_inner
+-
+-    path = positionToPath (lhs (the left) :: Term f) overlap_pos
+diff -r 51bc7fdc8899 src/Twee/Rule.hs
+--- a/src/Twee/Rule.hs	Fri Mar 19 20:01:11 2021 +0100
++++ b/src/Twee/Rule.hs	Sat Mar 20 10:28:30 2021 +0100
+@@ -188,7 +188,7 @@
+ {-# INLINEABLE simplify #-}
+ {-# SCC simplify #-}
+ simplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
+-simplify = simplifyOutermost
++simplify = simplifyInnermost
+ 
+ -- | Compute the normal form of a term wrt only oriented rules, using outermost reduction.
+ simplifyOutermost :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
+@@ -269,7 +269,7 @@
+ ruleResult :: Term f -> Rule f -> Term f
+ ruleResult t r = build (replace (lhs r) (rhs r) (singleton t))
+ 
+-ruleProof :: Function f => Term f -> Rule f -> Derivation f
++ruleProof :: Term f -> Rule f -> Derivation f
+ ruleProof t r@(Rule _ _ lhs _)
+   | t == lhs = ruleDerivation r
+   | len t < len lhs = Proof.Refl t
+@@ -332,7 +332,7 @@
+ 
+ -- | Apply a strategy anywhere in a term.
+ anywhere :: Strategy f -> Strategy f
+-anywhere = anywhereOutermost
++anywhere = anywhereInnermost
+ 
+ -- | Apply a strategy anywhere in a term, preferring outermost reductions.
+ anywhereOutermost :: Strategy f -> Strategy f
+diff -r 51bc7fdc8899 tests/append-rev.p
+--- a/tests/append-rev.p	Fri Mar 19 20:01:11 2021 +0100
++++ b/tests/append-rev.p	Sat Mar 20 10:28:30 2021 +0100
+@@ -1,4 +1,4 @@
+ cnf(rev_rev, axiom, rev(rev(X)) = X).
+ cnf(app_assoc, axiom, X ++ (Y ++ Z) = (X ++ Y) ++ Z).
+ cnf(rev_app, axiom, rev(X) ++ rev(Y) = rev(Y ++ X)).
+-cnf(conjecture, conjecture, a ++ rev(b) = rev(b ++ rev(a))).
++fof(conjecture, conjecture, ![A,B]: A ++ rev(B) = rev(B ++ rev(A))).

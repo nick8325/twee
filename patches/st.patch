@@ -1,0 +1,565 @@
+diff -r a279fa503d5b src/Data/DynamicArray.hs
+--- a/src/Data/DynamicArray.hs	Sun Apr 04 16:54:23 2021 +0200
++++ b/src/Data/DynamicArray.hs	Sun Apr 04 20:32:45 2021 +0200
+@@ -1,28 +1,40 @@
+ -- | Zero-indexed dynamic arrays, optimised for lookup.
+ -- Modification is slow. Uninitialised indices have a default value.
+-{-# LANGUAGE CPP #-}
++{-# LANGUAGE CPP, MagicHash, UnboxedTuples #-}
+ module Data.DynamicArray where
+ 
+ #ifdef BOUNDS_CHECKS
+ import qualified Data.Primitive.SmallArray.Checked as P
+ #else
+ import qualified Data.Primitive.SmallArray as P
++import qualified Data.Primitive.MutVar as P
+ #endif
+ import Control.Monad.ST
+ import Data.List
++import GHC.Prim
++import GHC.Types
++import GHC.ST
++import Twee.Utils
+ 
+ -- | A type which has a default value.
+ class Default a where
+   -- | The default value.
+   def :: a
+ 
++instance Default (Maybe a) where def = Nothing
++
+ -- | An array.
+-data Array a =
++newtype Array a =
+   Array {
+-    -- | The size of the array.
+-    arraySize     :: {-# UNPACK #-} !Int,
+     -- | The contents of the array.
+-    arrayContents :: {-# UNPACK #-} !(P.SmallArray a) }
++    arrayContents :: P.SmallArray a }
++
++newtype MutableArray s a =
++  MutableArray {
++    mutableArrayContents :: P.SmallMutableArray s a }
++
++arraySize :: Array a -> Int
++arraySize = P.sizeofSmallArray . arrayContents
+ 
+ -- | Convert an array to a list of (index, value) pairs.
+ {-# INLINE toList #-}
+@@ -40,12 +52,29 @@
+       | (i, x) <- toList arr ] ++
+     "}"
+ 
++unsafeFreezeArray :: MutableArray s a -> ST s (Array a)
++unsafeFreezeArray (MutableArray marr) =
++  Array <$> P.unsafeFreezeSmallArray marr
++
++thawArray :: Array a -> ST s (MutableArray s a)
++thawArray (Array arr) =
++  MutableArray <$> P.thawSmallArray arr 0 (P.sizeofSmallArray arr)
++
++newMutableArray :: Default a => Int -> ST s (MutableArray s a)
++newMutableArray n =
++  MutableArray <$> P.newSmallArray n def
++
+ -- | Create an empty array.
+ newArray :: Array a
+ newArray = runST $ do
+   marr <- P.newSmallArray 0 undefined
+-  arr  <- P.unsafeFreezeSmallArray marr
+-  return (Array 0 arr)
++  Array <$> P.unsafeFreezeSmallArray marr
++
++instance Functor Array where
++  fmap = mapArray
++
++mapArray :: (a -> b) -> Array a -> Array b
++mapArray f (Array arr) = Array (P.mapSmallArray' f arr)
+ 
+ -- | Index into an array. O(1) time.
+ {-# INLINE (!) #-}
+@@ -73,4 +102,47 @@
+   P.copySmallArray marr 0 (arrayContents arr) 0 (arraySize arr)
+   P.writeSmallArray marr n $! x
+   arr' <- P.unsafeFreezeSmallArray marr
+-  return (Array size arr')
++  return (Array arr')
++
++{-# INLINE readArray #-}
++readArray :: Default a => MutableArray s a -> Int -> ST s a
++readArray (MutableArray marr) n
++  | 0 <= n && n < P.sizeofSmallMutableArray marr =
++    P.readSmallArray marr n
++  | otherwise = return def
++
++{-# INLINE writeArray #-}
++writeArray :: Default a => MutableArray s a -> Int -> a -> ST s (MutableArray s a)
++writeArray (MutableArray marr) n x = do
++  marr <- reserve def marr n
++  if n < 0 then error "out of bounds write"
++  else do
++    P.writeSmallArray marr n x
++    return (MutableArray marr)
++
++{-# INLINE reserve #-}
++reserve :: a -> P.SmallMutableArray s a -> Int -> ST s (P.SmallMutableArray s a)
++reserve def (P.SmallMutableArray marr#) (I# n#) =
++  ST $ \s ->
++    case reserve# s def marr# n# of
++      (# s, marr# #) -> (# s, P.SmallMutableArray marr# #)
++
++{-# NOINLINE reserve# #-}
++reserve# :: State# s -> a -> SmallMutableArray# s a -> Int# -> (# State# s, SmallMutableArray# s a #)
++reserve# s def marr# n# =
++  case reserve (P.SmallMutableArray marr#) (I# n#) of
++    ST m ->
++      case m s of
++        (# s, P.SmallMutableArray marr# #) -> (# s, marr# #)
++  where
++    reserve marr n
++      | n < k = return marr
++      | otherwise = expand marr ((k*2) `intMax` 1) n
++      where
++        k = P.sizeofSmallMutableArray marr
++    expand marr k n
++      | n < k = do
++        marr' <- P.newSmallArray k def
++        P.copySmallMutableArray marr' 0 marr 0 (P.sizeofSmallMutableArray marr)
++        return marr'
++      | otherwise = expand marr (k*2) n
+diff -r a279fa503d5b src/Twee/Base.hs
+--- a/src/Twee/Base.hs	Sun Apr 04 16:54:23 2021 +0200
++++ b/src/Twee/Base.hs	Sun Apr 04 20:32:45 2021 +0200
+@@ -83,7 +83,7 @@
+ 
+ instance Symbolic (Subst f) where
+   type ConstantOf (Subst f) = f
+-  termsDL (Subst sub) = termsDL (IntMap.elems sub)
++  termsDL sub = termsDL (map snd (substToList sub))
+   subst_ sub (Subst s) = Subst (fmap (subst_ sub) s)
+ 
+ instance (ConstantOf a ~ ConstantOf b, Symbolic a, Symbolic b) => Symbolic (a, b) where
+diff -r a279fa503d5b src/Twee/Proof.hs
+--- a/src/Twee/Proof.hs	Sun Apr 04 16:54:23 2021 +0200
++++ b/src/Twee/Proof.hs	Sun Apr 04 20:32:45 2021 +0200
+@@ -380,14 +380,15 @@
+     elim (Cong f ps) =
+       case find (build (app f (map var vs))) of
+         Nothing -> Cong f (map elim ps)
+-        Just (rhs, Subst sub) ->
++        Just (rhs, sub0) ->
++          let sub = IntMap.fromList [(x, t) | (V x, t) <- substToList' sub0] in
+           let proof (Cons (Var (V x)) Empty) = qs !! x in
+           replace (proof <$> sub) rhs
+       where
+         vs = map V [0..length ps-1]
+         qs = map (simpleLemma . certify . elim) ps -- avoid duplicating proofs of ts
+ 
+-    elimSubst (Subst sub) = Subst (singleton <$> term <$> unsingleton <$> sub)
++    elimSubst (Subst sub) = Subst (fmap (singleton . term . unsingleton) <$> sub)
+       where
+         unsingleton (Cons t Empty) = t
+ 
+diff -r a279fa503d5b src/Twee/Term.hs
+--- a/src/Twee/Term.hs	Sun Apr 04 16:54:23 2021 +0200
++++ b/src/Twee/Term.hs	Sun Apr 04 20:32:45 2021 +0200
+@@ -39,14 +39,13 @@
+   subst,
+   Subst(..),
+   -- ** Constructing and querying substitutions
+-  emptySubst, listToSubst, substToList,
++  emptySubst, listToSubst, substToList, substToList',
+   lookup, lookupList,
+   extend, extendList, unsafeExtendList,
+-  retract,
+   -- ** Other operations on substitutions
+   foldSubst, allSubst, substDomain,
+   substSize,
+-  substCompatible, substUnion, idempotent, idempotentOn,
++  substCompatible, idempotent, idempotentOn,
+   canonicalise,
+   -- * Matching
+   match, matchIn, matchList, matchListIn,
+@@ -54,7 +53,7 @@
+   isInstanceOf, isVariantOf,
+   -- * Unification
+   unify, unifyList, unifyMany,
+-  unifyTri, unifyTriFrom, unifyListTri, unifyListTriFrom,
++  unifyTri, unifyListTri,
+   TriangleSubst(..), emptyTriangleSubst,
+   close,
+   -- * Positions in terms
+@@ -76,7 +75,10 @@
+ import Control.Arrow((&&&))
+ import Twee.Utils
+ import qualified Twee.Label as Label
++import qualified Data.DynamicArray as Array
+ import Data.Typeable
++import Control.Monad.ST
++import Data.Ord
+ 
+ --------------------------------------------------------------------------------
+ -- * A type class for builders
+@@ -139,9 +141,12 @@
+ -- Functions for substitutions.
+ --------------------------------------------------------------------------------
+ 
++instance Eq (Subst f) where x == y = substToList x == substToList y
++instance Ord (Subst f) where compare = comparing substToList
++
+ {-# INLINE substToList' #-}
+ substToList' :: Subst f -> [(Var, TermList f)]
+-substToList' (Subst sub) = [(V x, t) | (x, t) <- IntMap.toList sub]
++substToList' (Subst sub) = [(V x, t) | (x, Just t) <- Array.toList sub]
+ 
+ -- | Convert a substitution to a list of bindings.
+ {-# INLINE substToList #-}
+@@ -162,7 +167,8 @@
+ -- | Compute the set of variables bound by a substitution.
+ {-# INLINE substDomain #-}
+ substDomain :: Subst f -> [Var]
+-substDomain (Subst sub) = map V (IntMap.keys sub)
++substDomain (Subst sub) =
++  map V [ n | n <- [0..Array.arraySize sub-1], sub Array.! n /= Nothing ]
+ 
+ --------------------------------------------------------------------------------
+ -- Substitution.
+@@ -210,21 +216,53 @@
+ -- | A substitution which maps variables to terms of type @'Term' f@.
+ newtype Subst f =
+   Subst {
+-    unSubst :: IntMap (TermList f) }
+-  deriving (Eq, Ord)
++    unSubst :: Array.Array (Maybe (TermList f)) }
++
++newtype SubstST s f =
++  SubstST {
++    unSubstST :: Array.MutableArray s (Maybe (TermList f)) }
++
++newSubstST :: ST s (SubstST s f)
++newSubstST = SubstST <$> Array.newMutableArray 8
++
++unsafeFreezeSubst :: SubstST s f -> ST s (Subst f)
++unsafeFreezeSubst (SubstST sub) =
++  Subst <$> Array.unsafeFreezeArray sub
++
++thawSubst :: Subst f -> ST s (SubstST s f)
++thawSubst (Subst sub) =
++  SubstST <$> Array.thawArray sub
+ 
+ -- | Return the highest-number variable in a substitution plus 1.
+ {-# INLINE substSize #-}
+ substSize :: Subst f -> Int
+-substSize (Subst sub)
+-  | IntMap.null sub = 0
+-  | otherwise = fst (IntMap.findMax sub) + 1
++substSize (Subst sub) = Array.arraySize sub
+ 
+ -- | Look up a variable in a substitution, returning a termlist.
+ {-# INLINE lookupList #-}
+ lookupList :: Var -> Subst f -> Maybe (TermList f)
+-lookupList x (Subst sub) = IntMap.lookup (var_id x) sub
++lookupList x (Subst sub) = sub Array.! var_id x
++
++{-# INLINE lookupListST #-}
++lookupListST :: Var -> SubstST s f -> ST s (Maybe (TermList f))
++lookupListST x (SubstST sub) = Array.readArray sub (var_id x)
+ 
++extendList :: Var -> TermList f -> SubstST s f -> ST s (Maybe (SubstST s f))
++extendList x !t (SubstST sub) = do
++  binding <- Array.readArray sub (var_id x)
++  case binding of
++    Nothing -> do
++      !sub <- Array.writeArray sub (var_id x) (Just t)
++      return $! Just (SubstST sub)
++    Just u
++      | t == u -> return (Just (SubstST sub))
++      | otherwise -> return Nothing
++
++unsafeExtendList :: Var -> TermList f -> SubstST s f -> ST s (SubstST s f)
++unsafeExtendList x !t (SubstST sub) =
++  SubstST <$> Array.writeArray sub (var_id x) (Just t)
++
++{-
+ -- | Add a new binding to a substitution, giving a termlist.
+ {-# INLINE extendList #-}
+ extendList :: Var -> TermList f -> Subst f -> Maybe (Subst f)
+@@ -245,24 +283,25 @@
+ {-# INLINE unsafeExtendList #-}
+ unsafeExtendList :: Var -> TermList f -> Subst f -> Subst f
+ unsafeExtendList x !t (Subst sub) = Subst (IntMap.insert (var_id x) t sub)
++-}
+ 
+ -- | Check if two substitutions are compatible (they do not send the same
+ -- variable to different terms).
+ substCompatible :: Subst f -> Subst f -> Bool
+ substCompatible (Subst !sub1) (Subst !sub2) =
+-  IntMap.null (IntMap.mergeWithKey f g h sub1 sub2)
++  and [ ok (sub1 Array.! i) (sub2 Array.! i)
++      | i <- [0..(Array.arraySize sub1 `min` Array.arraySize sub2)-1] ]
+   where
+-    f _ t u
+-      | t == u = Nothing
+-      | otherwise = Just t
+-    g _ = IntMap.empty
+-    h _ = IntMap.empty
++    ok (Just t) (Just u) = t == u
++    ok _ _ = True
+ 
++{-
+ -- | Take the union of two substitutions.
+ -- The substitutions must be compatible, which is not checked.
+ substUnion :: Subst f -> Subst f -> Subst f
+ substUnion (Subst !sub1) (Subst !sub2) =
+   Subst (IntMap.union sub1 sub2)
++-}
+ 
+ -- | Check if a substitution is idempotent (applying it twice has the same
+ -- effect as applying it once).
+@@ -286,13 +325,16 @@
+   | otherwise      = close (Triangle (compose sub sub))
+   where
+     compose (Subst !sub1) !sub2 =
+-      Subst (IntMap.map (buildList . substList sub2) sub1)
++      Subst (fmap (fmap (buildList . substList sub2)) sub1)
+ 
+ -- | Return a substitution which renames the variables of a list of terms to put
+ -- them in a canonical order.
+ canonicalise :: [TermList f] -> Subst f
+ canonicalise [] = emptySubst
+-canonicalise (t:ts) = loop emptySubst vars t ts
++canonicalise (t:ts) =
++  runST $ do
++    sub <- newSubstST
++    loop sub vars t ts >>= unsafeFreezeSubst
+   where
+     (V m, V n) = boundLists (t:ts)
+     vars =
+@@ -302,18 +344,20 @@
+         mconcat [emitVar (V x) | x <- [0..n-m+1]]
+ 
+     loop !_ !_ !_ !_ | False = undefined
+-    loop sub _ Empty [] = sub
+-    loop sub Empty _ _ = sub
++    loop sub _ Empty [] = return sub
++    loop sub Empty _ _ = return sub
+     loop sub vs Empty (t:ts) = loop sub vs t ts
+     loop sub vs ConsSym{hd = App{}, rest = t} ts = loop sub vs t ts
+-    loop sub vs0@(Cons v vs) (Cons (Var x) t) ts =
+-      case extend x v sub of
++    loop sub vs0@(Cons v vs) (Cons (Var x) t) ts = do
++      res <- extend x v sub
++      case res of
+         Just sub -> loop sub vs  t ts
+         Nothing  -> loop sub vs0 t ts
+ 
+ -- | The empty substitution.
++{-# NOINLINE emptySubst #-}
+ emptySubst :: Subst f
+-emptySubst = Subst IntMap.empty
++emptySubst = Subst Array.newArray
+ 
+ -- | The empty triangle substitution.
+ emptyTriangleSubst :: TriangleSubst f
+@@ -344,27 +388,44 @@
+ -- | A variant of 'match' which works on termlists.
+ {-# INLINE matchList #-}
+ matchList :: TermList f -> TermList f -> Maybe (Subst f)
+-matchList pat t = matchListIn emptySubst pat t
++matchList pat t = runST $ do
++  msub <- newSubstST
++  res <- matchListInST msub pat t
++  case res of
++    Nothing -> return Nothing
++    Just msub -> Just <$> unsafeFreezeSubst msub
+ 
+ -- | A variant of 'match' which works on termlists
+ -- and extends an existing substitution.
+ {-# SCC matchListIn #-}
+ matchListIn :: Subst f -> TermList f -> TermList f -> Maybe (Subst f)
+-matchListIn !sub !pat !t
+-  | lenList t < lenList pat = Nothing
++matchListIn !sub !pat !t = runST $ do
++  msub <- thawSubst sub
++  res <- matchListInST msub pat t
++  case res of
++    Nothing -> return Nothing
++    Just msub -> Just <$> unsafeFreezeSubst msub
++
++matchListInST :: SubstST s f -> TermList f -> TermList f -> ST s (Maybe (SubstST s f))
++matchListInST !sub !pat !t
++  | lenList t < lenList pat = return Nothing
+   | otherwise =
+     let 
+-        loop !sub ConsSym{hd = pat, tl = pats, rest = pats1} !ts = do
+-          ConsSym{hd = t, tl = ts, rest = ts1} <- Just ts
+-          case (pat, t) of
+-            (App f _, App g _) | f == g ->
+-              loop sub pats1 ts1
+-            (Var x, _) -> do
+-              sub <- extend x t sub
+-              loop sub pats ts
+-            _ -> Nothing
+-        loop sub _ Empty = Just sub
+-        loop _ _ _ = Nothing
++        loop !sub ConsSym{hd = pat, tl = pats, rest = pats1} !ts =
++          case ts of
++            ConsSym{hd = t, tl = ts, rest = ts1} ->
++              case (pat, t) of
++                (App f _, App g _) | f == g ->
++                  loop sub pats1 ts1
++                (Var x, _) -> do
++                  res <- extend x t sub
++                  case res of
++                    Nothing -> return Nothing
++                    Just sub -> loop sub pats ts
++                _ -> return Nothing
++            _ -> return Nothing
++        loop sub _ Empty = return (Just sub)
++        loop _ _ _ = return Nothing
+     in loop sub pat t
+ 
+ -- | A variant of 'match' which works on lists of terms.
+@@ -442,69 +503,82 @@
+     us = buildList (map fst ts)
+     vs = buildList (map snd ts)
+ 
+--- | Unify two terms, returning a triangle substitution.
+--- This is slightly faster than 'unify'.
+ unifyTri :: Term f -> Term f -> Maybe (TriangleSubst f)
+ unifyTri t u = unifyListTri (singleton t) (singleton u)
+ 
+--- | Unify two terms, starting from an existing substitution.
+-unifyTriFrom :: Term f -> Term f -> TriangleSubst f -> Maybe (TriangleSubst f)
+-unifyTriFrom t u sub = unifyListTriFrom (singleton t) (singleton u) sub
+-
+--- | Unify two termlists, returning a triangle substitution.
++-- | Unify two terms, returning a triangle substitution.
+ -- This is slightly faster than 'unify'.
+ unifyListTri :: TermList f -> TermList f -> Maybe (TriangleSubst f)
+-unifyListTri t u = unifyListTriFrom t u (Triangle emptySubst)
++unifyListTri t u = runST $ do
++  sub <- newSubstST
++  res <- unifyListTriFromST t u sub
++  case res of
++    Nothing -> return Nothing
++    Just sub -> Just <$> Triangle <$> unsafeFreezeSubst sub
+ 
+-{-# SCC unifyListTriFrom #-}
+-unifyListTriFrom :: TermList f -> TermList f -> TriangleSubst f -> Maybe (TriangleSubst f)
+-unifyListTriFrom !t !u (Triangle !sub) =
+-  fmap Triangle (loop sub t u)
++{-# SCC unifyListTriFromST #-}
++unifyListTriFromST :: TermList f -> TermList f -> SubstST s f -> ST s (Maybe (SubstST s f))
++unifyListTriFromST !t !u !sub =
++  loop sub t u
+   where
+     loop !_ !_ !_ | False = undefined
+-    loop sub (ConsSym{hd = t, tl = ts, rest = ts1}) u = do
+-      ConsSym{hd = u, tl = us, rest =  us1} <- Just u
+-      case (t, u) of
+-        (App f _, App g _) | f == g ->
+-          loop sub ts1 us1
+-        (Var x, _) -> do
+-          sub <- var sub x u
+-          loop sub ts us
+-        (_, Var x) -> do
+-          sub <- var sub x t
+-          loop sub ts us
+-        _ -> Nothing
+-    loop sub _ Empty = Just sub
+-    loop _ _ _ = Nothing
++    loop sub (ConsSym{hd = t, tl = ts, rest = ts1}) u =
++      case u of
++        ConsSym{hd = u, tl = us, rest =  us1} ->
++          case (t, u) of
++            (App f _, App g _) | f == g ->
++              loop sub ts1 us1
++            (Var x, _) -> do
++              res <- var sub x u
++              case res of
++                Nothing -> return Nothing
++                Just sub -> loop sub ts us
++            (_, Var x) -> do
++              res <- var sub x t
++              case res of
++                Nothing -> return Nothing
++                Just sub -> loop sub ts us
++            _ -> return Nothing
++        _ -> return Nothing
++    loop sub _ Empty = return (Just sub)
++    loop _ _ _ = return Nothing
+ 
+     {-# INLINE var #-}
+-    var sub x t =
+-      case lookupList x sub of
++    var sub x t = do
++      res <- lookupListST x sub
++      case res of
+         Just u -> loop sub u (singleton t)
+         Nothing -> var1 sub x t
+ 
+     var1 sub x t@(Var y)
+-      | x == y = return sub
+-      | otherwise =
+-        case lookup y sub of
++      | x == y = return (Just sub)
++      | otherwise = do
++        res <- lookupST y sub
++        case res of
+           Just t  -> var1 sub x t
+           Nothing -> extend x t sub
+ 
+     var1 sub x t = do
+-      occurs sub x (singleton t)
+-      extend x t sub
++      res <- occurs sub x (singleton t)
++      case res of
++        Nothing -> return Nothing
++        Just () -> extend x t sub
+ 
+     occurs !sub !x (ConsSym{hd = t, rest = ts}) =
+       case t of
+         App{} -> occurs sub x ts
+         Var y
+-          | x == y -> Nothing
++          | x == y -> return Nothing
+           | otherwise -> do
+-            occurs sub x ts
+-            case lookupList y sub of
+-              Nothing -> Just ()
+-              Just u  -> occurs sub x u
+-    occurs _ _ _ = Just ()
++            res <- occurs sub x ts
++            case res of
++              Nothing -> return Nothing
++              Just () -> do
++                res <- lookupListST y sub
++                case res of
++                  Nothing -> return (Just ())
++                  Just u  -> occurs sub x u
++    occurs _ _ _ = return (Just ())
+ 
+ --------------------------------------------------------------------------------
+ -- Miscellaneous stuff.
+@@ -550,9 +624,18 @@
+   Cons t Empty <- lookupList x s
+   return t
+ 
++-- | Look up a variable in a substitution.
++{-# INLINE lookupST #-}
++lookupST :: Var -> SubstST s f -> ST s (Maybe (Term f))
++lookupST x s = do
++  res <- lookupListST x s
++  case res of
++    Just (Cons t Empty) -> return (Just t)
++    _ -> return Nothing
++
+ -- | Add a new binding to a substitution.
+ {-# INLINE extend #-}
+-extend :: Var -> Term f -> Subst f -> Maybe (Subst f)
++extend :: Var -> Term f -> SubstST s f -> ST s (Maybe (SubstST s f))
+ extend x t sub = extendList x (singleton t) sub
+ 
+ -- | Find the length of a term.

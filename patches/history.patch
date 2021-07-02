@@ -1,0 +1,635 @@
+master-02       (4d ago)    changes to: Bump Jukebox version to get prettier printing of Skolem constants.
+
+diff --git a/src/Twee.hs b/src/Twee.hs
+--- a/src/Twee.hs
++++ b/src/Twee.hs
+@@ -2,7 +2,7 @@
+ {-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables, GeneralizedNewtypeDeriving, PatternGuards, TypeFamilies #-}
+ module Twee where
+ 
+-import Twee.Base
++import Twee.Base hiding (at)
+ import Twee.Rule hiding (normalForms)
+ import qualified Twee.Rule as Rule
+ import Twee.Equation
+@@ -36,6 +36,8 @@
+ import qualified Control.Monad.Trans.State.Strict as StateM
+ import qualified Data.IntSet as IntSet
+ import Data.IntSet(IntSet)
++import Twee.Historical(Historical, now, at, initial, tick)
++import qualified Twee.Historical as Historical
+ 
+ ----------------------------------------------------------------------
+ -- * Configuration and prover state.
+@@ -61,10 +63,10 @@
+ -- | The prover state.
+ data State f =
+   State {
+-    st_rules          :: !(RuleIndex f (ActiveRule f)),
++    st_rules          :: !(Historical Id (RuleIndex f (ActiveRule f))),
+     st_active_ids     :: !(IntMap (Active f)),
+-    st_rule_ids       :: !(IntMap (ActiveRule f)),
+-    st_joinable       :: !(Index f (Equation f)),
++    st_rule_ids       :: !(Historical Id (IntMap (ActiveRule f))),
++    st_joinable       :: !(Historical Id (Index f (Equation f))),
+     st_goals          :: ![Goal f],
+     st_queue          :: !(Queue Params),
+     st_next_active    :: {-# UNPACK #-} !Id,
+@@ -75,7 +77,7 @@
+     st_cp_next_sample :: ![(Integer, Int)],
+     st_num_cps        :: !Integer,
+     st_not_complete   :: !IntSet,
+-    st_complete       :: !(Index f (Rule f)),
++    st_complete       :: !(Historical Id (Index f (Rule f))),
+     st_messages_rev   :: ![Message f] }
+ 
+ -- | The default prover configuration.
+@@ -107,10 +109,10 @@
+ initialState :: Config f -> State f
+ initialState Config{..} =
+   State {
+-    st_rules = RuleIndex.empty,
++    st_rules = initial RuleIndex.empty,
+     st_active_ids = IntMap.empty,
+-    st_rule_ids = IntMap.empty,
+-    st_joinable = Index.empty,
++    st_rule_ids = initial IntMap.empty,
++    st_joinable = initial Index.empty,
+     st_goals = [],
+     st_queue = Queue.empty,
+     st_next_active = 1,
+@@ -121,7 +123,7 @@
+     st_cp_next_sample = reservoir cfg_cp_sample_size,
+     st_num_cps = 0,
+     st_not_complete = IntSet.empty,
+-    st_complete = Index.empty,
++    st_complete = initial Index.empty,
+     st_messages_rev = [] }
+ 
+ ----------------------------------------------------------------------
+@@ -199,9 +201,9 @@
+ makePassives :: Function f => Config f -> State f -> ActiveRule f -> [Passive Params]
+ makePassives Config{..} State{..} rule =
+   [ Passive (fromIntegral (score cfg_critical_pairs o)) (rule_rid rule1) (rule_rid rule2) (fromIntegral (overlap_pos o))
+-  | (rule1, rule2, o) <- overlaps (Depth cfg_max_cp_depth) (index_oriented st_rules) rules rule ]
++  | (rule1, rule2, o) <- overlaps (Depth cfg_max_cp_depth) (index_oriented (now st_rules)) rules rule ]
+   where
+-    rules = IntMap.elems st_rule_ids
++    rules = IntMap.elems (now st_rule_ids)
+ 
+ -- | Turn a Passive back into an overlap.
+ -- Doesn't try to simplify it.
+@@ -209,8 +211,11 @@
+ {-# SCC findPassive #-}
+ findPassive :: forall f. Function f => State f -> Passive Params -> Maybe (ActiveRule f, ActiveRule f, Overlap f)
+ findPassive State{..} Passive{..} = do
+-  rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_rule_ids
+-  rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_rule_ids
++  rule1 <- IntMap.lookup (fromIntegral passive_rule1) (now st_rule_ids)
++  rule2 <- IntMap.lookup (fromIntegral passive_rule2) (now st_rule_ids)
++  let t = rule_active rule1 `max` rule_active rule2
++  rule1 <- IntMap.lookup (fromIntegral passive_rule1) (st_rule_ids `at` Just t)
++  rule2 <- IntMap.lookup (fromIntegral passive_rule2) (st_rule_ids `at` Just t)
+   let !depth = 1 + max (the rule1) (the rule2)
+   overlap <-
+     overlapAt (fromIntegral passive_pos) depth
+@@ -223,7 +228,7 @@
+ simplifyPassive :: Function f => Config f -> State f -> Passive Params -> Maybe (Passive Params)
+ simplifyPassive Config{..} state@State{..} passive = do
+   (_, _, overlap) <- findPassive state passive
+-  overlap <- simplifyOverlap (index_oriented st_rules) overlap
++  overlap <- simplifyOverlap (index_oriented (now st_rules)) overlap
+   return passive {
+     passive_score = fromIntegral $
+       fromIntegral (passive_score passive) `intMin`
+@@ -354,8 +359,9 @@
+     active@Active{..} = active0 st_next_active st_next_rule (succ st_next_rule)
+     state' =
+       message (NewActive active) $
++      tickState st_next_active $
+       addActiveOnly state{st_next_active = st_next_active+1, st_next_rule = st_next_rule+2} active
+-  in if subsumed (st_joinable, st_complete) st_rules (unorient active_rule) then
++  in if subsumed (now st_joinable, now st_complete) (now st_rules) (unorient active_rule) then
+     state
+   else
+     normaliseGoals config $
+@@ -366,6 +372,12 @@
+       enqueue state (the rule) passives
+       where
+         passives = makePassives config state rule
++    tickState active st@State{..} =
++      st {
++        st_rules = tick active st_rules,
++        st_rule_ids = tick active st_rule_ids,
++        st_joinable = tick active st_joinable,
++        st_complete = tick active st_complete }
+ 
+ -- Update the list of sampled critical pairs.
+ {-# INLINEABLE sample #-}
+@@ -383,7 +395,7 @@
+     idx = n - st_num_cps
+     find passive = do
+       (_, _, overlap) <- findPassive state passive
+-      simplifyOverlap (index_oriented st_rules) overlap
++      simplifyOverlap (index_oriented (now st_rules)) overlap
+ 
+ -- Reset the list of sampled critical pairs.
+ {-# INLINEABLE resetSample #-}
+@@ -408,7 +420,7 @@
+   state{st_cp_sample = map (>>= simp) st_cp_sample}
+   where
+     simp overlap = do
+-      overlap' <- simplifyOverlap (index_oriented st_rules) overlap
++      overlap' <- simplifyOverlap (index_oriented (now st_rules)) overlap
+       guard (overlap_eqn overlap == overlap_eqn overlap')
+       return overlap
+ 
+@@ -417,9 +429,9 @@
+ addActiveOnly :: Function f => State f -> Active f -> State f
+ addActiveOnly state@State{..} active@Active{..} =
+   state {
+-    st_rules = foldl' insertRule st_rules active_rules,
++    st_rules = Historical.modify (\rules -> foldl' insertRule rules active_rules) st_rules,
+     st_active_ids = IntMap.insert (fromIntegral active_id) active st_active_ids,
+-    st_rule_ids = foldl' insertRuleId st_rule_ids active_rules }
++    st_rule_ids = Historical.modify (\rule_ids -> foldl' insertRuleId rule_ids active_rules) st_rule_ids }
+   where
+     insertRule rules rule@ActiveRule{..} =
+       RuleIndex.insert (lhs rule_rule) rule rules
+@@ -431,9 +443,9 @@
+ deleteActive :: Function f => State f -> Active f -> State f
+ deleteActive state@State{..} Active{..} =
+   state {
+-    st_rules = foldl' deleteRule st_rules active_rules,
++    st_rules = Historical.modify (\rules -> foldl' deleteRule rules active_rules) st_rules,
+     st_active_ids = IntMap.delete (fromIntegral active_id) st_active_ids,
+-    st_rule_ids = foldl' deleteRuleId st_rule_ids active_rules }
++    st_rule_ids = Historical.modify (\rule_ids -> foldl' deleteRuleId rule_ids active_rules) st_rule_ids }
+   where
+     deleteRule rules rule =
+       RuleIndex.delete (lhs (rule_rule rule)) rule rules
+@@ -442,9 +454,9 @@
+ 
+ -- Try to join a critical pair.
+ {-# INLINEABLE consider #-}
+-consider :: Function f => Config f -> State f -> CriticalPair f -> State f
+-consider config state cp =
+-  considerUsing (st_rules state) config state cp
++consider :: Function f => Config f -> State f -> Maybe Id -> CriticalPair f -> State f
++consider config state t cp =
++  considerUsing (st_rules state `at` t) config state t cp
+ 
+ -- Try to join a critical pair, but using a different set of critical
+ -- pairs for normalisation.
+@@ -452,15 +464,15 @@
+ {-# SCC considerUsing #-}
+ considerUsing ::
+   Function f =>
+-  RuleIndex f (ActiveRule f) -> Config f -> State f -> CriticalPair f -> State f
+-considerUsing rules config@Config{..} state@State{..} cp0 =
++  RuleIndex f (ActiveRule f) -> Config f -> State f -> Maybe Id -> CriticalPair f -> State f
++considerUsing rules config@Config{..} state@State{..} t cp0 =
+   -- Important to canonicalise the rule so that we don't get
+   -- bigger and bigger variable indices over time
+   let cp = canonicalise cp0 in
+-  case joinCriticalPair cfg_join (st_joinable, st_complete) rules Nothing cp of
++  case joinCriticalPair cfg_join (st_joinable `at` t, st_complete `at` t) rules Nothing cp of
+     Right (mcp, cps) ->
+       let
+-        state' = foldl' (considerUsing rules config) state cps
++        state' = foldl' (\state -> considerUsing rules config state t) state cps
+       in case mcp of
+         Just cp -> addJoinable state' (cp_eqn cp)
+         Nothing -> state'
+@@ -503,7 +515,7 @@
+ {-# INLINEABLE addAxiom #-}
+ addAxiom :: Function f => Config f -> State f -> Axiom f -> State f
+ addAxiom config state axiom =
+-  consider config state $
++  consider config state Nothing $
+     CriticalPair {
+       cp_eqn = axiom_eqn axiom,
+       cp_depth = 0,
+@@ -518,8 +530,7 @@
+   message (NewEquation eqn) $
+   state {
+     st_joinable =
+-      Index.insert t (t :=: u) $
+-      Index.insert u (u :=: t) (st_joinable state) }
++      Historical.modify (Index.insert t (t :=: u) . Index.insert u (u :=: t)) (st_joinable state) }
+ 
+ -- Find a confluent subset of the rules.
+ {-# INLINEABLE checkCompleteness #-}
+@@ -527,7 +538,7 @@
+ checkCompleteness _ state@State{..} | st_simplified_at == st_next_active = state
+ checkCompleteness _config state =
+   state { st_not_complete = excluded,
+-          st_complete = Index.fromListWith lhs rules }
++          st_complete = Historical.put (Index.fromListWith lhs rules) (st_complete state) }
+   where
+     maxSet s = if IntSet.null s then minBound else IntSet.findMax s
+     maxN = maximum [maxSet (unMax (active_max r)) | r <- IntMap.elems (st_active_ids state)]
+@@ -546,7 +557,7 @@
+       guard (s `IntSet.disjoint` excl)
+       (n, _) <- IntSet.maxView s
+       return n
+-    rules = map rule_rule (filter ok (IntMap.elems (st_rule_ids state)))
++    rules = map rule_rule (filter ok (IntMap.elems (now (st_rule_ids state))))
+     ok r = unMax (rule_max r) `IntSet.disjoint` excluded
+ 
+ -- Assume that all rules form a confluent rewrite system.
+@@ -554,7 +565,7 @@
+ assumeComplete :: Function f => State f -> State f
+ assumeComplete state =
+   state { st_not_complete = IntSet.empty,
+-          st_complete = Index.fromListWith lhs (map rule_rule (IntMap.elems (st_rule_ids state))) }
++          st_complete = Historical.put (Index.fromListWith lhs (map rule_rule (IntMap.elems (now (st_rule_ids state))))) (st_complete state) }
+ 
+ -- For goal terms we store the set of all their normal forms.
+ -- Name and number are for information only.
+@@ -581,7 +592,7 @@
+ normaliseGoals Config{..} state@State{..} =
+   state {
+     st_goals =
+-      map (goalMap (nf (rewrite reduces (index_all st_rules)))) st_goals }
++      map (goalMap (nf (rewrite reduces (index_all (now st_rules))))) st_goals }
+   where
+     goalMap f goal@Goal{..} =
+       goal { goal_lhs = f goal_lhs, goal_rhs = f goal_rhs }
+@@ -639,7 +650,7 @@
+           r <- backwardsTerm t,
+           let q = ruleProof t r ]
+     backwardsTerm t = do
+-      rule <- map the (Index.elems (RuleIndex.index_all (st_rules state)))
++      rule <- map the (Index.elems (RuleIndex.index_all (now (st_rules state))))
+       guard (usort (vars (lhs rule)) == usort (vars (rhs rule)))
+       [r] <- anywhere (tryRule (\_ _ -> True) (backwards rule)) t
+       return r
+@@ -672,9 +683,9 @@
+       foldl' (interreduce1 config)
+         -- Clear out st_joinable, since we don't know which
+         -- equations have made use of each active.
+-        state { st_joinable = Index.empty, st_complete = Index.empty }
++        state { st_joinable = Historical.put Index.empty (st_joinable state), st_complete = Historical.put Index.empty (st_complete state) }
+         (IntMap.elems (st_active_ids state))
+-    in state' { st_joinable = st_joinable state, st_complete = st_complete state, st_simplified_at = st_next_active state' }
++    in state' { st_joinable = Historical.put (now (st_joinable state)) (st_joinable state'), st_complete = Historical.put (now (st_complete state)) (st_complete state'), st_simplified_at = st_next_active state' }
+ 
+ {-# INLINEABLE interreduce1 #-}
+ interreduce1 :: Function f => Config f -> State f -> Active f -> State f
+@@ -684,16 +695,16 @@
+   case
+     joinCriticalPair cfg_join
+       (Index.empty, Index.empty) -- (st_joinable state)
+-      (st_rules (deleteActive state active))
++      (now (st_rules (deleteActive state active)))
+       (Just (active_model active)) (active_cp active)
+   of
+     Right (_, cps) ->
+-      flip (foldl' (consider config)) cps $
++      flip (foldl' (\state -> consider config state Nothing)) cps $
+       message (DeleteActive active) $
+       deleteActive state active
+     Left (cp, model)
+       | cp_eqn cp `simplerThan` cp_eqn (active_cp active) ->
+-        flip (foldl' (consider config)) (split cp) $
++        flip (foldl' (\state -> consider config state Nothing)) (split cp) $
+         message (DeleteActive active) $
+         deleteActive state active
+       | model /= active_model active ->
+@@ -763,8 +774,8 @@
+   | otherwise =
+     case dequeue config state of
+       (Nothing, state) -> (False, state)
+-      (Just (overlap, _, _), state) ->
+-        (True, consider config state overlap)
++      (Just (overlap, rule1, rule2), state) ->
++        (True, consider config state (Just (rule_active rule1 `max` rule_active rule2)) overlap)
+ 
+ {-# INLINEABLE solved #-}
+ solved :: Function f => State f -> Bool
+@@ -811,15 +822,15 @@
+ {-# INLINEABLE normaliseTerm #-}
+ normaliseTerm :: Function f => State f -> Term f -> Reduction f
+ normaliseTerm State{..} t =
+-  normaliseWith (const True) (rewrite reduces (index_all st_rules)) t
++  normaliseWith (const True) (rewrite reduces (index_all (now st_rules))) t
+ 
+ {-# INLINEABLE normalForms #-}
+ normalForms :: Function f => State f -> Term f -> Map (Term f) (Reduction f)
+ normalForms State{..} t =
+   Map.map snd $
+-  Rule.normalForms (rewrite reduces (index_all st_rules)) (Map.singleton t [])
++  Rule.normalForms (rewrite reduces (index_all (now st_rules))) (Map.singleton t [])
+ 
+ {-# INLINEABLE simplifyTerm #-}
+ simplifyTerm :: Function f => State f -> Term f -> Term f
+ simplifyTerm State{..} t =
+-  simplify (index_oriented st_rules) t
++  simplify (index_oriented (now st_rules)) t
+diff --git a/src/twee-lib.cabal b/src/twee-lib.cabal
+--- a/src/twee-lib.cabal
++++ b/src/twee-lib.cabal
+@@ -56,6 +56,7 @@
+     Twee.Term
+     Twee.Task
+     Twee.Utils
++    Twee.Historical
+   other-modules:
+     Data.ChurchList
+     Data.DynamicArray
+diff --git a/tests/haken.p b/tests/haken.p
+--- a/tests/haken.p
++++ b/tests/haken.p
+@@ -1,4 +1,4 @@
+-cnf(a, conjecture, a1 = a2 & a2 = a3 & a3 = a4 & a4 = a5 & a5 = a6 &
++cnf(goal, conjecture, a1 = a2 & a2 = a3 & a3 = a4 & a4 = a5 & a5 = a6 &
+ a6 = a7 & a7 = a8 & a8 = a9 & a9 = a10 & a10 = a11 & a11 = a12 & a12 =
+ a13 & a13 = a14 & a14 = a15 & a15 = a16 & a16 = a17 & a17 = a18 & a18
+ = a19 & a19 = a20 & a20 = a21 & a20 = a22 & a21 = a23 & a23 = a24 &
+@@ -27,144 +27,144 @@
+ cnf(a, axiom, '*'(X, X) = X).
+ cnf(a, axiom, '*'('*'(X,Y),Y) = X).
+ cnf(a, axiom, '*'('*'(X,Y),Z) = '*'('*'(X, Z), '*'(Y, Z))).
+-cnf(a, axiom, a2 = '*'(a1, a42)).
+-cnf(a, axiom, a3 = '*'(a2, a41)).
+-cnf(a, axiom, a4 = '*'(a3, a14)).
+-cnf(a, axiom, a5 = '*'(a4, a39)).
+-cnf(a, axiom, a6 = '*'(a5, a136)).
+-cnf(a, axiom, a7 = '*'(a6, a52)).
+-cnf(a, axiom, a8 = '*'(a7, a17)).
+-cnf(a, axiom, a9 = '*'(a8, a56)).
+-cnf(a, axiom, a10 = '*'(a9, a134)).
+-cnf(a, axiom, a11 = '*'(a10, a37)).
+-cnf(a, axiom, a12 = '*'(a11, a21)).
+-cnf(a, axiom, a13 = '*'(a12, a23)).
+-cnf(a, axiom, a14 = '*'(a13, a32)).
+-cnf(a, axiom, a15 = '*'(a14, a53)).
+-cnf(a, axiom, a16 = '*'(a15, a136)).
+-cnf(a, axiom, a17 = '*'(a16, a29)).
+-cnf(a, axiom, a18 = '*'(a17, a133)).
+-cnf(a, axiom, a19 = '*'(a18, a58)).
+-cnf(a, axiom, a20 = '*'(a19, a26)).
+-cnf(a, axiom, a21 = '*'(a20, a35)).
+-cnf(a, axiom, a22 = '*'(a21, a141)).
+-cnf(a, axiom, a23 = '*'(a22, a45)).
+-cnf(a, axiom, a24 = '*'(a23, a35)).
+-cnf(a, axiom, a25 = '*'(a24, a49)).
+-cnf(a, axiom, a26 = '*'(a25, a138)).
+-cnf(a, axiom, a27 = '*'(a26, a8)).
+-cnf(a, axiom, a28 = '*'(a27, a37)).
+-cnf(a, axiom, a29 = '*'(a28, a17)).
+-cnf(a, axiom, a30 = '*'(a29, a14)).
+-cnf(a, axiom, a31 = '*'(a30, a5)).
+-cnf(a, axiom, a32 = '*'(a31, a39)).
+-cnf(a, axiom, a33 = '*'(a32, a13)).
+-cnf(a, axiom, a34 = '*'(a33, a131)).
+-cnf(a, axiom, a35 = '*'(a34, a60)).
+-cnf(a, axiom, a36 = '*'(a35, a139)).
+-cnf(a, axiom, a37 = '*'(a36, a47)).
+-cnf(a, axiom, a38 = '*'(a37, a17)).
+-cnf(a, axiom, a39 = '*'(a38, a7)).
+-cnf(a, axiom, a40 = '*'(a39, a4)).
+-cnf(a, axiom, a41 = '*'(a40, a14)).
+-cnf(a, axiom, a42 = '*'(a41, a2)).
+-cnf(a, axiom, a43 = '*'(a42, a62)).
+-cnf(a, axiom, a44 = '*'(a43, a128)).
+-cnf(a, axiom, a45 = '*'(a44, a23)).
+-cnf(a, axiom, a46 = '*'(a45, a141)).
+-cnf(a, axiom, a47 = '*'(a46, a11)).
+-cnf(a, axiom, a48 = '*'(a47, a20)).
+-cnf(a, axiom, a49 = '*'(a48, a138)).
+-cnf(a, axiom, a50 = '*'(a49, a131)).
+-cnf(a, axiom, a51 = '*'(a50, a59)).
+-cnf(a, axiom, a52 = '*'(a51, a39)).
+-cnf(a, axiom, a53 = '*'(a52, a136)).
+-cnf(a, axiom, a54 = '*'(a53, a29)).
+-cnf(a, axiom, a55 = '*'(a54, a135)).
+-cnf(a, axiom, a56 = '*'(a55, a37)).
+-cnf(a, axiom, a57 = '*'(a56, a134)).
+-cnf(a, axiom, a58 = '*'(a57, a26)).
+-cnf(a, axiom, a59 = '*'(a58, a138)).
+-cnf(a, axiom, a60 = '*'(a59, a131)).
+-cnf(a, axiom, a61 = '*'(a60, a13)).
+-cnf(a, axiom, a62 = '*'(a61, a1)).
+-cnf(a, axiom, a63 = '*'(a62, a96)).
+-cnf(a, axiom, a64 = '*'(a63, a127)).
+-cnf(a, axiom, a65 = '*'(a64, a41)).
+-cnf(a, axiom, a66 = '*'(a65, a2)).
+-cnf(a, axiom, a67 = '*'(a66, a92)).
+-cnf(a, axiom, a68 = '*'(a67, a98)).
+-cnf(a, axiom, a69 = '*'(a68, a32)).
+-cnf(a, axiom, a70 = '*'(a69, a13)).
+-cnf(a, axiom, a71 = '*'(a70, a118)).
+-cnf(a, axiom, a72 = '*'(a71, a109)).
+-cnf(a, axiom, a73 = '*'(a72, a82)).
+-cnf(a, axiom, a74 = '*'(a73, a32)).
+-cnf(a, axiom, a75 = '*'(a74, a14)).
+-cnf(a, axiom, a76 = '*'(a75, a68)).
+-cnf(a, axiom, a77 = '*'(a76, a114)).
+-cnf(a, axiom, a78 = '*'(a77, a13)).
+-cnf(a, axiom, a79 = '*'(a78, a33)).
+-cnf(a, axiom, a80 = '*'(a79, a119)).
+-cnf(a, axiom, a81 = '*'(a80, a70)).
+-cnf(a, axiom, a82 = '*'(a81, a109)).
+-cnf(a, axiom, a83 = '*'(a82, a118)).
+-cnf(a, axiom, a84 = '*'(a83, a39)).
+-cnf(a, axiom, a85 = '*'(a84, a5)).
+-cnf(a, axiom, a86 = '*'(a85, a30)).
+-cnf(a, axiom, a87 = '*'(a86, a104)).
+-cnf(a, axiom, a88 = '*'(a87, a4)).
+-cnf(a, axiom, a89 = '*'(a88, a14)).
+-cnf(a, axiom, a90 = '*'(a89, a41)).
+-cnf(a, axiom, a91 = '*'(a90, a100)).
+-cnf(a, axiom, a92 = '*'(a91, a124)).
+-cnf(a, axiom, a93 = '*'(a92, a2)).
+-cnf(a, axiom, a94 = '*'(a93, a41)).
+-cnf(a, axiom, a95 = '*'(a94, a127)).
+-cnf(a, axiom, a96 = '*'(a95, a64)).
+-cnf(a, axiom, a97 = '*'(a96, a42)).
+-cnf(a, axiom, a98 = '*'(a97, a1)).
+-cnf(a, axiom, a99 = '*'(a98, a92)).
+-cnf(a, axiom, a100 = '*'(a99, a124)).
+-cnf(a, axiom, a101 = '*'(a100, a14)).
+-cnf(a, axiom, a102 = '*'(a101, a40)).
+-cnf(a, axiom, a103 = '*'(a102, a4)).
+-cnf(a, axiom, a104 = '*'(a103, a87)).
+-cnf(a, axiom, a105 = '*'(a104, a30)).
+-cnf(a, axiom, a106 = '*'(a105, a5)).
+-cnf(a, axiom, a107 = '*'(a106, a84)).
+-cnf(a, axiom, a108 = '*'(a107, a39)).
+-cnf(a, axiom, a109 = '*'(a108, a118)).
+-cnf(a, axiom, a110 = '*'(a109, a70)).
+-cnf(a, axiom, a111 = '*'(a110, a119)).
+-cnf(a, axiom, a112 = '*'(a111, a79)).
+-cnf(a, axiom, a113 = '*'(a112, a33)).
+-cnf(a, axiom, a114 = '*'(a113, a13)).
+-cnf(a, axiom, a115 = '*'(a114, a68)).
+-cnf(a, axiom, a116 = '*'(a115, a14)).
+-cnf(a, axiom, a117 = '*'(a116, a74)).
+-cnf(a, axiom, a118 = '*'(a117, a32)).
+-cnf(a, axiom, a119 = '*'(a118, a70)).
+-cnf(a, axiom, a120 = '*'(a119, a13)).
+-cnf(a, axiom, a121 = '*'(a120, a32)).
+-cnf(a, axiom, a122 = '*'(a121, a68)).
+-cnf(a, axiom, a123 = '*'(a122, a115)).
+-cnf(a, axiom, a124 = '*'(a123, a75)).
+-cnf(a, axiom, a125 = '*'(a124, a2)).
+-cnf(a, axiom, a126 = '*'(a125, a65)).
+-cnf(a, axiom, a127 = '*'(a126, a41)).
+-cnf(a, axiom, a128 = '*'(a127, a96)).
+-cnf(a, axiom, a129 = '*'(a128, a62)).
+-cnf(a, axiom, a130 = '*'(a129, a1)).
+-cnf(a, axiom, a131 = '*'(a130, a13)).
+-cnf(a, axiom, a132 = '*'(a131, a138)).
+-cnf(a, axiom, a133 = '*'(a132, a58)).
+-cnf(a, axiom, a134 = '*'(a133, a26)).
+-cnf(a, axiom, a135 = '*'(a134, a37)).
+-cnf(a, axiom, a136 = '*'(a135, a29)).
+-cnf(a, axiom, a137 = '*'(a136, a39)).
+-cnf(a, axiom, a138 = '*'(a137, a51)).
+-cnf(a, axiom, a139 = '*'(a138, a20)).
+-cnf(a, axiom, a140 = '*'(a139, a47)).
+-cnf(a, axiom, a141 = '*'(a140, a11)).
+-cnf(a, axiom, a1 = '*'(a141, a23)).
++cnf(knot, axiom, a2 = '*'(a1, a42)).
++cnf(knot, axiom, a3 = '*'(a2, a41)).
++cnf(knot, axiom, a4 = '*'(a3, a14)).
++cnf(knot, axiom, a5 = '*'(a4, a39)).
++cnf(knot, axiom, a6 = '*'(a5, a136)).
++cnf(knot, axiom, a7 = '*'(a6, a52)).
++cnf(knot, axiom, a8 = '*'(a7, a17)).
++cnf(knot, axiom, a9 = '*'(a8, a56)).
++cnf(knot, axiom, a10 = '*'(a9, a134)).
++cnf(knot, axiom, a11 = '*'(a10, a37)).
++cnf(knot, axiom, a12 = '*'(a11, a21)).
++cnf(knot, axiom, a13 = '*'(a12, a23)).
++cnf(knot, axiom, a14 = '*'(a13, a32)).
++cnf(knot, axiom, a15 = '*'(a14, a53)).
++cnf(knot, axiom, a16 = '*'(a15, a136)).
++cnf(knot, axiom, a17 = '*'(a16, a29)).
++cnf(knot, axiom, a18 = '*'(a17, a133)).
++cnf(knot, axiom, a19 = '*'(a18, a58)).
++cnf(knot, axiom, a20 = '*'(a19, a26)).
++cnf(knot, axiom, a21 = '*'(a20, a35)).
++cnf(knot, axiom, a22 = '*'(a21, a141)).
++cnf(knot, axiom, a23 = '*'(a22, a45)).
++cnf(knot, axiom, a24 = '*'(a23, a35)).
++cnf(knot, axiom, a25 = '*'(a24, a49)).
++cnf(knot, axiom, a26 = '*'(a25, a138)).
++cnf(knot, axiom, a27 = '*'(a26, a8)).
++cnf(knot, axiom, a28 = '*'(a27, a37)).
++cnf(knot, axiom, a29 = '*'(a28, a17)).
++cnf(knot, axiom, a30 = '*'(a29, a14)).
++cnf(knot, axiom, a31 = '*'(a30, a5)).
++cnf(knot, axiom, a32 = '*'(a31, a39)).
++cnf(knot, axiom, a33 = '*'(a32, a13)).
++cnf(knot, axiom, a34 = '*'(a33, a131)).
++cnf(knot, axiom, a35 = '*'(a34, a60)).
++cnf(knot, axiom, a36 = '*'(a35, a139)).
++cnf(knot, axiom, a37 = '*'(a36, a47)).
++cnf(knot, axiom, a38 = '*'(a37, a17)).
++cnf(knot, axiom, a39 = '*'(a38, a7)).
++cnf(knot, axiom, a40 = '*'(a39, a4)).
++cnf(knot, axiom, a41 = '*'(a40, a14)).
++cnf(knot, axiom, a42 = '*'(a41, a2)).
++cnf(knot, axiom, a43 = '*'(a42, a62)).
++cnf(knot, axiom, a44 = '*'(a43, a128)).
++cnf(knot, axiom, a45 = '*'(a44, a23)).
++cnf(knot, axiom, a46 = '*'(a45, a141)).
++cnf(knot, axiom, a47 = '*'(a46, a11)).
++cnf(knot, axiom, a48 = '*'(a47, a20)).
++cnf(knot, axiom, a49 = '*'(a48, a138)).
++cnf(knot, axiom, a50 = '*'(a49, a131)).
++cnf(knot, axiom, a51 = '*'(a50, a59)).
++cnf(knot, axiom, a52 = '*'(a51, a39)).
++cnf(knot, axiom, a53 = '*'(a52, a136)).
++cnf(knot, axiom, a54 = '*'(a53, a29)).
++cnf(knot, axiom, a55 = '*'(a54, a135)).
++cnf(knot, axiom, a56 = '*'(a55, a37)).
++cnf(knot, axiom, a57 = '*'(a56, a134)).
++cnf(knot, axiom, a58 = '*'(a57, a26)).
++cnf(knot, axiom, a59 = '*'(a58, a138)).
++cnf(knot, axiom, a60 = '*'(a59, a131)).
++cnf(knot, axiom, a61 = '*'(a60, a13)).
++cnf(knot, axiom, a62 = '*'(a61, a1)).
++cnf(knot, axiom, a63 = '*'(a62, a96)).
++cnf(knot, axiom, a64 = '*'(a63, a127)).
++cnf(knot, axiom, a65 = '*'(a64, a41)).
++cnf(knot, axiom, a66 = '*'(a65, a2)).
++cnf(knot, axiom, a67 = '*'(a66, a92)).
++cnf(knot, axiom, a68 = '*'(a67, a98)).
++cnf(knot, axiom, a69 = '*'(a68, a32)).
++cnf(knot, axiom, a70 = '*'(a69, a13)).
++cnf(knot, axiom, a71 = '*'(a70, a118)).
++cnf(knot, axiom, a72 = '*'(a71, a109)).
++cnf(knot, axiom, a73 = '*'(a72, a82)).
++cnf(knot, axiom, a74 = '*'(a73, a32)).
++cnf(knot, axiom, a75 = '*'(a74, a14)).
++cnf(knot, axiom, a76 = '*'(a75, a68)).
++cnf(knot, axiom, a77 = '*'(a76, a114)).
++cnf(knot, axiom, a78 = '*'(a77, a13)).
++cnf(knot, axiom, a79 = '*'(a78, a33)).
++cnf(knot, axiom, a80 = '*'(a79, a119)).
++cnf(knot, axiom, a81 = '*'(a80, a70)).
++cnf(knot, axiom, a82 = '*'(a81, a109)).
++cnf(knot, axiom, a83 = '*'(a82, a118)).
++cnf(knot, axiom, a84 = '*'(a83, a39)).
++cnf(knot, axiom, a85 = '*'(a84, a5)).
++cnf(knot, axiom, a86 = '*'(a85, a30)).
++cnf(knot, axiom, a87 = '*'(a86, a104)).
++cnf(knot, axiom, a88 = '*'(a87, a4)).
++cnf(knot, axiom, a89 = '*'(a88, a14)).
++cnf(knot, axiom, a90 = '*'(a89, a41)).
++cnf(knot, axiom, a91 = '*'(a90, a100)).
++cnf(knot, axiom, a92 = '*'(a91, a124)).
++cnf(knot, axiom, a93 = '*'(a92, a2)).
++cnf(knot, axiom, a94 = '*'(a93, a41)).
++cnf(knot, axiom, a95 = '*'(a94, a127)).
++cnf(knot, axiom, a96 = '*'(a95, a64)).
++cnf(knot, axiom, a97 = '*'(a96, a42)).
++cnf(knot, axiom, a98 = '*'(a97, a1)).
++cnf(knot, axiom, a99 = '*'(a98, a92)).
++cnf(knot, axiom, a100 = '*'(a99, a124)).
++cnf(knot, axiom, a101 = '*'(a100, a14)).
++cnf(knot, axiom, a102 = '*'(a101, a40)).
++cnf(knot, axiom, a103 = '*'(a102, a4)).
++cnf(knot, axiom, a104 = '*'(a103, a87)).
++cnf(knot, axiom, a105 = '*'(a104, a30)).
++cnf(knot, axiom, a106 = '*'(a105, a5)).
++cnf(knot, axiom, a107 = '*'(a106, a84)).
++cnf(knot, axiom, a108 = '*'(a107, a39)).
++cnf(knot, axiom, a109 = '*'(a108, a118)).
++cnf(knot, axiom, a110 = '*'(a109, a70)).
++cnf(knot, axiom, a111 = '*'(a110, a119)).
++cnf(knot, axiom, a112 = '*'(a111, a79)).
++cnf(knot, axiom, a113 = '*'(a112, a33)).
++cnf(knot, axiom, a114 = '*'(a113, a13)).
++cnf(knot, axiom, a115 = '*'(a114, a68)).
++cnf(knot, axiom, a116 = '*'(a115, a14)).
++cnf(knot, axiom, a117 = '*'(a116, a74)).
++cnf(knot, axiom, a118 = '*'(a117, a32)).
++cnf(knot, axiom, a119 = '*'(a118, a70)).
++cnf(knot, axiom, a120 = '*'(a119, a13)).
++cnf(knot, axiom, a121 = '*'(a120, a32)).
++cnf(knot, axiom, a122 = '*'(a121, a68)).
++cnf(knot, axiom, a123 = '*'(a122, a115)).
++cnf(knot, axiom, a124 = '*'(a123, a75)).
++cnf(knot, axiom, a125 = '*'(a124, a2)).
++cnf(knot, axiom, a126 = '*'(a125, a65)).
++cnf(knot, axiom, a127 = '*'(a126, a41)).
++cnf(knot, axiom, a128 = '*'(a127, a96)).
++cnf(knot, axiom, a129 = '*'(a128, a62)).
++cnf(knot, axiom, a130 = '*'(a129, a1)).
++cnf(knot, axiom, a131 = '*'(a130, a13)).
++cnf(knot, axiom, a132 = '*'(a131, a138)).
++cnf(knot, axiom, a133 = '*'(a132, a58)).
++cnf(knot, axiom, a134 = '*'(a133, a26)).
++cnf(knot, axiom, a135 = '*'(a134, a37)).
++cnf(knot, axiom, a136 = '*'(a135, a29)).
++cnf(knot, axiom, a137 = '*'(a136, a39)).
++cnf(knot, axiom, a138 = '*'(a137, a51)).
++cnf(knot, axiom, a139 = '*'(a138, a20)).
++cnf(knot, axiom, a140 = '*'(a139, a47)).
++cnf(knot, axiom, a141 = '*'(a140, a11)).
++cnf(knot, axiom, a1 = '*'(a141, a23)).

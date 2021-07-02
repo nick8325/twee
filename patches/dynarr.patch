@@ -1,0 +1,130 @@
+diff -r a279fa503d5b src/Data/DynamicArray.hs
+--- a/src/Data/DynamicArray.hs	Sun Apr 04 16:54:23 2021 +0200
++++ b/src/Data/DynamicArray.hs	Sun Apr 04 20:32:45 2021 +0200
+@@ -1,28 +1,40 @@
+ -- | Zero-indexed dynamic arrays, optimised for lookup.
+ -- Modification is slow. Uninitialised indices have a default value.
+-{-# LANGUAGE CPP #-}
++{-# LANGUAGE CPP, MagicHash, UnboxedTuples #-}
+ module Data.DynamicArray where
+ 
+ #ifdef BOUNDS_CHECKS
+ import qualified Data.Primitive.SmallArray.Checked as P
+ #else
+ import qualified Data.Primitive.SmallArray as P
++import qualified Data.Primitive.MutVar as P
+ #endif
+ import Control.Monad.ST
+ import Data.List
++import GHC.Prim
++import GHC.Types
++import GHC.ST
++import Twee.Utils
+ 
+ -- | A type which has a default value.
+ class Default a where
+   -- | The default value.
+   def :: a
+ 
++instance Default (Maybe a) where def = Nothing
++
+ -- | An array.
+-data Array a =
++newtype Array a =
+   Array {
+-    -- | The size of the array.
+-    arraySize     :: {-# UNPACK #-} !Int,
+     -- | The contents of the array.
+-    arrayContents :: {-# UNPACK #-} !(P.SmallArray a) }
++    arrayContents :: P.SmallArray a }
++
++newtype MutableArray s a =
++  MutableArray {
++    mutableArrayContents :: P.SmallMutableArray s a }
++
++arraySize :: Array a -> Int
++arraySize = P.sizeofSmallArray . arrayContents
+ 
+ -- | Convert an array to a list of (index, value) pairs.
+ {-# INLINE toList #-}
+@@ -40,12 +52,29 @@
+       | (i, x) <- toList arr ] ++
+     "}"
+ 
++unsafeFreezeArray :: MutableArray s a -> ST s (Array a)
++unsafeFreezeArray (MutableArray marr) =
++  Array <$> P.unsafeFreezeSmallArray marr
++
++thawArray :: Array a -> ST s (MutableArray s a)
++thawArray (Array arr) =
++  MutableArray <$> P.thawSmallArray arr 0 (P.sizeofSmallArray arr)
++
++newMutableArray :: Default a => Int -> ST s (MutableArray s a)
++newMutableArray n =
++  MutableArray <$> P.newSmallArray n def
++
+ -- | Create an empty array.
+ newArray :: Array a
+ newArray = runST $ do
+   marr <- P.newSmallArray 0 undefined
+-  arr  <- P.unsafeFreezeSmallArray marr
+-  return (Array 0 arr)
++  Array <$> P.unsafeFreezeSmallArray marr
++
++instance Functor Array where
++  fmap = mapArray
++
++mapArray :: (a -> b) -> Array a -> Array b
++mapArray f (Array arr) = Array (P.mapSmallArray' f arr)
+ 
+ -- | Index into an array. O(1) time.
+ {-# INLINE (!) #-}
+@@ -73,4 +102,47 @@
+   P.copySmallArray marr 0 (arrayContents arr) 0 (arraySize arr)
+   P.writeSmallArray marr n $! x
+   arr' <- P.unsafeFreezeSmallArray marr
+-  return (Array size arr')
++  return (Array arr')
++
++{-# INLINE readArray #-}
++readArray :: Default a => MutableArray s a -> Int -> ST s a
++readArray (MutableArray marr) n
++  | 0 <= n && n < P.sizeofSmallMutableArray marr =
++    P.readSmallArray marr n
++  | otherwise = return def
++
++{-# INLINE writeArray #-}
++writeArray :: Default a => MutableArray s a -> Int -> a -> ST s (MutableArray s a)
++writeArray (MutableArray marr) n x = do
++  marr <- reserve def marr n
++  if n < 0 then error "out of bounds write"
++  else do
++    P.writeSmallArray marr n x
++    return (MutableArray marr)
++
++{-# INLINE reserve #-}
++reserve :: a -> P.SmallMutableArray s a -> Int -> ST s (P.SmallMutableArray s a)
++reserve def (P.SmallMutableArray marr#) (I# n#) =
++  ST $ \s ->
++    case reserve# s def marr# n# of
++      (# s, marr# #) -> (# s, P.SmallMutableArray marr# #)
++
++{-# NOINLINE reserve# #-}
++reserve# :: State# s -> a -> SmallMutableArray# s a -> Int# -> (# State# s, SmallMutableArray# s a #)
++reserve# s def marr# n# =
++  case reserve (P.SmallMutableArray marr#) (I# n#) of
++    ST m ->
++      case m s of
++        (# s, P.SmallMutableArray marr# #) -> (# s, marr# #)
++  where
++    reserve marr n
++      | n < k = return marr
++      | otherwise = expand marr ((k*2) `intMax` 1) n
++      where
++        k = P.sizeofSmallMutableArray marr
++    expand marr k n
++      | n < k = do
++        marr' <- P.newSmallArray k def
++        P.copySmallMutableArray marr' 0 marr 0 (P.sizeofSmallMutableArray marr)
++        return marr'
++      | otherwise = expand marr (k*2) n

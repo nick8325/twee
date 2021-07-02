@@ -1,0 +1,117 @@
+diff -r 877fa530486b src/Twee.hs
+--- a/src/Twee.hs	Sat Mar 20 10:50:42 2021 +0100
++++ b/src/Twee.hs	Sat Mar 20 11:16:26 2021 +0100
+@@ -134,6 +134,7 @@
+     NewActive !(Active f)
+     -- | A new joinable equation.
+   | NewEquation !(Equation f)
++  | Joined !(Equation f)
+     -- | A rule was deleted.
+   | DeleteActive !(Active f)
+     -- | The CP queue was simplified.
+@@ -149,6 +150,8 @@
+   pPrint (NewActive rule) = pPrint rule
+   pPrint (NewEquation eqn) =
+     text "  (hard)" <+> pPrint eqn
++  pPrint (Joined eqn) =
++    text "  (joined)" <+> pPrint eqn
+   pPrint (DeleteActive rule) =
+     text "  (delete rule " <#> pPrint (active_id rule) <#> text ")"
+   pPrint SimplifyQueue =
+@@ -199,7 +202,7 @@
+ makePassives :: Function f => Config f -> State f -> ActiveRule f -> [Passive Params]
+ makePassives Config{..} State{..} rule =
+   [ Passive (fromIntegral (score cfg_critical_pairs o)) (rule_rid rule1) (rule_rid rule2) (fromIntegral (overlap_pos o))
+-  | (rule1, rule2, o) <- overlaps (Depth cfg_max_cp_depth) (index_oriented st_rules) rules rule ]
++  | (rule1, rule2, o) <- overlaps (subsumed (st_joinable, st_complete) st_rules) (Depth cfg_max_cp_depth) (index_oriented st_rules) rules rule ]
+   where
+     rules = IntMap.elems st_rule_ids
+ 
+@@ -223,7 +226,7 @@
+ simplifyPassive :: Function f => Config f -> State f -> Passive Params -> Maybe (Passive Params)
+ simplifyPassive Config{..} state@State{..} passive = do
+   (_, _, overlap) <- findPassive state passive
+-  overlap <- simplifyOverlap (index_oriented st_rules) overlap
++  overlap <- simplifyOverlap (subsumed (st_joinable, st_complete) st_rules) (index_oriented st_rules) overlap
+   return passive {
+     passive_score = fromIntegral $
+       fromIntegral (passive_score passive) `intMin`
+@@ -383,7 +386,7 @@
+     idx = n - st_num_cps
+     find passive = do
+       (_, _, overlap) <- findPassive state passive
+-      simplifyOverlap (index_oriented st_rules) overlap
++      simplifyOverlap (subsumed (st_joinable, st_complete) st_rules) (index_oriented st_rules) overlap
+ 
+ -- Reset the list of sampled critical pairs.
+ {-# INLINEABLE resetSample #-}
+@@ -408,7 +411,7 @@
+   state{st_cp_sample = map (>>= simp) st_cp_sample}
+   where
+     simp overlap = do
+-      overlap' <- simplifyOverlap (index_oriented st_rules) overlap
++      overlap' <- simplifyOverlap (subsumed (st_joinable, st_complete) st_rules) (index_oriented st_rules) overlap
+       guard (overlap_eqn overlap == overlap_eqn overlap')
+       return overlap
+ 
+diff -r 877fa530486b src/Twee/CP.hs
+--- a/src/Twee/CP.hs	Sat Mar 20 10:50:42 2021 +0100
++++ b/src/Twee/CP.hs	Sat Mar 20 11:16:26 2021 +0100
+@@ -72,33 +72,33 @@
+ {-# INLINEABLE overlaps #-}
+ overlaps ::
+   forall a f. (Function f, Has a Id, Has a (Rule f), Has a (Positions f), Has a Depth) =>
+-  Depth -> Index f a -> [a] -> a -> [(a, a, Overlap f)]
+-overlaps max_depth idx rules r =
+-  ChurchList.toList (overlapsChurch max_depth idx rules r)
++  (Equation f -> Bool) -> Depth -> Index f a -> [a] -> a -> [(a, a, Overlap f)]
++overlaps redundant max_depth idx rules r =
++  ChurchList.toList (overlapsChurch redundant max_depth idx rules r)
+ 
+ {-# INLINE overlapsChurch #-}
+ overlapsChurch :: forall f a.
+   (Function f, Has a (Rule f), Has a (Positions f), Has a Depth) =>
+-  Depth -> Index f a -> [a] -> a -> ChurchList (a, a, Overlap f)
+-overlapsChurch max_depth idx rules r1 = do
++  (Equation f -> Bool) -> Depth -> Index f a -> [a] -> a -> ChurchList (a, a, Overlap f)
++overlapsChurch redundant max_depth idx rules r1 = do
+   guard (the r1 < max_depth)
+   r2 <- ChurchList.fromList rules
+   guard (the r2 < max_depth)
+   let !depth = 1 + max (the r1) (the r2)
+-  do { o <- asymmetricOverlaps idx depth (the r1) r1' (the r2); return (r1, r2, o) } `mplus`
+-    do { o <- asymmetricOverlaps idx depth (the r2) (the r2) r1'; return (r2, r1, o) }
++  do { o <- asymmetricOverlaps redundant idx depth (the r1) r1' (the r2); return (r1, r2, o) } `mplus`
++    do { o <- asymmetricOverlaps redundant idx depth (the r2) (the r2) r1'; return (r2, r1, o) }
+   where
+     !r1' = renameAvoiding (map the rules :: [Rule f]) (the r1)
+ 
+ {-# INLINE asymmetricOverlaps #-}
+ asymmetricOverlaps ::
+   (Function f, Has a (Rule f), Has a Depth) =>
+-  Index f a -> Depth -> Positions f -> Rule f -> Rule f -> ChurchList (Overlap f)
+-asymmetricOverlaps idx depth posns r1 r2 = do
++  (Equation f -> Bool) -> Index f a -> Depth -> Positions f -> Rule f -> Rule f -> ChurchList (Overlap f)
++asymmetricOverlaps redundant idx depth posns r1 r2 = do
+   n <- positionsChurch posns
+   ChurchList.fromMaybe $
+     overlapAt n depth r1 r2 >>=
+-    simplifyOverlap idx
++    simplifyOverlap redundant idx
+ 
+ -- | Create an overlap at a particular position in a term.
+ -- Doesn't simplify the overlap.
+@@ -125,10 +125,11 @@
+ 
+ -- | Simplify an overlap and remove it if it's trivial.
+ {-# INLINE simplifyOverlap #-}
+-simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap f -> Maybe (Overlap f)
+-simplifyOverlap idx overlap@Overlap{overlap_eqn = lhs :=: rhs, ..}
++simplifyOverlap :: (Function f, Has a (Rule f)) => (Equation f -> Bool) -> Index f a -> Overlap f -> Maybe (Overlap f)
++simplifyOverlap redundant idx overlap@Overlap{overlap_eqn = lhs :=: rhs, ..}
+   | lhs == rhs   = Nothing
+   | lhs' == rhs' = Nothing
++  | redundant (lhs' :=: rhs') = Nothing
+   | otherwise = Just overlap{overlap_eqn = lhs' :=: rhs'}
+   where
+     lhs' = simplify idx lhs

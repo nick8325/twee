@@ -1,0 +1,72 @@
+diff -r 34e79ed14c61 executable/SequentialMain.hs
+--- a/executable/SequentialMain.hs	Sat Feb 20 18:20:52 2021 +0100
++++ b/executable/SequentialMain.hs	Sat Feb 20 20:21:19 2021 +0100
+@@ -313,12 +313,12 @@
+   termStyle Constant{..}
+     | hasLabel "type_tag" con_id = invisible
+     | "_" `isPrefixOf` base con_id && con_arity == 1 = postfix
+-    | any isAlphaNum (base con_id) = uncurried
++    | any isAlphaNum (base con_id) = curried
+     | otherwise =
+       case con_arity of
+         1 -> prefix
+         2 -> infixStyle 5
+-        _ -> uncurried
++        _ -> curried
+ 
+ instance Minimal Constant where
+   minimal = fun Minimal
+@@ -578,7 +578,7 @@
+       [ goal n pre_name (toEquation pre_eqn)
+       | (n, PreEquation{..}) <- zip [1..] goals0 ]
+     axioms =
+-      [ Axiom n pre_name (toEquation pre_eqn)
++      [ Axiom n (fixName pre_name) (toEquation pre_eqn)
+       | (n, PreEquation{..}) <- zip [1..] axioms0 ]
+     defs =
+       [ axiom
+@@ -587,6 +587,10 @@
+     isDefinition Input{source = Unknown} = True
+     isDefinition inp = tag inp `elem` flags_eliminate
+ 
++    fixName name
++      | "goal" `isPrefixOf` name = "induction hypothesis"
++      | otherwise = name
++
+     withGoals = foldl' (addGoal config) (initialState config) goals
+     withAxioms = foldl' (addAxiom config) withGoals axioms
+     withBackwardsGoal = foldn rewriteGoalsBackwards withAxioms flags_backwards_goal
+diff -r 34e79ed14c61 src/Twee/Pretty.hs
+--- a/src/Twee/Pretty.hs	Sat Feb 20 18:20:52 2021 +0100
++++ b/src/Twee/Pretty.hs	Sat Feb 20 20:21:19 2021 +0100
+@@ -49,7 +49,7 @@
+         0 -> ""
+         m -> show (m+1)
+     where
+-      vars = "XYZWVUTS"
++      vars = "xyzwvuts"
+ 
+ instance (Pretty k, Pretty v) => Pretty (Map k v) where
+   pPrint = pPrintSet . map binding . Map.toList
+diff -r 34e79ed14c61 src/Twee/Proof.hs
+--- a/src/Twee/Proof.hs	Sat Feb 20 18:20:52 2021 +0100
++++ b/src/Twee/Proof.hs	Sat Feb 20 20:21:19 2021 +0100
+@@ -763,7 +763,8 @@
+     ppStep = pp True
+       where
+         pp dir (UseAxiom axiom@Axiom{..} sub) =
+-          text "axiom" <+> text (axiomNum axiom) <+> parens (text axiom_name) <+> ppDir dir <#> showSubst sub
++          {-text "axiom" <+> text (axiomNum axiom) <+> parens (text axiom_name)-}
++          text axiom_name <+> ppDir dir <#> showSubst sub
+         pp dir (UseLemma lemma sub) =
+           text "lemma" <+> text (lemmaNum lemma) <+> ppDir dir <#> showSubst sub
+         pp dir (Symm p) =
+@@ -801,7 +802,7 @@
+     [ pp "Lemma" (lemmaNum p) Nothing (equation p) emptySubst p
+     | p <- lemmas,
+       not (invisible (equation p)) ] ++
+-    [ pp "Goal" (show num) (Just pg_name) pg_goal_hint pg_witness_hint pg_proof
++    [ pp "Goal" (show num) Nothing {-(Just pg_name)-} pg_goal_hint pg_witness_hint pg_proof
+     | (num, ProvedGoal{..}) <- zip [1..] goals ]
+   where
+     pp kind n mname eqn witness p =

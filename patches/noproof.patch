@@ -1,0 +1,583 @@
+diff -r ad80949ff72c executable/SequentialMain.hs
+--- a/executable/SequentialMain.hs	Sun Feb 21 01:49:38 2021 +0100
++++ b/executable/SequentialMain.hs	Sun Feb 21 01:52:43 2021 +0100
+@@ -631,8 +631,8 @@
+     traceActive Active{active_top = Nothing, ..} =
+       traceApp "rule" [pPrint active_id, traceEqn (unorient active_rule)]
+     traceActive Active{active_top = Just top, ..} =
+-      traceApp "rule" [pPrint active_id, traceEqn (unorient active_rule), traceEqn lemma1, traceEqn lemma2]
+-      where
++      traceApp "rule" [pPrint active_id]
++{-      where
+         (lemma1, lemma2) =
+           find (steps (derivation active_proof))
+         find (s1:s2:_)
+@@ -642,7 +642,7 @@
+         lemmaOf s =
+           case (usedLemmas s, usedAxioms s) of
+             ([p], []) -> equation p
+-            ([], [ax]) -> axiom_eqn ax
++            ([], [ax]) -> axiom_eqn ax-}
+ 
+     traceEqn (t :=: u) =
+       pPrintPrec prettyNormal 6 t <+> text "=" <+> pPrintPrec prettyNormal 6 u
+@@ -676,7 +676,7 @@
+       pres = present cfg_present $ map (eliminateDefinitionsFromGoal defs) $ solutions state
+ 
+     sayTrace ""
+-    forM_ (pres_axioms pres) $ \p ->
++    {-forM_ (pres_axioms pres) $ \p ->
+       sayTrace $ show $
+         traceApp "axiom" [traceEqn (axiom_eqn p)] <#> text "."
+     forM_ (pres_lemmas pres) $ \p ->
+@@ -684,7 +684,7 @@
+         traceApp "lemma" [traceEqn (equation p)] <#> text "."
+     forM_ (pres_goals pres) $ \p ->
+       sayTrace $ show $
+-        traceApp "goal" [traceEqn (pg_goal_hint p)] <#> text "."
++        traceApp "goal" [traceEqn (pg_goal_hint p)] <#> text "."-}
+ 
+     when (tstp && not flags_formal_proof) $ do
+       putStrLn "% SZS output start Proof"
+@@ -791,7 +791,8 @@
+   [(Int, Input Form)] ->
+   Presentation Constant ->
+   Problem Form
+-presentToJukebox ctx toEquation axioms goals Presentation{..} =
++presentToJukebox ctx toEquation axioms goals Presentation{..} = error "no"
++{-
+   [ Input {
+       tag = pg_name,
+       kind = Jukebox.Ax Jukebox.Axiom,
+@@ -820,7 +821,7 @@
+     tstp = deriv . derivation
+ 
+     deriv :: Derivation Constant -> Input Form
+-    deriv p@(Trans q r) = derivFrom (deriv r:sources q) p
++    --deriv p@(Trans q r) = derivFrom (deriv r:sources q) p
+     deriv p = derivFrom (sources p) p
+ 
+     derivFrom :: [Input Form] -> Derivation Constant -> Input Form
+@@ -868,6 +869,7 @@
+                   us = buildList [eqn_lhs eqn', eqn_rhs eqn']
+                 in
+                   isJust (matchList ts us) && isJust (matchList us ts)
++                -}
+ 
+ main = do
+   hSetBuffering stdout LineBuffering
+diff -r ad80949ff72c src/Twee.hs
+--- a/src/Twee.hs	Sun Feb 21 01:49:38 2021 +0100
++++ b/src/Twee.hs	Sun Feb 21 01:52:43 2021 +0100
+@@ -7,7 +7,7 @@
+ import qualified Twee.Rule as Rule
+ import Twee.Equation
+ import qualified Twee.Proof as Proof
+-import Twee.Proof(Axiom(..), Proof(..), Derivation, ProvedGoal(..), provedGoal, certify, derivation)
++import Twee.Proof(Axiom(..), Proof(..), Derivation, ProvedGoal(..), provedGoal, certify)
+ import Twee.CP hiding (Config)
+ import qualified Twee.CP as CP
+ import Twee.Join hiding (Config, defaultConfig)
+@@ -285,7 +285,7 @@
+     cp_eqn = unorient active_rule,
+     cp_depth = active_depth,
+     cp_top = active_top,
+-    cp_proof = derivation active_proof }
++    cp_proof = Proof.Splot }
+ 
+ -- An active oriented in a particular direction.
+ data ActiveRule f =
+@@ -594,8 +594,8 @@
+     goal_name = name,
+     goal_number = n,
+     goal_eqn = t :=: u,
+-    goal_expanded_lhs = Map.singleton t (Proof.Refl t),
+-    goal_expanded_rhs = Map.singleton u (Proof.Refl u),
++    goal_expanded_lhs = Map.singleton t Proof.Splot,
++    goal_expanded_rhs = Map.singleton u Proof.Splot,
+     goal_lhs = Map.singleton t (t, []),
+     goal_rhs = Map.singleton u (u, []) }
+ 
+diff -r ad80949ff72c src/Twee/Proof.hs
+--- a/src/Twee/Proof.hs	Sun Feb 21 01:49:38 2021 +0100
++++ b/src/Twee/Proof.hs	Sun Feb 21 01:52:43 2021 +0100
+@@ -3,13 +3,13 @@
+ module Twee.Proof(
+   -- * Constructing proofs
+   Proof, Derivation(..), Axiom(..),
+-  certify, equation, derivation,
++  certify,
+   -- ** Smart constructors for derivations
+-  lemma, autoSubst, simpleLemma, axiom, symm, trans, cong, congPath,
++  lemma, simpleLemma, axiom, symm, trans, cong, congPath,
+ 
+   -- * Analysing proofs
+   simplify, steps, usedLemmas, usedAxioms, usedLemmasAndSubsts, usedAxiomsAndSubsts,
+-  groundAxiomsAndSubsts, eliminateDefinitions, eliminateDefinitionsFromGoal,
++  eliminateDefinitions, eliminateDefinitionsFromGoal,
+ 
+   -- * Pretty-printing proofs
+   Config(..), defaultConfig, Presentation(..),
+@@ -40,16 +40,17 @@
+ -- it should jolly well represent a valid proof!
+ --
+ -- The only way to construct a @Proof f@ is by using 'certify'.
+-data Proof f =
+-  Proof {
++data Proof f = Nope
++{-  Proof {
+     equation   :: !(Equation f),
+-    derivation :: !(Derivation f) }
++    derivation :: !(Derivation f) }-}
+   deriving Show
+ 
+ -- | A derivation is an unchecked proof. It might be wrong!
+ -- The way to check it is to call 'certify' to turn it into a 'Proof'.
+-data Derivation f =
+-    -- | Apply an existing rule (with proof!) to the root of a term
++data Derivation f = Splot
++  deriving (Eq, Show)
++{-    -- | Apply an existing rule (with proof!) to the root of a term
+     UseLemma {-# UNPACK #-} !(Proof f) !(Subst f)
+     -- | Apply an axiom to the root of a term
+   | UseAxiom {-# UNPACK #-} !(Axiom f) !(Subst f)
+@@ -63,7 +64,7 @@
+     -- Parallel, i.e., takes a function symbol and one derivation for each
+     -- argument of that function.
+   | Cong {-# UNPACK #-} !(Fun f) ![Derivation f]
+-  deriving (Eq, Show)
++  deriving (Eq, Show) -}
+ 
+ --  | An axiom, which comes without proof.
+ data Axiom f =
+@@ -87,8 +88,8 @@
+ {-# INLINEABLE certify #-}
+ {-# SCC certify #-}
+ certify :: PrettyTerm f => Derivation f -> Proof f
+-certify p =
+-  case check p of
++certify p = Nope
++{-  case check p of
+     Nothing -> error ("Invalid proof created!\n" ++ prettyShow p)
+     Just eqn -> Proof eqn p
+   where
+@@ -110,7 +111,7 @@
+       eqns <- mapM check ps
+       return
+         (build (app f (map eqn_lhs eqns)) :=:
+-         build (app f (map eqn_rhs eqns)))
++         build (app f (map eqn_rhs eqns)))-}
+ 
+ ----------------------------------------------------------------------
+ -- Everything below this point need not be trusted, since all proof
+@@ -126,28 +127,33 @@
+ instance Ord (Proof f) where
+   -- Don't look at the proof itself, to prevent exponential blowup
+   -- when a proof contains UseLemma
+-  compare = comparing equation
++--  compare = comparing equation
++  compare _ _ = EQ
+ 
+ instance Symbolic (Derivation f) where
+   type ConstantOf (Derivation f) = f
+-  termsDL (UseLemma _ sub) = termsDL sub
++  termsDL _ = mempty
++{-  termsDL (UseLemma _ sub) = termsDL sub
+   termsDL (UseAxiom _ sub) = termsDL sub
+   termsDL (Refl t) = termsDL t
+   termsDL (Symm p) = termsDL p
+   termsDL (Trans p q) = termsDL p `mplus` termsDL q
+-  termsDL (Cong _ ps) = termsDL ps
++  termsDL (Cong _ ps) = termsDL ps-}
++  subst_ _ Splot = Splot
+ 
+-  subst_ sub (UseLemma lemma s) = UseLemma lemma (subst_ sub s)
++{-  subst_ sub (UseLemma lemma s) = UseLemma lemma (subst_ sub s)
+   subst_ sub (UseAxiom axiom s) = UseAxiom axiom (subst_ sub s)
+   subst_ sub (Refl t) = Refl (subst_ sub t)
+   subst_ sub (Symm p) = symm (subst_ sub p)
+   subst_ sub (Trans p q) = trans (subst_ sub p) (subst_ sub q)
+-  subst_ sub (Cong f ps) = cong f (subst_ sub ps)
++  subst_ sub (Cong f ps) = cong f (subst_ sub ps)-}
+ 
+ instance Function f => Pretty (Proof f) where
+-  pPrint = pPrintLemma defaultConfig (prettyShow . axiom_number) (prettyShow . equation)
++  pPrint _ = text "[]"
++--  pPrint = pPrintLemma defaultConfig (prettyShow . axiom_number) (prettyShow . equation)
+ instance PrettyTerm f => Pretty (Derivation f) where
+-  pPrint (UseLemma lemma sub) =
++  pPrint _ = text "[]"
++{-  pPrint (UseLemma lemma sub) =
+     text "subst" <#> pPrintTuple [text "lemma" <+> pPrint (equation lemma), pPrint sub]
+   pPrint (UseAxiom axiom sub) =
+     text "subst" <#> pPrintTuple [pPrint axiom, pPrint sub]
+@@ -158,15 +164,15 @@
+   pPrint (Trans p q) =
+     text "trans" <#> pPrintTuple [pPrint p, pPrint q]
+   pPrint (Cong f ps) =
+-    text "cong" <#> pPrintTuple (pPrint f:map pPrint ps)
++    text "cong" <#> pPrintTuple (pPrint f:map pPrint ps)-}
+ 
+ instance PrettyTerm f => Pretty (Axiom f) where
+   pPrint Axiom{..} =
+     text "axiom" <#>
+     pPrintTuple [pPrint axiom_number, text axiom_name, pPrint axiom_eqn]
+-
++{-
+ foldLemmas :: PrettyTerm f => (Map (Proof f) a -> Derivation f -> a) -> [Derivation f] -> Map (Proof f) a
+-foldLemmas op ds =
++foldLemmas op ds = Map.empty
+   execState (mapM_ foldGoal ds) Map.empty
+   where
+     foldGoal p = mapM_ foldLemma (usedLemmas p)
+@@ -211,48 +217,51 @@
+ unfoldLemmas lem (Trans p q) = trans (unfoldLemmas lem p) (unfoldLemmas lem q)
+ unfoldLemmas lem (Cong f ps) = cong f (map (unfoldLemmas lem) ps)
+ unfoldLemmas _ p = p
+-
++-}
+ lemma :: Proof f -> Subst f -> Derivation f
+-lemma p sub = UseLemma p sub
++lemma p sub = Splot -- UseLemma p sub
+ 
+ simpleLemma :: PrettyTerm f => Proof f -> Derivation f
+-simpleLemma p =
+-  UseLemma p (autoSubst (equation p))
++simpleLemma p = Splot
++--  UseLemma p (autoSubst (equation p))
+ 
+ axiom :: Axiom f -> Derivation f
+-axiom ax@Axiom{..} =
+-  UseAxiom ax (autoSubst axiom_eqn)
+-
++axiom ax@Axiom{..} = Splot
++--  UseAxiom ax (autoSubst axiom_eqn)
++{-
+ autoSubst :: Equation f -> Subst f
+ autoSubst eqn =
+   fromJust $
+   listToSubst [(x, build (var x)) | x <- vars eqn]
+-
++-}
+ symm :: Derivation f -> Derivation f
+-symm (Refl t) = Refl t
++symm _ = Splot
++{-symm (Refl t) = Refl t
+ symm (Symm p) = p
+ symm (Trans p q) = trans (symm q) (symm p)
+ symm (Cong f ps) = cong f (map symm ps)
+-symm p = Symm p
++symm p = Symm p-}
+ 
+ trans :: Derivation f -> Derivation f -> Derivation f
+-trans Refl{} p = p
++trans _ _ = Splot
++{-trans Refl{} p = p
+ trans p Refl{} = p
+ trans (Trans p q) r =
+   -- Right-associate uses of transitivity.
+   -- p cannot be a Trans (if it was created with the smart
+   -- constructors) but q could be.
+   Trans p (trans q r)
+-trans p q = Trans p q
++trans p q = Trans p q-}
+ 
+ cong :: Fun f -> [Derivation f] -> Derivation f
+-cong f ps =
++cong _ _ = Splot
++{-cong f ps =
+   case sequence (map unRefl ps) of
+     Nothing -> Cong f ps
+     Just ts -> Refl (build (app f ts))
+   where
+     unRefl (Refl t) = Just t
+-    unRefl _ = Nothing
++    unRefl _ = Nothing-}
+ 
+ -- Transform a proof so that each step uses exactly one axiom
+ -- or lemma. The proof will have the following form afterwards:
+@@ -262,8 +271,8 @@
+ --   * Refl only occurs as an argument to Cong, or outermost if the
+ --     whole proof is a single reflexivity step
+ flattenDerivation :: Function f => Derivation f -> Derivation f
+-flattenDerivation p =
+-  fromSteps (equation (certify p)) (steps p)
++flattenDerivation p = Splot
++--  fromSteps (equation (certify p)) (steps p)
+ 
+ -- | Simplify a derivation so that:
+ --   * Symm occurs innermost
+@@ -271,14 +280,15 @@
+ --   * Each Cong has at least one non-Refl argument
+ --   * Refl is not used unnecessarily
+ simplify :: PrettyTerm f => Derivation f -> Derivation f
+-simplify (Symm p) = symm (simplify p)
++{-simplify (Symm p) = symm (simplify p)
+ simplify (Trans p q) = trans (simplify p) (simplify q)
+ simplify (Cong f ps) = cong f (map simplify ps)
+ simplify p
+   | t == u = Refl t
+   | otherwise = p
+   where
+-    t :=: u = equation (certify p)
++    t :=: u = equation (certify p)-}
++simplify _ = Splot
+ 
+ -- | Transform a derivation into a list of single steps.
+ --   Each step has the following form:
+@@ -287,7 +297,7 @@
+ --     * Each Cong has exactly one non-Refl argument (no parallel rewriting)
+ --     * Refl only occurs as an argument to Cong
+ steps :: Function f => Derivation f -> [Derivation f]
+-steps = steps1 . simplify
++{-steps = steps1 . simplify
+   where
+     steps1 p@UseAxiom{} = [p]
+     steps1 p@UseLemma{} = [p]
+@@ -302,13 +312,15 @@
+           Cong f $
+             map Refl (take i (unpack us)) ++
+             [p] ++
+-            map Refl (drop (i+1) (unpack ts))
++            map Refl (drop (i+1) (unpack ts))-}
++steps _ = []
+ 
+ -- | Convert a list of steps (plus the equation it is proving)
+ -- back to a derivation.
+ fromSteps :: Equation f -> [Derivation f] -> Derivation f
+-fromSteps (t :=: _) [] = Refl t
+-fromSteps _ ps = foldr1 Trans ps
++{-fromSteps (t :=: _) [] = Refl t
++fromSteps _ ps = foldr1 Trans ps-}
++fromSteps _ _ = Splot
+ 
+ -- | Find all lemmas which are used in a derivation.
+ usedLemmas :: Derivation f -> [Proof f]
+@@ -317,13 +329,14 @@
+ -- | Find all lemmas which are used in a derivation,
+ -- together with the substitutions used.
+ usedLemmasAndSubsts :: Derivation f -> [(Proof f, Subst f)]
+-usedLemmasAndSubsts p = lem p []
++{-usedLemmasAndSubsts p = lem p []
+   where
+     lem (UseLemma p sub) = ((p, sub):)
+     lem (Symm p) = lem p
+     lem (Trans p q) = lem p . lem q
+     lem (Cong _ ps) = foldr (.) id (map lem ps)
+-    lem _ = id
++    lem _ = id-}
++usedLemmasAndSubsts _ = []
+ 
+ -- | Find all axioms which are used in a derivation.
+ usedAxioms :: Derivation f -> [Axiom f]
+@@ -332,17 +345,17 @@
+ -- | Find all axioms which are used in a derivation,
+ -- together with the substitutions used.
+ usedAxiomsAndSubsts :: Derivation f -> [(Axiom f, Subst f)]
+-usedAxiomsAndSubsts p = ax p []
+-  where
++usedAxiomsAndSubsts p = []
++{-  where
+     ax (UseAxiom axiom sub) = ((axiom, sub):)
+     ax (Symm p) = ax p
+     ax (Trans p q) = ax p . ax q
+     ax (Cong _ ps) = foldr (.) id (map ax ps)
+-    ax _ = id
++    ax _ = id-}
+ 
+ -- | Find all ground instances of axioms which are used in the
+ -- expanded form of a derivation (no lemmas).
+-groundAxiomsAndSubsts :: Function f => Derivation f -> Map (Axiom f) (Set (Subst f))
++{-groundAxiomsAndSubsts :: Function f => Derivation f -> Map (Axiom f) (Set (Subst f))
+ groundAxiomsAndSubsts p = ax lem p
+   where
+     lem = foldLemmas ax [p]
+@@ -357,16 +370,16 @@
+     ax lem (Symm p) = ax lem p
+     ax lem (Trans p q) = Map.unionWith Set.union (ax lem p) (ax lem q)
+     ax lem (Cong _ ps) = Map.unionsWith Set.union (map (ax lem) ps)
+-    ax _ _ = Map.empty
++    ax _ _ = Map.empty-}
+ 
+ eliminateDefinitionsFromGoal :: Function f => [Axiom f] -> ProvedGoal f -> ProvedGoal f
+-eliminateDefinitionsFromGoal axioms pg =
+-  pg {
+-    pg_proof = certify (eliminateDefinitions axioms (derivation (pg_proof pg))) }
++eliminateDefinitionsFromGoal axioms pg = pg
++{-  pg {
++    pg_proof = certify (eliminateDefinitions axioms (derivation (pg_proof pg))) }-}
+ 
+ eliminateDefinitions :: Function f => [Axiom f] -> Derivation f -> Derivation f
+-eliminateDefinitions [] p = p
+-eliminateDefinitions axioms p = head (mapLemmas elim [p])
++eliminateDefinitions _ p = p
++{-eliminateDefinitions axioms p = head (mapLemmas elim [p])
+   where
+     elim (UseAxiom axiom sub)
+       | axiom `Set.member` axSet =
+@@ -411,11 +424,12 @@
+       cong f (map (replace sub) (unpack ts))
+ 
+     axSet = Set.fromList axioms
+-    idx = Index.fromListWith (eqn_lhs . axiom_eqn) axioms
++    idx = Index.fromListWith (eqn_lhs . axiom_eqn) axioms-}
+ 
+ -- | Applies a derivation at a particular path in a term.
+ congPath :: [Int] -> Term f -> Derivation f -> Derivation f
+-congPath [] _ p = p
++congPath _ _ _ = Splot
++{-congPath [] _ p = p
+ congPath (n:ns) (App f t) p | n <= length ts =
+   cong f $
+     map Refl (take n ts) ++
+@@ -423,7 +437,7 @@
+     map Refl (drop (n+1) ts)
+   where
+     ts = unpack t
+-congPath _ _ _ = error "bad path"
++congPath _ _ _ = error "bad path"-}
+ 
+ ----------------------------------------------------------------------
+ -- Pretty-printing of proofs.
+@@ -482,7 +496,6 @@
+     -- In general, subst pg_witness_hint pg_goal_hint == equation pg_proof.
+     -- For non-existential goals, pg_goal_hint == equation pg_proof
+     -- and pg_witness_hint is the empty substitution.
+-    pg_goal_hint    :: Equation f,
+     pg_witness_hint :: Subst f }
+   deriving Show
+ 
+@@ -493,28 +506,26 @@
+     pg_number = number,
+     pg_name = name,
+     pg_proof = proof,
+-    pg_goal_hint = equation proof,
+     pg_witness_hint = emptySubst }
+ 
+ -- | Check that pg_goal/pg_witness match up with pg_proof.
+ checkProvedGoal :: Function f => ProvedGoal f -> ProvedGoal f
+-checkProvedGoal pg@ProvedGoal{..}
+-  | subst pg_witness_hint pg_goal_hint == equation pg_proof =
++checkProvedGoal pg@ProvedGoal{..} = pg
++{-  | subst pg_witness_hint pg_goal_hint == equation pg_proof =
+     pg
+   | otherwise =
+     error $ show $
+       text "Invalid ProvedGoal!" $$
+-      text "Claims to prove" <+> pPrint pg_goal_hint $$
+       text "with witness" <+> pPrint pg_witness_hint <#> text "," $$
+-      text "but actually proves" <+> pPrint (equation pg_proof)
++      text "but actually proves" <+> pPrint (equation pg_proof)-}
+ 
+ instance Function f => Pretty (Presentation f) where
+   pPrint = pPrintPresentation defaultConfig
+ 
+ -- | Simplify and present a proof.
+ present :: Function f => Config f -> [ProvedGoal f] -> Presentation f
+-present config@Config{..} goals =
+-  Presentation axioms lemmas goals'
++present config@Config{..} goals = Presentation [] [] []
++{-  Presentation axioms lemmas goals'
+   where
+     ps =
+       mapLemmas flattenDerivation $
+@@ -732,6 +743,7 @@
+         Just sub2 = matchManyList (terms after) (terms before)
+         canon p = subst sub2 (simpleLemma (certify (subst sub1 p)))
+ 
++
+ invisible :: Function f => Equation f -> Bool
+ invisible (t :=: u) = show (pPrint t) == show (pPrint u)
+ 
+@@ -789,11 +801,11 @@
+   fsep (punctuate comma
+     [ pPrint x <+> text "->" <+> pPrint t
+     | (x, t) <- substToList sub ])
+-
++-}
+ -- | Print a presented proof.
+ pPrintPresentation :: forall f. Function f => Config f -> Presentation f -> Doc
+-pPrintPresentation config (Presentation axioms lemmas goals) =
+-  vcat $ intersperse (text "") $
++pPrintPresentation config (Presentation axioms lemmas goals) = text "[]"
++{-  vcat $ intersperse (text "") $
+     vcat [ describeEquation "Axiom" (axiomNum axiom) (Just name) eqn $$
+            ppAxiomUses axiom
+          | axiom@(Axiom _ name eqn) <- axioms,
+@@ -846,6 +858,7 @@
+             (groundAxiomsAndSubsts p)
+         | goal <- goals,
+           let p = derivation (pg_proof goal) ]
++          -}
+ 
+ -- | Format an equation nicely.
+ --
+@@ -908,12 +921,12 @@
+       pg {
+         pg_name = name,
+         pg_proof = certify deriv,
+-        pg_goal_hint = goal,
+         pg_witness_hint = witness }
+ 
+ maybeDecodeGoal :: forall f. Function f =>
+   ProvedGoal f -> Maybe (String, Subst f, Equation f, Derivation f)
+-maybeDecodeGoal ProvedGoal{..}
++maybeDecodeGoal ProvedGoal{..} = Nothing
++{-
+   --  N.B. presentWithGoals takes care of expanding any lemma which mentions
+   --  $equals, and flattening the proof.
+   | isFalseTerm u = extract (steps deriv)
+@@ -963,3 +976,4 @@
+       | Cong eq [p1', p2'] <- p, isEquals eq =
+         cont (p1 `trans` p1') (p2 `trans` p2') ps
+     cont _ _ _ = Nothing
++-}
+diff -r ad80949ff72c src/Twee/Rule.hs
+--- a/src/Twee/Rule.hs	Sun Feb 21 01:49:38 2021 +0100
++++ b/src/Twee/Rule.hs	Sun Feb 21 01:52:43 2021 +0100
+@@ -49,12 +49,13 @@
+ type RuleOf a = Rule (ConstantOf a)
+ 
+ ruleDerivation :: Rule f -> Derivation f
+-ruleDerivation r =
++ruleDerivation r = Proof.Splot
++{-
+   case (matchEquation (Proof.equation (rule_proof r)) (lhs r :=: rhs r),
+         matchEquation (Proof.equation (rule_proof r)) (rhs r :=: lhs r)) of
+     (Just sub, _) -> Proof.lemma (rule_proof r) sub
+     (_, Just sub) -> Proof.symm (Proof.lemma (rule_proof r) sub)
+-    _ -> error "rule out of sync with proof"
++    _ -> error "rule out of sync with proof"-}
+ 
+ -- | A rule's orientation.
+ --
+@@ -243,23 +244,27 @@
+ 
+ -- | Turn a reduction into a proof.
+ reductionProof :: PrettyTerm f => Term f -> Reduction f -> Derivation f
+-reductionProof t ps = red t (Proof.Refl t) (reverse ps)
++reductionProof t ps = Proof.Splot -- red t (Proof.Refl t) (reverse ps)
++{-
+   where
+     red _ p [] = p
+     red t p (q:qs) =
+       red (ruleResult t q) (p `Proof.trans` ruleProof t q) qs
++-}
+ 
+ -- Helpers for result and reductionProof.
+ ruleResult :: Term f -> Rule f -> Term f
+ ruleResult t r = build (replace (lhs r) (rhs r) (singleton t))
+ 
+ ruleProof :: PrettyTerm f => Term f -> Rule f -> Derivation f
++{-
+ ruleProof t r@(Rule _ _ lhs _)
+   | t == lhs = ruleDerivation r
+   | len t < len lhs = Proof.Refl t
+ ruleProof (App f ts) rule =
+   Proof.cong f [ruleProof u rule | u <- unpack ts]
+-ruleProof t _ = Proof.Refl t
++ruleProof t _ = Proof.Refl t-}
++ruleProof _ _ = Proof.Splot
+ 
+ --------------------------------------------------------------------------------
+ -- * Normalisation.

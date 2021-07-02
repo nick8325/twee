@@ -1,0 +1,134 @@
+diff -r 34e79ed14c61 src/Twee/Index.hs
+--- a/src/Twee/Index.hs	Sat Feb 20 18:20:52 2021 +0100
++++ b/src/Twee/Index.hs	Sat Feb 20 20:20:30 2021 +0100
+@@ -5,7 +5,7 @@
+ -- the search term is an instance of the key, and return the corresponding
+ -- values.
+ 
+-{-# LANGUAGE BangPatterns, RecordWildCards, OverloadedStrings, FlexibleContexts, CPP #-}
++{-# LANGUAGE BangPatterns, RecordWildCards, OverloadedStrings, FlexibleContexts, CPP, TypeSynonymInstances, FlexibleInstances #-}
+ -- We get some bogus warnings because of pattern synonyms.
+ {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
+ {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
+@@ -59,7 +59,7 @@
+ -- that case the algorithm uses backtracking.
+ 
+ -- | A term index: a multimap from @'Term' f@ to @a@.
+-data Index f a =
++{-data Index f a =
+   -- A non-empty index.
+   Index {
+     -- Size of smallest term in index.
+@@ -78,10 +78,11 @@
+     var    :: !(Index f a) } |
+   -- An empty index.
+   Nil
+-  deriving Show
++  deriving Show-}
++type Index f a = [(TermList f, a)]
+ 
+-instance Default (Index f a) where def = Nil
+-
++instance Default (Index f a) where def = []
++{-
+ -- To get predictable performance, the lookup function uses an explicit stack
+ -- instead of a lazy list to control backtracking.
+ data Stack f a =
+@@ -168,14 +169,14 @@
+         _ ->
+           -- We've run out of search term - it doesn't match this node.
+           rest
+-
++-}
+ -- | An empty index.
+ empty :: Index f a
+-empty = Nil
++empty = []
+ 
+ -- | Is the index empty?
+ null :: Index f a -> Bool
+-null Nil = True
++null [] = True
+ null _ = False
+ 
+ -- | An index with one entry.
+@@ -185,12 +186,15 @@
+ -- An index with one entry, giving a termlist instead of a term.
+ {-# INLINE singletonList #-}
+ singletonList :: TermList f -> a -> Index f a
+-singletonList t x = Index 0 t [x] newArray Nil
++singletonList !t x = [(t, x)]
++--singletonList t x = Index 0 t [x] newArray Nil
++
+ 
+ -- | Insert an entry into the index.
+ {-# SCC insert #-}
+ insert :: Term f -> a -> Index f a -> Index f a
+-insert !t x !idx = aux (Term.singleton t) idx
++insert !t x !idx = (Term.singleton t, x):idx
++{-insert !t x !idx = aux (Term.singleton t) idx
+   where
+     aux t Nil = singletonList t x
+     aux (Cons t ts) idx@Index{prefix = Cons u us}
+@@ -221,8 +225,8 @@
+     skeleton t = build (subst (const (Term.var (V 0))) t)
+ 
+     atom (Var x) = Term.var x
+-    atom (App f _) = con f
+-
++    atom (App f _) = con f-}
++{-
+ -- Add a prefix to an index.
+ -- Does not update the size field.
+ withPrefix :: Term f -> Index f a -> Index f a
+@@ -250,12 +254,12 @@
+         here = [],
+         fun = update (fun_id f) idx { prefix = ts, size = size - 1 } newArray,
+         var = Nil }
+-
++-}
+ -- | Delete an entry from the index.
+ {-# INLINEABLE delete #-}
+ {-# SCC delete #-}
+ delete :: Eq a => Term f -> a -> Index f a -> Index f a
+-delete !t x !idx = aux (Term.singleton t) idx
++{-delete !t x !idx = aux (Term.singleton t) idx
+   where
+     aux _ Nil = Nil
+     aux (ConsSym{rest = ts}) idx@Index{prefix = u@ConsSym{rest = us}} =
+@@ -274,7 +278,13 @@
+     aux ConsSym{hd = App f _, rest = t} idx =
+       idx { fun = update (fun_id f) (aux t (fun idx ! fun_id f)) (fun idx) }
+     aux ConsSym{hd = Var _, rest = t} idx =
+-      idx { var = aux t (var idx) }
++      idx { var = aux t (var idx) }-}
++delete !t x !idx = aux (Term.singleton t) x idx
++  where
++    aux _ _ [] = []
++    aux t x ((u, y):ts)
++      | t == u && x == y = ts
++      | otherwise = (u, y):aux t x ts
+ 
+ -- | Look up a term in the index. Finds all key-value such that the search term
+ -- is an instance of the key, and returns an instance of the the value which
+@@ -312,15 +322,17 @@
+ {-# SCC approxMatchesList #-}
+ approxMatchesList :: TermList f -> Index f a -> [a]
+ approxMatchesList t idx =
+-  run (Frame t idx Stop)
++  [x | (u, x) <- idx, isJust (matchList u t)]
++--  run (Frame t idx Stop)
+ 
+ -- | Return all elements of the index.
+ elems :: Index f a -> [a]
+-elems Nil = []
++elems = map snd
++{-elems Nil = []
+ elems idx =
+   here idx ++
+   concatMap elems (map snd (toList (fun idx))) ++
+-  elems (var idx)
++  elems (var idx)-}
+ 
+ -- | Create an index from a list of items
+ fromListWith :: (a -> Term f) -> [a] -> Index f a

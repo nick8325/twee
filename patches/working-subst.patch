@@ -1,0 +1,465 @@
+diff -r a279fa503d5b src/Data/DynamicArray.hs
+--- a/src/Data/DynamicArray.hs	Sun Apr 04 16:54:23 2021 +0200
++++ b/src/Data/DynamicArray.hs	Sun Apr 04 22:31:03 2021 +0200
+@@ -47,6 +47,13 @@
+   arr  <- P.unsafeFreezeSmallArray marr
+   return (Array 0 arr)
+ 
++{-# INLINE newArrayFromList #-}
++newArrayFromList :: [a] -> Array a
++newArrayFromList xs =
++  Array (P.sizeofSmallArray arr) arr
++  where
++    arr = P.smallArrayFromList xs
++
+ -- | Index into an array. O(1) time.
+ {-# INLINE (!) #-}
+ (!) :: Default a => Array a -> Int -> a
+diff -r a279fa503d5b src/Twee/Base.hs
+--- a/src/Twee/Base.hs	Sun Apr 04 16:54:23 2021 +0200
++++ b/src/Twee/Base.hs	Sun Apr 04 22:31:03 2021 +0200
+@@ -83,8 +83,11 @@
+ 
+ instance Symbolic (Subst f) where
+   type ConstantOf (Subst f) = f
+-  termsDL (Subst sub) = termsDL (IntMap.elems sub)
+-  subst_ sub (Subst s) = Subst (fmap (subst_ sub) s)
++  termsDL sub = termsDL (map snd (substToList sub))
++  subst_ sub (Subst s) = Subst (fmap subst1 s)
++    where
++      subst1 (Cons t Empty) = singleton (subst_ sub t)
++      subst1 ts = ts
+ 
+ instance (ConstantOf a ~ ConstantOf b, Symbolic a, Symbolic b) => Symbolic (a, b) where
+   type ConstantOf (a, b) = ConstantOf a
+diff -r a279fa503d5b src/Twee/Equation.hs
+--- a/src/Twee/Equation.hs	Sun Apr 04 16:54:23 2021 +0200
++++ b/src/Twee/Equation.hs	Sun Apr 04 22:31:03 2021 +0200
+@@ -51,6 +51,6 @@
+ 
+ -- | Match one equation against another.
+ matchEquation :: Equation f -> Equation f -> Maybe (Subst f)
+-matchEquation (pat1 :=: pat2) (t1 :=: t2) = do
+-  sub <- match pat1 t1
++matchEquation (pat1 :=: pat2) (t1 :=: t2) = freezeSubst <$> do
++  sub <- matchIn emptyWorkingSubst pat1 t1
+   matchIn sub pat2 t2
+diff -r a279fa503d5b src/Twee/KBO.hs
+--- a/src/Twee/KBO.hs	Sun Apr 04 16:54:23 2021 +0200
++++ b/src/Twee/KBO.hs	Sun Apr 04 22:31:03 2021 +0200
+@@ -58,7 +58,7 @@
+         case unify t u of
+           Nothing -> True
+           Just sub
+-            | not (allSubst (\_ (Cons t Empty) -> isMinimal t) sub) -> error "weird term inequality"
++            | not (allSubst (\_ t -> isMinimal t) sub) -> error "weird term inequality"
+             | otherwise -> lexLess (subst sub ts) (subst sub us)
+     lexLess _ _ = error "incorrect function arity"
+     xs = weightedVars t
+diff -r a279fa503d5b src/Twee/Proof.hs
+--- a/src/Twee/Proof.hs	Sun Apr 04 16:54:23 2021 +0200
++++ b/src/Twee/Proof.hs	Sun Apr 04 22:31:03 2021 +0200
+@@ -380,15 +380,18 @@
+     elim (Cong f ps) =
+       case find (build (app f (map var vs))) of
+         Nothing -> Cong f (map elim ps)
+-        Just (rhs, Subst sub) ->
++        Just (rhs, sub) ->
++          let WorkingSubst wsub = thawSubst sub in
+           let proof (Cons (Var (V x)) Empty) = qs !! x in
+-          replace (proof <$> sub) rhs
++          replace (proof <$> wsub) rhs
+       where
+         vs = map V [0..length ps-1]
+         qs = map (simpleLemma . certify . elim) ps -- avoid duplicating proofs of ts
+ 
+-    elimSubst (Subst sub) = Subst (singleton <$> term <$> unsingleton <$> sub)
++    elimSubst sub =
++      freezeSubst $ WorkingSubst (singleton <$> term <$> unsingleton <$> wsub)
+       where
++        WorkingSubst wsub = thawSubst sub
+         unsingleton (Cons t Empty) = t
+ 
+     term = build . term'
+diff -r a279fa503d5b src/Twee/Rule.hs
+--- a/src/Twee/Rule.hs	Sun Apr 04 16:54:23 2021 +0200
++++ b/src/Twee/Rule.hs	Sun Apr 04 22:31:03 2021 +0200
+@@ -136,7 +136,7 @@
+         case unify t u of
+           Nothing -> Oriented
+           Just sub
+-            | allSubst (\_ (Cons t Empty) -> isMinimal t) sub ->
++            | allSubst (\_ t -> isMinimal t) sub ->
+               WeaklyOriented minimal (map (build . var . fst) (substToList sub))
+             | otherwise -> Unoriented
+       | lessEq t u = error "wrongly-oriented rule"
+diff -r a279fa503d5b src/Twee/Term.hs
+--- a/src/Twee/Term.hs	Sun Apr 04 16:54:23 2021 +0200
++++ b/src/Twee/Term.hs	Sun Apr 04 22:31:03 2021 +0200
+@@ -37,16 +37,16 @@
+   -- * Substitutions
+   Substitution(..),
+   subst,
+-  Subst(..),
++  Subst(..), WorkingSubst(..),
+   -- ** Constructing and querying substitutions
+-  emptySubst, listToSubst, substToList,
++  emptySubst, emptyWorkingSubst, freezeSubst, thawSubst, listToSubst, substToList,
+   lookup, lookupList,
+   extend, extendList, unsafeExtendList,
+   retract,
+   -- ** Other operations on substitutions
+   foldSubst, allSubst, substDomain,
+   substSize,
+-  substCompatible, substUnion, idempotent, idempotentOn,
++  idempotent, idempotentOn,
+   canonicalise,
+   -- * Matching
+   match, matchIn, matchList, matchListIn,
+@@ -77,6 +77,7 @@
+ import Twee.Utils
+ import qualified Twee.Label as Label
+ import Data.Typeable
++import qualified Data.Primitive.SmallArray as Array
+ 
+ --------------------------------------------------------------------------------
+ -- * A type class for builders
+@@ -139,35 +140,62 @@
+ -- Functions for substitutions.
+ --------------------------------------------------------------------------------
+ 
+-{-# INLINE substToList' #-}
+-substToList' :: Subst f -> [(Var, TermList f)]
+-substToList' (Subst sub) = [(V x, t) | (x, t) <- IntMap.toList sub]
+-
+ -- | Convert a substitution to a list of bindings.
+ {-# INLINE substToList #-}
+ substToList :: Subst f -> [(Var, Term f)]
+ substToList sub =
+-  [(x, t) | (x, Cons t Empty) <- substToList' sub]
++  [(V x, t) | x <- [0..substSize sub-1], Just t <- [lookup (V x) sub]]
+ 
+ -- | Fold a function over a substitution.
+ {-# INLINE foldSubst #-}
+-foldSubst :: (Var -> TermList f -> b -> b) -> b -> Subst f -> b
+-foldSubst op e !sub = foldr (uncurry op) e (substToList' sub)
++foldSubst :: (Var -> Term f -> b -> b) -> b -> Subst f -> b
++foldSubst op e !sub = foldr (uncurry op) e (substToList sub)
+ 
+ -- | Check if all bindings of a substitution satisfy a given property.
+ {-# INLINE allSubst #-}
+-allSubst :: (Var -> TermList f -> Bool) -> Subst f -> Bool
++allSubst :: (Var -> Term f -> Bool) -> Subst f -> Bool
+ allSubst p = foldSubst (\x t y -> p x t && y) True
+ 
+ -- | Compute the set of variables bound by a substitution.
+ {-# INLINE substDomain #-}
+ substDomain :: Subst f -> [Var]
+-substDomain (Subst sub) = map V (IntMap.keys sub)
++substDomain sub = map fst (substToList sub)
+ 
+ --------------------------------------------------------------------------------
+ -- Substitution.
+ --------------------------------------------------------------------------------
+ 
++newtype Subst f = Subst (Array.SmallArray (TermList f))
++  deriving (Eq, Ord)
++
++freezeSubst :: WorkingSubst f -> Subst f
++freezeSubst (WorkingSubst sub) = Subst (Array.smallArrayFromList xs)
++  where
++    xs = map get [0..n]
++    n = if IntMap.null sub then -1 else fst (IntMap.findMax sub)
++    get i =
++      case IntMap.lookup i sub of
++        Nothing -> empty
++        Just t  -> t
++
++thawSubst :: Subst f -> WorkingSubst f
++thawSubst (Subst arr) = 
++  WorkingSubst (foldl' op IntMap.empty [0..Array.sizeofSmallArray arr-1])
++  where
++    op sub x =
++      case Array.indexSmallArray arr x of
++        ts@(Cons _ Empty) -> IntMap.insert x ts sub
++        _ -> sub
++
++instance Substitution (Subst f) where
++  type SubstFun (Subst f) = f
++
++  {-# INLINE evalSubst #-}
++  evalSubst sub x =
++    case lookupList x sub of
++      Nothing -> var x
++      Just ts -> builder ts
++
+ -- | A class for values which act as substitutions.
+ --
+ -- Instances include 'Subst' as well as functions from variables to terms.
+@@ -193,12 +221,12 @@
+   {-# INLINE evalSubst #-}
+   evalSubst sub x = builder (sub x)
+ 
+-instance Substitution (Subst f) where
+-  type SubstFun (Subst f) = f
++instance Substitution (WorkingSubst f) where
++  type SubstFun (WorkingSubst f) = f
+ 
+   {-# INLINE evalSubst #-}
+   evalSubst sub x =
+-    case lookupList x sub of
++    case lookupListWorking x sub of
+       Nothing -> var x
+       Just ts -> builder ts
+ 
+@@ -208,61 +236,46 @@
+ subst sub t = substList sub (singleton t)
+ 
+ -- | A substitution which maps variables to terms of type @'Term' f@.
+-newtype Subst f =
+-  Subst {
++newtype WorkingSubst f =
++  WorkingSubst {
+     unSubst :: IntMap (TermList f) }
+   deriving (Eq, Ord)
+ 
+ -- | Return the highest-number variable in a substitution plus 1.
+ {-# INLINE substSize #-}
+ substSize :: Subst f -> Int
+-substSize (Subst sub)
+-  | IntMap.null sub = 0
+-  | otherwise = fst (IntMap.findMax sub) + 1
++substSize (Subst sub) = Array.sizeofSmallArray sub
+ 
+ -- | Look up a variable in a substitution, returning a termlist.
+ {-# INLINE lookupList #-}
+ lookupList :: Var -> Subst f -> Maybe (TermList f)
+-lookupList x (Subst sub) = IntMap.lookup (var_id x) sub
++lookupList x sub = singleton <$> lookup x sub
++
++-- | Look up a variable in a substitution, returning a termlist.
++{-# INLINE lookupListWorking #-}
++lookupListWorking :: Var -> WorkingSubst f -> Maybe (TermList f)
++lookupListWorking x (WorkingSubst sub) = IntMap.lookup (var_id x) sub
+ 
+ -- | Add a new binding to a substitution, giving a termlist.
+ {-# INLINE extendList #-}
+-extendList :: Var -> TermList f -> Subst f -> Maybe (Subst f)
+-extendList x !t (Subst sub) =
++extendList :: Var -> TermList f -> WorkingSubst f -> Maybe (WorkingSubst f)
++extendList x !t (WorkingSubst sub) =
+   case IntMap.lookup (var_id x) sub of
+-    Nothing -> Just $! Subst (IntMap.insert (var_id x) t sub)
++    Nothing -> Just $! WorkingSubst (IntMap.insert (var_id x) t sub)
+     Just u
+-      | t == u    -> Just (Subst sub)
++      | t == u    -> Just (WorkingSubst sub)
+       | otherwise -> Nothing
+ 
+ -- | Remove a binding from a substitution.
+ {-# INLINE retract #-}
+-retract :: Var -> Subst f -> Subst f
+-retract x (Subst sub) = Subst (IntMap.delete (var_id x) sub)
++retract :: Var -> WorkingSubst f -> WorkingSubst f
++retract x (WorkingSubst sub) = WorkingSubst (IntMap.delete (var_id x) sub)
+ 
+ -- | Add a new binding to a substitution.
+ -- Overwrites any existing binding.
+ {-# INLINE unsafeExtendList #-}
+-unsafeExtendList :: Var -> TermList f -> Subst f -> Subst f
+-unsafeExtendList x !t (Subst sub) = Subst (IntMap.insert (var_id x) t sub)
+-
+--- | Check if two substitutions are compatible (they do not send the same
+--- variable to different terms).
+-substCompatible :: Subst f -> Subst f -> Bool
+-substCompatible (Subst !sub1) (Subst !sub2) =
+-  IntMap.null (IntMap.mergeWithKey f g h sub1 sub2)
+-  where
+-    f _ t u
+-      | t == u = Nothing
+-      | otherwise = Just t
+-    g _ = IntMap.empty
+-    h _ = IntMap.empty
+-
+--- | Take the union of two substitutions.
+--- The substitutions must be compatible, which is not checked.
+-substUnion :: Subst f -> Subst f -> Subst f
+-substUnion (Subst !sub1) (Subst !sub2) =
+-  Subst (IntMap.union sub1 sub2)
++unsafeExtendList :: Var -> TermList f -> WorkingSubst f -> WorkingSubst f
++unsafeExtendList x !t (WorkingSubst sub) = WorkingSubst (IntMap.insert (var_id x) t sub)
+ 
+ -- | Check if a substitution is idempotent (applying it twice has the same
+ -- effect as applying it once).
+@@ -272,8 +285,8 @@
+ 
+ -- | Check if a substitution has no effect on a given term.
+ {-# INLINE idempotentOn #-}
+-idempotentOn :: Subst f -> TermList f -> Bool
+-idempotentOn !sub = aux
++idempotentOn :: Subst f -> Term f -> Bool
++idempotentOn !sub = aux . singleton
+   where
+     aux Empty = True
+     aux ConsSym{hd = App{}, rest = t} = aux t
+@@ -285,14 +298,15 @@
+   | idempotent sub = sub
+   | otherwise      = close (Triangle (compose sub sub))
+   where
+-    compose (Subst !sub1) !sub2 =
+-      Subst (IntMap.map (buildList . substList sub2) sub1)
++    compose (Subst !sub1) !sub2 = Subst (fmap (composeTerm sub2) sub1)
++    composeTerm sub2 (Cons t Empty) = buildList (subst sub2 t)
++    composeTerm _ ts = ts
+ 
+ -- | Return a substitution which renames the variables of a list of terms to put
+ -- them in a canonical order.
+ canonicalise :: [TermList f] -> Subst f
+ canonicalise [] = emptySubst
+-canonicalise (t:ts) = loop emptySubst vars t ts
++canonicalise (t:ts) = freezeSubst $ loop emptyWorkingSubst vars t ts
+   where
+     (V m, V n) = boundLists (t:ts)
+     vars =
+@@ -313,7 +327,15 @@
+ 
+ -- | The empty substitution.
+ emptySubst :: Subst f
+-emptySubst = Subst IntMap.empty
++emptySubst = Subst emptyArray
++
++{-# NOINLINE emptyArray #-}
++emptyArray :: Array.SmallArray a
++emptyArray = Array.smallArrayFromList []
++
++-- | The empty working substitution.
++emptyWorkingSubst :: WorkingSubst f
++emptyWorkingSubst = WorkingSubst IntMap.empty
+ 
+ -- | The empty triangle substitution.
+ emptyTriangleSubst :: TriangleSubst f
+@@ -338,18 +360,18 @@
+ 
+ -- | A variant of 'match' which extends an existing substitution.
+ {-# INLINE matchIn #-}
+-matchIn :: Subst f -> Term f -> Term f -> Maybe (Subst f)
++matchIn :: WorkingSubst f -> Term f -> Term f -> Maybe (WorkingSubst f)
+ matchIn sub pat t = matchListIn sub (singleton pat) (singleton t)
+ 
+ -- | A variant of 'match' which works on termlists.
+ {-# INLINE matchList #-}
+ matchList :: TermList f -> TermList f -> Maybe (Subst f)
+-matchList pat t = matchListIn emptySubst pat t
++matchList pat t = freezeSubst <$> matchListIn emptyWorkingSubst pat t
+ 
+ -- | A variant of 'match' which works on termlists
+ -- and extends an existing substitution.
+ {-# SCC matchListIn #-}
+-matchListIn :: Subst f -> TermList f -> TermList f -> Maybe (Subst f)
++matchListIn :: WorkingSubst f -> TermList f -> TermList f -> Maybe (WorkingSubst f)
+ matchListIn !sub !pat !t
+   | lenList t < lenList pat = Nothing
+   | otherwise =
+@@ -369,20 +391,20 @@
+ 
+ -- | A variant of 'match' which works on lists of terms.
+ matchMany :: [Term f] -> [Term f] -> Maybe (Subst f)
+-matchMany pat t = matchManyIn emptySubst pat t
++matchMany pat t = freezeSubst <$> matchManyIn emptyWorkingSubst pat t
+ 
+ -- | A variant of 'match' which works on lists of terms,
+ -- and extends an existing substitution.
+-matchManyIn :: Subst f -> [Term f] -> [Term f] -> Maybe (Subst f)
++matchManyIn :: WorkingSubst f -> [Term f] -> [Term f] -> Maybe (WorkingSubst f)
+ matchManyIn sub ts us = matchManyListIn sub (map singleton ts) (map singleton us)
+ 
+ -- | A variant of 'match' which works on lists of termlists.
+ matchManyList :: [TermList f] -> [TermList f] -> Maybe (Subst f)
+-matchManyList pat t = matchManyListIn emptySubst pat t
++matchManyList pat t = freezeSubst <$> matchManyListIn emptyWorkingSubst pat t
+ 
+ -- | A variant of 'match' which works on lists of termlists,
+ -- and extends an existing substitution.
+-matchManyListIn :: Subst f -> [TermList f] -> [TermList f] -> Maybe (Subst f)
++matchManyListIn :: WorkingSubst f -> [TermList f] -> [TermList f] -> Maybe (WorkingSubst f)
+ matchManyListIn !sub [] [] = return sub
+ matchManyListIn sub (t:ts) (u:us) = do
+   sub <- matchListIn sub t u
+@@ -448,18 +470,19 @@
+ unifyTri t u = unifyListTri (singleton t) (singleton u)
+ 
+ -- | Unify two terms, starting from an existing substitution.
+-unifyTriFrom :: Term f -> Term f -> TriangleSubst f -> Maybe (TriangleSubst f)
++unifyTriFrom :: Term f -> Term f -> WorkingSubst f -> Maybe (WorkingSubst f)
+ unifyTriFrom t u sub = unifyListTriFrom (singleton t) (singleton u) sub
+ 
+ -- | Unify two termlists, returning a triangle substitution.
+ -- This is slightly faster than 'unify'.
+ unifyListTri :: TermList f -> TermList f -> Maybe (TriangleSubst f)
+-unifyListTri t u = unifyListTriFrom t u (Triangle emptySubst)
++unifyListTri t u =
++  Triangle <$> freezeSubst <$> unifyListTriFrom t u emptyWorkingSubst
+ 
+ {-# SCC unifyListTriFrom #-}
+-unifyListTriFrom :: TermList f -> TermList f -> TriangleSubst f -> Maybe (TriangleSubst f)
+-unifyListTriFrom !t !u (Triangle !sub) =
+-  fmap Triangle (loop sub t u)
++unifyListTriFrom :: TermList f -> TermList f -> WorkingSubst f -> Maybe (WorkingSubst f)
++unifyListTriFrom !t !u !sub =
++  loop sub t u
+   where
+     loop !_ !_ !_ | False = undefined
+     loop sub (ConsSym{hd = t, tl = ts, rest = ts1}) u = do
+@@ -479,14 +502,14 @@
+ 
+     {-# INLINE var #-}
+     var sub x t =
+-      case lookupList x sub of
++      case lookupListWorking x sub of
+         Just u -> loop sub u (singleton t)
+         Nothing -> var1 sub x t
+ 
+     var1 sub x t@(Var y)
+       | x == y = return sub
+       | otherwise =
+-        case lookup y sub of
++        case lookupWorking y sub of
+           Just t  -> var1 sub x t
+           Nothing -> extend x t sub
+ 
+@@ -501,7 +524,7 @@
+           | x == y -> Nothing
+           | otherwise -> do
+             occurs sub x ts
+-            case lookupList y sub of
++            case lookupListWorking y sub of
+               Nothing -> Just ()
+               Just u  -> occurs sub x u
+     occurs _ _ _ = Just ()
+@@ -546,13 +569,23 @@
+ -- | Look up a variable in a substitution.
+ {-# INLINE lookup #-}
+ lookup :: Var -> Subst f -> Maybe (Term f)
+-lookup x s = do
+-  Cons t Empty <- lookupList x s
++lookup x (Subst sub)
++  | var_id x < 0 || var_id x >= Array.sizeofSmallArray sub = Nothing
++  | otherwise =
++    case Array.indexSmallArray sub (var_id x) of
++      Cons t Empty -> Just t
++      _ -> Nothing
++
++-- | Look up a variable in a substitution.
++{-# INLINE lookupWorking #-}
++lookupWorking :: Var -> WorkingSubst f -> Maybe (Term f)
++lookupWorking x s = do
++  Cons t Empty <- lookupListWorking x s
+   return t
+ 
+ -- | Add a new binding to a substitution.
+ {-# INLINE extend #-}
+-extend :: Var -> Term f -> Subst f -> Maybe (Subst f)
++extend :: Var -> Term f -> WorkingSubst f -> Maybe (WorkingSubst f)
+ extend x t sub = extendList x (singleton t) sub
+ 
+ -- | Find the length of a term.

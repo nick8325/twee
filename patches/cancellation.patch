@@ -1,0 +1,245 @@
+diff -r 2b455414fc71 executable/SequentialMain.hs
+--- a/executable/SequentialMain.hs	Mon Jun 14 10:28:47 2021 +0200
++++ b/executable/SequentialMain.hs	Fri Jun 18 14:24:19 2021 +0200
+@@ -136,7 +136,7 @@
+ parseConfig :: OptionParser (Config Constant)
+ parseConfig =
+   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
+-    (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
++    (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor <*> cancellation) <*>
+     (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join) <*>
+     (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses)
+   where
+@@ -196,6 +196,12 @@
+       expert $
+       inGroup "Critical pair weighting heuristics" $
+       defaultFlag "dup-factor" "Size factor of duplicate subterms" (CP.cfg_dupfactor . cfg_critical_pairs) argNum
++    cancellation =
++      expert $
++      inGroup "Completion heuristics" $
++      bool "cancellation"
++        ["Look out for cancellation rules (on by default)."]
++        True
+     ground_join =
+       expert $
+       inGroup "Critical pair joining heuristics" $
+diff -r 2b455414fc71 src/Twee.hs
+--- a/src/Twee.hs	Mon Jun 14 10:28:47 2021 +0200
++++ b/src/Twee.hs	Fri Jun 18 14:24:19 2021 +0200
+@@ -64,6 +64,7 @@
+     st_active_set     :: !(IntMap (Active f)),
+     st_joinable       :: !(Index f (Equation f)),
+     st_goals          :: ![Goal f],
++    st_cancellations  :: !Cancellations,
+     st_queue          :: !(Queue Params),
+     st_next_active    :: {-# UNPACK #-} !Id,
+     st_considered     :: {-# UNPACK #-} !Int64,
+@@ -106,6 +107,7 @@
+     st_active_set = IntMap.empty,
+     st_joinable = Index.empty,
+     st_goals = [],
++    st_cancellations = emptyCancellations,
+     st_queue = Queue.empty,
+     st_next_active = 1,
+     st_considered = 0,
+@@ -188,9 +190,9 @@
+ {-# INLINEABLE makePassives #-}
+ {-# SCC makePassives #-}
+ makePassives :: Function f => Config f -> State f -> Active f -> [Passive Params]
+-makePassives config@Config{..} State{..} rule =
++makePassives config@Config{..} state@State{..} rule =
+ -- XXX factor out depth calculation
+-  [ makePassive config overlap
++  [ makePassive config state overlap
+   | ok rule,
+     overlap <- overlaps (index_oriented st_rules) (filter ok rules) rule ]
+   where
+@@ -198,10 +200,10 @@
+     ok rule = the rule < Depth cfg_max_cp_depth
+ 
+ {-# INLINEABLE makePassive #-}
+-makePassive :: Function f => Config f -> Overlap (Active f) f -> Passive Params
+-makePassive Config{..} overlap@Overlap{..} =
++makePassive :: Function f => Config f -> State f -> Overlap (Active f) f -> Passive Params
++makePassive Config{..} State{..} overlap@Overlap{..} =
+   Passive {
+-    passive_score = fromIntegral (score cfg_critical_pairs depth overlap),
++    passive_score = fromIntegral (cancelledScore cfg_critical_pairs (index_oriented st_rules) st_cancellations depth overlap_eqn),
+     passive_rule1 = active_id overlap_rule1,
+     passive_rule2 = active_id overlap_rule2,
+     passive_pos   = packHow overlap_how }
+@@ -232,7 +234,7 @@
+     passive_score = fromIntegral $
+       fromIntegral (passive_score passive) `intMin`
+       -- XXX factor out depth calculation
+-      score cfg_critical_pairs (succ (the r1 `max` the r2)) overlap }
++      cancelledScore cfg_critical_pairs (index_oriented st_rules) st_cancellations (succ (the r1 `max` the r2)) (overlap_eqn overlap) }
+ 
+ -- | Check if we should renormalise the queue.
+ {-# INLINEABLE shouldSimplifyQueue #-}
+@@ -399,7 +401,8 @@
+ addActiveOnly state@State{..} active@Active{..} =
+   state {
+     st_rules = foldl' insertRule st_rules (activeRules active),
+-    st_active_set = IntMap.insert (fromIntegral active_id) active st_active_set }
++    st_active_set = IntMap.insert (fromIntegral active_id) active st_active_set,
++    st_cancellations = addCancellation active_rule st_cancellations }
+   where
+     insertRule rules rule =
+       RuleIndex.insert (lhs rule) rule rules
+@@ -724,7 +727,9 @@
+     case dequeue config state of
+       (Nothing, state) -> (False, state)
+       (Just (info, overlap, _, _), state) ->
+-        (True, consider config state info overlap)
++        (True,
++         foldl' (\state overlap -> consider config state info overlap) state
++           (cancelledCriticalPairs cfg_critical_pairs (st_cancellations state) overlap))
+ 
+ {-# INLINEABLE solved #-}
+ solved :: Function f => State f -> Bool
+diff -r 2b455414fc71 src/Twee/CP.hs
+--- a/src/Twee/CP.hs	Mon Jun 14 10:28:47 2021 +0200
++++ b/src/Twee/CP.hs	Fri Jun 18 14:24:19 2021 +0200
+@@ -16,6 +16,10 @@
+ import qualified Twee.Proof as Proof
+ import Twee.Proof(Derivation, congPath)
+ import Data.Bits
++import Data.DynamicArray(Array)
++import qualified Data.DynamicArray as Array
++import Data.Maybe
++import Debug.Trace
+ 
+ -- | The set of positions at which a term can have critical overlaps.
+ data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
+@@ -169,10 +173,16 @@
+ -- | Simplify an overlap and remove it if it's trivial.
+ {-# INLINE simplifyOverlap #-}
+ simplifyOverlap :: (Function f, Has a (Rule f)) => Index f a -> Overlap b f -> Maybe (Overlap b f)
+-simplifyOverlap idx overlap@Overlap{overlap_eqn = lhs :=: rhs, ..}
++simplifyOverlap idx overlap@Overlap{overlap_eqn = eqn, ..} = do
++  eqn' <- simplifyEquation idx eqn
++  return overlap{overlap_eqn = eqn'}
++
++{-# INLINE simplifyEquation #-}
++simplifyEquation :: (Function f, Has a (Rule f)) => Index f a -> Equation f -> Maybe (Equation f)
++simplifyEquation idx (lhs :=: rhs)
+   | lhs == rhs   = Nothing
+   | lhs' == rhs' = Nothing
+-  | otherwise = Just overlap{overlap_eqn = lhs' :=: rhs'}
++  | otherwise = Just (lhs' :=: rhs')
+   where
+     lhs' = simplify idx lhs
+     rhs' = simplify idx rhs
+@@ -194,7 +204,8 @@
+     cfg_varweight :: !Int,
+     cfg_depthweight :: !Int,
+     cfg_dupcost :: !Int,
+-    cfg_dupfactor :: !Int }
++    cfg_dupfactor :: !Int,
++    cfg_use_cancellations :: !Bool }
+ 
+ -- | The default heuristic configuration.
+ defaultConfig :: Config
+@@ -206,7 +217,61 @@
+     cfg_varweight = 6,
+     cfg_depthweight = 16,
+     cfg_dupcost = 7,
+-    cfg_dupfactor = 0 }
++    cfg_dupfactor = 0,
++    cfg_use_cancellations = True }
++
++type Cancellations = Array [Cancellation]
++type Cancellation = [(Int, Int)]
++
++instance Array.Default [a] where def = []
++
++emptyCancellations :: Cancellations
++emptyCancellations = Array.newArray
++
++addCancellation :: Rule f -> Cancellations -> Cancellations
++addCancellation Rule{orientation = Oriented, lhs = App f ts, rhs = u} cancel
++  | isVar u,
++    all isVar (unpack ts),
++    not (null groups),
++    and [ x `notElem` vars u | x <- map fst groups ] =
++    Array.update (fun_id f) (pairs : (cancel Array.! fun_id f)) cancel
++  where
++    groups =
++      filter (\(_, xs) -> length xs > 1) $
++      collate id $
++      zip [x | ~(Var x) <- unpack ts] [0..]
++    pairs =
++      [(x, y) | (_, x:xs) <- groups, y <- xs]
++addCancellation _ cancel = cancel
++
++findCancellation :: Term f -> Cancellations -> [TriangleSubst f]
++findCancellation (App f ts) cancel = do
++  pairs <- cancel Array.! fun_id f
++  let
++    loop [] !sub = Just sub
++    loop ((i, j):pairs) sub = do
++      sub <- unifyTriFrom (unpack ts !! i) (unpack ts !! j) sub
++      loop pairs sub
++
++  maybeToList (loop pairs emptyTriangleSubst)
++
++findCancellation _ _ = []
++
++cancelledCriticalPairs :: Function f => Config -> Cancellations -> CriticalPair f -> [CriticalPair f]
++cancelledCriticalPairs config@Config{..} cancel cp@CriticalPair{cp_eqn = t :=: u}
++  | not cfg_use_cancellations = [cp]
++  | otherwise =
++    cp:[subst sub cp | sub <- findCancellation t cancel ++ findCancellation u cancel]
++
++{-# INLINEABLE cancelledScore #-}
++cancelledScore :: (Function f, Has a (Rule f)) => Config -> Index f a -> Cancellations -> Depth -> Equation f -> Int
++cancelledScore config@Config{..} idx cancel depth eqn@(t :=: u)
++  | not cfg_use_cancellations = score config depth eqn
++  | otherwise =
++    foldl' intMin (score config depth eqn)
++      [ score config depth eqn'
++      | sub <- findCancellation t cancel ++ findCancellation u cancel,
++        eqn' <- maybeToList (simplifyEquation idx (subst sub eqn)) ]
+ 
+ -- | Compute a score for a critical pair.
+ 
+@@ -215,13 +280,12 @@
+ -- where l is the biggest term and r is the smallest,
+ -- and variables have weight 1 and functions have weight cfg_funweight.
+ {-# INLINEABLE score #-}
+-score :: Function f => Config -> Depth -> Overlap a f -> Int
+-score Config{..} depth Overlap{..} =
++score :: Function f => Config -> Depth -> Equation f -> Int
++score Config{..} depth (l :=: r) =
+   fromIntegral depth * cfg_depthweight +
+   (m + n) * cfg_rhsweight +
+   intMax m n * (cfg_lhsweight - cfg_rhsweight)
+   where
+-    l :=: r = overlap_eqn
+     m = size' 0 (singleton l)
+     n = size' 0 (singleton r)
+ 
+@@ -229,14 +293,14 @@
+     size' n (Cons t ts)
+       | len t > 1, t `isSubtermOfList` ts =
+         size' (n+cfg_dupcost+cfg_dupfactor*len t) ts
+-    size' n ts
+-      | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
+-        not (isVar a),
+-        not (isVar b),
+-        hasEqualsBonus (fun_value f),
+-        Just sub <- unify a b =
+-        size' (n+cfg_funweight) ws `min`
+-        size' (size' (n+1) (subst sub us)) (subst sub vs)
++--    size' n ts
++--      | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
++--        not (isVar a),
++--        not (isVar b),
++--        hasEqualsBonus (fun_value f),
++--        Just sub <- unify a b =
++--        size' (n+cfg_funweight) ws `min`
++--        size' (size' (n+1) (subst sub us)) (subst sub vs)
+     size' n (Cons (Var _) ts) =
+       size' (n+cfg_varweight) ts
+     size' n ConsSym{hd = App{}, rest = ts} =

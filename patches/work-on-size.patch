@@ -1,0 +1,1196 @@
+diff -r 780787784f1f executable/SequentialMain.hs
+--- a/executable/SequentialMain.hs	Sat May 15 15:50:53 2021 +0200
++++ b/executable/SequentialMain.hs	Wed Jun 02 14:51:49 2021 +0200
+@@ -1,4 +1,4 @@
+-{-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards, DerivingVia #-}
++{-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards, DeriveAnyClass #-}
+ {-# OPTIONS_GHC -flate-specialise #-}
+ module SequentialMain(main) where
+ 
+@@ -51,11 +51,12 @@
+     flags_eliminate :: [String],
+     flags_backwards_goal :: Int,
+     flags_flatten_backwards_goal :: Int,
+-    flags_equals_transformation :: Bool }
++    flags_equals_transformation :: Bool,
++    flags_distributivity_heuristic :: Bool }
+ 
+ parseMainFlags :: OptionParser MainFlags
+ parseMainFlags =
+-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation
++  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic
+   where
+     proof =
+       inGroup "Output options" $
+@@ -111,6 +112,10 @@
+       expert $
+       inGroup "Completion heuristics" $
+       bool "equals-transformation" ["Apply the 'equals transformation' even to ground goals (off by default)."] False
++    distributivityHeuristic =
++      expert $
++      inGroup "Completion heuristics" $
++      bool "distributivity-heuristic" ["Treat distributive operators specially (off by default)."] False
+     eliminate =
+       inGroup "Proof presentation" $
+       concat <$>
+@@ -133,7 +138,7 @@
+     maxSize =
+       inGroup "Resource limits" $
+       flag "max-term-size" ["Discard rewrite rules whose left-hand side is bigger than this limit (unlimited by default)."] Nothing (Just <$> checkSize <$> argNum)
+-    checkSize n t = KBO.size t <= n
++    checkSize n t = len t <= n
+     maxCPs =
+       inGroup "Resource limits" $
+       flag "max-cps" ["Give up after considering this many critical pairs (unlimited by default)."] maxBound argNum
+@@ -297,21 +302,18 @@
+     con_size   :: !Integer,
+     con_weight :: !Integer,
+     con_bonus  :: !Bool }
+-  deriving (Eq, Ord)
+-  deriving Labelled via AutoLabel Constant
++  deriving (Eq, Ord, Labelled)
+ 
+ data Precedence = Precedence !Bool !Bool !(Maybe Int) !Int
+   deriving (Eq, Ord)
+ 
+-instance KBO.Sized Constant where
+-  size Minimal = 1
+-  size Constant{..} = con_size
+-instance KBO.Weighted Constant where
+-  argWeight Minimal = 1
+-  argWeight Constant{..} = con_weight
+-instance Arity Constant where
+-  arity Minimal = 0
+-  arity Constant{..} = con_arity
++conSize :: Constant -> Integer
++conSize Minimal = 1
++conSize Constant{..} = con_size
++
++conArgWeight :: Constant -> Integer
++conArgWeight Minimal = 1
++conArgWeight Constant{..} = con_weight
+ 
+ instance Pretty Constant where
+   pPrint Minimal = text "?"
+@@ -335,11 +337,6 @@
+ instance Minimal Constant where
+   minimal = fun Minimal
+ 
+-instance Ordered Constant where
+-  lessEq t u = KBO.lessEq t u
+-  lessIn model t u = KBO.lessIn model t u
+-  lessEqSkolem t u = KBO.lessEqSkolem t u
+-
+ instance EqualsBonus Constant where
+   hasEqualsBonus Minimal = False
+   hasEqualsBonus c = con_bonus c
+@@ -476,6 +473,39 @@
+         ground u,
+         v <- backwards (n-1) cs u ]
+ 
++addDistributivityHeuristic :: Problem Clause -> Problem Clause
++addDistributivityHeuristic prob =
++  run prob $ \prob -> do
++    cs <- mapM add prob
++    return (prob ++ catMaybes cs)
++
++  where
++    add Input{what = Clause (Bind _ [Pos (t Jukebox.:=: u)])}
++      | isDistributivity t u = Just <$> define t
++      | isDistributivity u t = Just <$> define u
++    add _ = return Nothing
++
++    isDistributivity (f1 :@: [Jukebox.Var x1, g1 :@: [Jukebox.Var y1, Jukebox.Var z1]])
++          (g2 :@: [f2 :@: [Jukebox.Var x2, Jukebox.Var y2],
++                   f3 :@: [Jukebox.Var x3, Jukebox.Var z2]]) =
++      f1 == f2 && f2 == f3 && g1 == g2 &&
++      x1 == x2 && x2 == x3 && y1 == y2 && z1 == z2
++      
++    isDistributivity (f1 :@: [g1 :@: [Jukebox.Var x1, Jukebox.Var y1], Jukebox.Var z1])
++          (g2 :@: [f2 :@: [Jukebox.Var x2, Jukebox.Var z2],
++                   f3 :@: [Jukebox.Var y2, Jukebox.Var z3]]) =
++      f1 == f2 && f2 == f3 && g1 == g2 &&
++      x1 == x2 && y1 == y2 && z1 == z2 && z2 == z3
++    isDistributivity _ _ = False
++
++    define (f :@: ts) = do
++      name <- newName f
++      let vs  = Jukebox.vars ts
++          g = name ::: FunType (map typ vs) (typ f)
++          c = clause [Pos (g :@: map Jukebox.Var vs Jukebox.:=: f :@: ts)]
++      return Input{tag = "distributivity_heuristic", kind = Jukebox.Ax Definition,
++                   what = c, source = Unknown }
++
+ -- Encode existentials so that all goals are ground.
+ addNarrowing :: Bool -> TweeContext -> Problem Clause -> Problem Clause
+ addNarrowing alwaysNarrow TweeContext{..} prob =
+@@ -560,12 +590,15 @@
+ runTwee globals (TSTPFlags tstp) horn precedence config MainFlags{..} later obligs = {-# SCC runTwee #-} do
+   let
+     -- Encode whatever needs encoding in the problem
+-    obligs'
++    obligs1
+       | flags_flatten_goals_lightly = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground False False obligs
+       | flags_flatten_all = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground True True obligs
+       | flags_flatten_goals = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground False True obligs
+       | otherwise = obligs
+-    ctx = makeContext obligs'
++    obligs2
++      | flags_distributivity_heuristic = addDistributivityHeuristic obligs1
++      | otherwise = obligs1
++    ctx = makeContext obligs2
+     lowercaseSkolem x
+       | hasLabel "skolem" x =
+         withRenamer x $ \s i ->
+@@ -573,7 +606,7 @@
+             Renaming xss xs ->
+               Renaming (map (map toLower) xss) (map toLower xs)
+       | otherwise = x
+-    prob = prettyNames (mapName lowercaseSkolem (addNarrowing flags_equals_transformation ctx obligs'))
++    prob = prettyNames (mapName lowercaseSkolem (addNarrowing flags_equals_transformation ctx obligs2))
+ 
+   (unsortedAxioms0, goals0) <-
+     case identifyProblem ctx prob of
+@@ -596,225 +629,227 @@
+     maybeNegate = if flags_flip_ordering then negate else id
+     occs = funsOcc prob
+ 
+-    -- Translate everything to Twee.
+-    toEquation (t, u) =
+-      canonicalise (tweeTerm horn ctx prec t :=: tweeTerm horn ctx prec u)
++  KBO.withKBO KBO.KBOParams{kbo_size = conSize, kbo_argweight = conArgWeight} compare $ do
++    let
++      -- Translate everything to Twee.
++      toEquation (t, u) =
++        canonicalise (tweeTerm horn ctx prec t :=: tweeTerm horn ctx prec u)
+ 
+-    axiomCompare ax1 ax2
+-      | ax1' `simplerThan` ax2' = LT
+-      | ax2' `simplerThan` ax1' = GT
+-      | otherwise = EQ
+-      where
+-        ax1' = toEquation (pre_eqn ax1)
+-        ax2' = toEquation (pre_eqn ax2)
+-    axioms0 = sortBy axiomCompare unsortedAxioms0
++      axiomCompare ax1 ax2
++        | ax1' `simplerThan` ax2' = LT
++        | ax2' `simplerThan` ax1' = GT
++        | otherwise = EQ
++        where
++          ax1' = toEquation (pre_eqn ax1)
++          ax2' = toEquation (pre_eqn ax2)
++      axioms0 = sortBy axiomCompare unsortedAxioms0
+ 
+-    goals =
+-      [ goal n pre_name (toEquation pre_eqn)
+-      | (n, PreEquation{..}) <- zip [1..] goals0 ]
+-    axioms =
+-      [ Axiom n pre_name (toEquation pre_eqn)
+-      | (n, PreEquation{..}) <- zip [1..] axioms0 ]
+-    defs =
+-      [ axiom
+-      | (axiom, PreEquation{..}) <- zip axioms axioms0,
+-        isDefinition pre_form ]
+-    isDefinition Input{source = Unknown} = True
+-    isDefinition inp = tag inp `elem` flags_eliminate
++      goals =
++        [ goal n pre_name (toEquation pre_eqn)
++        | (n, PreEquation{..}) <- zip [1..] goals0 ]
++      axioms =
++        [ Axiom n pre_name (toEquation pre_eqn)
++        | (n, PreEquation{..}) <- zip [1..] axioms0 ]
++      defs =
++        [ axiom
++        | (axiom, PreEquation{..}) <- zip axioms axioms0,
++          isDefinition pre_form ]
++      isDefinition Input{source = Unknown} = True
++      isDefinition inp = tag inp `elem` flags_eliminate
+ 
+-    withGoals = foldl' (addGoal config) (initialState config) goals
+-    withAxioms = foldl' (addAxiom config) withGoals axioms
+-    withBackwardsGoal = foldn rewriteGoalsBackwards withAxioms flags_backwards_goal
++      withGoals = foldl' (addGoal config) (initialState config) goals
++      withAxioms = foldl' (addAxiom config) withGoals axioms
++      withBackwardsGoal = foldn rewriteGoalsBackwards withAxioms flags_backwards_goal
+ 
+-  -- Set up tracing.
+-  sayTrace <-
+-    case flags_trace of
+-      Nothing -> return $ \_ -> return ()
+-      Just (file, mod) -> do
+-        h <- openFile file WriteMode
+-        hSetBuffering h LineBuffering
+-        let put msg = hPutStrLn h msg
+-        put $ ":- module(" ++ mod ++ ", [step/1, lemma/1, axiom/1, goal/1])."
+-        put ":- discontiguous(step/1)."
+-        put ":- discontiguous(lemma/1)."
+-        put ":- discontiguous(axiom/1)."
+-        put ":- discontiguous(goal/1)."
+-        put ":- style_check(-singleton)."
+-        return $ \msg -> hPutStrLn h msg
+-  
+-  let
+-    say msg = unless (quiet globals) (putStrLn msg)
+-    line = say ""
+-    output = Output {
+-      output_message = \msg -> do
+-        say (prettyShow msg)
+-        sayTrace (show (traceMsg msg)) }
++    -- Set up tracing.
++    sayTrace <-
++      case flags_trace of
++        Nothing -> return $ \_ -> return ()
++        Just (file, mod) -> do
++          h <- openFile file WriteMode
++          hSetBuffering h LineBuffering
++          let put msg = hPutStrLn h msg
++          put $ ":- module(" ++ mod ++ ", [step/1, lemma/1, axiom/1, goal/1])."
++          put ":- discontiguous(step/1)."
++          put ":- discontiguous(lemma/1)."
++          put ":- discontiguous(axiom/1)."
++          put ":- discontiguous(goal/1)."
++          put ":- style_check(-singleton)."
++          return $ \msg -> hPutStrLn h msg
++    
++    let
++      say msg = unless (quiet globals) (putStrLn msg)
++      line = say ""
++      output = Output {
++        output_message = \msg -> do
++          say (prettyShow msg)
++          sayTrace (show (traceMsg msg)) }
++
++      traceMsg (NewActive active) =
++        step "add" [traceActive active]
++      traceMsg (NewEquation eqn) =
++        step "hard" [traceEqn eqn]
++      traceMsg (DeleteActive active) =
++        step "delete" [traceActive active]
++      traceMsg SimplifyQueue =
++        step "simplify_queue" []
++      traceMsg Interreduce =
++        step "interreduce" []
++      traceMsg (Status n) =
++        step "status" [pPrint n]
+ 
+-    traceMsg (NewActive active) =
+-      step "add" [traceActive active]
+-    traceMsg (NewEquation eqn) =
+-      step "hard" [traceEqn eqn]
+-    traceMsg (DeleteActive active) =
+-      step "delete" [traceActive active]
+-    traceMsg SimplifyQueue =
+-      step "simplify_queue" []
+-    traceMsg Interreduce =
+-      step "interreduce" []
+-    traceMsg (Status n) =
+-      step "status" [pPrint n]
++      traceActive Active{active_top = Nothing, ..} =
++        traceApp "rule" [pPrint active_id, traceEqn (unorient active_rule)]
++      traceActive Active{active_top = Just top, ..} =
++        traceApp "rule" [pPrint active_id, traceEqn (unorient active_rule), traceEqn lemma1, traceEqn lemma2]
++        where
++          (lemma1, lemma2) =
++            find (steps (derivation active_proof))
++          find (s1:s2:_)
++            | eqn_rhs (equation (certify s1)) == top && eqn_lhs (equation (certify s2)) == top =
++              (lemmaOf s1, lemmaOf s2)
++          find (_:xs) = find xs
++          lemmaOf s =
++            case (usedLemmas s, usedAxioms s) of
++              ([p], []) -> equation p
++              ([], [ax]) -> axiom_eqn ax
+ 
+-    traceActive Active{active_top = Nothing, ..} =
+-      traceApp "rule" [pPrint active_id, traceEqn (unorient active_rule)]
+-    traceActive Active{active_top = Just top, ..} =
+-      traceApp "rule" [pPrint active_id, traceEqn (unorient active_rule), traceEqn lemma1, traceEqn lemma2]
+-      where
+-        (lemma1, lemma2) =
+-          find (steps (derivation active_proof))
+-        find (s1:s2:_)
+-          | eqn_rhs (equation (certify s1)) == top && eqn_lhs (equation (certify s2)) == top =
+-            (lemmaOf s1, lemmaOf s2)
+-        find (_:xs) = find xs
+-        lemmaOf s =
+-          case (usedLemmas s, usedAxioms s) of
+-            ([p], []) -> equation p
+-            ([], [ax]) -> axiom_eqn ax
++      traceEqn (t :=: u) =
++        pPrintPrec prettyNormal 6 t <+> text "=" <+> pPrintPrec prettyNormal 6 u
++      traceApp f xs =
++        pPrintTerm uncurried prettyNormal 0 (text f) xs
++
++      step :: String -> [Doc] -> Doc
++      step f xs = traceApp "step" [traceApp f xs] <#> text "."
+ 
+-    traceEqn (t :=: u) =
+-      pPrintPrec prettyNormal 6 t <+> text "=" <+> pPrintPrec prettyNormal 6 u
+-    traceApp f xs =
+-      pPrintTerm uncurried prettyNormal 0 (text f) xs
++    say "Here is the input problem:"
++    forM_ axioms $ \Axiom{..} ->
++      say $ show $ nest 2 $
++        describeEquation "Axiom"
++          (show axiom_number) (Just axiom_name) axiom_eqn
++    forM_ goals $ \Goal{..} ->
++      say $ show $ nest 2 $
++        describeEquation "Goal"
++          (show goal_number) (Just goal_name) goal_eqn
++    line
++
++    state <- complete output config withBackwardsGoal
++    line
+ 
+-    step :: String -> [Doc] -> Doc
+-    step f xs = traceApp "step" [traceApp f xs] <#> text "."
++    when (solved state && flags_proof) $ later $ do
++      let
++        cfg_present
++          | tstp && flags_formal_proof =
++            (cfg_proof_presentation config){cfg_all_lemmas = True}
++          | otherwise =
++            cfg_proof_presentation config
++        pres = present cfg_present $ map (eliminateDefinitionsFromGoal defs) $ solutions state
+ 
+-  say "Here is the input problem:"
+-  forM_ axioms $ \Axiom{..} ->
+-    say $ show $ nest 2 $
+-      describeEquation "Axiom"
+-        (show axiom_number) (Just axiom_name) axiom_eqn
+-  forM_ goals $ \Goal{..} ->
+-    say $ show $ nest 2 $
+-      describeEquation "Goal"
+-        (show goal_number) (Just goal_name) goal_eqn
+-  line
++      sayTrace ""
++      forM_ (pres_axioms pres) $ \p ->
++        sayTrace $ show $
++          traceApp "axiom" [traceEqn (axiom_eqn p)] <#> text "."
++      forM_ (pres_lemmas pres) $ \p ->
++        sayTrace $ show $
++          traceApp "lemma" [traceEqn (equation p)] <#> text "."
++      forM_ (pres_goals pres) $ \p ->
++        sayTrace $ show $
++          traceApp "goal" [traceEqn (pg_goal_hint p)] <#> text "."
+ 
+-  state <- complete output config withBackwardsGoal
+-  line
++      when (tstp && not flags_formal_proof) $ do
++        putStrLn "% SZS output start Proof"
++        let
++          axiomForms =
++            Map.fromList
++              (zip (map axiom_number axioms) (map pre_form axioms0))
++          goalForms =
++            Map.fromList
++              (zip (map goal_number goals) (map pre_form goals0))
+ 
+-  when (solved state && flags_proof) $ later $ do
+-    let
+-      cfg_present
+-        | tstp && flags_formal_proof =
+-          (cfg_proof_presentation config){cfg_all_lemmas = True}
+-        | otherwise =
+-          cfg_proof_presentation config
+-      pres = present cfg_present $ map (eliminateDefinitionsFromGoal defs) $ solutions state
++          findSource forms n =
++            case Map.lookup n forms of
++              Nothing -> []
++              Just inp -> go inp
++             where
++              go Input{source = Unknown} = []
++              go Input{source = Inference _ _ inps} = concatMap go inps
++              go inp@Input{source = FromFile _ _} = [inp]
++
++        when flags_explain_encoding $ do
++          putStrLn "Take the following subset of the input axioms:"
++          mapM_ putStrLn $ map ("  " ++) $ lines $ showProblem $
++            usortBy (comparing show) $
++              (pres_axioms pres >>= findSource axiomForms . axiom_number) ++
++              (pres_goals pres >>= findSource goalForms . pg_number)
+ 
+-    sayTrace ""
+-    forM_ (pres_axioms pres) $ \p ->
+-      sayTrace $ show $
+-        traceApp "axiom" [traceEqn (axiom_eqn p)] <#> text "."
+-    forM_ (pres_lemmas pres) $ \p ->
+-      sayTrace $ show $
+-        traceApp "lemma" [traceEqn (equation p)] <#> text "."
+-    forM_ (pres_goals pres) $ \p ->
+-      sayTrace $ show $
+-        traceApp "goal" [traceEqn (pg_goal_hint p)] <#> text "."
+-
+-    when (tstp && not flags_formal_proof) $ do
+-      putStrLn "% SZS output start Proof"
+-      let
+-        axiomForms =
+-          Map.fromList
++          putStrLn ""
++          putStrLn "Now clausify the problem and encode Horn clauses using encoding 3 of"
++          putStrLn "http://www.cse.chalmers.se/~nicsma/papers/horn.pdf."
++          putStrLn "We repeatedly replace C & s=t => u=v by the two clauses:"
++          putStrLn "  fresh(y, y, x1...xn) = u"
++          putStrLn "  C => fresh(s, t, x1...xn) = v"
++          putStrLn "where fresh is a fresh function symbol and x1..xn are the free"
++          putStrLn "variables of u and v."
++          putStrLn "A predicate p(X) is encoded as p(X)=true (this is sound, because the"
++          putStrLn "input problem has no model of domain size 1)."
++          putStrLn ""
++          putStrLn "The encoding turns the above axioms into the following unit equations and goals:"
++          putStrLn ""
++        print $ pPrintPresentation (cfg_proof_presentation config) pres
++        putStrLn "% SZS output end Proof"
++        putStrLn ""
++    
++      when (tstp && flags_formal_proof) $ do
++        putStrLn "% SZS output start CNFRefutation"
++        print $ pPrintProof $
++          presentToJukebox ctx (curry toEquation)
+             (zip (map axiom_number axioms) (map pre_form axioms0))
+-        goalForms =
+-          Map.fromList
+             (zip (map goal_number goals) (map pre_form goals0))
++            pres
++        putStrLn "% SZS output end CNFRefutation"
++        putStrLn ""
+ 
+-        findSource forms n =
+-          case Map.lookup n forms of
+-            Nothing -> []
+-            Just inp -> go inp
+-           where
+-            go Input{source = Unknown} = []
+-            go Input{source = Inference _ _ inps} = concatMap go inps
+-            go inp@Input{source = FromFile _ _} = [inp]
+-
+-      when flags_explain_encoding $ do
+-        putStrLn "Take the following subset of the input axioms:"
+-        mapM_ putStrLn $ map ("  " ++) $ lines $ showProblem $
+-          usortBy (comparing show) $
+-            (pres_axioms pres >>= findSource axiomForms . axiom_number) ++
+-            (pres_goals pres >>= findSource goalForms . pg_number)
+-
++      unless tstp $ do
++        putStrLn "The conjecture is true! Here is a proof."
++        putStrLn ""
++        print $ pPrintPresentation (cfg_proof_presentation config) pres
+         putStrLn ""
+-        putStrLn "Now clausify the problem and encode Horn clauses using encoding 3 of"
+-        putStrLn "http://www.cse.chalmers.se/~nicsma/papers/horn.pdf."
+-        putStrLn "We repeatedly replace C & s=t => u=v by the two clauses:"
+-        putStrLn "  fresh(y, y, x1...xn) = u"
+-        putStrLn "  C => fresh(s, t, x1...xn) = v"
+-        putStrLn "where fresh is a fresh function symbol and x1..xn are the free"
+-        putStrLn "variables of u and v."
+-        putStrLn "A predicate p(X) is encoded as p(X)=true (this is sound, because the"
+-        putStrLn "input problem has no model of domain size 1)."
+-        putStrLn ""
+-        putStrLn "The encoding turns the above axioms into the following unit equations and goals:"
++
++    when (not (quiet globals) && not (solved state)) $ later $ do
++      let
++        state' = interreduce config state
++        score rule =
++          (KBO.size (lhs rule), lhs rule,
++           KBO.size (rhs rule), rhs rule)
++        actives =
++          sortBy (comparing (score . active_rule)) $
++          IntMap.elems (st_active_set state')
++
++      when (tstp && configIsComplete config) $ do
++        putStrLn "% SZS output start Saturation"
++        print $ pPrintProof $
++          map pre_form axioms0 ++
++          map pre_form goals0 ++
++          [ Input "rule" (Jukebox.Ax Jukebox.Axiom) Unknown $
++              toForm $ clause
++                [Pos (jukeboxTerm ctx (lhs rule) Jukebox.:=: jukeboxTerm ctx (rhs rule))]
++          | rule <- rules state ]
++        putStrLn "% SZS output end Saturation"
+         putStrLn ""
+-      print $ pPrintPresentation (cfg_proof_presentation config) pres
+-      putStrLn "% SZS output end Proof"
+-      putStrLn ""
+-  
+-    when (tstp && flags_formal_proof) $ do
+-      putStrLn "% SZS output start CNFRefutation"
+-      print $ pPrintProof $
+-        presentToJukebox ctx (curry toEquation)
+-          (zip (map axiom_number axioms) (map pre_form axioms0))
+-          (zip (map goal_number goals) (map pre_form goals0))
+-          pres
+-      putStrLn "% SZS output end CNFRefutation"
++
++      if configIsComplete config then do
++        putStrLn "Ran out of critical pairs. This means the conjecture is not true."
++      else do
++        putStrLn "Gave up on reaching the given resource limit."
++      putStrLn "Here is the final rewrite system:"
++      forM_ actives $ \active ->
++        putStrLn ("  " ++ prettyShow (canonicalise (active_rule active)))
+       putStrLn ""
+ 
+-    unless tstp $ do
+-      putStrLn "The conjecture is true! Here is a proof."
+-      putStrLn ""
+-      print $ pPrintPresentation (cfg_proof_presentation config) pres
+-      putStrLn ""
+-
+-  when (not (quiet globals) && not (solved state)) $ later $ do
+-    let
+-      state' = interreduce config state
+-      score rule =
+-        (KBO.size (lhs rule), lhs rule,
+-         KBO.size (rhs rule), rhs rule)
+-      actives =
+-        sortBy (comparing (score . active_rule)) $
+-        IntMap.elems (st_active_set state')
+-
+-    when (tstp && configIsComplete config) $ do
+-      putStrLn "% SZS output start Saturation"
+-      print $ pPrintProof $
+-        map pre_form axioms0 ++
+-        map pre_form goals0 ++
+-        [ Input "rule" (Jukebox.Ax Jukebox.Axiom) Unknown $
+-            toForm $ clause
+-              [Pos (jukeboxTerm ctx (lhs rule) Jukebox.:=: jukeboxTerm ctx (rhs rule))]
+-        | rule <- rules state ]
+-      putStrLn "% SZS output end Saturation"
+-      putStrLn ""
+-
+-    if configIsComplete config then do
+-      putStrLn "Ran out of critical pairs. This means the conjecture is not true."
+-    else do
+-      putStrLn "Gave up on reaching the given resource limit."
+-    putStrLn "Here is the final rewrite system:"
+-    forM_ actives $ \active ->
+-      putStrLn ("  " ++ prettyShow (canonicalise (active_rule active)))
+-    putStrLn ""
+-
+-  return $
+-    if solved state then Unsat Unsatisfiable Nothing
+-    else if configIsComplete config && not (dropNonHorn horn) && not flags_give_up_on_saturation then Sat Satisfiable Nothing
+-    else NoAnswer GaveUp
++    return $
++      if solved state then Unsat Unsatisfiable Nothing
++      else if configIsComplete config && not (dropNonHorn horn) && not flags_give_up_on_saturation then Sat Satisfiable Nothing
++      else NoAnswer GaveUp
+ 
+ -- Transform a proof presentation into a Jukebox proof.
+ presentToJukebox ::
+diff -r 780787784f1f src/Twee.hs
+--- a/src/Twee.hs	Sat May 15 15:50:53 2021 +0200
++++ b/src/Twee.hs	Wed Jun 02 14:51:49 2021 +0200
+@@ -136,7 +136,7 @@
+     -- | Status update: how many queued critical pairs there are.
+   | Status !Int
+ 
+-instance Function f => Pretty (Message f) where
++instance FunctionType f => Pretty (Message f) where
+   pPrint (NewActive rule) = pPrint rule
+   pPrint (NewEquation eqn) =
+     text "  (hard)" <+> pPrint eqn
+@@ -327,7 +327,7 @@
+ instance Eq (Active f) where
+   (==) = (==) `on` active_id
+ 
+-instance Function f => Pretty (Active f) where
++instance FunctionType f => Pretty (Active f) where
+   pPrint Active{..} =
+     pPrint active_id <#> text "." <+> pPrint (canonicalise active_rule)
+ 
+diff -r 780787784f1f src/Twee/Base.hs
+--- a/src/Twee/Base.hs	Sat May 15 15:50:53 2021 +0200
++++ b/src/Twee/Base.hs	Wed Jun 02 14:51:49 2021 +0200
+@@ -13,7 +13,8 @@
+   Id(..), Has(..),
+   -- * Typeclasses
+   Minimal(..), minimalTerm, isMinimal, erase, eraseExcept, ground,
+-  Arity(..), Ordered(..), lessThan, orientTerms, EqualsBonus(..), Strictness(..), Function) where
++  Ordered, OrderedFun, compareFuns, (<<), lessEq, lessThan, lessEqInModel, lessEqSkolem,
++  orientTerms, EqualsBonus(..), Strictness(..), Function, FunctionType) where
+ 
+ import Prelude hiding (lookup)
+ import Control.Monad
+@@ -213,18 +214,11 @@
+ ground :: (Symbolic a, ConstantOf a ~ f, Minimal f) => a -> a
+ ground t = erase (vars t) t
+ 
+--- | For types which have a notion of arity.
+-class Arity f where
+-  -- | Measure the arity.
+-  arity :: f -> Int
+-
+-instance (Labelled f, Arity f) => Arity (Fun f) where
+-  arity = arity . fun_value
+-
+ -- | For types which have a notion of size.
+ -- | The collection of constraints which the type of function symbols must
+ -- satisfy in order to be used by twee.
+-type Function f = (Ordered f, Arity f, Minimal f, PrettyTerm f, EqualsBonus f, Labelled f)
++type FunctionType f = (Minimal f, PrettyTerm f, EqualsBonus f, Labelled f)
++type Function f = (FunctionType f, Ordered f)
+ 
+ -- | A hack for encoding Horn clauses. See 'Twee.CP.Score'.
+ -- The default implementation of 'hasEqualsBonus' should work OK.
+diff -r 780787784f1f src/Twee/Constraints.hs
+--- a/src/Twee/Constraints.hs	Sat May 15 15:50:53 2021 +0200
++++ b/src/Twee/Constraints.hs	Wed Jun 02 14:51:49 2021 +0200
+@@ -1,4 +1,4 @@
+-{-# LANGUAGE FlexibleContexts, UndecidableInstances, RecordWildCards #-}
++{-# LANGUAGE FlexibleContexts, UndecidableInstances, RecordWildCards, ImplicitParams, ConstraintKinds #-}
+ -- | Solving constraints on variable ordering.
+ module Twee.Constraints where
+ 
+@@ -112,10 +112,10 @@
+ trueBranch :: Branch f
+ trueBranch = Branch [] [] []
+ 
+-norm :: Eq f => Branch f -> Atom f -> Atom f
++norm :: Branch f -> Atom f -> Atom f
+ norm Branch{..} x = fromMaybe x (lookup x equals)
+ 
+-contradictory :: (Minimal f, Ord f, Labelled f) => Branch f -> Bool
++contradictory :: (Minimal f, Labelled f) => Branch f -> Bool
+ contradictory Branch{..} =
+   or [f == minimal | (_, Constant f) <- less] ||
+   or [f /= g | (Constant f, Constant g) <- equals] ||
+@@ -210,7 +210,7 @@
+       where
+         rel = if i == j then LessEq else Less
+ 
+-modelFromOrder :: (Minimal f, Ord f) => [Atom f] -> Model f
++modelFromOrder :: [Atom f] -> Model f
+ modelFromOrder xs =
+   Model (Map.fromList [(x, (i, i)) | (x, i) <- zip xs [0..]])
+ 
+@@ -230,10 +230,10 @@
+     -- We must never make two constants equal
+     ok xs = length [x | (Constant x, _) <- xs] <= 1
+ 
+-varInModel :: (Minimal f, Ord f) => Model f -> Var -> Bool
++varInModel :: Minimal f => Model f -> Var -> Bool
+ varInModel (Model m) x = Variable x `Map.member` m
+ 
+-varGroups :: (Minimal f, Ord f) => Model f -> [(Fun f, [Var], Maybe (Fun f))]
++varGroups :: Minimal f => Model f -> [(Fun f, [Var], Maybe (Fun f))]
+ varGroups (Model m) = filter nonempty (go minimal (map fst (sortBy (comparing snd) (Map.toList m))))
+   where
+     go f xs =
+@@ -251,7 +251,7 @@
+   minimal :: Fun f
+ 
+ {-# INLINE lessEqInModel #-}
+-lessEqInModel :: (Minimal f, Ordered f, Labelled f) => Model f -> Atom f -> Atom f -> Maybe Strictness
++lessEqInModel :: (Minimal f, OrderedFun f, Labelled f) => Model f -> Atom f -> Atom f -> Maybe Strictness
+ lessEqInModel (Model m) x y
+   | Just (a, _) <- Map.lookup x m,
+     Just (b, _) <- Map.lookup y m,
+@@ -281,14 +281,33 @@
+       model = modelFromOrder vs
+       true (t, u) = lessEqInModel model t u == Just Strict
+ 
+-class Ord f => Ordered f where
+-  -- | Return 'True' if the first term is less than or equal to the second,
+-  -- in the term ordering.
+-  lessEq :: Term f -> Term f -> Bool
+-  -- | Check if the first term is less than or equal to the second in the given model,
+-  -- and decide whether the inequality is strict or nonstrict.
+-  lessIn :: Model f -> Term f -> Term f -> Maybe Strictness
+-  lessEqSkolem :: Term f -> Term f -> Bool
++type Ordered f =
++  (OrderedFun f,
++   ?lessEq :: Term f -> Term f -> Bool,
++   ?lessIn :: Model f -> Term f -> Term f -> Maybe Strictness,
++   ?lessEqSkolem :: Term f -> Term f -> Bool)
++type OrderedFun f =
++  (Labelled f,
++   ?compareFuns :: f -> f -> Ordering)
++
++-- | Return 'True' if the first term is less than or equal to the second,
++-- in the term ordering.
++lessEq :: Ordered f => Term f -> Term f -> Bool
++lessEq = ?lessEq
++
++-- | Check if the first term is less than or equal to the second in the given model,
++-- and decide whether the inequality is strict or nonstrict.
++lessIn :: Ordered f => Model f -> Term f -> Term f -> Maybe Strictness
++lessIn = ?lessIn
++
++lessEqSkolem :: Ordered f => Term f -> Term f -> Bool
++lessEqSkolem = ?lessEqSkolem
++
++(<<) :: OrderedFun f => Fun f -> Fun f -> Bool
++f << g = compareFuns f g == LT
++
++compareFuns :: OrderedFun f => Fun f -> Fun f -> Ordering
++compareFuns f g = ?compareFuns (fun_value f) (fun_value g)
+ 
+ -- | Describes whether an inequality is strict or nonstrict.
+ data Strictness =
+diff -r 780787784f1f src/Twee/Join.hs
+--- a/src/Twee/Join.hs	Sat May 15 15:50:53 2021 +0200
++++ b/src/Twee/Join.hs	Wed Jun 02 14:51:49 2021 +0200
+@@ -235,7 +235,7 @@
+ groundJoinFromMaybe config eqns idx Nothing = groundJoin config eqns idx
+ groundJoinFromMaybe config eqns idx (Just model) = groundJoinFrom config eqns idx model
+ 
+-{-# INLINEABLE valid #-}
++
+ valid :: Function f => Model f -> Reduction f -> Bool
+ valid model red =
+   and [ reducesInModel model rule emptySubst
+diff -r 780787784f1f src/Twee/KBO.hs
+--- a/src/Twee/KBO.hs	Sat May 15 15:50:53 2021 +0200
++++ b/src/Twee/KBO.hs	Wed Jun 02 14:51:49 2021 +0200
+@@ -1,7 +1,7 @@
+ -- | An implementation of Knuth-Bendix ordering.
+ 
+-{-# LANGUAGE PatternGuards, BangPatterns #-}
+-module Twee.KBO(lessEq, lessIn, lessEqSkolem, Sized(..), Weighted(..)) where
++{-# LANGUAGE PatternGuards, BangPatterns, RankNTypes, ImplicitParams, RecordWildCards, ConstraintKinds #-}
++module Twee.KBO(lessEq, lessIn, lessEqSkolem, Sized(..), withKBO, KBOParams(..), KBOContext) where
+ 
+ import Twee.Base hiding (lessEq, lessIn, lessEqSkolem)
+ import Twee.Equation
+@@ -12,7 +12,27 @@
+ import Control.Monad
+ import Twee.Utils
+ 
+-lessEqSkolem :: (Function f, Sized f, Weighted f) => Term f -> Term f -> Bool
++-- | Parameters to KBO (not including the function precedence).
++data KBOParams f =
++  KBOParams {
++    kbo_size      :: f -> Integer,
++    kbo_argweight :: f -> Integer }
++
++-- | Run a computation with KBO used as the term ordering.
++withKBO :: FunctionType f => KBOParams f -> (f -> f -> Ordering) -> ((KBOContext f, Ordered f) => a) -> a
++withKBO KBOParams{..} cmp x =
++  let ?compareFuns = cmp
++      ?size = kbo_size
++      ?argWeight = kbo_argweight in
++  let ?lessEq = lessEq
++      ?lessEqSkolem = lessEqSkolem
++      ?lessIn = lessIn in
++  x
++
++-- The implicit parameters that are set up by withKBO
++type KBOContext f = (FunctionType f, OrderedFun f, ?size :: f -> Integer, ?argWeight :: f -> Integer)
++
++lessEqSkolem :: KBOContext f => Term f -> Term f -> Bool
+ lessEqSkolem !t !u
+   | m < n = True
+   | m > n = False
+@@ -26,8 +46,8 @@
+ lessEqSkolem (Var x) (Var y) = x <= y
+ lessEqSkolem (Var _) _ = True
+ lessEqSkolem _ (Var _) = False
+-lessEqSkolem (App (F _ f) ts) (App (F _ g) us) =
+-  case compare f g of
++lessEqSkolem (App f ts) (App g us) =
++  case compareFuns f g of
+     LT -> True
+     GT -> False
+     EQ ->
+@@ -39,7 +59,7 @@
+ 
+ -- | Check if one term is less than another in KBO.
+ {-# SCC lessEq #-}
+-lessEq :: (Function f, Sized f, Weighted f) => Term f -> Term f -> Bool
++lessEq :: KBOContext f => Term f -> Term f -> Bool
+ lessEq (App f Empty) _ | f == minimal = True
+ lessEq (Var x) (Var y) | x == y = True
+ lessEq _ (Var _) = False
+@@ -77,14 +97,14 @@
+ -- See "notes/kbo under assumptions" for how this works.
+ 
+ {-# SCC lessIn #-}
+-lessIn :: (Function f, Sized f, Weighted f) => Model f -> Term f -> Term f -> Maybe Strictness
++lessIn :: KBOContext f => Model f -> Term f -> Term f -> Maybe Strictness
+ lessIn model t u =
+   case sizeLessIn model t u of
+     Nothing -> Nothing
+     Just Strict -> Just Strict
+     Just Nonstrict -> lexLessIn model t u
+ 
+-sizeLessIn :: (Function f, Sized f, Weighted f) => Model f -> Term f -> Term f -> Maybe Strictness
++sizeLessIn :: KBOContext f => Model f -> Term f -> Term f -> Maybe Strictness
+ sizeLessIn model t u =
+   case minimumIn model m of
+     Just l
+@@ -96,10 +116,10 @@
+       add 1 u (add (-1) t (0, Map.empty))
+ 
+     add a (App f ts) (k, m) =
+-      foldr (add (a * argWeight f)) (k + a * size f, m) (unpack ts)
++      foldr (add (a * ?argWeight (fun_value f))) (k + a * size f, m) (unpack ts)
+     add a (Var x) (k, m) = (k, Map.insertWith (+) x a m)
+ 
+-minimumIn :: (Function f, Sized f) => Model f -> Map Var Integer -> Maybe Integer
++minimumIn :: KBOContext f => Model f -> Map Var Integer -> Maybe Integer
+ minimumIn model t =
+   liftM2 (+)
+     (fmap sum (mapM minGroup (varGroups model)))
+@@ -124,7 +144,7 @@
+       | k < 0 = Nothing
+       | otherwise = Just k
+ 
+-lexLessIn :: (Function f, Sized f, Weighted f) => Model f -> Term f -> Term f -> Maybe Strictness
++lexLessIn :: KBOContext f => Model f -> Term f -> Term f -> Maybe Strictness
+ lexLessIn _ t u | t == u = Just Nonstrict
+ lexLessIn cond t u
+   | Just a <- fromTerm t,
+@@ -154,37 +174,30 @@
+ lexLessIn _ t _ | isMinimal t = Just Nonstrict
+ lexLessIn _ _ _ = Nothing
+ 
+-class Sized a where
++class Sized t where
+   -- | Compute the size.
+-  size  :: a -> Integer
++  size :: KBOContext f => t f -> Integer
+ 
+-class Weighted f where
+-  argWeight :: f -> Integer
++instance Sized Fun where
++  size = ?size . fun_value
+ 
+-instance (Weighted f, Labelled f) => Weighted (Fun f) where
+-  argWeight = argWeight . fun_value
+-
+-weightedVars :: (Weighted f, Labelled f) => Term f -> [(Var, Integer)]
++weightedVars :: KBOContext f => Term f -> [(Var, Integer)]
+ weightedVars t = collate sum (loop 1 t)
+   where
+     loop k (Var x) = [(x, k)]
+     loop k (App f ts) =
+-      concatMap (loop (k * argWeight f)) (unpack ts)
++      concatMap (loop (k * ?argWeight (fun_value f))) (unpack ts)
+ 
+-instance (Labelled f, Sized f) => Sized (Fun f) where
+-  size = size . fun_value
+-
+-instance (Labelled f, Sized f, Weighted f) => Sized (TermList f) where
++instance Sized TermList where
+   size = aux 0
+     where
+       aux n Empty = n
+       aux n (Cons (App f t) u) =
+-        aux (n + size f + argWeight f * size t) u
++        aux (n + size f + ?argWeight (fun_value f) * size t) u
+       aux n (Cons (Var _) t) = aux (n+1) t
+ 
+-instance (Labelled f, Sized f, Weighted f) => Sized (Term f) where
++instance Sized Term where
+   size = size . singleton
+ 
+-instance (Labelled f, Sized f, Weighted f) => Sized (Equation f) where
++instance Sized Equation where
+   size (x :=: y) = size x + size y
+-
+diff -r 780787784f1f src/Twee/Proof.hs
+--- a/src/Twee/Proof.hs	Sat May 15 15:50:53 2021 +0200
++++ b/src/Twee/Proof.hs	Wed Jun 02 14:51:49 2021 +0200
+@@ -86,7 +86,7 @@
+ -- This is the trusted core of the module.
+ {-# INLINEABLE certify #-}
+ {-# SCC certify #-}
+-certify :: Function f => Derivation f -> Proof f
++certify :: FunctionType f => Derivation f -> Proof f
+ certify p =
+   case check p of
+     Nothing -> error ("Invalid proof created!\n" ++ prettyShow p)
+@@ -144,7 +144,7 @@
+   subst_ sub (Trans p q) = trans (subst_ sub p) (subst_ sub q)
+   subst_ sub (Cong f ps) = cong f (subst_ sub ps)
+ 
+-instance Function f => Pretty (Proof f) where
++instance FunctionType f => Pretty (Proof f) where
+   pPrint = pPrintLemma defaultConfig (prettyShow . axiom_number) (prettyShow . equation)
+ instance (Labelled f, PrettyTerm f) => Pretty (Derivation f) where
+   pPrint (UseLemma lemma sub) =
+@@ -184,13 +184,13 @@
+               put (Map.insert p x m)
+               return x
+ 
+-mapLemmas :: Function f => (Derivation f -> Derivation f) -> [Derivation f] -> [Derivation f]
++mapLemmas :: FunctionType f => (Derivation f -> Derivation f) -> [Derivation f] -> [Derivation f]
+ mapLemmas f ds = map (derivation . op lem) ds
+   where
+     op lem = certify . f . unfoldLemmas (\pf -> Just (simpleLemma (lem Map.! pf)))
+     lem = foldLemmas op ds
+ 
+-allLemmas :: Function f => [Derivation f] -> [Proof f]
++allLemmas :: FunctionType f => [Derivation f] -> [Proof f]
+ allLemmas ds =
+   reverse [p | (_, p, _) <- map vertex (topSort graph)]
+   where
+@@ -215,7 +215,7 @@
+ lemma :: Proof f -> Subst f -> Derivation f
+ lemma p sub = UseLemma p sub
+ 
+-simpleLemma :: Function f => Proof f -> Derivation f
++simpleLemma :: FunctionType f => Proof f -> Derivation f
+ simpleLemma p =
+   UseLemma p (autoSubst (equation p))
+ 
+@@ -261,7 +261,7 @@
+ --   * Symm only occurs innermost, i.e., next to UseLemma or UseAxiom
+ --   * Refl only occurs as an argument to Cong, or outermost if the
+ --     whole proof is a single reflexivity step
+-flattenDerivation :: Function f => Derivation f -> Derivation f
++flattenDerivation :: FunctionType f => Derivation f -> Derivation f
+ flattenDerivation p =
+   fromSteps (equation (certify p)) (steps p)
+ 
+@@ -270,7 +270,7 @@
+ --   * Trans is right-associated
+ --   * Each Cong has at least one non-Refl argument
+ --   * Refl is not used unnecessarily
+-simplify :: Function f => Derivation f -> Derivation f
++simplify :: FunctionType f => Derivation f -> Derivation f
+ simplify (Symm p) = symm (simplify p)
+ simplify (Trans p q) = trans (simplify p) (simplify q)
+ simplify (Cong f ps) = cong f (map simplify ps)
+@@ -286,7 +286,7 @@
+ --     * Symm only occurs innermost, i.e., next to UseLemma or UseAxiom
+ --     * Each Cong has exactly one non-Refl argument (no parallel rewriting)
+ --     * Refl only occurs as an argument to Cong
+-steps :: Function f => Derivation f -> [Derivation f]
++steps :: FunctionType f => Derivation f -> [Derivation f]
+ steps = steps1 . simplify
+   where
+     steps1 p@UseAxiom{} = [p]
+@@ -342,7 +342,7 @@
+ 
+ -- | Find all ground instances of axioms which are used in the
+ -- expanded form of a derivation (no lemmas).
+-groundAxiomsAndSubsts :: Function f => Derivation f -> Map (Axiom f) (Set (Subst f))
++groundAxiomsAndSubsts :: FunctionType f => Derivation f -> Map (Axiom f) (Set (Subst f))
+ groundAxiomsAndSubsts p = ax lem p
+   where
+     lem = foldLemmas ax [p]
+@@ -359,12 +359,12 @@
+     ax lem (Cong _ ps) = Map.unionsWith Set.union (map (ax lem) ps)
+     ax _ _ = Map.empty
+ 
+-eliminateDefinitionsFromGoal :: Function f => [Axiom f] -> ProvedGoal f -> ProvedGoal f
++eliminateDefinitionsFromGoal :: FunctionType f => [Axiom f] -> ProvedGoal f -> ProvedGoal f
+ eliminateDefinitionsFromGoal axioms pg =
+   pg {
+     pg_proof = certify (eliminateDefinitions axioms (derivation (pg_proof pg))) }
+ 
+-eliminateDefinitions :: Function f => [Axiom f] -> Derivation f -> Derivation f
++eliminateDefinitions :: FunctionType f => [Axiom f] -> Derivation f -> Derivation f
+ eliminateDefinitions [] p = p
+ eliminateDefinitions axioms p = head (mapLemmas elim [p])
+   where
+@@ -497,7 +497,7 @@
+     pg_witness_hint = emptySubst }
+ 
+ -- | Check that pg_goal/pg_witness match up with pg_proof.
+-checkProvedGoal :: Function f => ProvedGoal f -> ProvedGoal f
++checkProvedGoal :: FunctionType f => ProvedGoal f -> ProvedGoal f
+ checkProvedGoal pg@ProvedGoal{..}
+   | subst pg_witness_hint pg_goal_hint == equation pg_proof =
+     pg
+@@ -508,7 +508,7 @@
+       text "with witness" <+> pPrint pg_witness_hint <#> text "," $$
+       text "but actually proves" <+> pPrint (equation pg_proof)
+ 
+-instance Function f => Pretty (Presentation f) where
++instance FunctionType f => Pretty (Presentation f) where
+   pPrint = pPrintPresentation defaultConfig
+ 
+ -- | Simplify and present a proof.
+@@ -530,7 +530,7 @@
+ 
+     lemmas = allLemmas (map (derivation . pg_proof) goals')
+ 
+-groundProof :: Function f => [Derivation f] -> [Derivation f]
++groundProof :: FunctionType f => [Derivation f] -> [Derivation f]
+ groundProof ds
+   | all (isGround . equation) (allLemmas ds) = ds
+   | otherwise = groundProof (mapLemmas f ds)
+@@ -567,7 +567,7 @@
+     _    `onlyIf` False = id
+ 
+ simplificationPass ::
+-  Function f =>
++  FunctionType f =>
+   -- A transformation on lemmas
+   (Map (Proof f) (Derivation f) -> Proof f -> Derivation f) ->
+   -- A transformation on goals
+@@ -579,7 +579,7 @@
+     op f lem p =
+       f lem (unfoldLemmas (\lemma -> Just (lem Map.! lemma)) p)
+ 
+-inlineTrivialLemmas :: Function f => Config f -> [Derivation f] -> [Derivation f]
++inlineTrivialLemmas :: FunctionType f => Config f -> [Derivation f] -> [Derivation f]
+ inlineTrivialLemmas Config{..} =
+   -- A lemma is trivial if one of the following holds:
+   --   * It only has one step
+@@ -608,7 +608,7 @@
+       | (q, d) <- Map.toList lem,
+         sub <- maybeToList (matchEquation (equation q) eq) ]
+ 
+-inlineUsedOnceLemmas :: Function f => [Derivation f] -> [Derivation f]
++inlineUsedOnceLemmas :: FunctionType f => [Derivation f] -> [Derivation f]
+ inlineUsedOnceLemmas ds =
+   -- Inline any lemma that's only used once in the proof
+   simplificationPass (const inlineOnce) (const id) ds
+@@ -628,7 +628,7 @@
+             Just 1 -> True
+             _ -> False
+ 
+-tightenProof :: Function f => [Derivation f] -> [Derivation f]
++tightenProof :: FunctionType f => [Derivation f] -> [Derivation f]
+ tightenProof = mapLemmas tightenLemma
+   where
+     tightenLemma p =
+@@ -665,7 +665,7 @@
+             sub <- maybeToList (match u t),
+             subst sub (eqn_rhs eq) == eqn_rhs eq ]
+ 
+-generaliseProof :: Function f => [Derivation f] -> [Derivation f]
++generaliseProof :: FunctionType f => [Derivation f] -> [Derivation f]
+ generaliseProof =
+   simplificationPass (const generaliseLemma) (const generaliseGoal)
+   where
+@@ -732,11 +732,11 @@
+         Just sub2 = matchManyList (terms after) (terms before)
+         canon p = subst sub2 (simpleLemma (certify (subst sub1 p)))
+ 
+-invisible :: Function f => Equation f -> Bool
++invisible :: FunctionType f => Equation f -> Bool
+ invisible (t :=: u) = show (pPrint t) == show (pPrint u)
+ 
+ -- Pretty-print the proof of a single lemma.
+-pPrintLemma :: Function f => Config f -> (Axiom f -> String) -> (Proof f -> String) -> Proof f -> Doc
++pPrintLemma :: FunctionType f => Config f -> (Axiom f -> String) -> (Proof f -> String) -> Proof f -> Doc
+ pPrintLemma Config{..} axiomNum lemmaNum p
+   | null qs = text "Reflexivity."
+   | equation (certify (fromSteps (equation p) qs)) == equation p =
+@@ -784,14 +784,14 @@
+     isRefl _ = False
+ 
+ -- Pretty-print a substitution.
+-pPrintSubst :: Function f => Subst f -> Doc
++pPrintSubst :: FunctionType f => Subst f -> Doc
+ pPrintSubst sub =
+   fsep (punctuate comma
+     [ pPrint x <+> text "->" <+> pPrint t
+     | (x, t) <- substToList sub ])
+ 
+ -- | Print a presented proof.
+-pPrintPresentation :: forall f. Function f => Config f -> Presentation f -> Doc
++pPrintPresentation :: forall f. FunctionType f => Config f -> Presentation f -> Doc
+ pPrintPresentation config (Presentation axioms lemmas goals) =
+   vcat $ intersperse (text "") $
+     vcat [ describeEquation "Axiom" (axiomNum axiom) (Just name) eqn $$
+@@ -851,7 +851,7 @@
+ --
+ -- Used both here and in the main file.
+ describeEquation ::
+-  Function f =>
++  FunctionType f =>
+   String -> String -> Maybe String -> Equation f -> Doc
+ describeEquation kind num mname eqn =
+   text kind <+> text num <#>
+@@ -892,14 +892,14 @@
+ -- and we can present that to the user.
+ 
+ -- Decode $equals(t,u) into an equation t=u.
+-decodeEquality :: Function f => Term f -> Maybe (Equation f)
++decodeEquality :: FunctionType f => Term f -> Maybe (Equation f)
+ decodeEquality (App equals (Cons t (Cons u Empty)))
+   | isEquals equals = Just (t :=: u)
+ decodeEquality _ = Nothing
+ 
+ -- Tries to transform a proof of $true = $false into a proof of
+ -- the original existentially-quantified formula.
+-decodeGoal :: Function f => ProvedGoal f -> ProvedGoal f
++decodeGoal :: FunctionType f => ProvedGoal f -> ProvedGoal f
+ decodeGoal pg =
+   case maybeDecodeGoal pg of
+     Nothing -> pg
+@@ -911,7 +911,7 @@
+         pg_goal_hint = goal,
+         pg_witness_hint = witness }
+ 
+-maybeDecodeGoal :: forall f. Function f =>
++maybeDecodeGoal :: forall f. FunctionType f =>
+   ProvedGoal f -> Maybe (String, Subst f, Equation f, Derivation f)
+ maybeDecodeGoal ProvedGoal{..}
+   --  N.B. presentWithGoals takes care of expanding any lemma which mentions
+diff -r 780787784f1f src/Twee/Term.hs
+--- a/src/Twee/Term.hs	Sat May 15 15:50:53 2021 +0200
++++ b/src/Twee/Term.hs	Wed Jun 02 14:51:49 2021 +0200
+@@ -13,7 +13,7 @@
+ --   * substitutions ('Substitution', 'Subst', 'subst');
+ --   * unification ('unify') and matching ('match');
+ --   * miscellaneous useful functions on terms.
+-{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables, CPP #-}
++{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables, CPP, DefaultSignatures #-}
+ {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
+ #ifdef USE_LLVM
+ {-# OPTIONS_GHC -fllvm #-}
+@@ -26,7 +26,7 @@
+   pattern UnsafeCons, pattern UnsafeConsSym, uhd, utl, urest,
+   empty, unpack, lenList,
+   -- * Function symbols and variables
+-  Fun, fun, fun_id, fun_value, pattern F, Var(..), Labelled(..), AutoLabel(..),
++  Fun, fun, fun_id, fun_value, pattern F, Var(..), Labelled(..),
+   -- * Building terms
+   Build(..),
+   Builder,
+@@ -63,7 +63,7 @@
+   replacePositionSub,
+   replace,
+   -- * Miscellaneous functions
+-  bound, boundList, boundLists, mapFun, mapFunList, (<<)) where
++  bound, boundList, boundLists, mapFun, mapFunList) where
+ 
+ import Prelude hiding (lookup)
+ import Twee.Term.Core hiding (F)
+@@ -724,33 +724,23 @@
+       list (k+len t) u (n-1) ns
+ 
+ class Labelled f where
+-  -- | Labels should be small positive integers!
+-  label :: f -> Int
+-  find :: Int -> f
++  label :: f -> Label.Label f
++  default label :: (Ord f, Typeable f) => f -> Label.Label f
++  label = Label.label
+ 
+ instance (Labelled f, Show f) => Show (Fun f) where show = show . fun_value
+ 
+--- | For "deriving via": a Labelled instance which uses Data.Label.
+-newtype AutoLabel a = AutoLabel { unAutoLabel :: a }
+-instance (Ord a, Typeable a) => Labelled (AutoLabel a) where
+-  label = fromIntegral . Label.labelNum . Label.label . unAutoLabel
+-  find = AutoLabel . Label.find . Label.unsafeMkLabel . fromIntegral
+-
+ -- | A pattern which extracts the 'fun_value' from a 'Fun'.
+ pattern F :: Labelled f => Int -> f -> Fun f
+ pattern F x y <- (fun_id &&& fun_value -> (x, y))
+ {-# COMPLETE F #-}
+ 
+--- | Compare the 'fun_value's of two 'Fun's.
+-(<<) :: (Labelled f, Ord f) => Fun f -> Fun f -> Bool
+-f << g = fun_value f < fun_value g
+-
+ -- | Construct a 'Fun' from a function symbol.
+ {-# INLINEABLE fun #-}
+ fun :: Labelled f => f -> Fun f
+-fun f = Core.F (fromIntegral (label f))
++fun f = Core.F (fromIntegral (Label.labelNum (label f)))
+ 
+ -- | The underlying function symbol of a 'Fun'.
+ {-# INLINEABLE fun_value #-}
+ fun_value :: Labelled f => Fun f -> f
+-fun_value x = find (fun_id x)
++fun_value x = Label.find (Label.unsafeMkLabel (fromIntegral (fun_id x)))

@@ -1,0 +1,273 @@
+diff -r 83677dd2e113 executable/SequentialMain.hs
+--- a/executable/SequentialMain.hs	Mon May 24 21:55:24 2021 +0200
++++ b/executable/SequentialMain.hs	Wed Jun 02 14:31:47 2021 +0200
+@@ -35,6 +35,7 @@
+ import qualified Data.Label as Label
+ import System.Console.ANSI
+ import Data.Symbol
++import Data.Bits
+ 
+ data MainFlags =
+   MainFlags {
+@@ -302,6 +303,17 @@
+ data Precedence = Precedence !Bool !Bool !(Maybe Int) !Int
+   deriving (Eq, Ord)
+ 
++precInt :: Constant -> Integer
++precInt Minimal = -1
++precInt Constant{con_prec = Precedence b1 b2 n1 n2} =
++  (fromBool b1 `shiftL` 62) +
++  (fromBool b2 `shiftL` 61) +
++  (fromIntegral (fromMaybe 0 (succ <$> n1)) `shiftL` 30) +
++   fromIntegral n2
++  where
++    fromBool :: Bool -> Integer
++    fromBool = fromIntegral . fromEnum
++
+ conSize :: Constant -> Integer
+ conSize Minimal = 1
+ conSize Constant{..} = con_size
+@@ -588,7 +600,9 @@
+     maybeNegate = if flags_flip_ordering then negate else id
+     occs = funsOcc prob
+ 
+-  KBO.withKBO KBO.KBOParams{kbo_size = conSize, kbo_argweight = conArgWeight} compare $ do
++    kboParams = KBO.KBOParams{kbo_size = conSize, kbo_argweight = conArgWeight}
++
++  KBO.withKBO kboParams (sort [tweeConstant horn ctx (prec f) f | f <- Jukebox.functions prob]) $ do
+     let
+       -- Translate everything to Twee.
+       toEquation (t, u) =
+@@ -778,8 +792,8 @@
+       let
+         state' = interreduce config state
+         score rule =
+-          (KBO.size (lhs rule), lhs rule,
+-           KBO.size (rhs rule), rhs rule)
++          (KBO.termSize (lhs rule), lhs rule,
++           KBO.termSize (rhs rule), rhs rule)
+         actives =
+           sortBy (comparing (score . active_rule)) $
+           IntMap.elems (st_active_set state')
+diff -r 83677dd2e113 src/Data/DynamicArray.hs
+--- a/src/Data/DynamicArray.hs	Mon May 24 21:55:24 2021 +0200
++++ b/src/Data/DynamicArray.hs	Wed Jun 02 14:31:47 2021 +0200
+@@ -16,6 +16,9 @@
+   -- | The default value.
+   def :: a
+ 
++instance Default (Maybe a) where
++  def = Nothing
++
+ -- | An array.
+ data Array a =
+   Array {
+diff -r 83677dd2e113 src/Twee/Constraints.hs
+--- a/src/Twee/Constraints.hs	Mon May 24 21:55:24 2021 +0200
++++ b/src/Twee/Constraints.hs	Wed Jun 02 14:31:47 2021 +0200
+@@ -14,6 +14,7 @@
+ import Data.Map.Strict(Map)
+ import Data.Ord
+ import Twee.Term hiding (lookup)
++import Data.MemoFun
+ 
+ data Atom f = Constant (Fun f) | Variable Var deriving (Show, Eq, Ord)
+ 
+@@ -288,7 +289,7 @@
+    ?lessEqSkolem :: Term f -> Term f -> Bool)
+ type OrderedFun f =
+   (Labelled f,
+-   ?compareFuns :: f -> f -> Ordering)
++   ?compareFuns :: MemoFun f Integer)
+ 
+ -- | Return 'True' if the first term is less than or equal to the second,
+ -- in the term ordering.
+@@ -307,7 +308,7 @@
+ f << g = compareFuns f g == LT
+ 
+ compareFuns :: OrderedFun f => Fun f -> Fun f -> Ordering
+-compareFuns f g = ?compareFuns (fun_value f) (fun_value g)
++compareFuns = comparing (apply ?compareFuns)
+ 
+ -- | Describes whether an inequality is strict or nonstrict.
+ data Strictness =
+diff -r 83677dd2e113 src/Twee/KBO.hs
+--- a/src/Twee/KBO.hs	Mon May 24 21:55:24 2021 +0200
++++ b/src/Twee/KBO.hs	Wed Jun 02 14:31:47 2021 +0200
+@@ -1,7 +1,7 @@
+ -- | An implementation of Knuth-Bendix ordering.
+ 
+ {-# LANGUAGE PatternGuards, BangPatterns, RankNTypes, ImplicitParams, RecordWildCards, ConstraintKinds #-}
+-module Twee.KBO(lessEq, lessIn, lessEqSkolem, Sized(..), withKBO, KBOParams(..), KBOContext) where
++module Twee.KBO(lessEq, lessIn, lessEqSkolem, withKBO, KBOParams(..), KBOContext, termSize, termListSize) where
+ 
+ import Twee.Base hiding (lessEq, lessIn, lessEqSkolem)
+ import Twee.Equation
+@@ -11,6 +11,8 @@
+ import Data.Maybe
+ import Control.Monad
+ import Twee.Utils
++import Data.MemoFun
++import Data.List
+ 
+ -- | Parameters to KBO (not including the function precedence).
+ data KBOParams f =
+@@ -18,27 +20,30 @@
+     kbo_size      :: f -> Integer,
+     kbo_argweight :: f -> Integer }
+ 
++{-# INLINE withKBO #-}
+ -- | Run a computation with KBO used as the term ordering.
+-withKBO :: FunctionType f => KBOParams f -> (f -> f -> Ordering) -> ((KBOContext f, Ordered f) => a) -> a
+-withKBO KBOParams{..} cmp x =
+-  let ?compareFuns = cmp
+-      ?size = kbo_size
+-      ?argWeight = kbo_argweight in
++withKBO :: FunctionType f => KBOParams f -> [f] -> ((KBOContext f, Ordered f) => a) -> a
++withKBO KBOParams{..} funs x =
++  let ord = Map.fromList (zip (minimal:delete minimal (map fun funs)) [0..]) in
++  let ?compareFuns = memo (\x -> Map.findWithDefault (error "withKBO: unknown function symbol") x ord)
++      ?size = memo (kbo_size . fun_value)
++      ?argWeight = memo (kbo_argweight . fun_value) in
+   let ?lessEq = lessEq
+       ?lessEqSkolem = lessEqSkolem
+       ?lessIn = lessIn in
+   x
+ 
+ -- The implicit parameters that are set up by withKBO
+-type KBOContext f = (FunctionType f, OrderedFun f, ?size :: f -> Integer, ?argWeight :: f -> Integer)
++type KBOContext f = (FunctionType f, OrderedFun f, ?size :: MemoFun f Integer, ?argWeight :: MemoFun f Integer)
+ 
++{-# INLINEABLE lessEqSkolem #-}
+ lessEqSkolem :: KBOContext f => Term f -> Term f -> Bool
+ lessEqSkolem !t !u
+   | m < n = True
+   | m > n = False
+   where
+-    m = size t
+-    n = size u
++    m = termSize t
++    n = termSize u
+ lessEqSkolem (App x Empty) _
+   | x == minimal = True
+ lessEqSkolem _ (App x Empty)
+@@ -59,6 +64,7 @@
+ 
+ -- | Check if one term is less than another in KBO.
+ {-# SCC lessEq #-}
++{-# INLINEABLE lessEq #-}
+ lessEq :: KBOContext f => Term f -> Term f -> Bool
+ lessEq (App f Empty) _ | f == minimal = True
+ lessEq (Var x) (Var y) | x == y = True
+@@ -83,8 +89,8 @@
+     lexLess _ _ = error "incorrect function arity"
+     xs = weightedVars t
+     ys = weightedVars u
+-    st = size t
+-    su = size u
++    st = termSize t
++    su = termSize u
+ 
+     [] `lessVars` _ = True
+     ((x,k1):xs) `lessVars` ((y,k2):ys)
+@@ -97,6 +103,7 @@
+ -- See "notes/kbo under assumptions" for how this works.
+ 
+ {-# SCC lessIn #-}
++{-# INLINEABLE lessIn #-}
+ lessIn :: KBOContext f => Model f -> Term f -> Term f -> Maybe Strictness
+ lessIn model t u =
+   case sizeLessIn model t u of
+@@ -116,7 +123,7 @@
+       add 1 u (add (-1) t (0, Map.empty))
+ 
+     add a (App f ts) (k, m) =
+-      foldr (add (a * ?argWeight (fun_value f))) (k + a * size f, m) (unpack ts)
++      foldr (add (a * apply ?argWeight f)) (k + a * apply ?size f, m) (unpack ts)
+     add a (Var x) (k, m) = (k, Map.insertWith (+) x a m)
+ 
+ minimumIn :: KBOContext f => Model f -> Map Var Integer -> Maybe Integer
+@@ -126,15 +133,15 @@
+     (fmap sum (mapM minOrphan (Map.toList t)))
+   where
+     minGroup (lo, xs, mhi)
+-      | all (>= 0) sums = Just (sum coeffs * size lo)
++      | all (>= 0) sums = Just (sum coeffs * apply ?size lo)
+       | otherwise =
+         case mhi of
+           Nothing -> Nothing
+           Just hi ->
+             let coeff = negate (minimum coeffs) in
+             Just $
+-              sum coeffs * size lo +
+-              coeff * (size lo - size hi)
++              sum coeffs * apply ?size lo +
++              coeff * (apply ?size lo - apply ?size hi)
+       where
+         coeffs = map (\x -> Map.findWithDefault 0 x t) xs
+         sums = scanr1 (+) coeffs
+@@ -174,30 +181,22 @@
+ lexLessIn _ t _ | isMinimal t = Just Nonstrict
+ lexLessIn _ _ _ = Nothing
+ 
+-class Sized t where
+-  -- | Compute the size.
+-  size :: KBOContext f => t f -> Integer
+-
+-instance Sized Fun where
+-  size = ?size . fun_value
+-
+ weightedVars :: KBOContext f => Term f -> [(Var, Integer)]
+ weightedVars t = collate sum (loop 1 t)
+   where
+     loop k (Var x) = [(x, k)]
+     loop k (App f ts) =
+-      concatMap (loop (k * ?argWeight (fun_value f))) (unpack ts)
++      concatMap (loop (k * apply ?argWeight f)) (unpack ts)
++
++{-# INLINEABLE termSize #-}
++termSize :: KBOContext f => Term f -> Integer
++termSize t = termListSize (singleton t)
+ 
+-instance Sized TermList where
+-  size = aux 0
+-    where
+-      aux n Empty = n
+-      aux n (Cons (App f t) u) =
+-        aux (n + size f + ?argWeight (fun_value f) * size t) u
+-      aux n (Cons (Var _) t) = aux (n+1) t
+-
+-instance Sized Term where
+-  size = size . singleton
+-
+-instance Sized Equation where
+-  size (x :=: y) = size x + size y
++{-# INLINEABLE termListSize #-}
++termListSize :: KBOContext f => TermList f -> Integer
++termListSize = aux 0
++  where
++    aux n Empty = n
++    aux n (Cons (App f t) u) =
++      aux (n + apply ?size f + apply ?argWeight f * termListSize t) u
++    aux n (Cons (Var _) t) = aux (n+1) t
+diff -r 83677dd2e113 src/Twee/Term.hs
+--- a/src/Twee/Term.hs	Mon May 24 21:55:24 2021 +0200
++++ b/src/Twee/Term.hs	Wed Jun 02 14:31:47 2021 +0200
+@@ -742,5 +742,5 @@
+ 
+ -- | The underlying function symbol of a 'Fun'.
+ {-# INLINEABLE fun_value #-}
+-fun_value :: Labelled f => Fun f -> f
++fun_value :: Fun f -> f
+ fun_value x = Label.find (Label.unsafeMkLabel (fromIntegral (fun_id x)))
+diff -r 83677dd2e113 src/twee-lib.cabal
+--- a/src/twee-lib.cabal	Mon May 24 21:55:24 2021 +0200
++++ b/src/twee-lib.cabal	Wed Jun 02 14:31:47 2021 +0200
+@@ -60,6 +60,7 @@
+     Data.ChurchList
+     Data.DynamicArray
+     Data.Heap
++    Data.MemoFun
+     Twee.Term.Core
+ 
+   build-depends:

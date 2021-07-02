@@ -1,0 +1,24 @@
+diff -r 2b455414fc71 src/Twee.hs
+--- a/src/Twee.hs	Mon Jun 14 10:28:47 2021 +0200
++++ b/src/Twee.hs	Fri Jun 18 14:25:00 2021 +0200
+@@ -280,9 +280,17 @@
+       case findPassive state passive of
+         Just (overlap@Overlap{overlap_eqn = t :=: u, overlap_rule1 = rule1, overlap_rule2 = rule2})
+           | fromMaybe True (cfg_accept_term <*> pure t),
+-            fromMaybe True (cfg_accept_term <*> pure u),
+-            cp <- makeCriticalPair overlap ->
+-              return ((combineInfo (active_info rule1) (active_info rule2), cp, rule1, rule2), n+1, queue)
++            fromMaybe True (cfg_accept_term <*> pure u) ->
++            let info = combineInfo (active_info rule1) (active_info rule2) in
++            case simplifyOverlap (index_oriented st_rules) overlap of
++              Nothing -> deq (n+1) queue
++              Just overlap'
++                | let score' = score cfg_critical_pairs (info_depth info) overlap',
++                  passive_score passive < score' -> do
++                  queue <- Just (Queue.insert (active_id rule1) [passive{passive_score = score'}] queue)
++                  deq n queue
++                | otherwise ->
++                  return ((info, makeCriticalPair overlap, rule1, rule2), n+1, queue)
+         _ -> deq (n+1) queue
+ 
+     combineInfo i1 i2 =

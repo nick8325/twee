@@ -1,0 +1,51 @@
+diff -r 780787784f1f executable/SequentialMain.hs
+--- a/executable/SequentialMain.hs	Sat May 15 15:50:53 2021 +0200
++++ b/executable/SequentialMain.hs	Sun May 23 22:40:45 2021 +0200
+@@ -440,18 +440,25 @@
+   where
+     extraTerms prob = concatMap (input prob) prob
+     input prob Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])} =
+-      concatMap term (backwards backwardsGoal prob x) ++
+-      concatMap term (backwards backwardsGoal prob y)
++      concatMap (term full) (backwards backwardsGoal prob x) ++
++      concatMap (term full) (backwards backwardsGoal prob y)
+     input _ Input{what = Clause (Bind _ [Pos (x Jukebox.:=: y)])}
+-      | flattenAll = term x ++ term y
++      | flattenAll = term full x ++ term full y
++      | length (funs' x ++ funs' y) >= 5 &&
++        length (funs' x) >= 2 &&
++        length (funs' y) >= 2 =
++        term False x ++ term False y
+     input _ _ = []
+ 
+-    term t@(_f :@: ts) =
++    funs' (f :@: ts) = f:concatMap funs' ts
++    funs' _ = []
++
++    term full t@(_f :@: ts) =
+       [ t
+       | ground t || flattenNonGround,
+         not (all isVar ts) || usort ts /= sort ts ] ++
+-      if full then concatMap term ts else []
+-    term _ = []
++      if full then concatMap (term full) ts else []
++    term _ _ = []
+ 
+     isVar (Jukebox.Var _) = True
+     isVar _ = False
+diff -r 780787784f1f stack.yaml
+--- a/stack.yaml	Sat May 15 15:50:53 2021 +0200
++++ b/stack.yaml	Sun May 23 22:40:45 2021 +0200
+@@ -8,3 +8,12 @@
+ - jukebox-0.5.3
+ - minisat-0.1.2
+ - primitive-0.7.1.0
++
++flags:
++  invertible:
++    arrows: False
++    invariant: False
++    lens: False
++    partial-isomorphisms: False
++    piso: False
++    typecompose: False
