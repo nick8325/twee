@@ -1,0 +1,8 @@
+#!/bin/bash
+cpus=$(lscpu -p=SOCKET,CORE | grep -v '^#' | sort | uniq | wc -l)
+vmem=$(ulimit -v)
+[[ $vmem = unlimited ]] && vmem=100000000
+# cpus+2: one for Twee master process, and one for luck
+vmem=$((vmem/(cpus+2)))
+ulimit -v $vmem
+exec ./twee $cpus --quiet $*

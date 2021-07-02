@@ -1,0 +1,6 @@
+- order axioms by complexity (in frontend?)
+- label each rule with which axioms it comes from
+- can also compute for each critical pair
+- now find "max axiom" for each queued cp and compute min
+- no queued cp has max axiom less than this => axioms [1..min-1] are complete
+- take rules having max axiom <= min-1
