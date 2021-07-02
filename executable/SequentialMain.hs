@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards, DerivingVia #-}
+{-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards, DeriveAnyClass #-}
 {-# OPTIONS_GHC -flate-specialise #-}
 module SequentialMain(main) where
 
@@ -308,8 +308,7 @@ data Constant =
     con_size   :: !Integer,
     con_weight :: !Integer,
     con_bonus  :: !Bool }
-  deriving (Eq, Ord)
-  deriving Labelled via AutoLabel Constant
+  deriving (Eq, Ord, Labelled)
 
 data Precedence = Precedence !Bool !Bool !(Maybe Int) !Int
   deriving (Eq, Ord)

@@ -13,7 +13,7 @@
 --   * substitutions ('Substitution', 'Subst', 'subst');
 --   * unification ('unify') and matching ('match');
 --   * miscellaneous useful functions on terms.
-{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables, CPP #-}
+{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables, CPP, DefaultSignatures #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
 #ifdef USE_LLVM
 {-# OPTIONS_GHC -fllvm #-}
@@ -26,7 +26,7 @@ module Twee.Term(
   pattern UnsafeCons, pattern UnsafeConsSym, uhd, utl, urest,
   empty, unpack, lenList,
   -- * Function symbols and variables
-  Fun, fun, fun_id, fun_value, pattern F, Var(..), Labelled(..), AutoLabel(..),
+  Fun, fun, fun_id, fun_value, pattern F, Var(..), Labelled(..),
   -- * Building terms
   Build(..),
   Builder,
@@ -721,17 +721,11 @@ pathToPosition t ns = term 0 t ns
       list (k+len t) u (n-1) ns
 
 class Labelled f where
-  -- | Labels should be small positive integers!
-  label :: f -> Int
-  find :: Int -> f
+  label :: f -> Label.Label f
+  default label :: (Ord f, Typeable f) => f -> Label.Label f
+  label = Label.label
 
 instance (Labelled f, Show f) => Show (Fun f) where show = show . fun_value
-
--- | For "deriving via": a Labelled instance which uses Data.Label.
-newtype AutoLabel a = AutoLabel { unAutoLabel :: a }
-instance (Ord a, Typeable a) => Labelled (AutoLabel a) where
-  label = fromIntegral . Label.labelNum . Label.label . unAutoLabel
-  find = AutoLabel . Label.find . Label.unsafeMkLabel . fromIntegral
 
 -- | A pattern which extracts the 'fun_value' from a 'Fun'.
 pattern F :: Labelled f => Int -> f -> Fun f
@@ -745,9 +739,9 @@ f << g = fun_value f < fun_value g
 -- | Construct a 'Fun' from a function symbol.
 {-# INLINEABLE fun #-}
 fun :: Labelled f => f -> Fun f
-fun f = Core.F (fromIntegral (label f))
+fun f = Core.F (fromIntegral (Label.labelNum (label f)))
 
 -- | The underlying function symbol of a 'Fun'.
 {-# INLINEABLE fun_value #-}
 fun_value :: Labelled f => Fun f -> f
-fun_value x = find (fun_id x)
+fun_value x = Label.find (Label.unsafeMkLabel (fromIntegral (fun_id x)))
