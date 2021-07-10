@@ -4,7 +4,7 @@
 {-# LANGUAGE CPP, PatternSynonyms, ViewPatterns,
     MagicHash, UnboxedTuples, BangPatterns,
     RankNTypes, RecordWildCards, GeneralizedNewtypeDeriving,
-    OverloadedStrings #-}
+    OverloadedStrings, RoleAnnotations #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
 #ifdef USE_LLVM
 {-# OPTIONS_GHC -fllvm #-}
@@ -83,6 +83,8 @@ data TermList f =
     high  :: {-# UNPACK #-} !Int,
     array :: {-# UNPACK #-} !ByteArray }
 
+type role TermList nominal
+
 -- | Index into a termlist.
 at :: Int -> TermList f -> Term f
 at n t
@@ -109,6 +111,8 @@ data Term f =
   Term {
     root     :: {-# UNPACK #-} !Int64,
     termlist :: {-# UNPACK #-} !(TermList f) }
+
+type role Term nominal
 
 instance Eq (Term f) where
   x == y = termlist x == termlist y
@@ -190,6 +194,8 @@ newtype Fun f =
     fun_id :: Int }
   deriving (Eq, Ord)
 
+type role Fun nominal
+
 -- | A variable.
 newtype Var =
   V {
@@ -256,6 +262,8 @@ newtype Builder f =
       -- Takes: the term array, and current position in the term.
       -- Returns the final array and position.
       forall s. Builder1 s f }
+
+type role Builder nominal
 
 type Builder1 s f = State# s -> MutableByteArray# s -> Int# -> (# State# s, MutableByteArray# s, Int# #)
 

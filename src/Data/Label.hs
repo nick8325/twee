@@ -1,7 +1,7 @@
 -- | Assignment of unique IDs to values.
 -- Inspired by the 'intern' package.
 
-{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash #-}
+{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash, RoleAnnotations #-}
 module Data.Label(Label, unsafeMkLabel, labelNum, label, find) where
 
 import Data.IORef
@@ -21,6 +21,8 @@ newtype Label a =
     -- | The unique ID of a label.
     labelNum :: Int32 }
   deriving (Eq, Ord, Show)
+
+type role Label nominal
 
 -- | Construct a @'Label' a@ from its unique ID, which must be the 'labelNum' of
 -- an already existing 'Label'. Extremely unsafe!
