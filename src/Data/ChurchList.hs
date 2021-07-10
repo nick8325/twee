@@ -1,4 +1,4 @@
--- Church-encoded lists. Used in Twee.CP to make sure that fusion happens.
+-- | Church-encoded lists. Used in Twee.CP to make sure that fusion happens.
 {-# LANGUAGE Rank2Types, BangPatterns #-}
 module Data.ChurchList where
 
