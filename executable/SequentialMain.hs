@@ -319,9 +319,6 @@ instance KBO.Sized Constant where
 instance KBO.Weighted Constant where
   argWeight Minimal = 1
   argWeight Constant{..} = con_weight
-instance Arity Constant where
-  arity Minimal = 0
-  arity Constant{..} = con_arity
 
 instance Pretty Constant where
   pPrint Minimal = text "?"

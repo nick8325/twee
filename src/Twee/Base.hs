@@ -13,7 +13,7 @@ module Twee.Base(
   Id(..), Has(..),
   -- * Typeclasses
   Minimal(..), minimalTerm, isMinimal, erase, eraseExcept, ground,
-  Arity(..), Ordered(..), lessThan, orientTerms, EqualsBonus(..), Strictness(..), Function) where
+  Ordered(..), lessThan, orientTerms, EqualsBonus(..), Strictness(..), Function) where
 
 import Prelude hiding (lookup)
 import Control.Monad
@@ -213,18 +213,10 @@ eraseExcept xs t =
 ground :: (Symbolic a, ConstantOf a ~ f, Minimal f) => a -> a
 ground t = erase (vars t) t
 
--- | For types which have a notion of arity.
-class Arity f where
-  -- | Measure the arity.
-  arity :: f -> Int
-
-instance (Labelled f, Arity f) => Arity (Fun f) where
-  arity = arity . fun_value
-
 -- | For types which have a notion of size.
 -- | The collection of constraints which the type of function symbols must
 -- satisfy in order to be used by twee.
-type Function f = (Ordered f, Arity f, Minimal f, PrettyTerm f, EqualsBonus f, Labelled f)
+type Function f = (Ordered f, Minimal f, PrettyTerm f, EqualsBonus f, Labelled f)
 
 -- | A hack for encoding Horn clauses. See 'Twee.CP.Score'.
 -- The default implementation of 'hasEqualsBonus' should work OK.
