@@ -1,5 +1,5 @@
 name:                twee
-version:             2.4
+version:             2.4.1
 synopsis:            An equational theorem prover
 homepage:            http://github.com/nick8325/twee
 license:             BSD3
@@ -55,7 +55,7 @@ executable twee
   other-modules:       SequentialMain
   default-language:    Haskell2010
   build-depends:       base < 5,
-                       twee-lib == 2.4,
+                       twee-lib == 2.4.1,
                        containers,
                        pretty,
                        split,
