@@ -13,9 +13,9 @@ The basic way to run twee is as follows:
 The problem must be in [TPTP](http://tptp.org) FOF or CNF or TFF format; you can
 find a worked example on the [main page](.) and lots of test problems
 [here](https://github.com/nick8325/twee/tree/master/tests). Twee accepts any
-problem which after clausification consists only of unit equalities. In practice
-this means that the input problem can freely use quantification, both universal
-and existential, in any combination.
+problem which after clausification consists only of unit equalities and Horn clauses.
+In practice this means that the input problem can freely use
+quantification, both universal and existential, in any combination.
 
 The input file can have any number of conjectures. Twee will then solve each of
 them one at a time and report the final result. If the conjecture has an
@@ -33,6 +33,38 @@ The `--quiet` flag disables all progress output.
 
 The `--no-proof` flag suppresses printing the final proof.
 
+## Different strategies
+
+If twee fails to prove your conjecture, you might have more luck with
+a different strategy. Here are a couple to try:
+
+* `--no-flatten-goal` - disable twee's support for goal-directed search
+* `--lhs-weight 1` - adjust the scoring of critical pairs
+
+## Infix operators
+
+As an extension to TPTP syntax, twee supports infix operators.
+For example, you can write
+
+```
+cnf(commutativity, axiom, X+Y = Y+X).
+```
+
+which is equivalent to
+
+```
+cnf(commutativity, axiom, '+'(X,Y) = '+'(Y, X)).
+```
+
+See https://github.com/nick8325/twee/blob/master/tests/deriv.p
+for a longer example.
+
+Operators may not include characters such as `&` and `|` that are used
+in TPTP connectives. This rules out quite a lot of useful characters.
+However, twee supports Unicode input, so you can often find a suitable
+Unicode character to use (see https://en.wikipedia.org/wiki/List\_of\_mathematical\_symbols\_by\_subject
+for the more common ones).
+
 ## TPTP support
 
 Twee respects the `TPTP` environment variable for finding problems and axioms.
@@ -41,7 +73,8 @@ You can add extra search directories using the `--root` option, which takes a
 comma-separated list of directories and can be passed multiple times.
 
 The `--tstp` flag causes twee to print `SZS status` lines in the official
-syntax, as well as printing a `CNFRefutation` when it proves the conjecture.
+syntax. The flags `--tstp --formal-proof` cause it to print a
+`CNFRefutation` in the formal TSTP format when it proves the conjecture.
 
 ## Resource limits
 
