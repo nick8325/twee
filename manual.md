@@ -56,7 +56,7 @@ which is equivalent to
 cnf(commutativity, axiom, '+'(X,Y) = '+'(Y, X)).
 ```
 
-You can find a longer example [https://github.com/nick8325/twee/blob/master/tests/deriv.p](here).
+You can find a longer example [here](https://github.com/nick8325/twee/blob/master/tests/deriv.p).
 
 Operators may not include characters such as `&` and `|` that are used
 in TPTP connectives. This rules out quite a lot of useful characters.
