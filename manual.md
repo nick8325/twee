@@ -56,13 +56,12 @@ which is equivalent to
 cnf(commutativity, axiom, '+'(X,Y) = '+'(Y, X)).
 ```
 
-See https://github.com/nick8325/twee/blob/master/tests/deriv.p
-for a longer example.
+You can find a longer example [https://github.com/nick8325/twee/blob/master/tests/deriv.p](here).
 
 Operators may not include characters such as `&` and `|` that are used
 in TPTP connectives. This rules out quite a lot of useful characters.
 However, twee supports Unicode input, so you can often find a suitable
-Unicode character to use (see https://en.wikipedia.org/wiki/List\_of\_mathematical\_symbols\_by\_subject
+Unicode character to use (see [here](https://en.wikipedia.org/wiki/List_of_mathematical_symbols_by_subject)
 for the more common ones).
 
 ## TPTP support
