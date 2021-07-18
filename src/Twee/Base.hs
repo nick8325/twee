@@ -28,10 +28,11 @@ import Data.Int
 import Data.List hiding (singleton)
 import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
+import Data.Serialize
 
 -- | Represents a unique identifier (e.g., for a rule).
 newtype Id = Id { unId :: Int32 }
-  deriving (Eq, Ord, Show, Enum, Bounded, Num, Real, Integral)
+  deriving (Eq, Ord, Show, Enum, Bounded, Num, Real, Integral, Serialize)
 
 instance Pretty Id where
   pPrint = text . show . unId

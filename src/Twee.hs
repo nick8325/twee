@@ -65,7 +65,7 @@ data State f =
     st_active_set     :: !(IntMap (Active f)),
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
-    st_queue          :: !(Queue Params),
+    st_queue          :: !Queue,
     st_next_active    :: {-# UNPACK #-} !Id,
     st_considered     :: {-# UNPACK #-} !Int64,
     st_simplified_at  :: {-# UNPACK #-} !Id,
@@ -174,20 +174,9 @@ messages state = reverse (st_messages_rev state)
 -- * The CP queue.
 ----------------------------------------------------------------------
 
-data Params
-instance Queue.Params Params where
-  type Score Params = Int
-  type Id Params = Id
-  type PackedId Params = Int32
-  type PackedScore Params = Int32
-  packScore _ = fromIntegral
-  unpackScore _ = fromIntegral
-  packId _ = fromIntegral
-  unpackId _ = fromIntegral
-
 -- | Compute all critical pairs from a rule.
 {-# INLINEABLE makePassives #-}
-makePassives :: Function f => Config f -> State f -> Active f -> [Passive Params]
+makePassives :: Function f => Config f -> State f -> Active f -> [Passive]
 makePassives config@Config{..} State{..} rule =
 -- XXX factor out depth calculation
   stampWith "make critical pair" length
@@ -199,29 +188,29 @@ makePassives config@Config{..} State{..} rule =
     ok rule = the rule < Depth cfg_max_cp_depth
 
 {-# INLINEABLE makePassive #-}
-makePassive :: Function f => Config f -> Overlap (Active f) f -> Passive Params
+makePassive :: Function f => Config f -> Overlap (Active f) f -> Passive
 makePassive Config{..} overlap@Overlap{..} =
   Passive {
     passive_score = fromIntegral (score cfg_critical_pairs depth overlap),
     passive_rule1 = active_id overlap_rule1,
     passive_rule2 = active_id overlap_rule2,
-    passive_pos   = packHow overlap_how }
+    passive_pos   = fromIntegral (packHow overlap_how) }
   where
     depth = succ (the overlap_rule1 `max` the overlap_rule2)
 
 -- | Turn a Passive back into an overlap.
 -- Doesn't try to simplify it.
 {-# INLINEABLE findPassive #-}
-findPassive :: forall f. Function f => State f -> Passive Params -> Maybe (Overlap (Active f) f)
+findPassive :: forall f. Function f => State f -> Passive -> Maybe (Overlap (Active f) f)
 findPassive State{..} Passive{..} = do
   rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_active_set
   rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_active_set
-  overlapAt (unpackHow passive_pos) rule1 rule2
+  overlapAt (unpackHow (fromIntegral passive_pos)) rule1 rule2
     (renameAvoiding (the rule2 :: Rule f) (the rule1)) (the rule2)
 
 -- | Renormalise a queued Passive.
 {-# INLINEABLE simplifyPassive #-}
-simplifyPassive :: Function f => Config f -> State f -> Passive Params -> Maybe (Passive Params)
+simplifyPassive :: Function f => Config f -> State f -> Passive -> Maybe (Passive)
 simplifyPassive Config{..} state@State{..} passive = do
   overlap <- findPassive state passive
   overlap <- simplifyOverlap (index_oriented st_rules) overlap
@@ -250,7 +239,7 @@ simplifyQueue config state =
 
 -- | Enqueue a set of critical pairs.
 {-# INLINEABLE enqueue #-}
-enqueue :: Function f => State f -> Id -> [Passive Params] -> State f
+enqueue :: Function f => State f -> Id -> [Passive] -> State f
 enqueue state rule passives =
   state { st_queue = Queue.insert rule passives (st_queue state) }
 
@@ -355,7 +344,7 @@ addActive config state@State{..} active0 =
 
 -- Update the list of sampled critical pairs.
 {-# INLINEABLE sample #-}
-sample :: Function f => Int -> [Passive Params] -> State f -> State f
+sample :: Function f => Int -> [Passive] -> State f -> State f
 sample m passives state@State{..} =
   state{st_cp_sample = addSample (m, map find passives) st_cp_sample}
   where

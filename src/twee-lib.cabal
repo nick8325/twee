@@ -79,9 +79,10 @@ library
     pretty >= 1.1.2.0,
     ghc-prim,
     primitive >= 0.7.1.0,
-    vector,
     uglymemo,
-    random
+    random,
+    bytestring,
+    cereal
   hs-source-dirs:      .
   ghc-options:         -W -fno-warn-incomplete-patterns
   default-language:    Haskell2010
