@@ -18,6 +18,7 @@ import Data.ByteString(ByteString)
 import GHC.Generics
 import Data.Either
 import Twee.Base hiding (unpack, empty)
+import Twee.CP(How)
 
 -- | A critical pair queue.
 newtype Queue =
@@ -47,18 +48,18 @@ nullPassives _ = False
 passivesSize :: Passives -> Int
 passivesSize (Passives n _) = n
 
-packPassives :: [(Int32, Id, Int32)] -> Passives
+packPassives :: [(Int32, Id, How)] -> Passives
 packPassives ps =
   Passives (length ps) (runPut (mapM_ put ps))
 
-unconsPassives :: Passives -> Maybe ((Int32, Id, Int32), Passives)
+unconsPassives :: Passives -> Maybe ((Int32, Id, How), Passives)
 unconsPassives (Passives 0 _) = Nothing
 unconsPassives (Passives n bs) =
   case runGetState get bs 0 of
     Left err -> error ("unconsPassives: " ++ err)
     Right (x, rest) -> Just (x, Passives (n-1) rest)
 
-unpackPassives :: Passives -> [(Int32, Id, Int32)]
+unpackPassives :: Passives -> [(Int32, Id, How)]
 unpackPassives = unfoldr unconsPassives
 
 -- A smart-ish constructor.
@@ -94,13 +95,13 @@ mkPassiveSet proxy rule left right
 
 -- Unpack a triple into a Passive.
 {-# INLINEABLE unpack #-}
-unpack :: Proxy params -> Id -> Bool -> (Int32, Id, Int32) -> Passive
-unpack proxy rule isLeft (score, rule', pos) =
+unpack :: Proxy params -> Id -> Bool -> (Int32, Id, How) -> Passive
+unpack proxy rule isLeft (score, rule', how) =
   Passive {
     passive_score = score,
     passive_rule1 = if isLeft then rule else rule',
     passive_rule2 = if isLeft then rule' else rule,
-    passive_pos = pos }
+    passive_how = how }
 
 -- Make a PassiveSet from a list of Passives.
 {-# INLINEABLE makePassiveSet #-}
@@ -120,7 +121,7 @@ makePassiveSet rule ps
     pack isLeft Passive{..} =
       (passive_score,
        if isLeft then passive_rule2 else passive_rule1,
-       passive_pos)
+       passive_how)
 
 -- Convert a PassiveSet back into a list of Passives.
 {-# INLINEABLE unpackPassiveSet #-}
@@ -150,7 +151,7 @@ data Passive =
     -- | The rule which does the innermost rewrite in this critical pair.
     passive_rule2 :: {-# UNPACK #-} !Id,
     -- | The position of the overlap. See 'Twee.CP.overlap_pos'.
-    passive_pos   :: {-# UNPACK #-} !Int32 }
+    passive_how   :: {-# UNPACK #-} !How }
   deriving Generic
 
 instance Serialize Passive
@@ -165,7 +166,7 @@ instance Ord Passive where
         (passive_score,
          intMax (fromIntegral passive_rule1) (fromIntegral passive_rule2),
          intMin (fromIntegral passive_rule1) (fromIntegral passive_rule2),
-         passive_pos)
+         passive_how)
 
 -- | The empty queue.
 empty :: Queue

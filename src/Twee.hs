@@ -194,7 +194,7 @@ makePassive Config{..} overlap@Overlap{..} =
     passive_score = fromIntegral (score cfg_critical_pairs depth overlap),
     passive_rule1 = active_id overlap_rule1,
     passive_rule2 = active_id overlap_rule2,
-    passive_pos   = fromIntegral (packHow overlap_how) }
+    passive_how   = overlap_how }
   where
     depth = succ (the overlap_rule1 `max` the overlap_rule2)
 
@@ -205,7 +205,7 @@ findPassive :: forall f. Function f => State f -> Passive -> Maybe (Overlap (Act
 findPassive State{..} Passive{..} = do
   rule1 <- IntMap.lookup (fromIntegral passive_rule1) st_active_set
   rule2 <- IntMap.lookup (fromIntegral passive_rule2) st_active_set
-  overlapAt (unpackHow (fromIntegral passive_pos)) rule1 rule2
+  overlapAt passive_how rule1 rule2
     (renameAvoiding (the rule2 :: Rule f) (the rule1)) (the rule2)
 
 -- | Renormalise a queued Passive.

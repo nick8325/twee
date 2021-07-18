@@ -16,6 +16,8 @@ import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof(Derivation, congPath)
 import Data.Bits
+import Data.Serialize
+import Data.Int
 
 -- | The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
@@ -62,7 +64,8 @@ data Overlap a f =
     overlap_rule1 :: !a,
     -- | The rule which applies at some subterm.
     overlap_rule2 :: !a,
-    -- | The position in the critical term which is rewritten.
+    -- | The position in the critical term which is rewritten,
+    -- together with the direction of the two rules.
     overlap_how   :: {-# UNPACK #-} !How,
     -- | The top term of the critical pair
     overlap_top   :: {-# UNPACK #-} !(Term f),
@@ -70,31 +73,38 @@ data Overlap a f =
     overlap_eqn   :: {-# UNPACK #-} !(Equation f) }
   deriving Show
 
-data Direction = Forwards | Backwards deriving (Eq, Enum, Show)
+data How =
+  How {
+    how_pos  :: {-# UNPACK #-} !Int,
+    how_dir1 :: !Direction,
+    how_dir2 :: !Direction }
+  deriving (Eq, Ord, Show)
+
+data Direction = Forwards | Backwards deriving (Eq, Ord, Enum, Show)
 
 direct :: Rule f -> Direction -> Rule f
 direct rule Forwards = rule
 direct rule Backwards = backwards rule
 
-data How =
-  How {
-    how_dir1 :: !Direction,
-    how_dir2 :: !Direction,
-    how_pos  :: {-# UNPACK #-} !Int }
-  deriving Show
+instance Serialize How where
+  put = put . packHow
+    where
+      packHow :: How -> Int32
+      packHow How{..} =
+        fromIntegral $
+        fromEnum how_dir1 +
+        fromEnum how_dir2 `shiftL` 1 +
+        how_pos `shiftL` 2
 
-packHow :: How -> Int
-packHow How{..} =
-  fromEnum how_dir1 +
-  fromEnum how_dir2 `shiftL` 1 +
-  how_pos `shiftL` 2
-
-unpackHow :: Int -> How
-unpackHow n =
-  How {
-    how_dir1 = toEnum (n .&. 1),
-    how_dir2 = toEnum ((n `shiftR` 1) .&. 1),
-    how_pos  = n `shiftR` 2 }
+  get = fmap unpackHow get
+    where
+      unpackHow :: Int32 -> How
+      unpackHow n0 =
+        let n = fromIntegral n0 in
+        How {
+          how_dir1 = toEnum (n .&. 1),
+          how_dir2 = toEnum ((n `shiftR` 1) .&. 1),
+          how_pos  = n `shiftR` 2 }
 
 -- | Represents the depth of a critical pair.
 newtype Depth = Depth Int deriving (Eq, Ord, Num, Real, Enum, Integral, Show)
@@ -135,14 +145,14 @@ asymmetricOverlaps ::
 asymmetricOverlaps idx r1 r2 d1 d2 posns eq1 eq2 = do
   n <- positionsChurch posns
   ChurchList.fromMaybe $
-    overlapAt' (How d1 d2 n) r1 r2 eq1 eq2 >>=
+    overlapAt' (How n d1 d2) r1 r2 eq1 eq2 >>=
     simplifyOverlap idx
 
 -- | Create an overlap at a particular position in a term.
 -- Doesn't simplify the overlap.
 {-# INLINE overlapAt #-}
 overlapAt :: How -> a -> a -> Rule f -> Rule f -> Maybe (Overlap a f)
-overlapAt how@(How d1 d2 _) x1 x2 r1 r2 =
+overlapAt how@(How _ d1 d2) x1 x2 r1 r2 =
   overlapAt' how x1 x2 (unorient (direct r1 d1)) (unorient (direct r2 d2))
 
 {-# INLINE overlapAt' #-}
