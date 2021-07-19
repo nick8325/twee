@@ -222,20 +222,26 @@ instance Ord Batch where compare = comparing batch_best
 
 instance Queue.Batch Batch where
   type Label Batch = Id
-  type Kind Batch = BatchKind
   type Entry Batch = Passive
 
-  classify _ rule Passive{..}
-    | rule == passive_rule1 = Rule1
-    | rule == passive_rule2 = Rule2
+  makeBatch rule p ps =
+    make1 Rule1 ps1 ++ make1 Rule2 ps2
+    where
+      (ps1, ps2) = partition isRule1 (p:ps)
+      isRule1 Passive{..} = rule == passive_rule1
 
-  make rule kind p ps =
-    Batch kind rule p $
-    PackedSequence.fromList $
-      [ (passive_score, if kind == Rule1 then passive_rule2 else passive_rule1, passive_how)
-      | Passive{..} <- ps ]
-  
-  uncons batch@Batch{..} =
+      make1 kind [] = []
+      make1 kind (p:ps) =
+        [Batch {
+           batch_kind = kind,
+           batch_rule = rule,
+           batch_best = p,
+           batch_rest = 
+             PackedSequence.fromList $
+               [ (passive_score, if kind == Rule1 then passive_rule2 else passive_rule1, passive_how)
+               | Passive{..} <- ps ] }]
+
+  unconsBatch batch@Batch{..} =
     (batch_best,
      do (p, ps) <- PackedSequence.uncons batch_rest
         return batch{batch_best = unpack batch_kind p, batch_rest = ps})
@@ -245,8 +251,7 @@ instance Queue.Batch Batch where
       unpack Rule2 (score, rule1, how) =
         Passive score rule1 batch_rule how
 
-  info Batch{..} = (batch_rule, batch_kind)
-
+  batchLabel Batch{..} = batch_rule
   batchSize Batch{..} = 1 + PackedSequence.size batch_rest
 
 {-# INLINEABLE makePassive #-}
