@@ -214,11 +214,7 @@ data Batch =
     batch_best      :: {-# UNPACK #-} !Passive,
     batch_rest      :: {-# UNPACK #-} !(PackedSequence (Int32, Id, How)) }
 
-data BatchKind = Rule1 | Rule2 deriving (Eq, Ord)
-
-instance Eq Batch where x == y = compare x y == EQ
--- XXX do this in BatchedQueue instead (newtype + Ord instance using uncons)
-instance Ord Batch where compare = comparing batch_best
+data BatchKind = Rule1 | Rule2 deriving Eq
 
 instance Queue.Batch Batch where
   type Label Batch = Id

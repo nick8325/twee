@@ -12,10 +12,10 @@ import Data.Serialize
 import Data.Ord
 
 -- | A queue of batches.
-newtype Queue a = Queue (Heap.Heap a)
+newtype Queue a = Queue (Heap.Heap (Best a))
 
 -- | The type of batches must be a member of this class.
-class (Ord a, Ord (Entry a)) => Batch a where
+class Ord (Entry a) => Batch a where
   -- | Each batch can have an associated label,
   -- which is specified when calling 'insert'.
   -- A label represents a piece of information which is
@@ -46,6 +46,12 @@ class (Ord a, Ord (Entry a)) => Batch a where
 
   type Label a = ()
 
+-- A newtype wrapper for batches which compares the smallest entry.
+newtype Best a = Best { unBest :: a }
+instance Batch a => Eq (Best a) where x == y = compare x y == EQ
+instance Batch a => Ord (Best a) where
+  compare = comparing (fst . unconsBatch . unBest)
+
 -- | Convert a batch into a list of entries.
 unbatch :: Batch a => a -> [Entry a]
 unbatch batch = unfoldr (fmap unconsBatch) (Just batch)
@@ -59,7 +65,7 @@ empty = Queue Heap.empty
 insert :: forall a. Batch a => Label a -> [Entry a] -> Queue a -> Queue a
 insert _ [] q = q
 insert l is (Queue q) =
-  Queue $ foldl' (flip Heap.insert) q (makeBatch l (sort is))
+  Queue $ foldl' (flip (Heap.insert . Best)) q (makeBatch l (sort is))
 
 -- | Remove the minimum entry from the queue.
 -- The first argument is a predicate: if the minimum entry's batch
@@ -67,11 +73,11 @@ insert l is (Queue q) =
 {-# INLINEABLE removeMin #-}
 removeMin :: Batch a => (Label a -> Bool) -> Queue a -> Maybe (Entry a, Queue a)
 removeMin ok (Queue q) = do
-  (batch, q) <- Heap.removeMin q
+  (Best batch, q) <- Heap.removeMin q
   if not (ok (batchLabel batch)) then removeMin ok (Queue q) else
     case unconsBatch batch of
       (entry, Just batch') ->
-        Just (entry, Queue (Heap.insert batch' q))
+        Just (entry, Queue (Heap.insert (Best batch') q))
       (entry, Nothing) ->
         Just (entry, Queue q)
 
@@ -82,19 +88,19 @@ removeMin ok (Queue q) = do
 mapMaybe :: Batch a => (Entry a -> Maybe (Entry a)) -> Queue a -> Queue a
 mapMaybe f (Queue q) = Queue (Heap.mapMaybe g q)
   where
-    g batch =
+    g (Best batch) =
       case Data.Maybe.mapMaybe f (unbatch batch) of
         [] -> Nothing
         is ->
           case makeBatch (batchLabel batch) (sort is) of
             [] -> Nothing
-            [batch'] -> Just batch'
+            [batch'] -> Just (Best batch')
             _ -> error "multiple batches produced"
 
 -- | Convert a queue into a list of batches, in unspecified order.
 {-# INLINEABLE toBatches #-}
 toBatches :: Queue a -> [a]
-toBatches (Queue q) = Heap.toList q
+toBatches (Queue q) = map unBest (Heap.toList q)
 
 -- | Convert a queue into a list of entries, in unspecified order.
 {-# INLINEABLE toList #-}
