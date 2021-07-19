@@ -1,6 +1,6 @@
 -- | Miscellaneous utility functions.
 
-{-# LANGUAGE CPP, MagicHash #-}
+{-# LANGUAGE CPP, MagicHash, GeneralizedNewtypeDeriving #-}
 module Twee.Utils where
 
 import Control.Arrow((&&&))
@@ -12,6 +12,8 @@ import GHC.Prim
 import GHC.Types
 import Data.Bits
 import System.Random
+import Data.Serialize
+import Data.Bits
 --import Test.QuickCheck hiding ((.&.))
 
 repeatM :: Monad m => m a -> m [a]
@@ -177,3 +179,38 @@ splits (x:xs) =
 foldn :: (a -> a) -> a -> Int -> a
 foldn _ e 0 = e
 foldn op e n | n > 0 = op (foldn op e (n-1))
+
+newtype U8 = U8 Int deriving (Eq, Ord, Num, Real, Enum, Integral)
+
+-- Untested!
+instance Serialize U8 where
+  put (U8 n)
+    | n < 0x80 = putWord8 (fromIntegral n)
+    | n < 0x4000 = do
+      putWord16be (fromIntegral n + 0x8000)
+    | otherwise = do
+      putWord32be (fromIntegral n + 0xc0000000)
+  get = do
+    x <- lookAhead getWord8
+    if x < 0x80 then fromIntegral <$> getWord8
+    else if x < 0xc0 then do
+      n <- getWord16be
+      return (fromIntegral (n - 0x8000))
+    else do
+      n <- getWord32be
+      return (fromIntegral (n - 0xc0000000))
+
+-- Untested!
+newtype U16 = U16 Int deriving (Eq, Ord, Num, Real, Enum, Integral)
+instance Serialize U16 where
+  put (U16 n)
+    | n < 0x8000 = do
+      putWord16be (fromIntegral n)
+    | otherwise = do
+      putWord32be (fromIntegral n + 0x80000000)
+  get = do
+    x <- lookAhead getWord8
+    if x < 0x80 then fromIntegral <$> getWord16be
+    else do
+      n <- getWord32be
+      return (fromIntegral (n - 0x80000000))
