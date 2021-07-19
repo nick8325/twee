@@ -1,0 +1,48 @@
+diff -r f9e79bc89c99 src/Twee.hs
+--- a/src/Twee.hs	Sun Jul 11 16:26:15 2021 +0200
++++ b/src/Twee.hs	Sun Jul 18 16:07:33 2021 +0200
+@@ -416,13 +416,42 @@
+ consider config state info cp =
+   considerUsing (st_rules state) config state info cp
+ 
+--- Try to join a critical pair, but using a different set of critical
+--- pairs for normalisation.
+ {-# INLINEABLE considerUsing #-}
+ considerUsing ::
+   Function f =>
+   RuleIndex f (Rule f) -> Config f -> State f -> Info -> CriticalPair f -> State f
+ considerUsing rules config@Config{..} state@State{..} info cp0 =
++  let cp = canonicalise cp0 in
++  case step1 cfg_join (st_joinable, st_complete) rules cp >>=
++       step2 cfg_join (st_joinable, st_complete) rules of
++    Nothing -> state
++    Just cp ->
++      case improve cp of
++        Nothing ->
++          considerOneUsing rules config state info cp
++        Just cp' ->
++          let state' = considerOneUsing rules config state info cp' in
++          considerOneUsing rules config state' info cp
++  where
++    improve cp = reorder cp >>= improve1
++    reorder cp@CriticalPair{cp_eqn = t :=: u}
++      | t `lessEq` u = 
++        Just cp{cp_eqn = u :=: t, cp_proof = Proof.symm (cp_proof cp)}
++      | u `lessEq` t = Just cp
++      | otherwise = Nothing
++    improve1 cp@CriticalPair{cp_eqn = t :=: u} =
++      let r = normaliseWith (const True) (rewrite reducesSkolem (index_all rules)) u
++          u' = result u r
++      in if u == u' then Nothing else
++        Just cp{cp_eqn = t :=: u', cp_proof = cp_proof cp `Proof.trans` reductionProof u r}
++
++-- Try to join a critical pair, but using a different set of critical
++-- pairs for normalisation.
++{-# INLINEABLE considerOneUsing #-}
++considerOneUsing ::
++  Function f =>
++  RuleIndex f (Rule f) -> Config f -> State f -> Info -> CriticalPair f -> State f
++considerOneUsing rules config@Config{..} state@State{..} info cp0 =
+   stamp "consider critical pair" $
+   -- Important to canonicalise the rule so that we don't get
+   -- bigger and bigger variable indices over time

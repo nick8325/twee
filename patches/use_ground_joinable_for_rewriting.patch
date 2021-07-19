@@ -1,0 +1,166 @@
+diff -r f9e79bc89c99 src/Twee.hs
+--- a/src/Twee.hs	Sun Jul 11 16:26:15 2021 +0200
++++ b/src/Twee.hs	Tue Jul 13 13:16:20 2021 +0200
+@@ -62,6 +62,7 @@
+ data State f =
+   State {
+     st_rules          :: !(RuleIndex f (Rule f)),
++    st_live_rules     :: !(RuleIndex f (Rule f)),
+     st_active_set     :: !(IntMap (Active f)),
+     st_joinable       :: !(Index f (Equation f)),
+     st_goals          :: ![Goal f],
+@@ -104,6 +105,7 @@
+ initialState Config{..} =
+   State {
+     st_rules = RuleIndex.empty,
++    st_live_rules = RuleIndex.empty,
+     st_active_set = IntMap.empty,
+     st_joinable = Index.empty,
+     st_goals = [],
+@@ -193,7 +195,7 @@
+   stampWith "make critical pair" length
+   [ makePassive config overlap
+   | ok rule,
+-    overlap <- overlaps (index_oriented st_rules) (filter ok rules) rule ]
++    overlap <- overlaps (index_oriented st_live_rules) (filter ok rules) rule ]
+   where
+     rules = IntMap.elems st_active_set
+     ok rule = the rule < Depth cfg_max_cp_depth
+@@ -394,6 +396,7 @@
+ addActiveOnly state@State{..} active@Active{..} =
+   state {
+     st_rules = foldl' insertRule st_rules (activeRules active),
++    st_live_rules = foldl' insertRule st_live_rules (activeRules active),
+     st_active_set = IntMap.insert (fromIntegral active_id) active st_active_set }
+   where
+     insertRule rules rule =
+@@ -404,7 +407,7 @@
+ deleteActive :: Function f => State f -> Active f -> State f
+ deleteActive state@State{..} active@Active{..} =
+   state {
+-    st_rules = foldl' deleteRule st_rules (activeRules active),
++    st_live_rules = foldl' deleteRule st_live_rules (activeRules active),
+     st_active_set = IntMap.delete (fromIntegral active_id) st_active_set }
+   where
+     deleteRule rules rule =
+@@ -432,7 +435,7 @@
+       let
+         state' = foldl' (\state cp -> considerUsing rules config state info cp) state cps
+       in case mcp of
+-        Just cp -> addJoinable state' (cp_eqn cp)
++        Just cp -> addJoinable state' cp
+         Nothing -> state'
+ 
+     Left (cp, model) ->
+@@ -443,7 +446,7 @@
+ addCP config model state@State{..} info CriticalPair{..} =
+   let
+     pf = certify cp_proof
+-    rule = orient cp_eqn pf
++    rule = orient pf
+   in
+   addActive config state $ \n ->
+   Active {
+@@ -468,13 +471,23 @@
+ 
+ -- Record an equation as being joinable.
+ {-# INLINEABLE addJoinable #-}
+-addJoinable :: Function f => State f -> Equation f -> State f
+-addJoinable state eqn@(t :=: u) =
++addJoinable :: Function f => State f -> CriticalPair f -> State f
++addJoinable state cp@CriticalPair{cp_eqn = eqn@(t :=: u)} =
+   message (NewEquation eqn) $
+   state {
+     st_joinable =
+       Index.insert t (t :=: u) $
+-      Index.insert u (u :=: t) (st_joinable state) }
++      Index.insert u (u :=: t) (st_joinable state),
++    st_rules =
++      foldl' insert (st_rules state) (split cp >>= orientations . toRule) }
++  where
++    toRule cp = orient (certify (cp_proof cp))
++    orientations rule
++      | oriented (orientation rule) = [rule]
++      | otherwise = [rule, backwards rule]
++    insert idx r =
++      RuleIndex.insert (lhs r) r idx
++
+ 
+ -- Find a confluent subset of the rules.
+ {-# INLINEABLE checkCompleteness #-}
+@@ -623,11 +636,7 @@
+ interreduce config@Config{..} state =
+   let
+     state' =
+-      foldl' (interreduce1 config)
+-        -- Clear out st_joinable, since we don't know which
+-        -- equations have made use of each active.
+-        state { st_joinable = Index.empty, st_complete = Index.empty }
+-        (IntMap.elems (st_active_set state))
++      foldl' (interreduce1 config) state (IntMap.elems (st_active_set state))
+     in state' { st_joinable = st_joinable state, st_complete = st_complete state, st_simplified_at = st_next_active state' }
+ 
+ {-# INLINEABLE interreduce1 #-}
+@@ -635,19 +644,20 @@
+ interreduce1 config@Config{..} state active@Active{..} =
+   -- Exclude the active from the rewrite rules when testing
+   -- joinability, otherwise it will be trivially joinable.
++  let rules = st_live_rules (deleteActive state active) in
+   case
+     joinCriticalPair cfg_join
+       (Index.empty, Index.empty) -- (st_joinable state)
+-      (st_rules (deleteActive state active))
++      rules
+       (Just active_model) (active_cp active)
+   of
+     Right (_, cps) ->
+-      flip (foldl' (\state cp -> consider config state active_info cp)) cps $
++      flip (foldl' (\state cp -> considerUsing rules config state active_info cp)) cps $
+       message (DeleteActive active) $
+       deleteActive state active
+     Left (cp, model)
+       | cp_eqn cp `simplerThan` cp_eqn (active_cp active) ->
+-        flip (foldl' (\state cp -> consider config state active_info cp)) (split cp) $
++        flip (foldl' (\state cp -> considerUsing rules config state active_info cp)) (split cp) $
+         message (DeleteActive active) $
+         deleteActive state active
+       | model /= active_model ->
+diff -r f9e79bc89c99 src/Twee/Rule.hs
+--- a/src/Twee/Rule.hs	Sun Jul 11 16:26:15 2021 +0200
++++ b/src/Twee/Rule.hs	Tue Jul 13 13:16:20 2021 +0200
+@@ -129,9 +129,10 @@
+ --
+ -- Crashes if either @t < u@, or there is a variable in @u@ which is
+ -- not in @t@. To avoid this problem, combine with 'Twee.CP.split'.
+-orient :: Function f => Equation f -> Proof f -> Rule f
+-orient (t :=: u) pf = Rule o pf t u
++orient :: Function f => Proof f -> Rule f
++orient pf = Rule o pf t u
+   where
++    t :=: u = Proof.equation pf
+     o | lessEq u t =
+         case unify t u of
+           Nothing -> Oriented
+diff -r f9e79bc89c99 twee.cabal
+--- a/twee.cabal	Sun Jul 11 16:26:15 2021 +0200
++++ b/twee.cabal	Tue Jul 13 13:16:20 2021 +0200
+@@ -38,18 +38,8 @@
+   default: False
+   manual: True
+ 
+-flag parallel
+-  description: Build a special parallel version of Twee.
+-  default: False
+-  manual: True
+-
+ executable twee
+-  if flag(parallel)
+-    main-is: ParallelMain.hs
+-    build-depends: async, unix
+-    c-sources: executable/link.c
+-  else
+-    main-is: Main.hs
++  main-is: Main.hs
+ 
+   hs-source-dirs:      executable
+   other-modules:       SequentialMain

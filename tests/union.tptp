@@ -1,0 +1,32 @@
+
+cnf( axiom, axiom, ( true=notelem(X,empty) ) ).
+
+cnf( axiom, axiom, ( ~true=notelem(X,union(A,B)) | true=notelem(X,A) ) ).
+
+cnf( axiom, axiom, ( ~true=notelem(X,union(A,B)) | true=notelem(X,B) ) ).
+
+cnf( axiom, axiom, ( true=notelem(X,union(A,B)) | ~true=notelem(X,A) | ~true=notelem(X,B) ) ).
+
+cnf( axiom, axiom, ( A = B |  ~true=notelem(diff(A,B),A) |  ~true=notelem(diff(A,B),B) ) ).
+
+cnf( negated_conjecture, negated_conjecture, ( union(a,b) != union(b,a) ) ).
+
+%cnf( negated_conjecture, negated_conjecture, ( union(empty,empty) != empty ) ).
+
+%cnf( axiom, axiom, ( A = B | true=notelem(diff(A,B),A) | true=notelem(diff(A,B),B) ) ).
+cnf( axiom, axiom, ~noteq(A,B) | ~noteq(true,notelem(diff(A,B),A)) | true=notelem(diff(A,B),B)).
+cnf( axiom, axiom, ~noteq(A,B) | ~noteq(true,notelem(diff(A,B),B)) | true=notelem(diff(A,B),A)).
+cnf( axiom, axiom, ~noteq(true,notelem(diff(A,B),B)) | ~noteq(true,notelem(diff(A,B),A)) | A = B).
+cnf( axiom, axiom, noteq(union(a,b),union(b,a))).
+cnf( axiom, axiom, noteq(A,B) => noteq(B,A)).
+cnf( axiom, axiom, noteq(union(A,B),union(C,D)) => (A!=C | B!=D)).
+cnf( axiom, axiom, noteq(union(A,B),union(A,C)) => noteq(B,C)).
+cnf( axiom, axiom, noteq(union(A,C),union(B,C)) => noteq(A,B)).
+cnf( axiom, axiom, noteq(diff(A,B),diff(C,D)) => (A!=C | B!=D)).
+cnf( axiom, axiom, noteq(diff(A,B),diff(A,C)) => noteq(B,C)).
+cnf( axiom, axiom, noteq(diff(A,C),diff(B,C)) => noteq(A,B)).
+cnf( axiom, axiom, noteq(notelem(A,B),notelem(C,D)) => (A!=C | B!=D)).
+cnf( axiom, axiom, noteq(notelem(A,B),notelem(A,C)) => noteq(B,C)).
+cnf( axiom, axiom, noteq(notelem(A,C),notelem(B,C)) => noteq(A,B)).
+cnf( axiom, axiom, (noteq(X,true) & noteq(Y,true)) => X=Y).
+cnf( axiom, axiom, noteq(X,Y) => X != Y).
