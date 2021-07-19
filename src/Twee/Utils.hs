@@ -13,7 +13,6 @@ import GHC.Types
 import Data.Bits
 import System.Random
 import Data.Serialize
-import Data.Bits
 --import Test.QuickCheck hiding ((.&.))
 
 repeatM :: Monad m => m a -> m [a]
@@ -214,3 +213,10 @@ instance Serialize U16 where
     else do
       n <- getWord32be
       return (fromIntegral (n - 0x80000000))
+
+-- Can be used to write strictness annotations e.g.
+-- f !_ !_ | never = undefined
+-- which otherwise trigger a spurious warning from GHC.
+{-# INLINE never #-}
+never :: Bool
+never = False

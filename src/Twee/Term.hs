@@ -70,7 +70,9 @@ import Twee.Term.Core hiding (F)
 import qualified Twee.Term.Core as Core
 import Data.List hiding (lookup, find, singleton)
 import Data.Maybe
+#if __GLASGOW_HASKELL__ < 804
 import Data.Semigroup(Semigroup(..))
+#endif
 import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Control.Arrow((&&&))
@@ -300,7 +302,7 @@ canonicalise (t:ts) = loop emptySubst vars t ts
         -- (n = minBound, m = maxBound), which is OK.
         mconcat [emitVar (V x) | x <- [0..n-m+1]]
 
-    loop !_ !_ !_ !_ | False = undefined
+    loop !_ !_ !_ !_ | never = undefined
     loop sub _ Empty [] = sub
     loop sub Empty _ _ = sub
     loop sub vs Empty (t:ts) = loop sub vs t ts
@@ -464,7 +466,7 @@ unifyListTriFrom :: TermList f -> TermList f -> TriangleSubst f -> Maybe (Triang
 unifyListTriFrom !t !u (Triangle !sub) =
   fmap Triangle (loop sub t u)
   where
-    loop !_ !_ !_ | False = undefined
+    loop !_ !_ !_ | never = undefined
     loop sub (ConsSym{hd = t, tl = ts, rest = ts1}) u = do
       ConsSym{hd = u, tl = us, rest =  us1} <- Just u
       case (t, u) of
@@ -668,7 +670,7 @@ replace t u (Cons v vs)
 replacePosition :: (Build a, BuildFun a ~ f) => Int -> a -> TermList f -> Builder f
 replacePosition n !x = aux n
   where
-    aux !_ !_ | False = undefined
+    aux !_ !_ | never = undefined
     aux _ Empty = mempty
     aux 0 (Cons _ t) = builder x `mappend` builder t
     aux n (Cons (Var x) t) = var x `mappend` aux (n-1) t
@@ -684,7 +686,7 @@ replacePosition n !x = aux n
 replacePositionSub :: (Substitution sub, SubstFun sub ~ f) => sub -> Int -> TermList f -> TermList f -> Builder f
 replacePositionSub sub n !x = aux n
   where
-    aux !_ !_ | False = undefined
+    aux !_ !_ | never = undefined
     aux _ Empty = mempty
     aux n (Cons t u)
       | n < len t = inside n t `mappend` outside u

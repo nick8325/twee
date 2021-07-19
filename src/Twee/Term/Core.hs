@@ -24,7 +24,6 @@ import GHC.Types(Int(..))
 import GHC.Prim
 import GHC.ST hiding (liftST)
 import Data.Ord
-import Data.Semigroup(Semigroup(..))
 import Twee.Profile
 
 --------------------------------------------------------------------------------

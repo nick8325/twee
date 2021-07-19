@@ -4,8 +4,6 @@ module Twee.Equation where
 
 import Twee.Base
 import Control.Monad
-import Data.List
-import Data.Ord
 
 --------------------------------------------------------------------------------
 -- * Equations.
