@@ -1,12 +1,16 @@
 -- | A queue where entries can be added in batches and stored compactly.
 {-# LANGUAGE TypeFamilies, RecordWildCards, FlexibleContexts, ScopedTypeVariables #-}
 module Data.BatchedQueue(
-  Queue, Batch(..), unbatch, empty, insert, removeMin, mapMaybe, toBatches, toList, size) where
+  Queue, Batch(..), StandardBatch, unbatch, empty, insert, removeMin, mapMaybe, toBatches, toList, size) where
 
 import qualified Data.Heap as Heap
 import Data.List(unfoldr, sort, foldl')
 import qualified Data.Maybe
 import Twee.Utils
+import Data.PackedSequence(PackedSequence)
+import qualified Data.PackedSequence as PackedSequence
+import Data.Serialize
+import Data.Ord
 
 -- | A queue of batches.
 newtype Queue a = Queue (Heap.Heap a)
@@ -20,6 +24,32 @@ class (Ord a, Ord (Kind a), Ord (Entry a)) => Batch a where
   make :: Label a -> Kind a -> Entry a -> [Entry a] -> a
   uncons :: a -> (Entry a, Maybe a)
   info :: a -> (Label a, Kind a)
+  batchSize :: a -> Int
+
+data StandardBatch a =
+  StandardBatch {
+    batch_best :: !a,
+    batch_rest :: {-# UNPACK #-} !(PackedSequence a) }
+
+instance Ord a => Eq (StandardBatch a) where
+  x == y = compare x y == EQ
+instance Ord a => Ord (StandardBatch a) where
+  compare = comparing batch_best
+
+instance (Ord a, Serialize a) => Batch (StandardBatch a) where
+  type Label (StandardBatch a) = ()
+  type Kind (StandardBatch a) = ()
+  type Entry (StandardBatch a) = a
+
+  classify _ _ _ = ()
+  make _ _ x xs = StandardBatch x (PackedSequence.fromList xs)
+  uncons StandardBatch{..} =
+    (batch_best,
+     case PackedSequence.uncons batch_rest of
+       Nothing -> Nothing
+       Just (x, xs) -> Just (StandardBatch x xs))
+  info _ = ((), ())
+  batchSize StandardBatch{..} = 1 + PackedSequence.size batch_rest
 
 -- | Convert a batch into a list of entries.
 unbatch :: Batch a => a -> [Entry a]
@@ -75,5 +105,5 @@ toList :: Batch a => Queue a -> [Entry a]
 toList q = concatMap unbatch (toBatches q)
 
 {-# INLINEABLE size #-}
-size :: (a -> Int) -> Queue a -> Int
-size sz = sum . map sz . toBatches
+size :: Batch a => Queue a -> Int
+size = sum . map batchSize . toBatches

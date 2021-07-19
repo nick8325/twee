@@ -247,8 +247,7 @@ instance Queue.Batch Batch where
 
   info Batch{..} = (batch_rule, batch_kind)
 
-batchSize :: Batch -> Int
-batchSize Batch{..} = 1 + PackedSequence.size batch_rest
+  batchSize Batch{..} = 1 + PackedSequence.size batch_rest
 
 {-# INLINEABLE makePassive #-}
 makePassive :: Function f => Config f -> Overlap (Active f) f -> Passive
@@ -426,7 +425,7 @@ resetSample Config{..} state@State{..} =
       state {
         st_cp_sample = emptySample cfg_cp_sample_size }
 
-    sample1 state batch = sample (batchSize batch) (Queue.unbatch batch) state
+    sample1 state batch = sample (Queue.batchSize batch) (Queue.unbatch batch) state
 
 -- Simplify the sampled critical pairs.
 -- (A sampled critical pair is replaced with Nothing if it can be
@@ -743,7 +742,7 @@ complete Output{..} config@Config{..} state =
           StateM.put $! recomputeGoals config state,
        newTask 60 0.01 $ do
           State{..} <- StateM.get
-          let !n = Queue.size batchSize st_queue
+          let !n = Queue.size st_queue
           lift $ output_message (Status n)]
 
     let
