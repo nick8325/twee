@@ -1,5 +1,5 @@
 -- | The main prover loop.
-{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables, GeneralizedNewtypeDeriving, PatternGuards, TypeFamilies #-}
+{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables, GeneralizedNewtypeDeriving, PatternGuards, TypeFamilies, FlexibleInstances #-}
 module Twee where
 
 import Twee.Base
@@ -19,8 +19,8 @@ import Twee.Index(Index)
 import Twee.Constraints
 import Twee.Utils
 import Twee.Task
-import qualified Twee.PassiveQueue as Queue
-import Twee.PassiveQueue(Queue, Passive(..))
+import qualified Data.BatchedQueue as Queue
+import Data.BatchedQueue(Queue)
 import qualified Data.IntMap.Strict as IntMap
 import Data.IntMap(IntMap)
 import Data.Maybe
@@ -36,6 +36,9 @@ import qualified Control.Monad.Trans.State.Strict as StateM
 import qualified Data.IntSet as IntSet
 import Data.IntSet(IntSet)
 import Twee.Profile
+import Data.Ord
+import Data.PackedSequence(PackedSequence)
+import qualified Data.PackedSequence as PackedSequence
 
 ----------------------------------------------------------------------
 -- * Configuration and prover state.
@@ -65,7 +68,7 @@ data State f =
     st_active_set     :: !(IntMap (Active f)),
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
-    st_queue          :: !Queue,
+    st_queue          :: !(Queue Batch),
     st_next_active    :: {-# UNPACK #-} !Id,
     st_considered     :: {-# UNPACK #-} !Int64,
     st_simplified_at  :: {-# UNPACK #-} !Id,
@@ -187,6 +190,66 @@ makePassives config@Config{..} State{..} rule =
     rules = IntMap.elems st_active_set
     ok rule = the rule < Depth cfg_max_cp_depth
 
+data Passive =
+  Passive {
+    passive_score :: {-# UNPACK #-} !Int32,
+    passive_rule1 :: {-# UNPACK #-} !Id,
+    passive_rule2 :: {-# UNPACK #-} !Id,
+    passive_how   :: !How }
+  deriving Eq
+
+instance Ord Passive where
+  compare = comparing f
+    where
+      f Passive{..} =
+        (passive_score,
+         intMax (fromIntegral passive_rule1) (fromIntegral passive_rule2),
+         intMin (fromIntegral passive_rule1) (fromIntegral passive_rule2),
+         passive_how)
+
+data Batch =
+  Batch {
+    batch_kind      :: !BatchKind,
+    batch_rule      :: {-# UNPACK #-} !Id,
+    batch_best      :: {-# UNPACK #-} !Passive,
+    batch_rest      :: {-# UNPACK #-} !(PackedSequence (Int32, Id, How)) }
+
+data BatchKind = Rule1 | Rule2 deriving (Eq, Ord)
+
+instance Eq Batch where x == y = compare x y == EQ
+-- XXX do this in BatchedQueue instead (newtype + Ord instance using uncons)
+instance Ord Batch where compare = comparing batch_best
+
+instance Queue.Batch Batch where
+  type Label Batch = Id
+  type Kind Batch = BatchKind
+  type Entry Batch = Passive
+
+  classify _ rule Passive{..}
+    | rule == passive_rule1 = Rule1
+    | rule == passive_rule2 = Rule2
+
+  make rule kind p ps =
+    Batch kind rule p $
+    PackedSequence.fromList $
+      [ (passive_score, if kind == Rule1 then passive_rule2 else passive_rule1, passive_how)
+      | Passive{..} <- ps ]
+  
+  uncons batch@Batch{..} =
+    (batch_best,
+     do (p, ps) <- PackedSequence.uncons batch_rest
+        return batch{batch_best = unpack batch_kind p, batch_rest = ps})
+    where
+      unpack Rule1 (score, rule2, how) =
+        Passive score batch_rule rule2 how
+      unpack Rule2 (score, rule1, how) =
+        Passive score rule1 batch_rule how
+
+  info Batch{..} = (batch_rule, batch_kind)
+
+batchSize :: Batch -> Int
+batchSize Batch{..} = 1 + PackedSequence.size batch_rest
+
 {-# INLINEABLE makePassive #-}
 makePassive :: Function f => Config f -> Overlap (Active f) f -> Passive
 makePassive Config{..} overlap@Overlap{..} =
@@ -261,7 +324,8 @@ dequeue Config{..} state@State{..} =
        state { st_queue = queue, st_considered = st_considered + n })
   where
     deq !n queue = do
-      (passive, queue) <- Queue.removeMin queue
+      let ok id = fromIntegral id `IntMap.member` st_active_set
+      (passive, queue) <- Queue.removeMin ok queue
       case findPassive state passive of
         Just (overlap@Overlap{overlap_eqn = t :=: u, overlap_rule1 = rule1, overlap_rule2 = rule2})
           | fromMaybe True (cfg_accept_term <*> pure t),
@@ -356,13 +420,13 @@ sample m passives state@State{..} =
 {-# INLINEABLE resetSample #-}
 resetSample :: Function f => Config f -> State f -> State f
 resetSample Config{..} state@State{..} =
-  foldl' sample1 state' (Queue.toList st_queue)
+  foldl' sample1 state' (Queue.toBatches st_queue)
   where
     state' =
       state {
         st_cp_sample = emptySample cfg_cp_sample_size }
 
-    sample1 state (n, passives) = sample n passives state
+    sample1 state batch = sample (batchSize batch) (Queue.unbatch batch) state
 
 -- Simplify the sampled critical pairs.
 -- (A sampled critical pair is replaced with Nothing if it can be
@@ -482,7 +546,7 @@ checkCompleteness _config state =
       where
         m = bound excl
 
-    bound excl = minimum . map (passiveMax excl) . concatMap snd . Queue.toList $ st_queue state
+    bound excl = minimum . map (passiveMax excl) . Queue.toList $ st_queue state
 
     passiveMax excl p = fromMaybe maxBound $ do
       Overlap{overlap_rule1 = r1, overlap_rule2 = r2} <- findPassive state p
@@ -679,7 +743,7 @@ complete Output{..} config@Config{..} state =
           StateM.put $! recomputeGoals config state,
        newTask 60 0.01 $ do
           State{..} <- StateM.get
-          let !n = Queue.queueSize st_queue
+          let !n = Queue.size batchSize st_queue
           lift $ output_message (Status n)]
 
     let

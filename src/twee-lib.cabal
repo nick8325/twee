@@ -54,7 +54,6 @@ library
     Twee.Index
     Twee.Join
     Twee.KBO
-    Twee.PassiveQueue
     Twee.Pretty
     Twee.Profile
     Twee.Proof
@@ -65,10 +64,12 @@ library
     Twee.Utils
     Data.Label
   other-modules:
+    Data.BatchedQueue
     Data.ChurchList
     Data.DynamicArray
     Data.Heap
     Data.Numbered
+    Data.PackedSequence
     Twee.Term.Core
 
   build-depends:
