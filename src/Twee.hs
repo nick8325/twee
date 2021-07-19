@@ -224,13 +224,13 @@ instance Queue.Batch Batch where
   type Label Batch = Id
   type Entry Batch = Passive
 
-  makeBatch rule p ps =
+  makeBatch rule ps =
     make1 Rule1 ps1 ++ make1 Rule2 ps2
     where
-      (ps1, ps2) = partition isRule1 (p:ps)
+      (ps1, ps2) = partition isRule1 ps
       isRule1 Passive{..} = rule == passive_rule1
 
-      make1 kind [] = []
+      make1 _ [] = []
       make1 kind (p:ps) =
         [Batch {
            batch_kind = kind,

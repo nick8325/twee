@@ -14,37 +14,37 @@ import Data.Ord
 -- | A queue of batches.
 newtype Queue a = Queue (Heap.Heap a)
 
+-- | The type of batches must be a member of this class.
 class (Ord a, Ord (Entry a)) => Batch a where
+  -- | Each batch can have an associated label,
+  -- which is specified when calling 'insert'.
+  -- A label represents a piece of information which is
+  -- shared in common between all entries in a batch,
+  -- and which might be used to store that batch more
+  -- efficiently. 
+  -- Labels are optional, and by default @Label a = ()@.
   type Label a
+
+  -- | Individual entries in the batch.
   type Entry a
 
-  makeBatch :: Label a -> Entry a -> [Entry a] -> [a]
+  -- | Given a label, and a non-empty list of entries,
+  -- sorted in ascending order, produce a list of batches.
+  makeBatch :: Label a -> [Entry a] -> [a]
+
+  -- | Remove the smallest entry from a batch.
   unconsBatch :: a -> (Entry a, Maybe a)
+  
+  -- | Return the label of a batch.
   batchLabel :: a -> Label a
+
+  -- | Compute the size of a batch. Used in 'size'.
+  -- The default implementation works by repeatedly calling
+  -- 'unconsBatch'.
   batchSize :: a -> Int
+  batchSize = length . unbatch
 
-data StandardBatch a =
-  StandardBatch {
-    batch_best :: !a,
-    batch_rest :: {-# UNPACK #-} !(PackedSequence a) }
-
-instance Ord a => Eq (StandardBatch a) where
-  x == y = compare x y == EQ
-instance Ord a => Ord (StandardBatch a) where
-  compare = comparing batch_best
-
-instance (Ord a, Serialize a) => Batch (StandardBatch a) where
-  type Label (StandardBatch a) = ()
-  type Entry (StandardBatch a) = a
-
-  makeBatch _ x xs = [StandardBatch x (PackedSequence.fromList xs)]
-  unconsBatch StandardBatch{..} =
-    (batch_best,
-     case PackedSequence.uncons batch_rest of
-       Nothing -> Nothing
-       Just (x, xs) -> Just (StandardBatch x xs))
-  batchLabel _ = ()
-  batchSize StandardBatch{..} = 1 + PackedSequence.size batch_rest
+  type Label a = ()
 
 -- | Convert a batch into a list of entries.
 unbatch :: Batch a => a -> [Entry a]
@@ -59,11 +59,11 @@ empty = Queue Heap.empty
 insert :: forall a. Batch a => Label a -> [Entry a] -> Queue a -> Queue a
 insert _ [] q = q
 insert l is (Queue q) =
-  Queue $ foldl' (flip Heap.insert) q (makeBatch l (head is') (tail is'))
-  where
-    is' = sort is
+  Queue $ foldl' (flip Heap.insert) q (makeBatch l (sort is))
 
 -- | Remove the minimum entry from the queue.
+-- The first argument is a predicate: if the minimum entry's batch
+-- does not satisfy the predicate, that batch is discarded.
 {-# INLINEABLE removeMin #-}
 removeMin :: Batch a => (Label a -> Bool) -> Queue a -> Maybe (Entry a, Queue a)
 removeMin ok (Queue q) = do
@@ -76,8 +76,8 @@ removeMin ok (Queue q) = do
         Just (entry, Queue q)
 
 -- | Map a function over all entries.
--- The function must preserve the label of the inference,
--- and the number of batches returned by 'make'.
+-- The function must preserve the label of each batch,
+-- and must not split existing batches into two.
 {-# INLINEABLE mapMaybe #-}
 mapMaybe :: Batch a => (Entry a -> Maybe (Entry a)) -> Queue a -> Queue a
 mapMaybe f (Queue q) = Queue (Heap.mapMaybe g q)
@@ -86,8 +86,7 @@ mapMaybe f (Queue q) = Queue (Heap.mapMaybe g q)
       case Data.Maybe.mapMaybe f (unbatch batch) of
         [] -> Nothing
         is ->
-          let is' = sort is in
-          case makeBatch (batchLabel batch) (head is') (tail is') of
+          case makeBatch (batchLabel batch) (sort is) of
             [] -> Nothing
             [batch'] -> Just batch'
             _ -> error "multiple batches produced"
@@ -105,3 +104,30 @@ toList q = concatMap unbatch (toBatches q)
 {-# INLINEABLE size #-}
 size :: Batch a => Queue a -> Int
 size = sum . map batchSize . toBatches
+
+-- | A "standard" type of batches. By using @Queue (StandardBatch a)@,
+-- you will get a queue where entries have type @a@ and labels have
+-- type @()@.
+data StandardBatch a =
+  StandardBatch {
+    batch_best :: !a,
+    batch_rest :: {-# UNPACK #-} !(PackedSequence a) }
+
+instance Ord a => Eq (StandardBatch a) where
+  x == y = compare x y == EQ
+instance Ord a => Ord (StandardBatch a) where
+  compare = comparing batch_best
+
+instance (Ord a, Serialize a) => Batch (StandardBatch a) where
+  type Label (StandardBatch a) = ()
+  type Entry (StandardBatch a) = a
+
+  makeBatch _ (x:xs) = [StandardBatch x (PackedSequence.fromList xs)]
+  unconsBatch StandardBatch{..} =
+    (batch_best,
+     case PackedSequence.uncons batch_rest of
+       Nothing -> Nothing
+       Just (x, xs) -> Just (StandardBatch x xs))
+  batchLabel _ = ()
+  batchSize StandardBatch{..} = 1 + PackedSequence.size batch_rest
+
