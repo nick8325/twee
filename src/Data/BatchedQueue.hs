@@ -50,9 +50,11 @@ class Ord (Entry a) => Batch a where
 newtype Best a = Best { unBest :: a }
 instance Batch a => Eq (Best a) where x == y = compare x y == EQ
 instance Batch a => Ord (Best a) where
+  {-# INLINEABLE compare #-}
   compare = comparing (fst . unconsBatch . unBest)
 
 -- | Convert a batch into a list of entries.
+{-# INLINEABLE unbatch #-}
 unbatch :: Batch a => a -> [Entry a]
 unbatch batch = unfoldr (fmap unconsBatch) (Just batch)
 
