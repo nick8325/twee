@@ -1,7 +1,7 @@
 -- | A queue where entries can be added in batches and stored compactly.
 {-# LANGUAGE TypeFamilies, RecordWildCards, FlexibleContexts, ScopedTypeVariables #-}
 module Data.BatchedQueue(
-  Queue, Batch(..), StandardBatch, unbatch, empty, insert, removeMin, mapMaybe, toBatches, toList, size) where
+  Queue, Batch(..), StandardBatch, unbatch, empty, insert, removeMin, removeMinFilter, mapMaybe, toBatches, toList, size) where
 
 import qualified Data.Heap as Heap
 import Data.List(unfoldr, sort, foldl')
@@ -70,13 +70,17 @@ insert l is (Queue q) =
   Queue $ foldl' (flip (Heap.insert . Best)) q (makeBatch l (sort is))
 
 -- | Remove the minimum entry from the queue.
--- The first argument is a predicate: if the minimum entry's batch
--- does not satisfy the predicate, that batch is discarded.
 {-# INLINEABLE removeMin #-}
-removeMin :: Batch a => (Label a -> Bool) -> Queue a -> Maybe (Entry a, Queue a)
-removeMin ok (Queue q) = do
+removeMin :: Batch a => Queue a -> Maybe (Entry a, Queue a)
+removeMin q = removeMinFilter (const True) q
+
+-- | Remove the minimum entry from the queue, discarding any
+-- batches that do not satisfy the predicate.
+{-# INLINEABLE removeMinFilter #-}
+removeMinFilter :: Batch a => (Label a -> Bool) -> Queue a -> Maybe (Entry a, Queue a)
+removeMinFilter ok (Queue q) = do
   (Best batch, q) <- Heap.removeMin q
-  if not (ok (batchLabel batch)) then removeMin ok (Queue q) else
+  if not (ok (batchLabel batch)) then removeMinFilter ok (Queue q) else
     case unconsBatch batch of
       (entry, Just batch') ->
         Just (entry, Queue (Heap.insert (Best batch') q))

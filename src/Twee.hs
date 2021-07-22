@@ -325,7 +325,7 @@ dequeue Config{..} state@State{..} =
   where
     deq !n queue = do
       let ok id = fromIntegral id `IntMap.member` st_active_set
-      (passive, queue) <- Queue.removeMin ok queue
+      (passive, queue) <- Queue.removeMinFilter ok queue
       case findPassive state passive of
         Just (overlap@Overlap{overlap_eqn = t :=: u, overlap_rule1 = rule1, overlap_rule2 = rule2})
           | fromMaybe True (cfg_accept_term <*> pure t),
