@@ -23,11 +23,6 @@ description:
    http://www.tptp.org). You can use types and quantifiers, but apart
    from that the problem must be equational.
 
-source-repository head
-  type:     git
-  location: git://github.com/nick8325/twee.git
-  branch:   master
-
 flag static
   description: Build a static binary.
   default: False

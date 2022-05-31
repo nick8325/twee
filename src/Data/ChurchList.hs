@@ -48,13 +48,11 @@ instance Functor ChurchList where
 
 instance Applicative ChurchList where
   {-# INLINE pure #-}
-  pure = return
+  pure = unit
   {-# INLINE (<*>) #-}
   (<*>) = liftM2 ($)
 
 instance Monad ChurchList where
-  {-# INLINE return #-}
-  return = unit
   {-# INLINE (>>=) #-}
   xs >>= f = join (fmap f xs)
 
