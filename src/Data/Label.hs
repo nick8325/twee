@@ -1,7 +1,7 @@
 -- | Assignment of unique IDs to values.
 -- Inspired by the 'intern' package.
 
-{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash, RoleAnnotations #-}
+{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash, RoleAnnotations, CPP #-}
 module Data.Label(Label, unsafeMkLabel, labelNum, label, find) where
 
 import Data.IORef
@@ -124,7 +124,11 @@ find :: Label a -> a
 find (Label !(I32# n#)) = findWorker n#
 
 {-# NOINLINE findWorker #-}
+#if __GLASGOW_HASKELL__ >= 920
 findWorker :: Int32# -> a
+#else
+findWorker :: Int# -> a
+#endif
 findWorker n# =
   unsafeDupablePerformIO $ do
     let n = I32# n#
