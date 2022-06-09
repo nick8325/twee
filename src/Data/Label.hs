@@ -124,7 +124,7 @@ find :: Label a -> a
 find (Label !(I32# n#)) = findWorker n#
 
 {-# NOINLINE findWorker #-}
-findWorker :: Int# -> a
+findWorker :: Int32# -> a
 findWorker n# =
   unsafeDupablePerformIO $ do
     let n = I32# n#
