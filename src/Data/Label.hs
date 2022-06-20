@@ -124,7 +124,7 @@ find :: Label a -> a
 find (Label !(I32# n#)) = findWorker n#
 
 {-# NOINLINE findWorker #-}
-#if __GLASGOW_HASKELL__ >= 920
+#if __GLASGOW_HASKELL__ >= 902
 findWorker :: Int32# -> a
 #else
 findWorker :: Int# -> a
