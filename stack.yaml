@@ -1,4 +1,4 @@
-resolver: lts-17.4
+resolver: lts-19.22
 
 packages:
 - .
@@ -7,4 +7,4 @@ packages:
 extra-deps:
 - jukebox-0.5.4
 - minisat-0.1.2
-- primitive-0.7.1.0
+- primitive-0.7.4.0
