@@ -20,6 +20,7 @@ import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof(Derivation, Proof)
 import Data.Tuple
+import Twee.Profile
 
 --------------------------------------------------------------------------------
 -- * Rewrite rules.
@@ -189,13 +190,13 @@ backwards (Rule or pf t u) = Rule (back or) pf u t
 -- | Compute the normal form of a term wrt only oriented rules.
 {-# INLINEABLE simplify #-}
 simplify :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
-simplify = simplifyOutermost
+simplify idx t = stamp "simplify" (simplifyOutermost idx t)
 
 -- | Compute the normal form of a term wrt only oriented rules, using outermost reduction.
 simplifyOutermost :: (Function f, Has a (Rule f)) => Index f a -> Term f -> Term f
 simplifyOutermost !idx !t
   | t == u = t
-  | otherwise = simplify idx u
+  | otherwise = simplifyOutermost idx u
   where
     u = build (simp (singleton t))
 
