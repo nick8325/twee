@@ -25,8 +25,7 @@ import Data.Int
 import GHC.Generics
 import Twee.Utils
 
-data Func = F Int Integer deriving (Eq, Ord, Show)
-  deriving Labelled via (AutoLabel Func)
+data Func = F Int Integer deriving (Eq, Ord, Show, Labelled)
 
 instance Pretty Func where pPrint (F f _) = text "f" <#> int f
 instance PrettyTerm Func
@@ -38,13 +37,15 @@ instance Minimal Func where
   minimal = fun (F 0 1)
 instance Ord.Sized Func where size (F _ n) = n
 instance Ord.Weighted Func where argWeight _ = 1
+class Arity f where
+  arity :: f -> Int
 instance Arity Func where
   arity (F 0 _) = 0
   arity (F 1 _) = 2
 instance EqualsBonus Func
 
 instance Arbitrary Var where arbitrary = fmap V (choose (0, 3))
-instance (Labelled f, Ord f, Typeable f, Arbitrary f) => Arbitrary (Fun f) where
+instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Fun f) where
   arbitrary = fmap fun arbitrary
 
 instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Term f) where
@@ -52,7 +53,7 @@ instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Ter
     sized $ \n ->
       oneof $
         [ build <$> var <$> arbitrary ] ++
-        [ do { f <- arbitrary; build <$> app f <$> vectorOf (arity f) (resize ((n-1) `div` arity f) arbitrary :: Gen (Term f)) } | n > 0 ]
+        [ do { f <- arbitrary; build <$> app (fun f) <$> vectorOf (arity f) (resize ((n-1) `div` arity f) arbitrary :: Gen (Term f)) } | n > 0 ]
   shrink (App f ts0) =
     ts ++ (build <$> app f <$> shrinkOne ts)
     where

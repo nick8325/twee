@@ -63,7 +63,6 @@ library
     Twee.Task
     Twee.Utils
     Data.Label
-  other-modules:
     Data.BatchedQueue
     Data.ChurchList
     Data.DynamicArray
