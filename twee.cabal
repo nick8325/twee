@@ -69,3 +69,16 @@ executable twee
 
   if flag(static-cxx)
     ghc-options: -pgml misc/static-libstdc++
+
+Test-Suite twee-test
+    type: exitcode-stdio-1.0
+    Default-language: Haskell2010
+    hs-source-dirs:
+        misc
+    main-is: Test.hs
+    build-depends: base < 5, QuickCheck, twee-lib == 2.4.2, containers, pretty
+    ghc-options:
+      -threaded
+      -rtsopts
+      -feager-blackholing
+      -with-rtsopts=-N4
