@@ -62,14 +62,15 @@ library
     Twee.Term
     Twee.Task
     Twee.Utils
+    Twee.Term.Core
     Data.Label
+  other-modules:
     Data.BatchedQueue
     Data.ChurchList
     Data.DynamicArray
     Data.Heap
     Data.Numbered
     Data.PackedSequence
-    Twee.Term.Core
 
   build-depends:
     base >= 4 && < 5,

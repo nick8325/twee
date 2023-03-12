@@ -1,5 +1,5 @@
 {-# LANGUAGE TemplateHaskell, FlexibleInstances, FlexibleContexts, UndecidableInstances, StandaloneDeriving, ScopedTypeVariables, TupleSections, DeriveGeneric, DerivingVia, DeriveAnyClass #-}
-module Test where
+module Main where
 
 import Twee.Constraints
 import Twee.Term hiding (subst, canonicalise, F)
