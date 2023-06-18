@@ -1,14 +1,14 @@
 -- | Useful operations on terms and similar. Also re-exports some generally
 -- useful modules such as 'Twee.Term' and 'Twee.Pretty'.
 
-{-# LANGUAGE TypeFamilies, FlexibleInstances, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ConstraintKinds, RecordWildCards #-}
+{-# LANGUAGE TypeFamilies, FlexibleInstances, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ConstraintKinds, RecordWildCards, BangPatterns #-}
 module Twee.Base(
   -- * Re-exported functionality
   module Twee.Term, module Twee.Pretty,
   -- * The 'Symbolic' typeclass
   Symbolic(..), subst, terms,
   TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
-  vars, isGround, funs, occ, occVar, canonicalise, renameAvoiding, renameManyAvoiding, freshVar,
+  vars, isGround, funs, occ, occVar, occs, nests, canonicalise, renameAvoiding, renameManyAvoiding, freshVar,
   -- * General-purpose functionality
   Id(..), Has(..),
   -- * Typeclasses
@@ -146,6 +146,29 @@ occ x t = length (filter (== x) (funs t))
 {-# INLINE occVar #-}
 occVar :: Symbolic a => Var -> a -> Int
 occVar x t = length (filter (== x) (vars t))
+
+-- | Count how many times all function symbols occur in the argument.
+{-# INLINE occs #-}
+occs :: Symbolic a => a -> IntMap.IntMap Int
+occs = foldl' insert IntMap.empty . funs
+  where
+    insert !m !f = IntMap.insertWith (+) (fun_id f) 1 m
+
+-- | 'nest' from Fuchs, "The application of goal-oriented heuristics
+-- for proving equational theorems via the unfailing Knuth-Bendix
+-- completion procedure"
+{-# INLINE nests #-}
+nests :: Symbolic a => a -> IntMap.IntMap Int
+nests t = foldl' (hnest 0 0) IntMap.empty (terms t)
+
+-- helper function for nests
+hnest :: Int -> Int -> IntMap.IntMap Int -> TermList f -> IntMap.IntMap Int
+hnest !f !c !as Empty = IntMap.insertWith max f c as
+hnest f c as (Cons (Var _) ts) = hnest f c as ts
+hnest f c as (Cons (App _ Empty) ts) = hnest f c as ts
+hnest f c as (Cons (App g ts) us) =
+  let as' = hnest (fun_id g) (if f == fun_id g then c+1 else 1) as ts
+  in hnest f c as' us
 
 -- | Rename the argument so that variables are introduced in a canonical order
 -- (starting with V0, then V1 and so on).

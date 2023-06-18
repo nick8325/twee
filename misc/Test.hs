@@ -18,12 +18,13 @@ import Control.Monad
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Ord
-import Data.List
+import Data.List hiding (singleton)
 import Data.Typeable
 import qualified Twee.Index as Index
 import Data.Int
 import GHC.Generics
 import Twee.Utils
+import qualified Data.IntMap as M
 
 data Func = F Int Integer deriving (Eq, Ord, Show, Labelled)
 
@@ -32,7 +33,7 @@ instance PrettyTerm Func
 instance Arbitrary (Subst Func) where
   arbitrary = fmap fromJust (fmap listToSubst (liftM2 zip (fmap nub arbitrary) (infiniteListOf arbitrary)))
 instance Arbitrary Func where
-  arbitrary = F <$> choose (1, 1) <*> choose (1, 3)
+  arbitrary = F <$> choose (0, 2) <*> choose (1, 3)
 instance Minimal Func where
   minimal = fun (F 0 1)
 instance Ord.Sized Func where size (F _ n) = n
@@ -41,8 +42,10 @@ class Arity f where
   arity :: f -> Int
 instance Arity Func where
   arity (F 0 _) = 0
-  arity (F 1 _) = 2
+  arity (F 1 _) = 1
+  arity (F 2 _) = 2
 instance EqualsBonus Func
+instance GoalWeight Func
 
 instance Arbitrary Var where arbitrary = fmap V (choose (0, 3))
 instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Fun f) where
@@ -63,6 +66,10 @@ instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Ter
         [ y:xs | y <- shrink x ] ++
         [ x:ys | ys <- shrinkOne xs ]
   shrink _ = []
+
+instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (TermList f) where
+  arbitrary = buildList <$> listOf (arbitrary :: Gen (Term f))
+  shrink = map buildList . shrink . unpack
 
 data Pair f = Pair (Term f) (Term f) deriving Show
 
@@ -222,8 +229,74 @@ prop_canonorder3 eq =
   counterexample (show eq) $
   Ord.size (eqn_lhs eq') >= Ord.size (eqn_rhs eq')
 
+--t :: Term Func
+--t = build (app (fun (F 0)) [app (fun (F 1)) [var (V 0), var (V 1)], var (V 2)])
+
+-- Define 'nest' from Fuchs "The application of goal-oriented heuristics...",
+-- then refine it to a more efficient version
+nestf :: Func -> Term Func -> Int
+nestf f _ | arity f == 0 = 0
+nestf f t = hnest (fun f) t 0 0
+  where
+    hnest _ (Var _) c a = max c a
+    hnest _ (App _ Empty) c a = max c a
+    hnest f (App g ts) c a
+      | f == g = maximum [hnest f t (c+1) a | t <- unpack ts]
+      | otherwise = maximum [hnest f t 0 (max c a) | t <- unpack ts]
+
+-- a simpler version, to illustrate the meaning
+nestf1 :: Func -> Term Func -> Int
+nestf1 f t = hnest (fun f) t 0
+  where
+    hnest _ (Var _) c = c
+    hnest _ (App _ Empty) c = c
+    hnest f (App g ts) c
+      | f == g = maximum [hnest f t (c+1) | t <- unpack ts]
+      | otherwise = max c (maximum [hnest f t 0 | t <- unpack ts])
+
+-- a more efficient version
+nestf2 :: Func -> Term Func -> Int
+nestf2 f t = hnest (fun f) (singleton t) 0 0
+  where
+    hnest _ Empty c a = max c a
+    hnest f (Cons (Var _) ts) c a = hnest f ts c a
+    hnest f (Cons (App _ Empty) ts) c a = hnest f ts c a
+    hnest f (Cons (App g ts) us) c a
+      | f == g = 
+        let a' = hnest f ts (c+1) a
+        in hnest f us c a'
+      | otherwise =
+        let a' = hnest f ts 0 a
+        in hnest f us c a'
+
+-- a version that does all function symbols at once
+nestf3 :: Term Func -> M.IntMap Int
+nestf3 t = hnest 0 0 M.empty (singleton t)
+  where
+    hnest f c as Empty = M.insertWith max f c as
+    hnest f c as (Cons (Var _) ts) = hnest f c as ts
+    hnest f c as (Cons (App _ Empty) ts) = hnest f c as ts
+    hnest f c as (Cons (App g ts) us) =
+      let as' = hnest (fun_id g) (if f == fun_id g then c+1 else 1) as ts
+      in hnest f c as' us
+
+prop_nest_1 :: Func -> Term Func -> Property
+prop_nest_1 f t = withMaxSuccess 1000000 $ nestf f t === nestf1 f t
+
+prop_nest_2 :: Func -> Term Func -> Property
+prop_nest_2 f t = withMaxSuccess 1000000 $ nestf f t === nestf2 f t
+
+prop_nest_3 :: Func -> Term Func -> Property
+prop_nest_3 f t =
+  withMaxSuccess 1000000 $
+    nestf f t === M.findWithDefault 0 (fun_id (fun f)) (nestf3 t)
+
+prop_nests :: Func -> TermList Func -> Property
+prop_nests f ts =
+  withMaxSuccess 1000000 $
+    maximum (0:map (nestf f) (unpack ts)) ===
+    M.findWithDefault 0 (fun_id (fun f)) (nests ts)
+
 return []
 main = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000000 })
 
---t :: Term Func
---t = build (app (fun (F 0)) [app (fun (F 1)) [var (V 0), var (V 1)], var (V 2)])
