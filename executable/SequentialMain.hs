@@ -137,7 +137,7 @@ parseMainFlags =
 parseConfig :: OptionParser (Config Constant)
 parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
-    (CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor) <*>
+    (CP.score <$> parseCPConfig) <*>
     (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses)
   where
@@ -169,34 +169,6 @@ parseConfig =
       expert $
       inGroup "Completion heuristics" $
       defaultFlag "cp-renormalise-threshold" "Trigger renormalisation when this percentage of CPs can be simplified" cfg_renormalise_threshold argNum
-    lweight =
-      expert $
-      inGroup "Critical pair weighting heuristics" $
-      defaultFlag "lhs-weight" "Weight given to LHS of critical pair" (CP.cfg_lhsweight . cfg_critical_pairs) argNum
-    rweight =
-      expert $
-      inGroup "Critical pair weighting heuristics" $
-      defaultFlag "rhs-weight" "Weight given to RHS of critical pair" (CP.cfg_rhsweight . cfg_critical_pairs) argNum
-    funweight =
-      expert $
-      inGroup "Critical pair weighting heuristics" $
-      defaultFlag "fun-weight" "Weight given to function symbols" (CP.cfg_funweight . cfg_critical_pairs) argNum
-    varweight =
-      expert $
-      inGroup "Critical pair weighting heuristics" $
-      defaultFlag "var-weight" "Weight given to variable symbols" (CP.cfg_varweight . cfg_critical_pairs) argNum
-    depthweight =
-      expert $
-      inGroup "Critical pair weighting heuristics" $
-      defaultFlag "depth-weight" "Weight given to critical pair depth" (CP.cfg_depthweight . cfg_critical_pairs) argNum
-    dupcost =
-      expert $
-      inGroup "Critical pair weighting heuristics" $
-      defaultFlag "dup-cost" "Cost of duplicate subterms" (CP.cfg_dupcost . cfg_critical_pairs) argNum
-    dupfactor =
-      expert $
-      inGroup "Critical pair weighting heuristics" $
-      defaultFlag "dup-factor" "Size factor of duplicate subterms" (CP.cfg_dupfactor . cfg_critical_pairs) argNum
     ground_join =
       expert $
       inGroup "Critical pair joining heuristics" $
@@ -287,10 +259,49 @@ parseConfig =
       liftM2 (&&) (hSupportsANSIColor stdout)
         (return (setSGRCode [] /= "")) -- Check for Windows terminal not supporting ANSI
 
+    defaultFlag :: Show a => String -> String -> (Config Constant -> a) -> ArgParser a -> OptionParser a
     defaultFlag name desc field parser =
       flag name [desc ++ " (" ++ show def ++ " by default)."] def parser
       where
         def = field defaultConfig
+
+parseCPConfig :: OptionParser CP.Config
+parseCPConfig =
+  CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor
+  where
+    lweight =
+      expert $
+      inGroup "Critical pair weighting heuristics" $
+      defaultFlag "lhs-weight" "Weight given to LHS of critical pair" CP.cfg_lhsweight argNum
+    rweight =
+      expert $
+      inGroup "Critical pair weighting heuristics" $
+      defaultFlag "rhs-weight" "Weight given to RHS of critical pair" CP.cfg_rhsweight argNum
+    funweight =
+      expert $
+      inGroup "Critical pair weighting heuristics" $
+      defaultFlag "fun-weight" "Weight given to function symbols" CP.cfg_funweight argNum
+    varweight =
+      expert $
+      inGroup "Critical pair weighting heuristics" $
+      defaultFlag "var-weight" "Weight given to variable symbols" CP.cfg_varweight argNum
+    depthweight =
+      expert $
+      inGroup "Critical pair weighting heuristics" $
+      defaultFlag "depth-weight" "Weight given to critical pair depth" CP.cfg_depthweight argNum
+    dupcost =
+      expert $
+      inGroup "Critical pair weighting heuristics" $
+      defaultFlag "dup-cost" "Cost of duplicate subterms" CP.cfg_dupcost argNum
+    dupfactor =
+      expert $
+      inGroup "Critical pair weighting heuristics" $
+      defaultFlag "dup-factor" "Size factor of duplicate subterms" CP.cfg_dupfactor argNum
+
+    defaultFlag name desc field parser =
+      flag name [desc ++ " (" ++ show def ++ " by default)."] def parser
+      where
+        def = field CP.defaultConfig
 
 parsePrecedence :: OptionParser [String]
 parsePrecedence =

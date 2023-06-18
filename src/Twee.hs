@@ -57,7 +57,7 @@ data Config f =
     cfg_set_join_goals         :: Bool,
     cfg_always_simplify        :: Bool,
     cfg_complete_subsets       :: Bool,
-    cfg_critical_pairs         :: CP.Config,
+    cfg_score_cp               :: Depth -> Overlap (Active f) f -> Int,
     cfg_join                   :: Join.Config,
     cfg_proof_presentation     :: Proof.Config f }
 
@@ -78,7 +78,7 @@ data State f =
     st_messages_rev   :: ![Message f] }
 
 -- | The default prover configuration.
-defaultConfig :: Config f
+defaultConfig :: Function f => Config f
 defaultConfig =
   Config {
     cfg_accept_term = Nothing,
@@ -91,7 +91,7 @@ defaultConfig =
     cfg_set_join_goals = True,
     cfg_always_simplify = False,
     cfg_complete_subsets = False,
-    cfg_critical_pairs = CP.defaultConfig,
+    cfg_score_cp = score CP.defaultConfig,
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig }
 
@@ -254,7 +254,7 @@ instance Queue.Batch Batch where
 makePassive :: Function f => Config f -> Overlap (Active f) f -> Passive
 makePassive Config{..} overlap@Overlap{..} =
   Passive {
-    passive_score = fromIntegral (score cfg_critical_pairs depth overlap),
+    passive_score = fromIntegral (cfg_score_cp depth overlap),
     passive_rule1 = active_id overlap_rule1,
     passive_rule2 = active_id overlap_rule2,
     passive_how   = overlap_how }
@@ -283,7 +283,7 @@ simplifyPassive Config{..} state@State{..} passive = do
     passive_score = fromIntegral $
       fromIntegral (passive_score passive) `intMin`
       -- XXX factor out depth calculation
-      score cfg_critical_pairs (succ (the r1 `max` the r2)) overlap }
+      cfg_score_cp (succ (the r1 `max` the r2)) overlap }
 
 -- | Check if we should renormalise the queue.
 {-# INLINEABLE shouldSimplifyQueue #-}
