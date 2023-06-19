@@ -16,13 +16,13 @@ raceMany (x:xs) = do
     Left res  -> return res
     Right res -> return res
 
-raceStdout :: [IO ()] -> IO ()
+raceStdout :: [(String, IO ())] -> IO ()
 raceStdout xs = do
   action <- raceMany (map waitForStdout xs)
   action
   where
     end = "*** END OF OUTPUT"
-    waitForStdout p = do
+    waitForStdout (args, p) = do
       (fdIn, fdOut) <- createPipe
       pid <- getProcessID
       forkProcess $ do
@@ -36,6 +36,8 @@ raceStdout xs = do
       hSetBuffering hIn LineBuffering
       line <- hGetLine hIn
       return $ do
+        putStrLn ("Command-line arguments: " ++ args)
+        putStrLn ""
         putStrLn line
         let
           loop = do
@@ -60,4 +62,4 @@ variants =
 main = do
   hSetBuffering stdout LineBuffering
   (n:args) <- getArgs
-  raceStdout [withArgs (args ++ variant) SequentialMain.main | variant <- take (read n) variants]
+  raceStdout [(unwords variant, withArgs (args ++ variant) SequentialMain.main) | variant <- take (read n) variants]
