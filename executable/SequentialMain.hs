@@ -137,7 +137,7 @@ parseMainFlags =
 parseConfig :: OptionParser (Config Constant)
 parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
-    (CP.score <$> parseCPConfig) <*>
+    pure undefined <*> -- scoring function - filled in later, in runTwee
     (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses)
   where
@@ -623,8 +623,8 @@ identifyProblem TweeContext{..} prob =
       return $ Left (pre inp (Jukebox.Var ctx_var, ctx_minimal :@: []))
     identify inp = Left inp
 
-runTwee :: GlobalFlags -> TSTPFlags -> HornFlags -> [String] -> Config Constant -> MainFlags -> (IO () -> IO ()) -> Problem Clause -> IO Answer
-runTwee globals (TSTPFlags tstp) horn precedence config flags@MainFlags{..} later obligs = {-# SCC runTwee #-} do
+runTwee :: GlobalFlags -> TSTPFlags -> HornFlags -> [String] -> Config Constant -> CP.Config -> MainFlags -> (IO () -> IO ()) -> Problem Clause -> IO Answer
+runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlags{..} later obligs = {-# SCC runTwee #-} do
   let
     -- Encode whatever needs encoding in the problem
     obligs1
@@ -662,9 +662,9 @@ runTwee globals (TSTPFlags tstp) horn precedence config flags@MainFlags{..} late
         (isType c)
         (isNothing (elemIndex (base c) precedence))
         (fmap negate (elemIndex (base c) precedence))
-        (maybeNegate (Map.findWithDefault 0 c occs))
+        (maybeNegate (Map.findWithDefault 0 c funOccs))
     maybeNegate = if flags_flip_ordering then negate else id
-    occs = funsOcc prob
+    funOccs = funsOcc prob
 
     -- Translate everything to Twee.
     toEquation (t, u) =
@@ -692,6 +692,24 @@ runTwee globals (TSTPFlags tstp) horn precedence config flags@MainFlags{..} late
     isDefinition Input{source = Unknown} = True
     isDefinition inp = tag inp `elem` flags_eliminate
 
+  -- Compute CP scoring heuristic
+  let
+    goalNests = nests (map goal_eqn goals)
+    goalOccs = occs (map goal_eqn goals)
+    score depth overlap@CP.Overlap{overlap_eqn = eqn} =
+      CP.score cpConfig depth overlap *
+      product
+        [ pos (IntMap.findWithDefault 0 f eqnNests - IntMap.findWithDefault 0 f goalNests) *
+          pos (IntMap.findWithDefault 0 f eqnOccs - IntMap.findWithDefault 0 f goalOccs)
+        | f <- IntMap.keys eqnOccs ]
+      where
+        eqnNests = nests eqn
+        eqnOccs = occs eqn
+
+        pos n = if n <= 0 then 1 else n+1
+    config = config0 { cfg_score_cp = score }
+
+  let
     withGoals = foldl' (addGoal config) (initialState config) goals
     withAxioms = foldl' (addAxiom config) withGoals axioms
     withBackwardsGoal = foldn rewriteGoalsBackwards withAxioms flags_backwards_goal
@@ -993,6 +1011,7 @@ main = do
            (combine <$>
              expert hornToUnitBox <*>
              parseConfig <*>
+             parseCPConfig <*>
              parseMainFlags <*>
              (toFormulasBox =>>=
               expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
@@ -1000,7 +1019,7 @@ main = do
              (runTwee <$> globalFlags <*> tstpFlags <*> expert hornFlags <*> parsePrecedence)))
   profile
   where
-    combine horn config main encode prove later prob0 = do
+    combine horn config cpConfig main encode prove later prob0 = do
       res <- horn prob0
       case res of
         Left ans -> return ans
@@ -1011,4 +1030,4 @@ main = do
             isUnitEquality _ = False
             isUnit = all isUnitEquality (map (toLiterals . what) prob0)
             main' = if isUnit then main{flags_explain_encoding = False} else main{flags_formal_proof = False}
-          encode prob >>= prove config main' later
+          encode prob >>= prove config cpConfig main' later
