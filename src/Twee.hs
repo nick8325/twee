@@ -57,7 +57,7 @@ data Config f =
     cfg_set_join_goals         :: Bool,
     cfg_always_simplify        :: Bool,
     cfg_complete_subsets       :: Bool,
-    cfg_score_cp               :: Depth -> Overlap (Active f) f -> Int,
+    cfg_score_cp               :: Depth -> Overlap (Active f) f -> Float,
     cfg_join                   :: Join.Config,
     cfg_proof_presentation     :: Proof.Config f }
 
@@ -91,7 +91,7 @@ defaultConfig =
     cfg_set_join_goals = True,
     cfg_always_simplify = False,
     cfg_complete_subsets = False,
-    cfg_score_cp = score CP.defaultConfig,
+    cfg_score_cp = \d o -> fromIntegral (score CP.defaultConfig d o),
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig }
 
@@ -192,7 +192,7 @@ makePassives config@Config{..} State{..} rule =
 
 data Passive =
   Passive {
-    passive_score :: {-# UNPACK #-} !Int32,
+    passive_score :: {-# UNPACK #-} !Float,
     passive_rule1 :: {-# UNPACK #-} !Id,
     passive_rule2 :: {-# UNPACK #-} !Id,
     passive_how   :: !How }
@@ -212,7 +212,7 @@ data Batch =
     batch_kind      :: !BatchKind,
     batch_rule      :: {-# UNPACK #-} !Id,
     batch_best      :: {-# UNPACK #-} !Passive,
-    batch_rest      :: {-# UNPACK #-} !(PackedSequence (Int32, Id, How)) }
+    batch_rest      :: {-# UNPACK #-} !(PackedSequence (Float, Id, How)) }
 
 data BatchKind = Rule1 | Rule2 deriving Eq
 
@@ -254,7 +254,7 @@ instance Queue.Batch Batch where
 makePassive :: Function f => Config f -> Overlap (Active f) f -> Passive
 makePassive Config{..} overlap@Overlap{..} =
   Passive {
-    passive_score = fromIntegral (cfg_score_cp depth overlap),
+    passive_score = cfg_score_cp depth overlap,
     passive_rule1 = active_id overlap_rule1,
     passive_rule2 = active_id overlap_rule2,
     passive_how   = overlap_how }
@@ -280,8 +280,8 @@ simplifyPassive Config{..} state@State{..} passive = do
   let r1 = overlap_rule1 overlap
       r2 = overlap_rule2 overlap
   return passive {
-    passive_score = fromIntegral $
-      fromIntegral (passive_score passive) `intMin`
+    passive_score =
+      passive_score passive `min`
       -- XXX factor out depth calculation
       cfg_score_cp (succ (the r1 `max` the r2)) overlap }
 

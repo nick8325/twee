@@ -54,11 +54,12 @@ data MainFlags =
     flags_flatten_backwards_goal :: Int,
     flags_equals_transformation :: Bool,
     flags_distributivity_heuristic :: Bool,
-    flags_kbo_weight0 :: Bool }
+    flags_kbo_weight0 :: Bool,
+    flags_goal_heuristic :: Bool }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic <*> kboWeight0
+  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic <*> kboWeight0 <*> goalHeuristic
   where
     proof =
       inGroup "Output options" $
@@ -121,7 +122,11 @@ parseMainFlags =
     distributivityHeuristic =
       expert $
       inGroup "Completion heuristics" $
-      bool "distributivity-heuristic" ["Treat distributive operators specially (off by default)."] False
+      bool "distributivity-heuristic" ["Use the CP weighting heuristic from Anantharaman and Andrianarievelo (off by default)."] False
+    goalHeuristic =
+      expert $
+      inGroup "Completion heuristics" $
+      bool "goal-heuristic" ["Treat distributive operators specially (off by default)."] False
     eliminate =
       inGroup "Proof presentation" $
       concat <$>
@@ -696,17 +701,21 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
   let
     goalNests = nests (map goal_eqn goals)
     goalOccs = occs (map goal_eqn goals)
-    score depth overlap@CP.Overlap{overlap_eqn = eqn} =
-      CP.score cpConfig depth overlap *
-      product
-        [ pos (IntMap.findWithDefault 0 f eqnNests - IntMap.findWithDefault 0 f goalNests) *
-          pos (IntMap.findWithDefault 0 f eqnOccs - IntMap.findWithDefault 0 f goalOccs)
-        | f <- IntMap.keys eqnOccs ]
+    score depth overlap@CP.Overlap{overlap_eqn = eqn}
+      | flags_goal_heuristic =
+        fromIntegral (CP.score cpConfig depth overlap) *
+        product
+          [ pos (IntMap.findWithDefault 0 f eqnNests - IntMap.findWithDefault 0 f goalNests) *
+            pos (IntMap.findWithDefault 0 f eqnOccs - IntMap.findWithDefault 0 f goalOccs)
+          | f <- IntMap.keys eqnNests ] -- skip constants
+      | otherwise = 
+        fromIntegral (CP.score cpConfig depth overlap)
       where
         eqnNests = nests eqn
         eqnOccs = occs eqn
 
-        pos n = if n <= 0 then 1 else n+1
+        pos :: Int -> Float
+        pos n = if n <= 0 then 1 else fromIntegral n+1
     config = config0 { cfg_score_cp = score }
 
   let
