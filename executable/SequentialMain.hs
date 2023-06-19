@@ -122,11 +122,11 @@ parseMainFlags =
     distributivityHeuristic =
       expert $
       inGroup "Completion heuristics" $
-      bool "distributivity-heuristic" ["Use the CP weighting heuristic from Anantharaman and Andrianarievelo (off by default)."] False
+      bool "distributivity-heuristic" ["Treat distributive operators specially (off by default)."] False
     goalHeuristic =
       expert $
       inGroup "Completion heuristics" $
-      bool "goal-heuristic" ["Treat distributive operators specially (off by default)."] False
+      bool "goal-heuristic" ["Use the CP weighting heuristic from Anantharaman and Andrianarievelo (off by default)."] False
     eliminate =
       inGroup "Proof presentation" $
       concat <$>
