@@ -53,10 +53,11 @@ variants =
   ["--lhs-weight 1 --flip-ordering --normalise-queue-percent 10 --cp-renormalise-threshold 10",
    "--no-flatten-goal",
    "--flatten",
-   "--lhs-weight 9 --flip-ordering --no-flatten-goal",
-   "--flip-ordering --lhs-weight 1 --depth-weight 60",
-   "--flip-ordering --lhs-weight 1 --dup-cost 0 --dup-factor 7",
-   "--kbo-weight0 --lhs-weight 9 --no-flatten-goal --normalise-queue-percent 10 --cp-renormalise-threshold 10",
+
+   "--lhs-weight 9 --flip-ordering --complete-subsets --normalise-queue-percent 10 --cp-renormalise-threshold 10",
+   "--ground-connectedness",
+   "--flip-ordering --lhs-weight 1 --depth-weight 60 --distributivity-heuristic",
+   "--set-join --lhs-weight 1 --no-flatten-goal --complete-subsets",
    "--kbo-weight0 --lhs-weight 5 --flip-ordering --normalise-queue-percent 10 --cp-renormalise-threshold 10"]
 
 main = do
