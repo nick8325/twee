@@ -53,12 +53,11 @@ variants =
   ["--lhs-weight 1 --flip-ordering --normalise-queue-percent 10 --cp-renormalise-threshold 10",
    "--no-flatten-goal",
    "--flatten",
-
    "--lhs-weight 9 --flip-ordering --complete-subsets --normalise-queue-percent 10 --cp-renormalise-threshold 10",
-   "--ground-connectedness",
+   "--ground-connectedness --complete-subsets",
    "--flip-ordering --lhs-weight 1 --depth-weight 60 --distributivity-heuristic",
-   "--set-join --lhs-weight 1 --no-flatten-goal --complete-subsets",
-   "--kbo-weight0 --lhs-weight 5 --flip-ordering --normalise-queue-percent 10 --cp-renormalise-threshold 10"]
+   "--set-join --lhs-weight 1 --no-flatten-goal --complete-subsets --goal-heuristic",
+   "--kbo-weight0 --lhs-weight 5 --flip-ordering --normalise-queue-percent 10 --cp-renormalise-threshold 10 --goal-heuristic"]
 
 main = do
   hSetBuffering stdout LineBuffering
