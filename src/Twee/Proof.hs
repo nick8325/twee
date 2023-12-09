@@ -10,6 +10,7 @@ module Twee.Proof(
   -- * Analysing proofs
   simplify, steps, usedLemmas, usedAxioms, usedLemmasAndSubsts, usedAxiomsAndSubsts,
   groundAxiomsAndSubsts, eliminateDefinitions, eliminateDefinitionsFromGoal,
+  simplifyProof, generaliseProof,
 
   -- * Pretty-printing proofs
   Config(..), defaultConfig, Presentation(..),
@@ -556,7 +557,7 @@ simplifyProof config@Config{..} goals =
       inlineTrivialLemmas config .
       tightenProof
 
-    simp = simpCore . generaliseProof
+    simp = simpCore . generaliseProof True
     -- generaliseProof undoes the effect of groundProof!
     -- But we still want to run generaliseProof first, to simplify the proof
     simp' = (simpCore . groundProof) `onlyIf` cfg_ground_proof
@@ -666,14 +667,14 @@ tightenProof = mapLemmas tightenLemma
             sub <- maybeToList (match u t),
             subst sub (eqn_rhs eq) == eqn_rhs eq ]
 
-generaliseProof :: Function f => [Derivation f] -> [Derivation f]
-generaliseProof =
+generaliseProof :: Function f => Bool -> [Derivation f] -> [Derivation f]
+generaliseProof instGoal =
   simplificationPass (const generaliseLemma) (const generaliseGoal)
   where
     generaliseLemma p = lemma (certify q) sub
       where
         (q, sub) = generalise p
-    generaliseGoal p = subst sub q
+    generaliseGoal p = if instGoal then subst sub q else q
       where
         (q, sub) = generalise (certify p)
 

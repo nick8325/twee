@@ -59,7 +59,8 @@ data Config f =
     cfg_complete_subsets       :: Bool,
     cfg_score_cp               :: Depth -> Overlap (Active f) f -> Float,
     cfg_join                   :: Join.Config,
-    cfg_proof_presentation     :: Proof.Config f }
+    cfg_proof_presentation     :: Proof.Config f,
+    cfg_eliminate_axioms       :: [Axiom f] }
 
 -- | The prover state.
 data State f =
@@ -93,7 +94,8 @@ defaultConfig =
     cfg_complete_subsets = False,
     cfg_score_cp = \d o -> fromIntegral (score CP.defaultConfig d o),
     cfg_join = Join.defaultConfig,
-    cfg_proof_presentation = Proof.defaultConfig }
+    cfg_proof_presentation = Proof.defaultConfig,
+    cfg_eliminate_axioms = [] }
 
 -- | Does this configuration run the prover in a complete mode?
 configIsComplete :: Config f -> Bool
@@ -489,7 +491,21 @@ considerUsing rules config@Config{..} state@State{..} info cp0 =
         Nothing -> state'
 
     Left (cp, model) ->
+      generaliseCP cp $
       foldl' (\state cp -> addCP config model state info cp) state (split cp)
+
+  where
+    generaliseCP cp state
+      | null cfg_eliminate_axioms = state
+      | canonicalise (cp_eqn cp) == canonicalise (cp_eqn cp') = state
+      | otherwise =
+        consider config{cfg_eliminate_axioms = []} state info cp'
+      where
+        deriv =
+          let d1 = Proof.eliminateDefinitions cfg_eliminate_axioms (cp_proof cp)
+              [d2] = fixpointOn (map (equation . certify)) (Proof.generaliseProof False) [d1]
+          in d2
+        cp' = cp { cp_eqn = equation (certify deriv), cp_proof = deriv }
 
 {-# INLINEABLE addCP #-}
 addCP :: Function f => Config f -> Model f -> State f -> Info -> CriticalPair f -> State f

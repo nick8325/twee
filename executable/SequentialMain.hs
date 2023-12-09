@@ -49,6 +49,7 @@ data MainFlags =
     flags_flatten_nonground :: Bool,
     flags_flatten_goals_lightly :: Bool,
     flags_flatten_all :: Bool,
+    flags_flatten_regeneralise :: Bool,
     flags_eliminate :: [String],
     flags_backwards_goal :: Int,
     flags_flatten_backwards_goal :: Int,
@@ -59,7 +60,7 @@ data MainFlags =
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic <*> kboWeight0 <*> goalHeuristic
+  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> flattenRegeneralise <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic <*> kboWeight0 <*> goalHeuristic
   where
     proof =
       inGroup "Output options" $
@@ -107,6 +108,10 @@ parseMainFlags =
       expert $
       inGroup "Completion heuristics" $
       bool "flatten" ["Flatten all clauses by adding new axioms (off by default)."] False
+    flattenRegeneralise =
+      expert $
+      inGroup "Completion heuristics" $
+      bool "flatten-regeneralise" ["Regeneralise rules involving flattened goal terms (off by default)."] False
     backwardsGoal =
       expert $
       inGroup "Completion heuristics" $
@@ -144,7 +149,7 @@ parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
     pure undefined <*> -- scoring function - filled in later, in runTwee
     (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join) <*>
-    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses)
+    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses) <*> pure []
   where
     maxSize =
       inGroup "Resource limits" $
@@ -716,7 +721,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
 
         pos :: Int -> Float
         pos n = if n <= 0 then 1 else fromIntegral n+1
-    config = config0 { cfg_score_cp = score }
+    config = config0 { cfg_score_cp = score, cfg_eliminate_axioms = if flags_flatten_regeneralise then defs else [] }
 
   let
     withGoals = foldl' (addGoal config) (initialState config) goals
