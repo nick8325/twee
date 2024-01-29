@@ -39,6 +39,11 @@ import Twee.Profile
 import Data.Ord
 import Data.PackedSequence(PackedSequence)
 import qualified Data.PackedSequence as PackedSequence
+import Test.QuickCheck.Gen hiding (sample)
+import Test.QuickCheck.Random
+import Debug.Trace
+import Twee.Generate
+import qualified System.Random as Random
 
 ----------------------------------------------------------------------
 -- * Configuration and prover state.
@@ -60,7 +65,8 @@ data Config f =
     cfg_score_cp               :: Depth -> Overlap (Active f) f -> Float,
     cfg_join                   :: Join.Config,
     cfg_proof_presentation     :: Proof.Config f,
-    cfg_eliminate_axioms       :: [Axiom f] }
+    cfg_eliminate_axioms       :: [Axiom f],
+    cfg_random_mode            :: Bool }
 
 -- | The prover state.
 data State f =
@@ -76,7 +82,8 @@ data State f =
     st_cp_sample      :: !(Sample (Maybe (Overlap (Active f) f))),
     st_not_complete   :: !IntSet,
     st_complete       :: !(Index f (Rule f)),
-    st_messages_rev   :: ![Message f] }
+    st_messages_rev   :: ![Message f],
+    st_random_seed    :: Maybe QCGen }
 
 -- | The default prover configuration.
 defaultConfig :: Function f => Config f
@@ -95,7 +102,8 @@ defaultConfig =
     cfg_score_cp = \d o -> fromIntegral (score CP.defaultConfig d o),
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig,
-    cfg_eliminate_axioms = [] }
+    cfg_eliminate_axioms = [],
+    cfg_random_mode = False }
 
 -- | Does this configuration run the prover in a complete mode?
 configIsComplete :: Config f -> Bool
@@ -119,7 +127,11 @@ initialState Config{..} =
     st_cp_sample = emptySample cfg_cp_sample_size,
     st_not_complete = IntSet.empty,
     st_complete = Index.empty,
-    st_messages_rev = [] }
+    st_messages_rev = [],
+    st_random_seed =
+      case cfg_random_mode of
+        False -> Nothing
+        True -> Just (mkQCGen 12345) }
 
 ----------------------------------------------------------------------
 -- * Messages.
@@ -182,6 +194,8 @@ messages state = reverse (st_messages_rev state)
 -- | Compute all critical pairs from a rule.
 {-# INLINEABLE makePassives #-}
 makePassives :: Function f => Config f -> State f -> Active f -> [Passive]
+-- don't generate critical pairs when in random mode
+makePassives Config{cfg_random_mode = True} _ _ = []
 makePassives config@Config{..} State{..} rule =
 -- XXX factor out depth calculation
   stampWith "make critical pair" length
@@ -784,10 +798,35 @@ complete1 config@Config{..} state
     (False, state)
   | solved state = (False, state)
   | otherwise =
-    case dequeue config state of
-      (Nothing, state) -> (False, state)
-      (Just (info, overlap, _, _), state) ->
-        (True, consider config state info overlap)
+    case st_random_seed state of
+      Nothing -> -- normal mode
+        case dequeue config state of
+          (Nothing, state) -> (False, state)
+          (Just (info, overlap, _, _), state) ->
+            (True, consider config state info overlap)
+      Just g -> -- random mode
+        let (g1, g2) = Random.split g in
+        let state' = state { st_random_seed = Just g2 } in
+        case findCriticalPair config state g1 of
+          Nothing -> (True, state')
+          Just (info, overlap) -> (True, consider config state info overlap)
+
+{-# INLINEABLE findCriticalPair #-}
+findCriticalPair :: Function f => Config f -> State f -> QCGen -> Maybe (Info, CriticalPair f)
+findCriticalPair config state g =
+  case [(r, t) | t <- terms, r@HasCriticalPair{} <- trace ("checking " ++ prettyShow t) [hasUNF strat t]] of
+    [] -> Nothing
+    (HasCriticalPair r1 (r2, n), t):_ -> 
+      trace ("Term " ++ prettyShow t ++ " has critical pair (" ++ prettyShow r1 ++ ", " ++ prettyShow r2 ++ ", " ++ show n ++ ")") $
+      let r2' = renameAvoiding r1 r2 in
+      let Just o = overlapAt (How n Forwards Forwards) r1 r2' r1 r2' in
+      Just (Info 0 IntSet.empty, makeCriticalPair o)
+  where
+    sizes = [0, 2 .. 200]
+    terms = unGen (sequence [resize n (generateTerm lhss) | n <- sizes]) g 0
+
+    strat = anywhere1 (basic (rewrite reduces (index_all (st_rules state))))
+    lhss = map lhs (Index.elems (index_all (st_rules state)))
 
 {-# INLINEABLE solved #-}
 solved :: Function f => State f -> Bool

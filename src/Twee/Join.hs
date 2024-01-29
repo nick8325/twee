@@ -237,8 +237,8 @@ groundJoinFromMaybe config eqns idx (Just model) = groundJoinFrom config eqns id
 {-# INLINEABLE valid #-}
 valid :: Function f => Model f -> Reduction f -> Bool
 valid model red =
-  and [ reducesInModel model rule emptySubst
-      | rule <- red ]
+  and [ reducesInModel model (subst sub rule) emptySubst
+      | (rule, sub) <- red ]
 
 optimise :: (a -> [a]) -> (a -> Bool) -> a -> a
 optimise f p x =

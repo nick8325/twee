@@ -51,6 +51,7 @@ library
     Twee.Constraints
     Twee.CP
     Twee.Equation
+    Twee.Generate
     Twee.Index
     Twee.Join
     Twee.KBO
@@ -83,7 +84,8 @@ library
     uglymemo,
     random,
     bytestring,
-    cereal
+    cereal,
+    QuickCheck
   hs-source-dirs:      .
   ghc-options:         -W -fno-warn-incomplete-patterns -fno-warn-dodgy-imports
   default-language:    Haskell2010

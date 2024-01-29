@@ -21,6 +21,10 @@ import qualified Twee.Proof as Proof
 import Twee.Proof(Derivation, Proof)
 import Data.Tuple
 import Twee.Profile
+import Data.MemoUgly
+import Debug.Trace
+import Twee.Pretty
+import Data.Function
 
 --------------------------------------------------------------------------------
 -- * Rewrite rules.
@@ -244,7 +248,7 @@ type Strategy f = Term f -> [Reduction f]
 -- are exactly equal to the LHS of the rule are replaced by the RHS,
 -- i.e. the rewrite step is performed as a parallel rewrite without
 -- matching.
-type Reduction f = [Rule f]
+type Reduction f = [(Rule f, Subst f)]
 
 -- | Transitivity for reduction sequences.
 trans :: Reduction f -> Reduction f -> Reduction f
@@ -267,13 +271,17 @@ reductionProof t ps = red t (Proof.Refl t) (reverse ps)
       red (ruleResult t q) (p `Proof.trans` ruleProof t q) qs
 
 -- Helpers for result and reductionProof.
-ruleResult :: Term f -> Rule f -> Term f
-ruleResult t r = build (replace (lhs r) (rhs r) (singleton t))
+ruleResult :: Term f -> (Rule f, Subst f) -> Term f
+ruleResult t (r0, sub) = build (replace (lhs r) (rhs r) (singleton t))
+  where
+    r = subst sub r0
 
-ruleProof :: Function f => Term f -> Rule f -> Derivation f
-ruleProof t r@(Rule _ _ lhs _)
-  | t == lhs = ruleDerivation r
-  | len t < len lhs = Proof.Refl t
+ruleProof :: Function f => Term f -> (Rule f, Subst f) -> Derivation f
+ruleProof t (r0, sub)
+  | t == lhs r = ruleDerivation r
+  | len t < len (lhs r) = Proof.Refl t
+  where
+    r = subst sub r0
 ruleProof (App f ts) rule =
   Proof.cong f [ruleProof u rule | u <- unpack ts]
 ruleProof t _ = Proof.Refl t
@@ -351,7 +359,7 @@ rewrite :: (Function f, Has a (Rule f)) => (Rule f -> Subst f -> Bool) -> Index 
 rewrite p rules t = do
   (sub, rule) <- Index.matches t rules
   guard (p (the rule) sub)
-  return [subst sub (the rule)]
+  return [(the rule, sub)]
 
 -- | A strategy which applies one rule only.
 {-# INLINEABLE tryRule #-}
@@ -359,7 +367,7 @@ tryRule :: (Function f, Has a (Rule f)) => (Rule f -> Subst f -> Bool) -> a -> S
 tryRule p rule t = do
   sub <- maybeToList (match (lhs (the rule)) t)
   guard (p (the rule) sub)
-  return [subst sub (the rule)]
+  return [(the rule, sub)]
 
 -- | Check if a rule can be applied, given an ordering <= on terms.
 {-# INLINEABLE reducesWith #-}
@@ -415,3 +423,105 @@ reducesInModel cond rule sub =
 reducesSkolem :: Function f => Rule f -> Subst f -> Bool
 reducesSkolem rule sub =
   reducesWith (\t u -> lessEqSkolem t u) rule sub
+
+--------------------------------------------------------------------------------
+-- * Rewriting that performs only a single step at a time (not in parallel).
+--------------------------------------------------------------------------------
+
+-- | A reduction proof is a sequence of rewrite steps, stored as a
+-- list in reverse order. Each rewrite step is coded as a rule, a
+-- substitution and a position to be rewritten.
+type Reduction1 f = [(Rule f, Subst f, Int)]
+
+-- | Transitivity for reduction sequences.
+trans1 :: Reduction1 f -> Reduction1 f -> Reduction1 f
+trans1 p q = q ++ p
+
+-- TODO: get rid of the below copy-and-pasting by introducing a typeclass
+
+-- | Compute the final term resulting from a reduction, given the
+-- starting term.
+result1 :: Term f -> Reduction1 f -> Term f
+result1 t [] = t
+result1 t (r:rs) = ruleResult1 u r
+  where
+    u = result1 t rs
+
+-- | Turn a reduction into a proof.
+reductionProof1 :: Function f => Term f -> Reduction1 f -> Derivation f
+reductionProof1 t ps = red t (Proof.Refl t) (reverse ps)
+  where
+    red _ p [] = p
+    red t p (q:qs) =
+      red (ruleResult1 t q) (p `Proof.trans` ruleProof1 t q) qs
+
+-- Helpers for result1 and reductionProof1.
+ruleResult1 :: Term f -> (Rule f, Subst f, Int) -> Term f
+ruleResult1 t (r0, sub, n)
+  | at n (singleton t) == lhs r =
+    build (replacePosition n (rhs r) (singleton t))
+  | otherwise = error "ruleResult1: selected subterm is not equal to lhs of rule"
+  where
+    r = subst sub r0
+
+ruleProof1 :: Function f => Term f -> (Rule f, Subst f, Int) -> Derivation f
+ruleProof1 t (r0, sub, n)
+  | at n (singleton t) == lhs r =
+    Proof.congPath (positionToPath t n) t (ruleDerivation r)    
+  | otherwise = error "ruleProof 1: selected subterm is not equal to lhs of rule"
+  where
+    r = subst sub r0
+
+-- | A strategy gives a set of possible reductions for a term.
+type Strategy1 f = Term f -> [Reduction1 f]
+
+-- | Apply a strategy anywhere in a term.
+anywhere1 :: Strategy1 f -> Strategy1 f
+anywhere1 strat t =
+  [ [(r, sub, n+m) | (r, sub, m) <- red]
+  | n <- [0..len t-1],
+    red <- strat (at n (singleton t)) ]
+
+-- | Apply a basic strategy to a term.
+basic :: Strategy f -> Strategy1 f
+basic strat t = [[(r, sub, 0)] | [(r, sub)] <- strat t]
+
+--------------------------------------------------------------------------------
+-- * Testing whether a term has a unique normal form.
+--------------------------------------------------------------------------------
+
+data UNF f =
+    -- Function has a unique normal form
+    UniqueNormalForm (Term f)
+  | -- This pair of rules has an unjoinable critical pair
+    HasCriticalPair (Rule f) (Rule f, Int)
+
+instance Function f => Pretty (UNF f) where
+  pPrint (UniqueNormalForm t) = text "unique normal form" <+> pPrint t
+  pPrint (HasCriticalPair r1 (r2, n)) = text "critical pair" <+> pPrint r1 <+> pPrint (r2, n)
+
+hasUNF :: Function f => Strategy1 f -> Term f -> UNF f
+hasUNF strat t0 =
+  head $
+    -- optimisation: check if any subterm has a non-unique normal form first
+    [r | r@HasCriticalPair{} <- map magic (sortBy (comparing len) (properSubterms t0))] ++
+    [magic t0]
+  where
+    magic = memo $ \t ->
+      --trace ("magic " ++ prettyShow t) $
+      let
+        as = [(red, {-trace ("recursing from " ++ prettyShow t ++ " to " ++ prettyShow (result1 t red) ++ " via " ++ prettyShow red) $-} magic (result1 t red)) | red <- strat t, if result1 t red == t then error "oops" else True]
+
+        conflict (r1, []) (r2, p) = HasCriticalPair r1 (r2, pathToPosition (lhs r1) p)
+        conflict (r1, p) (r2, []) = HasCriticalPair r2 (r1, pathToPosition (lhs r2) p)
+        conflict (r1, (m:ms)) (r2, (n:ns)) | m == n = conflict (r1, ms) (r2, ns)
+        conflict _ _ = error "something has gone wrong in the magic function"
+
+        res = head $
+          [r | r@HasCriticalPair{} <- map snd as] ++
+          case nubBy ((==) `on` snd) ([(red, t) | (red, UniqueNormalForm t) <- as]) of
+            [] -> [UniqueNormalForm t]
+            [(_, t)] -> [UniqueNormalForm t]
+            ((r1, _, n1):_, t1):((r2, _, n2):_, t2):_ ->
+              [conflict (r1, positionToPath t n1) (r2, positionToPath t n2)]
+      in {-traceShow (pPrint res)-} res
