@@ -79,6 +79,7 @@ import Control.Arrow((&&&))
 import Twee.Utils
 import qualified Data.Label as Label
 import Data.Typeable
+import GHC.Stack
 
 --------------------------------------------------------------------------------
 -- * A type class for builders
@@ -711,7 +712,7 @@ positionToPath t n = term t n
       | otherwise = list (k+1) u (n-len t)
 
 -- | Convert a path in a term into a position.
-pathToPosition :: Term f -> [Int] -> Int
+pathToPosition :: HasCallStack => Term f -> [Int] -> Int
 pathToPosition t ns = term 0 t ns
   where
     term k _ [] = k

@@ -25,6 +25,8 @@ import Data.MemoUgly
 import Debug.Trace
 import Twee.Pretty
 import Data.Function
+import Control.Arrow((***))
+import GHC.Stack
 
 --------------------------------------------------------------------------------
 -- * Rewrite rules.
@@ -430,8 +432,8 @@ reducesSkolem rule sub =
 
 -- | A reduction proof is a sequence of rewrite steps, stored as a
 -- list in reverse order. Each rewrite step is coded as a rule, a
--- substitution and a position to be rewritten.
-type Reduction1 f = [(Rule f, Subst f, Int)]
+-- substitution and a path to be rewritten.
+type Reduction1 f = [(Rule f, Subst f, [Int])]
 
 -- | Transitivity for reduction sequences.
 trans1 :: Reduction1 f -> Reduction1 f -> Reduction1 f
@@ -441,7 +443,7 @@ trans1 p q = q ++ p
 
 -- | Compute the final term resulting from a reduction, given the
 -- starting term.
-result1 :: Term f -> Reduction1 f -> Term f
+result1 :: HasCallStack => Term f -> Reduction1 f -> Term f
 result1 t [] = t
 result1 t (r:rs) = ruleResult1 u r
   where
@@ -456,21 +458,23 @@ reductionProof1 t ps = red t (Proof.Refl t) (reverse ps)
       red (ruleResult1 t q) (p `Proof.trans` ruleProof1 t q) qs
 
 -- Helpers for result1 and reductionProof1.
-ruleResult1 :: Term f -> (Rule f, Subst f, Int) -> Term f
-ruleResult1 t (r0, sub, n)
+ruleResult1 :: HasCallStack => Term f -> (Rule f, Subst f, [Int]) -> Term f
+ruleResult1 t (r0, sub, p)
   | at n (singleton t) == lhs r =
     build (replacePosition n (rhs r) (singleton t))
   | otherwise = error "ruleResult1: selected subterm is not equal to lhs of rule"
   where
     r = subst sub r0
+    n = pathToPosition t p
 
-ruleProof1 :: Function f => Term f -> (Rule f, Subst f, Int) -> Derivation f
-ruleProof1 t (r0, sub, n)
+ruleProof1 :: Function f => Term f -> (Rule f, Subst f, [Int]) -> Derivation f
+ruleProof1 t (r0, sub, p)
   | at n (singleton t) == lhs r =
-    Proof.congPath (positionToPath t n) t (ruleDerivation r)    
-  | otherwise = error "ruleProof 1: selected subterm is not equal to lhs of rule"
+    Proof.congPath p t (ruleDerivation r)    
+  | otherwise = error "ruleProof1: selected subterm is not equal to lhs of rule"
   where
     r = subst sub r0
+    n = pathToPosition t p
 
 -- | A strategy gives a set of possible reductions for a term.
 type Strategy1 f = Term f -> [Reduction1 f]
@@ -478,13 +482,29 @@ type Strategy1 f = Term f -> [Reduction1 f]
 -- | Apply a strategy anywhere in a term.
 anywhere1 :: Strategy1 f -> Strategy1 f
 anywhere1 strat t =
-  [ [(r, sub, n+m) | (r, sub, m) <- red]
-  | n <- [0..len t-1],
+  [ [(r, sub, p ++ p') | (r, sub, p') <- red]
+  | n <- reverse [0..len t-1], -- innermost
+    let p = positionToPath t n,
     red <- strat (at n (singleton t)) ]
 
 -- | Apply a basic strategy to a term.
 basic :: Strategy f -> Strategy1 f
-basic strat t = [[(r, sub, 0)] | [(r, sub)] <- strat t]
+basic strat t = [[(r, sub, [])] | [(r, sub)] <- strat t]
+
+-- | Normalise a term wrt a particular strategy.
+{-# INLINE normaliseWith1 #-}
+normaliseWith1 :: Function f => (Term f -> Bool) -> Strategy1 f -> Term f -> Reduction1 f
+normaliseWith1 ok strat t = res
+  where
+    res = aux 0 [] t
+    aux 1000 p _ =
+      error $
+        "Possibly nonterminating rewrite:\n" ++ prettyShow p
+    aux n p t =
+      case anywhere1 strat t of
+        (q:_) | u <- result1 t q, ok u ->
+          aux (n+1) (p `trans1` q) u
+        _ -> p
 
 --------------------------------------------------------------------------------
 -- * Testing whether a term has a unique normal form.
@@ -492,16 +512,127 @@ basic strat t = [[(r, sub, 0)] | [(r, sub)] <- strat t]
 
 data UNF f =
     -- Function has a unique normal form
-    UniqueNormalForm (Term f)
+    UniqueNormalForm
   | -- This pair of rules has an unjoinable critical pair
     HasCriticalPair (Rule f) (Rule f, Int)
 
 instance Function f => Pretty (UNF f) where
-  pPrint (UniqueNormalForm t) = text "unique normal form" <+> pPrint t
+  pPrint UniqueNormalForm = text "unique normal form"
   pPrint (HasCriticalPair r1 (r2, n)) = text "critical pair" <+> pPrint r1 <+> pPrint (r2, n)
 
 hasUNF :: Function f => Strategy1 f -> Term f -> UNF f
-hasUNF strat t0 =
+hasUNF strat =
+  \t -> -- don't bind t in where-clause
+  case nubBy ((==) `on` normR t) [r | [r] <- anywhere1 strat t] of
+    [] -> UniqueNormalForm
+    [_] -> UniqueNormalForm
+    r1:r2:_ ->
+      conflict t r1 r2
+  where
+    norm t = result1 t (normaliseWith1 (const True) strat t)
+    normR t r = norm (result1 t [r])
+
+    -- precondition: normR t r1 /= normR t r2
+    conflict t r1 r2
+      | trace "" $
+        trace ("Conflicting term: " ++ prettyShow t) $
+        trace ("Rule 1: " ++ prettyShow r1) $
+        trace ("Rule 2: " ++ prettyShow r2) $
+        trace "" False = undefined
+
+    -- Both rewrites apply to the same subterm.
+    -- Hypothesis: descending into the subterm will still find a conflict as long as norm is innermost
+    conflict t (r1, sub1, (p1:ps1)) (r2, sub2, (p2:ps2)) | p1 == p2 =
+      conflict (unpack (children t) !! p1) (r1, sub1, ps1) (r2, sub2, ps2)
+
+    -- One rule is at the root (first normalise so that r1 is at the root)
+    conflict t (r1, sub1, p@(_:_)) (r2, sub2, []) =
+      conflict t (r2, sub2, []) (r1, sub1, p)
+    conflict t (r1, sub1, []) (r2, sub2, p)
+      | criticalOverlap (lhs r1) p =
+        trace ("Critical pair " ++ prettyShow (r1, r2, p)) $
+        HasCriticalPair r1 (r2, pathToPosition (lhs r1) p)
+      | otherwise = nonOverlapping t (r1, sub1, []) (r2, sub2, p)
+    -- Rewrites apply to parallel subterms and can be easily commuted
+    conflict t r1 r2 = nonOverlapping t r1 r2
+
+    -- Precondition: r1 can be commuted with some number of parallel
+    -- rewrites of r2
+    nonOverlapping t red1@(r1, sub1, p1) red2@(r2, sub2, p2)
+      | trace "" $
+        trace ("Non-overlapping reduction: " ++ prettyShow t) $
+        trace ("First rule: " ++ prettyShow red1) $
+        trace ("Second rule: " ++ prettyShow red2) $
+        trace ("Intermediate term: " ++ prettyShow u) $
+        trace ("Positions before: " ++ prettyShow ps2Before) $
+        trace ("Positions after: " ++ prettyShow ps2After) $
+        trace ("Final term: " ++ prettyShow v) $
+        trace ("Commuted term for first rule: " ++ prettyShow (result1 t reds2Before)) $
+        False = undefined
+      -- here we skip some of the parallel reductions. is it ok?
+      -- maybe because of innermost rewriting?
+      | norm v /= normR t red1 = trace "1" $ parallel (result1 t [red1]) (head reds2After) -- can reds2 be empty?
+      | norm v /= normR t red2 = trace "2" $ parallel (result1 t reds2Before) red1
+      where
+        u = result1 t [(r1, sub1, p1)]
+        (ps2Before, ps2After) = track r1 p1 p2
+        reds2Before = [rematch (r2, sub2, p) t | p <- ps2Before]
+        reds2After = [rematch (r2, sub2, p) u | p <- ps2After]
+        v = result1 u reds2After
+        
+    parallel t r1 =
+      case anywhere1 strat t of
+        [] -> error "no reduction steps" -- UniqueNormalForm -- this can happen when unorientable rules become unapplicable... but, there must be a critical pair to be found!
+        (r2:_) -> conflict t (rematch r1 t) (head r2)
+
+    criticalOverlap (Var _) _ = False
+    criticalOverlap App{} [] = True
+    criticalOverlap t (p:ps) = criticalOverlap (unpack (children t) !! p) ps
+
+    -- find the substitution for a rewrite
+    rematch (r, _, pos) t = (r, sub, pos)
+      where
+        Just sub = match (lhs r) (at (pathToPosition t pos) (singleton t))
+
+-- Given a path in a term which is below a variable, find the variable
+-- and the part of the path below the variable
+decomposePath (Var x) ps = (x, ps)
+decomposePath t (p:ps) = decomposePath (unpack (children t) !! p) ps
+
+-- positions of a variable in a term
+varPos :: Var -> Term f -> [Int]
+varPos x t = [n | n <- [0..len t-1], at n (singleton t) == build (var x)]
+
+-- Consider a rewrite t -> u at position pr in a term, and a position
+-- pt that does not overlap with the rewrite:
+-- (1) Suppose that right now the rewrite could be applied, but
+--     instead do a different rewrite at position pt. What other
+--     positions must be also rewrite for the original rewrite to
+--     still be applicable?
+--     (e.g.: if the rule is f(x,x)->..., and the position is one of
+--     the "x"s, if we rewrite one "x" we must also rewrite the other)
+-- (2) Where does the position pt "move to" after the rewrite?
+track :: Rule f -> [Int] -> [Int] -> ([[Int]], [[Int]])
+track r (p:pr) (p':pt)
+    -- common prefix
+  | p == p' = (map (p:) *** map (p:)) (track r pr pt)
+    -- parallel prefix
+  | otherwise = ([p':pt], [p':pt])
+track _ (_:_) [] =
+  -- position being tracked < position of rewrite
+  ([[]], [[]])
+track Rule{lhs = lhs, rhs = rhs} [] pt =
+  -- strategy: find what variable position pt occurs under in the lhs of the rule,
+  -- then find all occurrences of that variable in the rhs of the rule
+  let
+    (x, p) = decomposePath lhs pt
+  in
+    ([positionToPath lhs n ++ p | n <- varPos x lhs],
+     [positionToPath rhs n ++ p | n <- varPos x rhs])
+
+{-
+hasUNFSlow :: Function f => Strategy1 f -> Term f -> UNF f
+hasUNFSlow strat t0 =
   head $
     -- optimisation: check if any subterm has a non-unique normal form first
     [r | r@HasCriticalPair{} <- map magic (sortBy (comparing len) (properSubterms t0))] ++
@@ -525,3 +656,4 @@ hasUNF strat t0 =
             ((r1, _, n1):_, t1):((r2, _, n2):_, t2):_ ->
               [conflict (r1, positionToPath t n1) (r2, positionToPath t n2)]
       in {-traceShow (pPrint res)-} res
+-}

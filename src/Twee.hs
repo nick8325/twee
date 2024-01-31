@@ -807,9 +807,9 @@ complete1 config@Config{..} state
       Just g -> -- random mode
         let (g1, g2) = Random.split g in
         let state' = state { st_random_seed = Just g2 } in
-        case findCriticalPair config state g1 of
+        case findCriticalPair config state' g1 of
           Nothing -> (True, state')
-          Just (info, overlap) -> (True, consider config state info overlap)
+          Just (info, overlap) -> (True, consider config state' info overlap)
 
 {-# INLINEABLE findCriticalPair #-}
 findCriticalPair :: Function f => Config f -> State f -> QCGen -> Maybe (Info, CriticalPair f)
@@ -822,10 +822,10 @@ findCriticalPair config state g =
       let Just o = overlapAt (How n Forwards Forwards) r1 r2' r1 r2' in
       Just (Info 0 IntSet.empty, makeCriticalPair o)
   where
-    sizes = [0, 2 .. 200]
+    sizes = [0, 2 .. 100]
     terms = unGen (sequence [resize n (generateTerm lhss) | n <- sizes]) g 0
 
-    strat = anywhere1 (basic (rewrite reduces (index_all (st_rules state))))
+    strat = basic (rewrite reduces (index_all (st_rules state)))
     lhss = map lhs (Index.elems (index_all (st_rules state)))
 
 {-# INLINEABLE solved #-}
