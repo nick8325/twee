@@ -149,7 +149,7 @@ parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
     pure undefined <*> -- scoring function - filled in later, in runTwee
     (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join) <*>
-    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses) <*> pure [] <*> randomMode
+    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses) <*> pure [] <*> randomMode <*> randomGoalDirected
   where
     maxSize =
       inGroup "Resource limits" $
@@ -259,6 +259,12 @@ parseConfig =
       inGroup "Completion heuristics" $
       bool "random-mode"
         ["Use random testing to find suitable CPs (doesn't work yet!) (off by default)."]
+        False
+    randomGoalDirected =
+      expert $
+      inGroup "Completion heuristics" $
+      bool "random-goal-directed"
+        ["Use goal-direction in --random-mode (off by default)."]
         False
     colour = fromMaybe <$> io colourSupported <*> colourFlag
     colourFlag =

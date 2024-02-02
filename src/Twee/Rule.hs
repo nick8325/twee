@@ -27,6 +27,7 @@ import Twee.Pretty
 import Data.Function
 import Control.Arrow((***))
 import GHC.Stack
+import Test.QuickCheck hiding (Function, subterms, Fun)
 
 --------------------------------------------------------------------------------
 -- * Rewrite rules.
@@ -496,6 +497,20 @@ normaliseWith1 ok strat t = aux t
           p `trans1` aux u
         _ -> []
 
+-- | Normalise a term wrt a particular strategy, picking random
+-- rewrites at every step.
+{-# INLINE normaliseWith1Random #-}
+normaliseWith1Random :: Function f => (Term f -> Bool) -> Strategy1 f -> Term f -> Gen (Reduction1 f)
+normaliseWith1Random ok strat t = aux t
+  where
+    aux t =
+      let choices = [(p, u) | p <- anywhere1 strat t, let u = result1 t p, ok u] in
+      case choices of
+        [] -> return []
+        _ -> do
+          (p, u) <- elements choices
+          fmap (p `trans1`) (aux u)
+
 --------------------------------------------------------------------------------
 -- * Testing whether a term has a unique normal form.
 --------------------------------------------------------------------------------
@@ -506,30 +521,38 @@ data UNF f =
   | -- This pair of rules has an unjoinable critical pair
     HasCriticalPair (Rule f) (Rule f, Int)
 
+instance Semigroup (UNF f) where
+  -- mconcat finds the first HasCriticalPair in the list
+  UniqueNormalForm <> x = x
+  x@HasCriticalPair{} <> _ = x
+instance Monoid (UNF f) where
+  mempty = UniqueNormalForm
+
 instance Function f => Pretty (UNF f) where
   pPrint UniqueNormalForm = text "unique normal form"
   pPrint (HasCriticalPair r1 (r2, n)) = text "critical pair" <+> pPrint r1 <+> pPrint (r2, n)
 
-hasUNF :: Function f => Strategy1 f -> Term f -> UNF f
+hasUNF :: Function f => Strategy1 f -> Term f -> Gen (UNF f)
 hasUNF strat =
   \t -> -- don't bind t in where-clause
-  head $
-    -- optimisation: check if any subterm has a non-unique normal form first
-    [r | r@HasCriticalPair{} <- map magic (sortBy (comparing len) (properSubterms t))] ++
-    [magic t]
+  sized $ \n -> magic (n+1) t -- always try at least 1 path
   where
+    trace _ x = x
     normFirstStep t = head (head (anywhere1 strat t))
     normSteps t = normaliseWith1 (const True) strat t
     norm = memo $ \t -> result1 t (normSteps t)
-    normR t r = norm (result1 t r)
 
-    magic t = 
-      let u = norm t in
-      case filter ((/=) u . normR t) ({-anywhere1-} strat t) of
-        [] -> UniqueNormalForm
-        r:_ ->
-          badPath t (result1 t r) r
+    magic n t = do
+      rs <- mapM (magic n) (unpack (children t))
+      r  <- here n t
+      return (mconcat rs `mappend` r)
 
+    here n t = fmap mconcat $ replicateM n $ do
+      r <- normaliseWith1Random (const True) strat t
+      let u = result1 t r
+      return $
+        if norm t == u then UniqueNormalForm else badPath t u r
+      
     -- precondition: r is a proof of t->*u where norm t /= norm u
     badPath t u rs
       | trace ("bad path " ++ prettyShow t ++ " -> " ++ prettyShow u ++ " (normal forms = " ++ prettyShow (norm t, norm u) ++ "): " ++ prettyShow rs) False = undefined

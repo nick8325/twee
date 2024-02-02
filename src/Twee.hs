@@ -66,11 +66,13 @@ data Config f =
     cfg_join                   :: Join.Config,
     cfg_proof_presentation     :: Proof.Config f,
     cfg_eliminate_axioms       :: [Axiom f],
-    cfg_random_mode            :: Bool }
+    cfg_random_mode            :: Bool,
+    cfg_random_goal_directed   :: Bool }
 
 -- | The prover state.
 data State f =
   State {
+    st_axioms         :: ![Axiom f],
     st_rules          :: !(RuleIndex f (Rule f)),
     st_active_set     :: !(IntMap (Active f)),
     st_joinable       :: !(Index f (Equation f)),
@@ -103,7 +105,8 @@ defaultConfig =
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig,
     cfg_eliminate_axioms = [],
-    cfg_random_mode = False }
+    cfg_random_mode = False,
+    cfg_random_goal_directed = False }
 
 -- | Does this configuration run the prover in a complete mode?
 configIsComplete :: Config f -> Bool
@@ -116,6 +119,7 @@ configIsComplete Config{..} =
 initialState :: Config f -> State f
 initialState Config{..} =
   State {
+    st_axioms = [],
     st_rules = RuleIndex.empty,
     st_active_set = IntMap.empty,
     st_joinable = Index.empty,
@@ -542,7 +546,7 @@ addCP config model state@State{..} info CriticalPair{..} =
 {-# INLINEABLE addAxiom #-}
 addAxiom :: Function f => Config f -> State f -> Axiom f -> State f
 addAxiom config state axiom =
-  consider config state
+  consider config state{st_axioms = axiom:st_axioms state}
     Info { info_depth = 0, info_max = IntSet.fromList [axiom_number axiom | cfg_complete_subsets config] }
     CriticalPair {
       cp_eqn = axiom_eqn axiom,
@@ -814,19 +818,53 @@ complete1 config@Config{..} state
 {-# INLINEABLE findCriticalPair #-}
 findCriticalPair :: Function f => Config f -> State f -> QCGen -> Maybe (Info, CriticalPair f)
 findCriticalPair config state g =
-  case [(r, t) | t <- terms, r@HasCriticalPair{} <- trace ("checking " ++ prettyShow t) [hasUNF strat t]] of
-    [] -> Nothing
-    (HasCriticalPair r1 (r2, n), t):_ -> 
-      trace ("Term " ++ prettyShow t ++ " has critical pair (" ++ prettyShow r1 ++ ", " ++ prettyShow r2 ++ ", " ++ show n ++ ")") $
-      let r2' = renameAvoiding r1 r2 in
-      let Just o = overlapAt (How n Forwards Forwards) r1 r2' r1 r2' in
-      Just (Info 0 IntSet.empty, makeCriticalPair o)
+  listToMaybe $ catMaybes $ unGen (sequence [resize n test | n <- sizes]) g 0
   where
-    sizes = [0, 2 .. 100]
-    terms = unGen (sequence [resize n (generateTerm lhss) | n <- sizes]) g 0
+    trace _ x = x
+    traceM _ = return ()
+    sizes = concat [replicate 10 i | i <- [10..100]]
+
+    test = do
+      t <- gen
+      () <- traceM ("checking " ++ prettyShow t)
+      r <- hasUNF strat t
+      case r of
+        UniqueNormalForm -> return Nothing
+        HasCriticalPair r1 (r2, n) ->  do
+          () <- traceM ("Term " ++ prettyShow t ++ " has critical pair (" ++ prettyShow r1 ++ ", " ++ prettyShow r2 ++ ", " ++ show n ++ ")")
+          let r2' = renameAvoiding r1 r2
+          let Just o = overlapAt (How n Forwards Forwards) r1 r2' r1 r2'
+          return $ Just (Info 0 IntSet.empty, makeCriticalPair o)
+
+    gen =
+      if cfg_random_goal_directed config then
+        generateGoalTerm (goalTerms state) (Index.elems (index_all (st_rules state)))
+      else
+        generateTerm lhss
 
     strat = basic (rewrite reduces (index_all (st_rules state)))
     lhss = map lhs (Index.elems (index_all (st_rules state)))
+
+-- Return all goal terms. Handles the $equals coding.
+goalTerms :: Function f => State f -> [Term f]
+goalTerms state =
+  -- Goals that are not related to $equals.
+  [ t
+  | eqn <- map goal_eqn (st_goals state),
+    t <- concatMap unpack (terms eqn), 
+    True ]
+{-
+    not (isTrueTerm t), not (isFalseTerm t)] ++
+  -- Axioms of the form $equals(t, u) = $false.
+  [ goalTerm
+  | t :=: u <- map axiom_eqn (st_axioms state),
+    (lhs, rhs) <- maybeToList $
+      if isFalseTerm t then decodeEquality u 
+      else if isFalseTerm u then decodeEquality t
+      else Nothing,
+    goalTerm <- [t, u] ]
+-}
+
 
 {-# INLINEABLE solved #-}
 solved :: Function f => State f -> Bool

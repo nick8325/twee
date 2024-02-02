@@ -13,7 +13,9 @@ module Twee.Base(
   Id(..), Has(..),
   -- * Typeclasses
   Minimal(..), minimalTerm, isMinimal, erase, eraseExcept, ground,
-  Ordered(..), lessThan, orientTerms, EqualsBonus(..), Strictness(..), Function) where
+  Ordered(..), lessThan, orientTerms,
+  EqualsBonus(..), isTrueTerm, isFalseTerm, decodeEquality,
+  Strictness(..), Function) where
 
 import Prelude hiding (lookup)
 import Control.Monad
@@ -251,6 +253,18 @@ class EqualsBonus f where
   isEquals _ = False
   isTrue _ = False
   isFalse _ = False
+
+isFalseTerm, isTrueTerm :: (EqualsBonus f, Labelled f) => Term f -> Bool
+isFalseTerm (App false _) = isFalse false
+isFalseTerm _ = False
+isTrueTerm (App true _) = isTrue true
+isTrueTerm _ = False
+
+-- Decode $equals(t,u) into an equation t=u.
+decodeEquality :: (EqualsBonus f, Labelled f) => Term f -> Maybe (Term f, Term f)
+decodeEquality (App equals (Cons t (Cons u Empty)))
+  | isEquals equals = Just (t, u)
+decodeEquality _ = Nothing
 
 instance (Labelled f, EqualsBonus f) => EqualsBonus (Fun f) where
   hasEqualsBonus = hasEqualsBonus . fun_value

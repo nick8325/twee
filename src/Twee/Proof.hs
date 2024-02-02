@@ -893,12 +893,6 @@ describeEquation kind num mname eqn =
 --   * a proof that both sides of the conjecture are equal
 -- and we can present that to the user.
 
--- Decode $equals(t,u) into an equation t=u.
-decodeEquality :: Function f => Term f -> Maybe (Equation f)
-decodeEquality (App equals (Cons t (Cons u Empty)))
-  | isEquals equals = Just (t :=: u)
-decodeEquality _ = Nothing
-
 -- Tries to transform a proof of $true = $false into a proof of
 -- the original existentially-quantified formula.
 decodeGoal :: Function f => ProvedGoal f -> ProvedGoal f
@@ -923,12 +917,6 @@ maybeDecodeGoal ProvedGoal{..}
   | isFalseTerm t = extract (steps (symm deriv))
   | otherwise = Nothing
   where
-    isFalseTerm, isTrueTerm :: Term f -> Bool
-    isFalseTerm (App false _) = isFalse false
-    isFalseTerm _ = False
-    isTrueTerm (App true _) = isTrue true
-    isTrueTerm _ = False
-
     t :=: u = equation pg_proof
     deriv = derivation pg_proof
 
@@ -936,7 +924,7 @@ maybeDecodeGoal ProvedGoal{..}
     decodeReflexivity :: Derivation f -> Maybe (Term f)
     decodeReflexivity (Symm (UseAxiom Axiom{..} sub)) = do
       guard (isTrueTerm (eqn_rhs axiom_eqn))
-      (t :=: u) <- decodeEquality (eqn_lhs axiom_eqn)
+      (t, u) <- decodeEquality (eqn_lhs axiom_eqn)
       guard (t == u)
       return (subst sub t)
     decodeReflexivity _ = Nothing
@@ -945,8 +933,8 @@ maybeDecodeGoal ProvedGoal{..}
     decodeConjecture :: Derivation f -> Maybe (String, Equation f, Subst f)
     decodeConjecture (UseAxiom Axiom{..} sub) = do
       guard (isFalseTerm (eqn_rhs axiom_eqn))
-      eqn <- decodeEquality (eqn_lhs axiom_eqn)
-      return (axiom_name, eqn, sub)
+      (t, u) <- decodeEquality (eqn_lhs axiom_eqn)
+      return (axiom_name, t :=: u, sub)
     decodeConjecture _ = Nothing
 
     extract (p:ps) = do
