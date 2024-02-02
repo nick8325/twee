@@ -245,28 +245,27 @@ simpleRewrite idx t =
 -- | A strategy gives a set of possible reductions for a term.
 type Strategy f = Term f -> [Reduction f]
 
--- | A reduction proof is just a sequence of rewrite steps, stored
--- as a list in reverse order. In each rewrite step, all subterms that
--- are exactly equal to the LHS of the rule are replaced by the RHS,
--- i.e. the rewrite step is performed as a parallel rewrite without
--- matching.
+-- | A reduction proof is just a sequence of rewrite steps. In each
+-- rewrite step, all subterms that are exactly equal to the LHS of the
+-- rule are replaced by the RHS, i.e. the rewrite step is performed as
+-- a parallel rewrite without matching.
 type Reduction f = [(Rule f, Subst f)]
 
 -- | Transitivity for reduction sequences.
 trans :: Reduction f -> Reduction f -> Reduction f
-trans p q = q ++ p
+trans p q = p ++ q
 
 -- | Compute the final term resulting from a reduction, given the
 -- starting term.
 result :: Term f -> Reduction f -> Term f
 result t [] = t
-result t (r:rs) = ruleResult u r
+result t (r:rs) = result u rs
   where
-    u = result t rs
+    !u = ruleResult t r
 
 -- | Turn a reduction into a proof.
 reductionProof :: Function f => Term f -> Reduction f -> Derivation f
-reductionProof t ps = red t (Proof.Refl t) (reverse ps)
+reductionProof t ps = red t (Proof.Refl t) ps
   where
     red _ p [] = p
     red t p (q:qs) =
@@ -295,17 +294,12 @@ ruleProof t _ = Proof.Refl t
 -- | Normalise a term wrt a particular strategy.
 {-# INLINE normaliseWith #-}
 normaliseWith :: Function f => (Term f -> Bool) -> Strategy f -> Term f -> Reduction f
-normaliseWith ok strat t = res
+normaliseWith ok strat t = aux t
   where
-    res = aux 0 [] t
-    aux 1000 p _ =
-      error $
-        "Possibly nonterminating rewrite:\n" ++ prettyShow p
-    aux n p t =
+    aux t =
       case anywhere strat t of
-        (q:_) | u <- result t q, ok u ->
-          aux (n+1) (p `trans` q) u
-        _ -> p
+        (p:_) | u <- result t p, ok u -> p `trans` aux u
+        _ -> []
 
 -- | Compute all normal forms of a set of terms wrt a particular strategy.
 normalForms :: Function f => Strategy f -> Map (Term f) (Reduction f) -> Map (Term f) (Term f, Reduction f)
