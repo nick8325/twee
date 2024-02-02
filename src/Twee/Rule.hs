@@ -494,14 +494,12 @@ basic strat t = [[(r, sub, [])] | [(r, sub)] <- strat t]
 -- | Normalise a term wrt a particular strategy.
 {-# INLINE normaliseWith1 #-}
 normaliseWith1 :: Function f => (Term f -> Bool) -> Strategy1 f -> Term f -> Reduction1 f
-normaliseWith1 ok strat t = aux 0 t
+normaliseWith1 ok strat t = aux t
   where
-    aux 1000 _ =
-      error "Possibly nonterminating rewrite"
-    aux n t =
+    aux t =
       case anywhere1 strat t of
         (p:_) | u <- result1 t p, ok u ->
-          p `trans1` aux (n+1) u
+          p `trans1` aux u
         _ -> []
 
 --------------------------------------------------------------------------------
