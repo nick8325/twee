@@ -523,14 +523,35 @@ instance Function f => Pretty (UNF f) where
 hasUNF :: Function f => Strategy1 f -> Term f -> UNF f
 hasUNF strat =
   \t -> -- don't bind t in where-clause
-  case nubBy ((==) `on` normR t) [r | [r] <- anywhere1 strat t] of
-    [] -> UniqueNormalForm
-    [_] -> UniqueNormalForm
-    r1:r2:_ ->
-      conflict t r1 r2
+  head $
+    -- optimisation: check if any subterm has a non-unique normal form first
+    [r | r@HasCriticalPair{} <- map magic (sortBy (comparing len) (properSubterms t))] ++
+    [magic t]
   where
-    norm t = result1 t (normaliseWith1 (const True) strat t)
-    normR t r = norm (result1 t [r])
+    normFirstStep t = head (head (anywhere1 strat t))
+    normSteps t = normaliseWith1 (const True) strat t
+    norm t = result1 t (normSteps t)
+    normR t r = norm (result1 t r)
+
+    magic t = 
+      let u = norm t in
+      case filter ((/=) u . normR t) (anywhere1 strat t) of
+        [] -> UniqueNormalForm
+        r:_ ->
+          badPath t (result1 t r) r
+
+    -- precondition: r is a proof of t->*u where norm t /= norm u
+    badPath t u rs
+      | trace ("bad path " ++ prettyShow t ++ " -> " ++ prettyShow u ++ " (normal forms = " ++ prettyShow (norm t, norm u) ++ "): " ++ prettyShow rs) False = undefined
+    badPath _ _ [] = error "badPath: empty list"
+    badPath t u rs
+      | norm v == norm u = conflict t r (normFirstStep t)
+      | otherwise =
+        trace ("v = " ++ prettyShow v ++ ", u = " ++ prettyShow u ++ ", norm v = " ++ prettyShow (norm v) ++ ", norm u = " ++ prettyShow (norm u)) $
+        badPath v u (init rs)
+      where
+        v = result1 t [r]
+        r = last rs
 
     -- precondition: normR t r1 /= normR t r2
     conflict t r1 r2
@@ -558,39 +579,54 @@ hasUNF strat =
 
     -- Precondition: r1 can be commuted with some number of parallel
     -- rewrites of r2
-    nonOverlapping t red1@(r1, sub1, p1) red2@(r2, sub2, p2)
+    nonOverlapping t r1@(rule1, _, p1) r2@(rule2, _, p2)
       | trace "" $
         trace ("Non-overlapping reduction: " ++ prettyShow t) $
-        trace ("First rule: " ++ prettyShow red1) $
-        trace ("Second rule: " ++ prettyShow red2) $
-        trace ("Intermediate term: " ++ prettyShow u) $
+        trace ("First rule: " ++ prettyShow r1) $
+        trace ("Second rule: " ++ prettyShow r2) $
+        trace ("Reduction of first rule: " ++ prettyShow u) $
+        trace ("Reduction of second rule: " ++ prettyShow v) $
         trace ("Positions before: " ++ prettyShow ps2Before) $
         trace ("Positions after: " ++ prettyShow ps2After) $
-        trace ("Final term: " ++ prettyShow v) $
-        trace ("Commuted term for first rule: " ++ prettyShow (result1 t reds2Before)) $
+        trace ("Rules before: " ++ prettyShow rs2Before) $
+        trace ("Rules after: " ++ prettyShow rs2After) $
+        trace ("Final term: " ++ prettyShow w) $
         False = undefined
-      -- here we skip some of the parallel reductions. is it ok?
-      -- maybe because of innermost rewriting?
-      | norm v /= normR t red1 = trace "1" $ parallel (result1 t [red1]) (head reds2After) -- can reds2 be empty?
-      | norm v /= normR t red2 = trace "2" $ parallel (result1 t reds2Before) red1
+      | norm w /= norm u = trace "1" $ badPath u w conf1
+      | norm w /= norm v = trace "2" $ badPath v w conf2
       where
-        u = result1 t [(r1, sub1, p1)]
-        (ps2Before, ps2After) = track r1 p1 p2
-        reds2Before = [rematch (r2, sub2, p) t | p <- ps2Before]
-        reds2After = [rematch (r2, sub2, p) u | p <- ps2After]
-        v = result1 u reds2After
-        
-    parallel t r1 =
-      case anywhere1 strat t of
-        [] -> error "no reduction steps" -- UniqueNormalForm -- this can happen when unorientable rules become unapplicable... but, there must be a critical pair to be found!
-        (r2:_) -> conflict t (rematch r1 t) (head r2)
+        u = result1 t [r1]
+        v = result1 t [r2]
+        (ps2Before, ps2After) = track rule1 p1 p2
+        rs2Before = [(rule2, rematch rule2 p t, p) | p <- ps2Before, p /= p2]
+        rs2After = [(rule2, rematch rule2 p u, p) | p <- ps2After]
 
+        -- Two paths:
+        -- (1) r1; rs2After
+        -- (2) rs2Before; r1
+        -- But, in (2), if r1 is oriented the wrong way, we do this instead:
+        -- (1) r1; rs2After; backwards r1
+        -- (2) rs2Before
+
+        -- TODO don't code term ordering
+        correctlyOriented = reduces rule1 sub1After
+        sub1After = rematch rule1 p1 (result1 v rs2Before)
+
+        -- The two reductions are: [red1] `trans` conf1, [red2] `trans` conf2
+        conf1 = rs2After `trans1` (if correctlyOriented then [] else [(backwards rule1, sub1After, p1)])
+        conf2 = rs2Before `trans1` (if correctlyOriented then [(rule1, sub1After, p1)] else [])
+
+        -- Check that both reductions give the same result
+        w1 = result1 u conf1
+        w2 = result1 v conf2
+        w | w1 == w2 = w1
+        
     criticalOverlap (Var _) _ = False
     criticalOverlap App{} [] = True
     criticalOverlap t (p:ps) = criticalOverlap (unpack (children t) !! p) ps
 
     -- find the substitution for a rewrite
-    rematch (r, _, pos) t = (r, sub, pos)
+    rematch r pos t = sub
       where
         Just sub = match (lhs r) (at (pathToPosition t pos) (singleton t))
 
