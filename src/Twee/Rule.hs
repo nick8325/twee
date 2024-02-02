@@ -431,13 +431,13 @@ reducesSkolem rule sub =
 --------------------------------------------------------------------------------
 
 -- | A reduction proof is a sequence of rewrite steps, stored as a
--- list in reverse order. Each rewrite step is coded as a rule, a
+-- list. Each rewrite step is coded as a rule, a
 -- substitution and a path to be rewritten.
 type Reduction1 f = [(Rule f, Subst f, [Int])]
 
 -- | Transitivity for reduction sequences.
 trans1 :: Reduction1 f -> Reduction1 f -> Reduction1 f
-trans1 p q = q ++ p
+trans1 p q = p ++ q
 
 -- TODO: get rid of the below copy-and-pasting by introducing a typeclass
 
@@ -445,13 +445,13 @@ trans1 p q = q ++ p
 -- starting term.
 result1 :: HasCallStack => Term f -> Reduction1 f -> Term f
 result1 t [] = t
-result1 t (r:rs) = ruleResult1 u r
+result1 t (r:rs) = result1 u rs
   where
-    u = result1 t rs
+    !u = ruleResult1 t r
 
 -- | Turn a reduction into a proof.
 reductionProof1 :: Function f => Term f -> Reduction1 f -> Derivation f
-reductionProof1 t ps = red t (Proof.Refl t) (reverse ps)
+reductionProof1 t ps = red t (Proof.Refl t) ps
   where
     red _ p [] = p
     red t p (q:qs) =
@@ -494,17 +494,15 @@ basic strat t = [[(r, sub, [])] | [(r, sub)] <- strat t]
 -- | Normalise a term wrt a particular strategy.
 {-# INLINE normaliseWith1 #-}
 normaliseWith1 :: Function f => (Term f -> Bool) -> Strategy1 f -> Term f -> Reduction1 f
-normaliseWith1 ok strat t = res
+normaliseWith1 ok strat t = aux 0 t
   where
-    res = aux 0 [] t
-    aux 1000 p _ =
-      error $
-        "Possibly nonterminating rewrite:\n" ++ prettyShow p
-    aux n p t =
+    aux 1000 _ =
+      error "Possibly nonterminating rewrite"
+    aux n t =
       case anywhere1 strat t of
-        (q:_) | u <- result1 t q, ok u ->
-          aux (n+1) (p `trans1` q) u
-        _ -> p
+        (p:_) | u <- result1 t p, ok u ->
+          p `trans1` aux (n+1) u
+        _ -> []
 
 --------------------------------------------------------------------------------
 -- * Testing whether a term has a unique normal form.
@@ -544,14 +542,13 @@ hasUNF strat =
     badPath t u rs
       | trace ("bad path " ++ prettyShow t ++ " -> " ++ prettyShow u ++ " (normal forms = " ++ prettyShow (norm t, norm u) ++ "): " ++ prettyShow rs) False = undefined
     badPath _ _ [] = error "badPath: empty list"
-    badPath t u rs
+    badPath t u (r:rs)
       | norm v == norm u = conflict t r (normFirstStep t)
       | otherwise =
         trace ("v = " ++ prettyShow v ++ ", u = " ++ prettyShow u ++ ", norm v = " ++ prettyShow (norm v) ++ ", norm u = " ++ prettyShow (norm u)) $
-        badPath v u (init rs)
+        badPath v u rs
       where
         v = result1 t [r]
-        r = last rs
 
     -- precondition: normR t r1 /= normR t r2
     conflict t r1 r2
