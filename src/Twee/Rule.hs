@@ -533,7 +533,7 @@ hasUNF strat =
 
     magic t = 
       let u = norm t in
-      case filter ((/=) u . normR t) (anywhere1 strat t) of
+      case filter ((/=) u . normR t) ({-anywhere1-} strat t) of
         [] -> UniqueNormalForm
         r:_ ->
           badPath t (result1 t r) r
