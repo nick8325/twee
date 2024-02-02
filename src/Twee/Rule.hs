@@ -528,7 +528,7 @@ hasUNF strat =
   where
     normFirstStep t = head (head (anywhere1 strat t))
     normSteps t = normaliseWith1 (const True) strat t
-    norm t = result1 t (normSteps t)
+    norm = memo $ \t -> result1 t (normSteps t)
     normR t r = norm (result1 t r)
 
     magic t = 
