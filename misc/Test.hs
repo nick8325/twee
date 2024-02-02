@@ -25,10 +25,17 @@ import Data.Int
 import GHC.Generics
 import Twee.Utils
 import qualified Data.IntMap as M
+import qualified Twee.Index as Index
 
 data Func = F Int Integer deriving (Eq, Ord, Show, Labelled)
 
-instance Pretty Func where pPrint (F f _) = text "f" <#> int f
+instance Pretty Func where
+  pPrint (F 3 _) = text "a"
+  pPrint (F 4 _) = text "b"
+  pPrint (F 5 _) = text "zero"
+  pPrint (F 6 _) = text "plus"
+  pPrint (F 7 _) = text "times"
+  pPrint (F f _) = text "f" <#> int f
 instance PrettyTerm Func
 instance Arbitrary (Subst Func) where
   arbitrary = fmap fromJust (fmap listToSubst (liftM2 zip (fmap nub arbitrary) (infiniteListOf arbitrary)))
@@ -44,8 +51,12 @@ instance Arity Func where
   arity (F 0 _) = 0
   arity (F 1 _) = 1
   arity (F 2 _) = 2
+  arity (F 3 _) = 0 -- a
+  arity (F 4 _) = 0 -- b
+  arity (F 5 _) = 0 -- zero
+  arity (F 6 _) = 2 -- plus
+  arity (F 7 _) = 2 -- times
 instance EqualsBonus Func
-instance GoalWeight Func
 
 instance Arbitrary Var where arbitrary = fmap V (choose (0, 3))
 instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Fun f) where
@@ -300,3 +311,24 @@ prop_nests f ts =
 return []
 main = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000000 })
 
+a = con (fun (F 3 1))
+b = con (fun (F 4 2))
+zero = con (fun (F 5 1))
+plus t u = app (fun (F 6 1)) [t, u]
+times t u = app (fun (F 7 1)) [t, u]
+x = var (V 0)
+y = var (V 1)
+
+axioms = [
+  build (plus x y) ==== plus y x,
+  times zero x ==== zero,
+  plus x zero ==== x ]
+  where
+    t ==== u = build t :=: build u
+
+rules = [orient eq (certify (axiom (Axiom 0 "axiom" eq))) | eq <- axioms]
+
+theIndex = Index.fromList [(lhs r, r) | r <- rules]
+
+term = build (plus (times zero a) b)
+strat = anywhere1 (basic (rewrite reduces theIndex))
