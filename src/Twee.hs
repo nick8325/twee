@@ -55,6 +55,7 @@ data Config f =
     cfg_accept_term            :: Maybe (Term f -> Bool),
     cfg_max_critical_pairs     :: Int64,
     cfg_max_cp_depth           :: Int,
+    cfg_max_rules              :: Int,
     cfg_simplify               :: Bool,
     cfg_renormalise_percent    :: Int,
     cfg_cp_sample_size         :: Int,
@@ -94,6 +95,7 @@ defaultConfig =
     cfg_accept_term = Nothing,
     cfg_max_critical_pairs = maxBound,
     cfg_max_cp_depth = maxBound,
+    cfg_max_rules = maxBound,
     cfg_simplify = True,
     cfg_renormalise_percent = 5,
     cfg_renormalise_threshold = 20,
@@ -113,7 +115,8 @@ configIsComplete :: Config f -> Bool
 configIsComplete Config{..} =
   isNothing (cfg_accept_term) &&
   cfg_max_critical_pairs == maxBound &&
-  cfg_max_cp_depth == maxBound
+  cfg_max_cp_depth == maxBound &&
+  cfg_max_rules == maxBound
 
 -- | The initial state.
 initialState :: Config f -> State f
@@ -798,6 +801,8 @@ complete Output{..} config@Config{..} state =
 {-# INLINEABLE complete1 #-}
 complete1 :: Function f => Config f -> State f -> (Bool, State f)
 complete1 config@Config{..} state
+  | fromIntegral (st_next_active state) > cfg_max_rules =
+    (False, state)
   | st_considered state >= cfg_max_critical_pairs =
     (False, state)
   | solved state = (False, state)

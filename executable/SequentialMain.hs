@@ -146,7 +146,7 @@ parseMainFlags =
 
 parseConfig :: OptionParser (Config Constant)
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
+  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> maxRules <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
     pure undefined <*> -- scoring function - filled in later, in runTwee
     (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses) <*> pure [] <*> randomMode <*> randomGoalDirected
@@ -161,6 +161,9 @@ parseConfig =
     maxCPDepth =
       inGroup "Resource limits" $
       flag "max-cp-depth" ["Only consider critical pairs up to this depth (unlimited by default)."] maxBound argNum
+    maxRules =
+      inGroup "Resource limits" $
+      flag "max-rules" ["Give up after generating this many rules (unlimited by default)."] maxBound argNum
     simplify =
       expert $
       inGroup "Completion heuristics" $
