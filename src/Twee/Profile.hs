@@ -130,6 +130,7 @@ profile = do
   report rec_cumulative log
 #else
 import Control.Monad.IO.Class
+import Test.QuickCheck
 
 stamp :: symbol -> a -> a
 stamp _ = id
@@ -139,6 +140,9 @@ stampWith _ _ = id
 
 stampM :: MonadIO m => symbol -> m a -> m a
 stampM _ = id
+
+stampGen :: symbol -> Gen a -> Gen a
+stampGen _ = id
 
 profile :: IO ()
 profile = return ()
