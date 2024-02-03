@@ -77,8 +77,7 @@ loop n f x | n > 0 = f x >>= loop (n-1) f
 -- The goal rhs and the subterm must be unifiable.
 tryBackwardsRewrite :: Rule f -> Term f -> Int -> Maybe (Term f)
 tryBackwardsRewrite rule t n = do
-  let subterm = at n (singleton t)
-  sub <- unify (rhs rule) subterm
+  sub <- unify (rhs rule) (t `at` n)
   return (build (replacePositionSub sub n (singleton (lhs rule)) (singleton t)))
 
 -- Pick a random rule and rewrite the term backwards using it.
@@ -87,7 +86,7 @@ rewriteBackwards maxSize rules t0 =
   frequency $
     [(1, return t0)] ++ -- in case no rules work
     [ -- penalise unification with a variable as it can result in "type-incorrect" terms
-      (if isVar (at n (singleton t)) then 1 else 10, return u)
+      (if isVar (t `at` n) then 1 else 10, return u)
     | n <- [0..len t-1],
       rule <- rules,
       u <- maybeToList (tryBackwardsRewrite rule t n),

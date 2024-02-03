@@ -33,7 +33,7 @@ module Twee.Term(
   build, buildList,
   con, app, var,
   -- * Access to subterms
-  children, properSubterms, subtermsList, subterms, reverseSubtermsList, reverseSubterms, occurs, isSubtermOf, isSubtermOfList, at,
+  children, properSubterms, subtermsList, subterms, reverseSubtermsList, reverseSubterms, occurs, isSubtermOf, isSubtermOfList, at, listAt, atPath,
   -- * Substitutions
   Substitution(..),
   subst,
@@ -521,6 +521,14 @@ unifyListTriFrom !t !u (Triangle !sub) =
 empty :: forall f. TermList f
 empty = buildList (mempty :: Builder f)
 
+-- | Index into a term.
+at :: Term f -> Int -> Term f
+t `at` n = singleton t `listAt` n
+
+-- | Index into a term using a path.
+atPath :: Term f -> [Int] -> Term f
+t `atPath` p = t `at` pathToPosition t p
+
 -- | Get the children (direct subterms) of a term.
 children :: Term f -> TermList f
 children t =
@@ -608,7 +616,7 @@ subterms = subtermsList . singleton
 {-# INLINE reverseSubtermsList #-}
 reverseSubtermsList :: TermList f -> [Term f]
 reverseSubtermsList t =
-  [ unsafeAt n t | n <- [k-1,k-2..0] ]
+  [ t `unsafeListAt` n | n <- [k-1,k-2..0] ]
   where
     k = lenList t
 

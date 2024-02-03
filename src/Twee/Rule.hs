@@ -457,7 +457,7 @@ reductionProof1 t ps = red t (Proof.Refl t) ps
 -- Helpers for result1 and reductionProof1.
 ruleResult1 :: HasCallStack => Term f -> (Rule f, Subst f, [Int]) -> Term f
 ruleResult1 t (r0, sub, p)
-  | at n (singleton t) == lhs r =
+  | t `at` n == lhs r =
     build (replacePosition n (rhs r) (singleton t))
   | otherwise = error "ruleResult1: selected subterm is not equal to lhs of rule"
   where
@@ -466,12 +466,11 @@ ruleResult1 t (r0, sub, p)
 
 ruleProof1 :: Function f => Term f -> (Rule f, Subst f, [Int]) -> Derivation f
 ruleProof1 t (r0, sub, p)
-  | at n (singleton t) == lhs r =
+  | t `atPath` p == lhs r =
     Proof.congPath p t (ruleDerivation r)    
   | otherwise = error "ruleProof1: selected subterm is not equal to lhs of rule"
   where
     r = subst sub r0
-    n = pathToPosition t p
 
 -- | A strategy gives a set of possible reductions for a term.
 type Strategy1 f = Term f -> [Reduction1 f]
@@ -483,7 +482,7 @@ anywhere1 strat t =
   [ [(r, sub, p ++ p') | (r, sub, p') <- red]
   | n <- reverse [0..len t-1], -- innermost
     let p = positionToPath t n,
-    red <- strat (at n (singleton t)) ]
+    red <- strat (t `at` n) ]
 
 -- | Apply a basic strategy to a term.
 basic :: Strategy f -> Strategy1 f
@@ -646,7 +645,7 @@ hasUNF strat =
     -- find the substitution for a rewrite
     rematch r pos t = sub
       where
-        Just sub = match (lhs r) (at (pathToPosition t pos) (singleton t))
+        Just sub = match (lhs r) (t `atPath` pos)
 
 -- Given a path in a term which is below a variable, find the variable
 -- and the part of the path below the variable
@@ -655,7 +654,7 @@ decomposePath t (p:ps) = decomposePath (unpack (children t) !! p) ps
 
 -- positions of a variable in a term
 varPos :: Var -> Term f -> [Int]
-varPos x t = [n | n <- [0..len t-1], at n (singleton t) == build (var x)]
+varPos x t = [n | n <- [0..len t-1], t `at` n == build (var x)]
 
 -- Consider a rewrite t -> u at position pr in a term, and a position
 -- pt that does not overlap with the rewrite:

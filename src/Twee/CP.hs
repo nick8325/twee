@@ -158,7 +158,7 @@ overlapAt how@(How _ d1 d2) x1 x2 r1 r2 =
 {-# INLINE overlapAt' #-}
 overlapAt' :: How -> a -> a -> Equation f -> Equation f -> Maybe (Overlap a f)
 overlapAt' how@How{how_pos = n} r1 r2 (!outer :=: (!outer')) (!inner :=: (!inner')) = do
-  let t = at n (singleton outer)
+  let t = outer `at` n
   sub <- unifyTri inner t
   let
     -- Make sure to keep in sync with overlapProof
@@ -360,7 +360,7 @@ makeCriticalPair Overlap{..} =
     Just rightSub = match (lhs right) inner
 
     path = positionToPath (lhs left) (how_pos overlap_how)
-    inner = at (pathToPosition overlap_top path) (singleton overlap_top)
+    inner = overlap_top `atPath` path
 
     proof =
       Proof.symm (ruleDerivation (subst leftSub left))

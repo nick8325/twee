@@ -85,14 +85,14 @@ data TermList f =
 type role TermList nominal
 
 -- | Index into a termlist.
-at :: Int -> TermList f -> Term f
-at n t
+listAt :: TermList f -> Int -> Term f
+t `listAt` n
   | n < 0 || low t + n >= high t = error "term index out of bounds"
-  | otherwise = unsafeAt n t
+  | otherwise = t `unsafeListAt` n
 
 -- | Index into a termlist, without bounds checking.
-unsafeAt :: Int -> TermList f -> Term f
-unsafeAt n (TermList lo hi arr) =
+unsafeListAt :: TermList f -> Int -> Term f
+TermList lo hi arr `unsafeListAt` n =
   case TermList (lo+n) hi arr of
     UnsafeCons t _ -> t
 
