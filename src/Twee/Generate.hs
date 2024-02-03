@@ -12,9 +12,12 @@ type LHS f = Term f
 -- the generator
 
 generateTerm :: Function f => [LHS f] -> Gen (Term f)
-generateTerm lhss =
+generateTerm lhss = generateTerm' lhss (build (var (V 0)))
+
+generateTerm' :: Function f => [LHS f] -> Pat f -> Gen (Term f)
+generateTerm' lhss pat =
   sized $ \n -> do
-    (t, _) <- gen n lhss (build (var (V 0)))
+    (t, _) <- gen n lhss pat
     return (build t)
 
 gen :: Function f => Int -> [LHS f] -> Pat f -> Gen (Builder f, Subst f) -- a random Term, plus a subst relating it to Pat
@@ -55,35 +58,37 @@ genList n lhss (p:ps) =
      (ts,sub') <- genList n lhss (map (subst sub) ps)
      return (t `mappend` ts,sub `substUnion` sub')
 
+-- Generate a term by starting with a goal term and rewriting
+-- backwawrds a certain number of times.
 generateGoalTerm :: Function f => [Term f] -> [Rule f] -> Gen (Term f)
 generateGoalTerm goals rules = sized $ \n -> do
   t <- elements goals
-  u <- loop (isqrt n) (rewriteBackwards rules) t
+  u <- loop n (rewriteBackwards n rules) t
   -- fill in any holes with randomly-generated terms
-  let vs = usort (vars u)
-  ts <- sequence [resize (isqrt n) (generateTerm (map lhs rules)) | _ <- vs]
-  let Just sub = listToSubst (zip vs ts)
-  return (subst sub u)
+  generateTerm' (map lhs rules) u
 
 loop :: Monad m => Int -> (a -> m a) -> a -> m a
 loop 0 _ x = return x
 loop n f x | n > 0 = f x >>= loop (n-1) f
 
-isqrt :: Int -> Int
-isqrt n = truncate (sqrt (fromIntegral n))
+-- Apply a rule backwards at a given position in a term.
+-- The goal rhs and the subterm must be unifiable.
+tryBackwardsRewrite :: Rule f -> Term f -> Int -> Maybe (Term f)
+tryBackwardsRewrite rule t n = do
+  let subterm = at n (singleton t)
+  sub <- unify (rhs rule) subterm
+  return (build (replacePositionSub sub n (singleton (lhs rule)) (singleton t)))
 
-rewriteBackwards :: Function f => [Rule f] -> Term f -> Gen (Term f)
-rewriteBackwards rules t0 =
+-- Pick a random rule and rewrite the term backwards using it.
+rewriteBackwards :: Function f => Int -> [Rule f] -> Term f -> Gen (Term f)
+rewriteBackwards maxSize rules t0 =
   frequency $
-    [(1, return t0)] ++
-    [(if bad then 1 else 10, return u) | (bad, u) <- candidates]
+    [(1, return t0)] ++ -- in case no rules work
+    [ -- penalise unification with a variable as it can result in "type-incorrect" terms
+      (if isVar (at n (singleton t)) then 1 else 10, return u)
+    | n <- [0..len t-1],
+      rule <- rules,
+      u <- maybeToList (tryBackwardsRewrite rule t n),
+      len u <= maxSize ]
   where
     t = renameAvoiding rules t0
-    candidates = [
-        (isVar subterm, u)
-      | n <- [0..len t-1],
-        rule <- rules,
-        let subterm = at n (singleton t),
-        sub <- maybeToList (unify (rhs rule) subterm),
-        let u = build (replacePositionSub sub n (singleton (lhs rule)) (singleton t)),
-        len u <= 1000 ]
