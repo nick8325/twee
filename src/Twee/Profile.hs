@@ -1,6 +1,6 @@
 -- Basic support for profiling.
 {-# LANGUAGE BangPatterns, RecordWildCards, CPP, OverloadedStrings #-}
-module Twee.Profile(stamp, stampWith, stampM, profile) where
+module Twee.Profile(stamp, stampWith, stampM, stampGen, profile) where
 
 #ifdef PROFILE
 import System.IO.Unsafe
@@ -17,6 +17,7 @@ import Data.HashMap.Strict(HashMap)
 import Data.Symbol
 import Data.Symbol.Unsafe
 import Data.Hashable
+import Test.QuickCheck.Gen
 
 instance Hashable Symbol where
   hashWithSalt s (Symbol n _) = hashWithSalt s n
@@ -96,6 +97,9 @@ stampM str mx = do
   x <- mx
   liftIO (exit m str)
   return x
+
+stampGen :: Symbol -> Gen a -> Gen a
+stampGen sym gen = MkGen (\g n -> stamp sym (unGen gen g n))
 
 report :: (Record -> Word64) -> HashMap Symbol Record -> IO ()
 report f cs = mapM_ pr ts

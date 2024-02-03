@@ -28,6 +28,8 @@ import Data.Function
 import Control.Arrow((***))
 import GHC.Stack
 import Test.QuickCheck hiding (Function, subterms, Fun)
+import Twee.Profile
+import Test.QuickCheck.Gen
 
 --------------------------------------------------------------------------------
 -- * Rewrite rules.
@@ -477,6 +479,7 @@ type Strategy1 f = Term f -> [Reduction1 f]
 -- | Apply a strategy anywhere in a term.
 anywhere1 :: Strategy1 f -> Strategy1 f
 anywhere1 strat t =
+  stamp "anywhere1 (whnf)"
   [ [(r, sub, p ++ p') | (r, sub, p') <- red]
   | n <- reverse [0..len t-1], -- innermost
     let p = positionToPath t n,
@@ -504,7 +507,7 @@ normaliseWith1Random :: Function f => (Term f -> Bool) -> Strategy1 f -> Term f 
 normaliseWith1Random ok strat t = aux t
   where
     aux t =
-      let choices = [(p, u) | p <- anywhere1 strat t, let u = result1 t p, ok u] in
+      let choices = [(p, u) | p <- anywhere1 strat t, let u = stamp "normaliseWith1Random.result1" (result1 t p), ok u] in
       case choices of
         [] -> return []
         _ -> do
@@ -535,38 +538,40 @@ instance Function f => Pretty (UNF f) where
 hasUNF :: Function f => Strategy1 f -> Term f -> Gen (UNF f)
 hasUNF strat =
   \t -> -- don't bind t in where-clause
-  sized $ \n -> magic (n+1) t -- always try at least 1 path
+  sized $ \n -> stampGen "hasUNF" (magic (n+1) t) -- always try at least 1 path
   where
     trace _ x = x
     normFirstStep t = head (head (anywhere1 strat t))
     normSteps t = normaliseWith1 (const True) strat t
-    norm = memo $ \t -> result1 t (normSteps t)
+    norm = memo $ \t -> stamp "hasUNF.norm" (result1 t (normSteps t))
 
     magic n t = do
       rs <- mapM (magic n) (unpack (children t))
       r  <- here n t
       return (mconcat rs `mappend` r)
 
-    here n t = fmap mconcat $ replicateM n $ do
+    here n t = fmap mconcat $ replicateM n $ stampGen "hasUNF.here" $ do
       r <- normaliseWith1Random (const True) strat t
-      let u = result1 t r
+      let u = stamp "hasUNF.result1" (result1 t r)
       return $
         if norm t == u then UniqueNormalForm else badPath t u r
       
     -- precondition: r is a proof of t->*u where norm t /= norm u
-    badPath t u rs
+    badPath t u rs = stamp "badPath" (badPath' t u rs)
+    badPath' t u rs
       | trace ("bad path " ++ prettyShow t ++ " -> " ++ prettyShow u ++ " (normal forms = " ++ prettyShow (norm t, norm u) ++ "): " ++ prettyShow rs) False = undefined
-    badPath _ _ [] = error "badPath: empty list"
-    badPath t u (r:rs)
+    badPath' _ _ [] = error "badPath: empty list"
+    badPath' t u (r:rs)
       | norm v == norm u = conflict t r (normFirstStep t)
       | otherwise =
         trace ("v = " ++ prettyShow v ++ ", u = " ++ prettyShow u ++ ", norm v = " ++ prettyShow (norm v) ++ ", norm u = " ++ prettyShow (norm u)) $
-        badPath v u rs
+        badPath' v u rs
       where
         v = result1 t [r]
 
     -- precondition: normR t r1 /= normR t r2
-    conflict t r1 r2
+    conflict t r1 r2 = stamp "conflict" (conflict' t r1 r2)
+    conflict' t r1 r2
       | trace "" $
         trace ("Conflicting term: " ++ prettyShow t) $
         trace ("Rule 1: " ++ prettyShow r1) $
@@ -575,23 +580,24 @@ hasUNF strat =
 
     -- Both rewrites apply to the same subterm.
     -- Hypothesis: descending into the subterm will still find a conflict as long as norm is innermost
-    conflict t (r1, sub1, (p1:ps1)) (r2, sub2, (p2:ps2)) | p1 == p2 =
-      conflict (unpack (children t) !! p1) (r1, sub1, ps1) (r2, sub2, ps2)
+    conflict' t (r1, sub1, (p1:ps1)) (r2, sub2, (p2:ps2)) | p1 == p2 =
+      conflict' (unpack (children t) !! p1) (r1, sub1, ps1) (r2, sub2, ps2)
 
     -- One rule is at the root (first normalise so that r1 is at the root)
-    conflict t (r1, sub1, p@(_:_)) (r2, sub2, []) =
-      conflict t (r2, sub2, []) (r1, sub1, p)
-    conflict t (r1, sub1, []) (r2, sub2, p)
+    conflict' t (r1, sub1, p@(_:_)) (r2, sub2, []) =
+      conflict' t (r2, sub2, []) (r1, sub1, p)
+    conflict' t (r1, sub1, []) (r2, sub2, p)
       | criticalOverlap (lhs r1) p =
         trace ("Critical pair " ++ prettyShow (r1, r2, p)) $
         HasCriticalPair r1 (r2, pathToPosition (lhs r1) p)
       | otherwise = nonOverlapping t (r1, sub1, []) (r2, sub2, p)
     -- Rewrites apply to parallel subterms and can be easily commuted
-    conflict t r1 r2 = nonOverlapping t r1 r2
+    conflict' t r1 r2 = nonOverlapping t r1 r2
 
     -- Precondition: r1 can be commuted with some number of parallel
     -- rewrites of r2
-    nonOverlapping t r1@(rule1, _, p1) r2@(rule2, _, p2)
+    nonOverlapping t r1 r2 = stamp "nonOverlapping" (nonOverlapping' t r1 r2)
+    nonOverlapping' t r1@(rule1, _, p1) r2@(rule2, _, p2)
       | trace "" $
         trace ("Non-overlapping reduction: " ++ prettyShow t) $
         trace ("First rule: " ++ prettyShow r1) $

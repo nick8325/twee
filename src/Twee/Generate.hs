@@ -1,10 +1,11 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Twee.Generate(generateTerm, generateGoalTerm) where
 
 import Test.QuickCheck hiding (Function)
 import Twee.Base
 import Twee.Rule
-import Twee.Utils
 import Data.Maybe
+import Twee.Profile
 
 type Pat f = Term f
 type LHS f = Term f
@@ -16,6 +17,7 @@ generateTerm lhss = generateTerm' lhss (build (var (V 0)))
 
 generateTerm' :: Function f => [LHS f] -> Pat f -> Gen (Term f)
 generateTerm' lhss pat =
+  stampGen "generateTerm'" $ do
   sized $ \n -> do
     (t, _) <- gen n lhss pat
     return (build t)
@@ -61,7 +63,7 @@ genList n lhss (p:ps) =
 -- Generate a term by starting with a goal term and rewriting
 -- backwawrds a certain number of times.
 generateGoalTerm :: Function f => [Term f] -> [Rule f] -> Gen (Term f)
-generateGoalTerm goals rules = sized $ \n -> do
+generateGoalTerm goals rules = stampGen "generateGoalTerm" $ sized $ \n -> do
   t <- elements goals
   u <- loop n (rewriteBackwards n rules) t
   -- fill in any holes with randomly-generated terms

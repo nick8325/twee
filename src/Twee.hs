@@ -830,7 +830,7 @@ findCriticalPair config state g =
     sizes = concat [replicate 10 i | i <- [10..100]]
 
     test = do
-      t <- gen
+      !t <- gen
       () <- traceM ("checking " ++ prettyShow t)
       r <- hasUNF strat t
       case r of
