@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards, DeriveAnyClass #-}
+{-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards, DeriveAnyClass, RankNTypes #-}
 {-# OPTIONS_GHC -flate-specialise #-}
 module SequentialMain(main) where
 
@@ -149,7 +149,7 @@ parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> maxRules <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
     pure undefined <*> -- scoring function - filled in later, in runTwee
     (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join) <*>
-    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses) <*> pure [] <*> randomMode <*> randomGoalDirected
+    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses) <*> pure [] <*> randomMode <*> randomModeGoalDirected <*> randomModeBestOf
   where
     maxSize =
       inGroup "Resource limits" $
@@ -263,12 +263,15 @@ parseConfig =
       bool "random-mode"
         ["Use random testing to find suitable CPs (doesn't work yet!) (off by default)."]
         False
-    randomGoalDirected =
+    randomModeGoalDirected =
       expert $
       inGroup "Completion heuristics" $
-      bool "random-goal-directed"
+      bool "random-mode-goal-directed"
         ["Use goal-direction in --random-mode (off by default)."]
         False
+    randomModeBestOf =
+      inGroup "Completion heuristics" $
+      defaultFlag "random-mode-best-of" "Generate this many critical pairs at a time and pick the best one" cfg_random_mode_best_of argNum
     colour = fromMaybe <$> io colourSupported <*> colourFlag
     colourFlag =
       inGroup "Proof presentation" $
@@ -721,15 +724,15 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
   let
     goalNests = nests (map goal_eqn goals)
     goalOccs = occs (map goal_eqn goals)
-    score depth overlap@CP.Overlap{overlap_eqn = eqn}
+    score depth eqn
       | flags_goal_heuristic =
-        fromIntegral (CP.score cpConfig depth overlap) *
+        fromIntegral (CP.score cpConfig depth eqn) *
         product
           [ pos (IntMap.findWithDefault 0 f eqnNests - IntMap.findWithDefault 0 f goalNests) *
             pos (IntMap.findWithDefault 0 f eqnOccs - IntMap.findWithDefault 0 f goalOccs)
           | f <- IntMap.keys eqnNests ] -- skip constants
       | otherwise = 
-        fromIntegral (CP.score cpConfig depth overlap)
+        fromIntegral (CP.score cpConfig depth eqn)
       where
         eqnNests = nests eqn
         eqnOccs = occs eqn

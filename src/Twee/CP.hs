@@ -223,13 +223,12 @@ defaultConfig =
 -- where l is the biggest term and r is the smallest,
 -- and variables have weight 1 and functions have weight cfg_funweight.
 {-# INLINEABLE score #-}
-score :: Function f => Config -> Depth -> Overlap a f -> Int
-score Config{..} depth Overlap{..} =
+score :: Function f => Config -> Depth -> Equation f -> Int
+score Config{..} depth (l :=: r) =
   fromIntegral depth * cfg_depthweight +
   (m + n) * cfg_rhsweight +
   intMax m n * (cfg_lhsweight - cfg_rhsweight)
   where
-    l :=: r = overlap_eqn
     m = size' 0 (singleton l)
     n = size' 0 (singleton r)
 

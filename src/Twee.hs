@@ -1,5 +1,5 @@
 -- | The main prover loop.
-{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables, GeneralizedNewtypeDeriving, PatternGuards, TypeFamilies, FlexibleInstances #-}
+{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables, GeneralizedNewtypeDeriving, PatternGuards, TypeFamilies, FlexibleInstances, RankNTypes #-}
 module Twee where
 
 import Twee.Base
@@ -52,23 +52,24 @@ import qualified System.Random as Random
 -- | The prover configuration.
 data Config f =
   Config {
-    cfg_accept_term            :: Maybe (Term f -> Bool),
-    cfg_max_critical_pairs     :: Int64,
-    cfg_max_cp_depth           :: Int,
-    cfg_max_rules              :: Int,
-    cfg_simplify               :: Bool,
-    cfg_renormalise_percent    :: Int,
-    cfg_cp_sample_size         :: Int,
-    cfg_renormalise_threshold  :: Int,
-    cfg_set_join_goals         :: Bool,
-    cfg_always_simplify        :: Bool,
-    cfg_complete_subsets       :: Bool,
-    cfg_score_cp               :: Depth -> Overlap (Active f) f -> Float,
-    cfg_join                   :: Join.Config,
-    cfg_proof_presentation     :: Proof.Config f,
-    cfg_eliminate_axioms       :: [Axiom f],
-    cfg_random_mode            :: Bool,
-    cfg_random_goal_directed   :: Bool }
+    cfg_accept_term               :: Maybe (Term f -> Bool),
+    cfg_max_critical_pairs        :: Int64,
+    cfg_max_cp_depth              :: Int,
+    cfg_max_rules                 :: Int,
+    cfg_simplify                  :: Bool,
+    cfg_renormalise_percent       :: Int,
+    cfg_cp_sample_size            :: Int,
+    cfg_renormalise_threshold     :: Int,
+    cfg_set_join_goals            :: Bool,
+    cfg_always_simplify           :: Bool,
+    cfg_complete_subsets          :: Bool,
+    cfg_score_cp                  :: Depth -> Equation f -> Float,
+    cfg_join                      :: Join.Config,
+    cfg_proof_presentation        :: Proof.Config f,
+    cfg_eliminate_axioms          :: [Axiom f],
+    cfg_random_mode               :: Bool,
+    cfg_random_mode_goal_directed :: Bool,
+    cfg_random_mode_best_of       :: Int }
 
 -- | The prover state.
 data State f =
@@ -103,12 +104,13 @@ defaultConfig =
     cfg_set_join_goals = True,
     cfg_always_simplify = False,
     cfg_complete_subsets = False,
-    cfg_score_cp = \d o -> fromIntegral (score CP.defaultConfig d o),
+    cfg_score_cp = \d eqn -> fromIntegral (score CP.defaultConfig d eqn),
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig,
     cfg_eliminate_axioms = [],
     cfg_random_mode = False,
-    cfg_random_goal_directed = False }
+    cfg_random_mode_goal_directed = False,
+    cfg_random_mode_best_of = 1 }
 
 -- | Does this configuration run the prover in a complete mode?
 configIsComplete :: Config f -> Bool
@@ -275,9 +277,9 @@ instance Queue.Batch Batch where
 
 {-# INLINEABLE makePassive #-}
 makePassive :: Function f => Config f -> Overlap (Active f) f -> Passive
-makePassive Config{..} overlap@Overlap{..} =
+makePassive Config{..} Overlap{..} =
   Passive {
-    passive_score = cfg_score_cp depth overlap,
+    passive_score = cfg_score_cp depth overlap_eqn,
     passive_rule1 = active_id overlap_rule1,
     passive_rule2 = active_id overlap_rule2,
     passive_how   = overlap_how }
@@ -306,7 +308,7 @@ simplifyPassive Config{..} state@State{..} passive = do
     passive_score =
       passive_score passive `min`
       -- XXX factor out depth calculation
-      cfg_score_cp (succ (the r1 `max` the r2)) overlap }
+      cfg_score_cp (succ (the r1 `max` the r2)) (overlap_eqn overlap) }
 
 -- | Check if we should renormalise the queue.
 {-# INLINEABLE shouldSimplifyQueue #-}
@@ -823,7 +825,8 @@ complete1 config@Config{..} state
 {-# INLINEABLE findCriticalPair #-}
 findCriticalPair :: Function f => Config f -> State f -> QCGen -> Maybe (Info, CriticalPair f)
 findCriticalPair config state g =
-  listToMaybe $ catMaybes $ unGen (sequence [resize n test | n <- sizes]) g 0
+  listToMaybe <$> map snd <$> sortBy (comparing fst) <$> take (cfg_random_mode_best_of config) <$> catMaybes $
+  unGen (sequence [resize n test | n <- sizes]) g 0
   where
     trace _ x = x
     traceM _ = return ()
@@ -839,10 +842,15 @@ findCriticalPair config state g =
           () <- traceM ("Term " ++ prettyShow t ++ " has critical pair (" ++ prettyShow r1 ++ ", " ++ prettyShow r2 ++ ", " ++ show n ++ ")")
           let r2' = renameAvoiding r1 r2
           let Just o = overlapAt (How n Forwards Forwards) r1 r2' r1 r2'
-          return $ Just (Info 0 IntSet.empty, makeCriticalPair o)
+          case simplifyOverlap (index_oriented (st_rules state)) o of
+            Nothing -> do
+              () <- traceM ("Overlap " ++ prettyShow (overlap_eqn o) ++ " was spurious")
+              return Nothing -- should be rare
+            Just o' ->
+              return $ Just (cfg_score_cp config 0 (overlap_eqn o'), (Info 0 IntSet.empty, makeCriticalPair o))
 
     gen =
-      if cfg_random_goal_directed config then
+      if cfg_random_mode_goal_directed config then
         generateGoalTerm (goalTerms state) (Index.elems (index_all (st_rules state)))
       else
         generateTerm lhss
