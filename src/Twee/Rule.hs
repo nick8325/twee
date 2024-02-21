@@ -538,7 +538,7 @@ hasUNF :: Function f => Strategy1 f -> Term f -> Gen (UNF f)
 hasUNF strat =
   \t -> -- don't bind t in where-clause
   sized $ \n ->
-  let res = magic 3 t -- always try at least 1 path
+  let res = magic 5 t -- always try at least 1 path
   in stampGen' (\res -> case res of { UniqueNormalForm -> "hasUNF.UNF"; HasCriticalPair{} -> "hasUNF.CP" }) res
   where
     trace _ x = x
