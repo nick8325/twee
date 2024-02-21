@@ -521,7 +521,7 @@ data UNF f =
     -- Function has a unique normal form
     UniqueNormalForm
   | -- This pair of rules has an unjoinable critical pair
-    HasCriticalPair (Rule f) (Rule f, Int)
+    HasCriticalPair (Rule f) (Rule f, Int) (Term f) (Term f)
 
 instance Semigroup (UNF f) where
   -- mconcat finds the first HasCriticalPair in the list
@@ -532,7 +532,7 @@ instance Monoid (UNF f) where
 
 instance Function f => Pretty (UNF f) where
   pPrint UniqueNormalForm = text "unique normal form"
-  pPrint (HasCriticalPair r1 (r2, n)) = text "critical pair" <+> pPrint r1 <+> pPrint (r2, n)
+  pPrint (HasCriticalPair r1 (r2, n) _ _) = text "critical pair" <+> pPrint r1 <+> pPrint (r2, n)
 
 hasUNF :: Function f => Strategy1 f -> Term f -> Gen (UNF f)
 hasUNF strat =
@@ -587,10 +587,10 @@ hasUNF strat =
     -- One rule is at the root (first normalise so that r1 is at the root)
     conflict' t (r1, sub1, p@(_:_)) (r2, sub2, []) =
       conflict' t (r2, sub2, []) (r1, sub1, p)
-    conflict' t (r1, sub1, []) (r2, sub2, p)
+    conflict' t rr1@(r1, sub1, []) rr2@(r2, sub2, p)
       | criticalOverlap (lhs r1) p =
         trace ("Critical pair " ++ prettyShow (r1, r2, p)) $
-        HasCriticalPair r1 (r2, pathToPosition (lhs r1) p)
+        HasCriticalPair r1 (r2, pathToPosition (lhs r1) p) (norm (result1 t [rr1])) (norm (result1 t [rr2]))
       | otherwise = nonOverlapping t (r1, sub1, []) (r2, sub2, p)
     -- Rewrites apply to parallel subterms and can be easily commuted
     conflict' t r1 r2 = nonOverlapping t r1 r2

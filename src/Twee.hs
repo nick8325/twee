@@ -164,6 +164,8 @@ data Message f =
   | Interreduce
     -- | Status update: how many queued critical pairs there are.
   | Status !Int
+    -- | New problem term discovered.
+  | NewProblemTerm !(Term f) !(Rule f) !(Term f) !(Rule f) !(Term f)
 
 instance Function f => Pretty (Message f) where
   pPrint (NewActive rule) = pPrint rule
@@ -183,6 +185,11 @@ instance Function f => Pretty (Message f) where
     text "  (simplifying rules with respect to one another...)"
   pPrint (Status n) =
     text "  (" <#> pPrint n <+> text "queued critical pairs)"
+  pPrint (NewProblemTerm t r1 u r2 v) =
+    text "" $$
+    text "Problem term:" <+> pPrint t $$
+    text "NF 1 using" <+> pPrint r1 <#> text ":" <+> pPrint u $$
+    text "NF 2 using" <+> pPrint r2 <#> text ":" <+> pPrint v
 
 -- | Emit a message.
 message :: PrettyTerm f => Message f -> State f -> State f
@@ -822,31 +829,35 @@ complete1 config@Config{..} state
         let state' = state { st_random_seed = Just g2 } in
         case findCriticalPair config state' g1 of
           Nothing -> (True, state'{st_problem_term = Nothing})
-          Just (info, t, overlap) ->
-            let state'' = consider config state'{st_problem_term = Just t} info overlap
+          Just (info, t, r1, u, r2, v, overlap, changed) ->
+            let maybeMessage st =
+                  case st_problem_term st of
+                    Just t | changed -> message (NewProblemTerm t r1 u r2 v) st
+                    _ -> st
+                state'' = consider config (maybeMessage state'{st_problem_term = Just t}) info overlap
                 progress = st_next_active state' /= st_next_active state'' in
             (True, state''{st_problem_term = if progress then st_problem_term state'' else Nothing})
 
 
 {-# INLINEABLE findCriticalPair #-}
-findCriticalPair :: Function f => Config f -> State f -> QCGen -> Maybe (Info, Term f, CriticalPair f)
+findCriticalPair :: Function f => Config f -> State f -> QCGen -> Maybe (Info, Term f, Rule f, Term f, Rule f, Term f, CriticalPair f, Bool)
 findCriticalPair config state g =
-  (st_problem_term state >>= \t -> fmap snd (unGen (test (return t)) g1 0)) `mplus`
+  (st_problem_term state >>= \t -> fmap snd (unGen (test (return t) False) g1 0)) `mplus`
   (listToMaybe <$> map snd <$> sortBy (comparing fst) <$> take (cfg_random_mode_best_of config) <$> catMaybes $
-   unGen (sequence [resize n (test gen) | n <- sizes]) g2 0)
+   unGen (sequence [resize n (test gen True) | n <- sizes]) g2 0)
   where
     trace _ x = x
     traceM _ = return ()
     (g1, g2) = Random.split g
     sizes = concat [replicate 10 i | i <- [1..100]]
 
-    test g = do
+    test g changed = do
       !t <- g
       () <- traceM ("checking " ++ prettyShow t)
       r <- hasUNF strat t
       case r of
         UniqueNormalForm -> return Nothing
-        HasCriticalPair r1 (r2, n) ->  do
+        HasCriticalPair r1 (r2, n) u v -> do
           () <- traceM ("Term " ++ prettyShow t ++ " has critical pair (" ++ prettyShow r1 ++ ", " ++ prettyShow r2 ++ ", " ++ show n ++ ")")
           let r2' = renameAvoiding r1 r2
           let Just o = overlapAt (How n Forwards Forwards) r1 r2' r1 r2'
@@ -855,7 +866,7 @@ findCriticalPair config state g =
               () <- traceM ("Overlap " ++ prettyShow (overlap_eqn o) ++ " was spurious")
               return Nothing -- should be rare
             Just o' ->
-              return $ Just (cfg_score_cp config 0 (overlap_eqn o'), (Info 0 IntSet.empty, t, makeCriticalPair o))
+              return $ Just (cfg_score_cp config 0 (overlap_eqn o'), (Info 0 IntSet.empty, t, r1, u, r2, v, makeCriticalPair o, changed))
 
     gen =
       if cfg_random_mode_goal_directed config then
