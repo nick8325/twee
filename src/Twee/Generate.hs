@@ -1,11 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Twee.Generate(generateTerm, generateGoalTerm) where
+module Twee.Generate(generateTerm, generateGoalTerm, permuteVars) where
 
 import Test.QuickCheck hiding (Function)
 import Twee.Base
 import Twee.Rule
 import Data.Maybe
 import Twee.Profile
+import Twee.Utils
 
 type Pat f = Term f
 type LHS f = Term f
@@ -20,13 +21,13 @@ generateTerm' lhss pat =
   stampGen "generateTerm'" $ do
   sized $ \n -> do
     (t, _) <- gen n lhss pat
-    return (build t)
+    permuteVars (build t)
 
 gen :: Function f => Int -> [LHS f] -> Pat f -> Gen (Builder f, Subst f) -- a random Term, plus a subst relating it to Pat
 gen n lhss p =
   -- TODO: play around with frequencies
   frequency $
-  [ (1, return (builder (ground p), emptySubst)) ] ++
+  [ (1, return (builder p, emptySubst)) ] ++
   -- commit to top-level function...
   [ (n,
      do (ts,sub) <- genList (reduce n (length ps)) lhss ps
@@ -65,7 +66,7 @@ genList n lhss (p:ps) =
 generateGoalTerm :: Function f => [Term f] -> [Rule f] -> Gen (Term f)
 generateGoalTerm goals rules = stampGen "generateGoalTerm" $ sized $ \n -> do
   t <- elements goals
-  u <- loop n (rewriteBackwards n rules) t
+  u <- loop (n `div` 5 + 1) (rewriteBackwards n rules) t
   -- fill in any holes with randomly-generated terms
   generateTerm' (map lhs rules) u
 
@@ -82,14 +83,23 @@ tryBackwardsRewrite rule t n = do
 
 -- Pick a random rule and rewrite the term backwards using it.
 rewriteBackwards :: Function f => Int -> [Rule f] -> Term f -> Gen (Term f)
-rewriteBackwards maxSize rules t0 =
-  frequency $
-    [(1, return t0)] ++ -- in case no rules work
-    [ -- penalise unification with a variable as it can result in "type-incorrect" terms
-      (if isVar (t `at` n) then 1 else 10, return u)
-    | n <- [0..len t-1],
-      rule <- rules,
-      u <- maybeToList (tryBackwardsRewrite rule t n),
-      len u <= maxSize ]
+rewriteBackwards maxSize rules t0
+  | len t0 >= maxSize = return t0
+  | otherwise = 
+    frequency $
+      [(1, return t0)] ++ -- in case no rules work
+      [ -- penalise unification with a variable as it can result in "type-incorrect" terms
+        (if isVar (t `at` n) then 1 else 10*len (t `at` n)*(if n == 0 then 2 else 1), return u)
+      | n <- [0..len t-1],
+        rule <- rules,
+        u <- maybeToList (tryBackwardsRewrite rule t n),
+        len u <= maxSize ]
   where
     t = renameAvoiding rules t0
+
+permuteVars :: Term f -> Gen (Term f)
+permuteVars t = do
+  let vs = usort (vars t)
+  ws <- shuffle vs
+  let Just sub = listToSubst [(v, build (var w)) | (v, w) <- zip vs ws]
+  return (subst sub t)

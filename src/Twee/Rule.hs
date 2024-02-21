@@ -537,10 +537,12 @@ instance Function f => Pretty (UNF f) where
 hasUNF :: Function f => Strategy1 f -> Term f -> Gen (UNF f)
 hasUNF strat =
   \t -> -- don't bind t in where-clause
-  sized $ \n -> stampGen "hasUNF" (magic (n+1) t) -- always try at least 1 path
+  sized $ \n ->
+  let res = magic 3 t -- always try at least 1 path
+  in stampGen' (\res -> case res of { UniqueNormalForm -> "hasUNF.UNF"; HasCriticalPair{} -> "hasUNF.CP" }) res
   where
     trace _ x = x
-    normFirstStep t = head (head (anywhere1 strat t))
+    normFirstStep t = trace (prettyShow (t, take 1 $ anywhere1 strat t)) $ head (head (anywhere1 strat t))
     normSteps t = normaliseWith1 (const True) strat t
     norm = memo $ \t -> stamp "hasUNF.norm" (result1 t (normSteps t))
 
@@ -626,7 +628,7 @@ hasUNF strat =
         -- (2) rs2Before
 
         -- TODO don't code term ordering
-        correctlyOriented = reduces rule1 sub1After
+        correctlyOriented = reducesSkolem rule1 sub1After
         sub1After = rematch rule1 p1 (result1 v rs2Before)
 
         -- The two reductions are: [red1] `trans` conf1, [red2] `trans` conf2

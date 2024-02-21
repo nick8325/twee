@@ -87,7 +87,8 @@ data State f =
     st_not_complete   :: !IntSet,
     st_complete       :: !(Index f (Rule f)),
     st_messages_rev   :: ![Message f],
-    st_random_seed    :: Maybe QCGen }
+    st_random_seed    :: Maybe QCGen,
+    st_problem_term   :: Maybe (Term f) }
 
 -- | The default prover configuration.
 defaultConfig :: Function f => Config f
@@ -140,7 +141,8 @@ initialState Config{..} =
     st_random_seed =
       case cfg_random_mode of
         False -> Nothing
-        True -> Just (mkQCGen 12345) }
+        True -> Just (mkQCGen 12345),
+    st_problem_term = Nothing }
 
 ----------------------------------------------------------------------
 -- * Messages.
@@ -819,21 +821,27 @@ complete1 config@Config{..} state
         let (g1, g2) = Random.split g in
         let state' = state { st_random_seed = Just g2 } in
         case findCriticalPair config state' g1 of
-          Nothing -> (True, state')
-          Just (info, overlap) -> (True, consider config state' info overlap)
+          Nothing -> (True, state'{st_problem_term = Nothing})
+          Just (info, t, overlap) ->
+            let state'' = consider config state'{st_problem_term = Just t} info overlap
+                progress = st_next_active state' /= st_next_active state'' in
+            (True, state''{st_problem_term = if progress then st_problem_term state'' else Nothing})
+
 
 {-# INLINEABLE findCriticalPair #-}
-findCriticalPair :: Function f => Config f -> State f -> QCGen -> Maybe (Info, CriticalPair f)
+findCriticalPair :: Function f => Config f -> State f -> QCGen -> Maybe (Info, Term f, CriticalPair f)
 findCriticalPair config state g =
-  listToMaybe <$> map snd <$> sortBy (comparing fst) <$> take (cfg_random_mode_best_of config) <$> catMaybes $
-  unGen (sequence [resize n test | n <- sizes]) g 0
+  (st_problem_term state >>= \t -> fmap snd (unGen (test (return t)) g1 0)) `mplus`
+  (listToMaybe <$> map snd <$> sortBy (comparing fst) <$> take (cfg_random_mode_best_of config) <$> catMaybes $
+   unGen (sequence [resize n (test gen) | n <- sizes]) g2 0)
   where
     trace _ x = x
     traceM _ = return ()
-    sizes = concat [replicate 10 i | i <- [10..100]]
+    (g1, g2) = Random.split g
+    sizes = concat [replicate 10 i | i <- [1..100]]
 
-    test = do
-      !t <- gen
+    test g = do
+      !t <- g
       () <- traceM ("checking " ++ prettyShow t)
       r <- hasUNF strat t
       case r of
@@ -847,7 +855,7 @@ findCriticalPair config state g =
               () <- traceM ("Overlap " ++ prettyShow (overlap_eqn o) ++ " was spurious")
               return Nothing -- should be rare
             Just o' ->
-              return $ Just (cfg_score_cp config 0 (overlap_eqn o'), (Info 0 IntSet.empty, makeCriticalPair o))
+              return $ Just (cfg_score_cp config 0 (overlap_eqn o'), (Info 0 IntSet.empty, t, makeCriticalPair o))
 
     gen =
       if cfg_random_mode_goal_directed config then
@@ -855,7 +863,7 @@ findCriticalPair config state g =
       else
         generateTerm lhss
 
-    strat = basic (rewrite reduces (index_all (st_rules state)))
+    strat = basic (rewrite reducesSkolem (index_all (st_rules state)))
     lhss = map lhs (Index.elems (index_all (st_rules state)))
 
 -- Return all goal terms. Handles the $equals coding.

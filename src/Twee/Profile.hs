@@ -1,6 +1,6 @@
 -- Basic support for profiling.
 {-# LANGUAGE BangPatterns, RecordWildCards, CPP, OverloadedStrings #-}
-module Twee.Profile(stamp, stampWith, stampM, stampGen, profile) where
+module Twee.Profile(stamp, stampWith, stampM, stampGen, stampGen', profile) where
 
 #ifdef PROFILE
 import System.IO.Unsafe
@@ -101,6 +101,9 @@ stampM str mx = do
 stampGen :: Symbol -> Gen a -> Gen a
 stampGen sym gen = MkGen (\g n -> stamp sym (unGen gen g n))
 
+stampGen' :: (a -> Symbol) -> Gen a -> Gen a
+stampGen' sym gen = MkGen (\g n -> let x = unGen gen g n in stamp (sym x) x)
+
 report :: (Record -> Word64) -> HashMap Symbol Record -> IO ()
 report f cs = mapM_ pr ts
   where
@@ -143,6 +146,9 @@ stampM _ = id
 
 stampGen :: symbol -> Gen a -> Gen a
 stampGen _ = id
+
+stampGen' :: (a -> symbol) -> Gen a -> Gen a
+stampGen' _ = id
 
 profile :: IO ()
 profile = return ()
