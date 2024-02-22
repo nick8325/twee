@@ -66,7 +66,8 @@ genList n lhss (p:ps) =
 -- backwawrds a certain number of times.
 generateGoalTerm :: Function f => [Term f] -> [Rule f] -> Gen (Term f)
 generateGoalTerm goals rules = stampGen "generateGoalTerm" $ sized $ \n -> do
-  t <- elements goals
+  t <- frequency [(len u, return u) | u <- goals]
+  -- () <- traceM ("Goal term: " ++ prettyShow t)
   u <- loop (n `div` 5 + 1) (rewriteBackwards n rules) t
   -- fill in any holes with randomly-generated terms
   generateTerm' (map lhs rules) u
@@ -90,13 +91,16 @@ rewriteBackwards maxSize rules t0
     frequency $
       [(1, return t0)] ++ -- in case no rules work
       [ -- penalise unification with a variable as it can result in "type-incorrect" terms
-        (if isVar (t `at` n) then 1 else 10*len (t `at` n)*(if n == 0 then 2 else 1), return u)
+        (if isVar (t `at` n) then 1 else 10*(overlap (t `at` n) (rhs rule)+1)*(if n == 0 then 2 else 1), return u)
       | n <- [0..len t-1],
         rule <- rules,
         u <- maybeToList (tryBackwardsRewrite rule t n),
         len u <= maxSize ]
   where
     t = renameAvoiding rules t0
+    overlap (App f ts) (App g us) | f == g =
+      1 + sum (zipWith overlap (unpack ts) (unpack us))
+    overlap _ _ = 0
 
 permuteVars :: Term f -> Gen (Term f)
 permuteVars t = do
