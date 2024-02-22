@@ -521,7 +521,17 @@ data UNF f =
     -- Function has a unique normal form
     UniqueNormalForm
   | -- This pair of rules has an unjoinable critical pair
-    HasCriticalPair (Rule f) (Rule f, Int) (Term f) (Term f)
+    HasCriticalPair (Rule f) (Rule f, Int) (ConfluenceFailure f)
+
+data ConfluenceFailure f =
+  ConfluenceFailure {
+    cf_term  :: Term f,
+    cf_left  :: Reduction1 f,
+    cf_right :: Reduction1 f }
+
+cf_left_term, cf_right_term :: ConfluenceFailure f -> Term f
+cf_left_term ConfluenceFailure{..} = result1 cf_term cf_left
+cf_right_term ConfluenceFailure{..} = result1 cf_term cf_right
 
 instance Semigroup (UNF f) where
   -- mconcat finds the first HasCriticalPair in the list
@@ -532,30 +542,38 @@ instance Monoid (UNF f) where
 
 instance Function f => Pretty (UNF f) where
   pPrint UniqueNormalForm = text "unique normal form"
-  pPrint (HasCriticalPair r1 (r2, n) _ _) = text "critical pair" <+> pPrint r1 <+> pPrint (r2, n)
+  pPrint (HasCriticalPair r1 (r2, n) _) = text "critical pair" <+> pPrint r1 <+> pPrint (r2, n)
 
-hasUNF :: Function f => Strategy1 f -> Term f -> Gen (UNF f)
+hasUNFRetry :: Function f => Strategy1 f -> ConfluenceFailure f -> UNF f
+hasUNFRetry strat ConfluenceFailure{..} =
+  hasUNF strat cf_term cf_left `mappend`
+  hasUNF strat cf_term cf_right
+
+hasUNFRandom :: Function f => Strategy1 f -> Term f -> Gen (UNF f)
+hasUNFRandom strat t =
+  mconcat <$> sequence
+  [ do r <- normaliseWith1Random (const True) strat u
+       return (hasUNF strat u r)
+  | u <- reverseSubterms t,
+    _ <- [1..5] ]
+
+hasUNF :: (HasCallStack, Function f) => Strategy1 f -> Term f -> Reduction1 f -> UNF f
 hasUNF strat =
-  \t -> -- don't bind t in where-clause
-  sized $ \n ->
-  let res = magic 5 t -- always try at least 1 path
-  in stampGen' (\res -> case res of { UniqueNormalForm -> "hasUNF.UNF"; HasCriticalPair{} -> "hasUNF.CP" }) res
+  \t r -> -- don't bind in where-clause
+  let res = magic t r
+  in stamp (case res of { UniqueNormalForm -> "hasUNF.UNF"; HasCriticalPair{} -> "hasUNF.CP" }) res
   where
     trace _ x = x
     normFirstStep t = trace (prettyShow (t, take 1 $ anywhere1 strat t)) $ head (head (anywhere1 strat t))
     normSteps t = normaliseWith1 (const True) strat t
+    normStepsVia r t = r `trans1` normSteps (result1 t r)
     norm = memo $ \t -> stamp "hasUNF.norm" (result1 t (normSteps t))
 
-    magic n t = do
-      rs <- mapM (magic n) (unpack (children t))
-      r  <- here n t
-      return (mconcat rs `mappend` r)
-
-    here n t = fmap mconcat $ replicateM n $ stampGen "hasUNF.here" $ do
-      r <- normaliseWith1Random (const True) strat t
-      let u = stamp "hasUNF.result1" (result1 t r)
-      return $
-        if norm t == u then UniqueNormalForm else badPath t u r
+    magic t r
+      | norm t == norm u = UniqueNormalForm
+      | otherwise = badPath t u r
+      where
+        u = stamp "hasUNF.result1" (result1 t r)
       
     -- precondition: r is a proof of t->*u where norm t /= norm u
     badPath t u rs = stamp "badPath" (badPath' t u rs)
@@ -590,7 +608,7 @@ hasUNF strat =
     conflict' t rr1@(r1, sub1, []) rr2@(r2, sub2, p)
       | criticalOverlap (lhs r1) p =
         trace ("Critical pair " ++ prettyShow (r1, r2, p)) $
-        HasCriticalPair r1 (r2, pathToPosition (lhs r1) p) (norm (result1 t [rr1])) (norm (result1 t [rr2]))
+        HasCriticalPair r1 (r2, pathToPosition (lhs r1) p) (ConfluenceFailure t (normStepsVia [rr1] t) (normStepsVia [rr2] t))
       | otherwise = nonOverlapping t (r1, sub1, []) (r2, sub2, p)
     -- Rewrites apply to parallel subterms and can be easily commuted
     conflict' t r1 r2 = nonOverlapping t r1 r2

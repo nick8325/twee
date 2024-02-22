@@ -88,7 +88,7 @@ data State f =
     st_complete       :: !(Index f (Rule f)),
     st_messages_rev   :: ![Message f],
     st_random_seed    :: Maybe QCGen,
-    st_problem_term   :: Maybe (Term f) }
+    st_problem_term   :: Maybe (ConfluenceFailure f) }
 
 -- | The default prover configuration.
 defaultConfig :: Function f => Config f
@@ -165,7 +165,7 @@ data Message f =
     -- | Status update: how many queued critical pairs there are.
   | Status !Int
     -- | New problem term discovered.
-  | NewProblemTerm !(Term f) !(Rule f) !(Term f) !(Rule f) !(Term f)
+  | NewProblemTerm !(ConfluenceFailure f)
 
 instance Function f => Pretty (Message f) where
   pPrint (NewActive rule) = pPrint rule
@@ -185,11 +185,11 @@ instance Function f => Pretty (Message f) where
     text "  (simplifying rules with respect to one another...)"
   pPrint (Status n) =
     text "  (" <#> pPrint n <+> text "queued critical pairs)"
-  pPrint (NewProblemTerm t r1 u r2 v) =
+  pPrint (NewProblemTerm cf) =
     text "" $$
-    text "Problem term:" <+> pPrint t $$
-    text "NF 1 using" <+> pPrint r1 <#> text ":" <+> pPrint u $$
-    text "NF 2 using" <+> pPrint r2 <#> text ":" <+> pPrint v
+    text "Problem term:" <+> pPrint (cf_term cf) $$
+    text "  -->" <+> pPrint (cf_left_term cf) $$
+    text "  -->" <+> pPrint (cf_right_term cf)
 
 -- | Emit a message.
 message :: PrettyTerm f => Message f -> State f -> State f
@@ -829,44 +829,34 @@ complete1 config@Config{..} state
         let state' = state { st_random_seed = Just g2 } in
         case findCriticalPair config state' g1 of
           Nothing -> (True, state'{st_problem_term = Nothing})
-          Just (info, t, r1, u, r2, v, overlap, changed) ->
+          Just (info, overlap, changed, cf) ->
             let maybeMessage st =
                   case st_problem_term st of
-                    Just t | changed -> message (NewProblemTerm t r1 u r2 v) st
+                    Just cf | changed -> message (NewProblemTerm cf) st
                     _ -> st
-                state'' = consider config (maybeMessage state'{st_problem_term = Just t}) info overlap
+                state'' = consider config (maybeMessage state'{st_problem_term = Just cf}) info overlap
                 progress = st_next_active state' /= st_next_active state'' in
             (True, state''{st_problem_term = if progress then st_problem_term state'' else Nothing})
 
-
 {-# INLINEABLE findCriticalPair #-}
-findCriticalPair :: Function f => Config f -> State f -> QCGen -> Maybe (Info, Term f, Rule f, Term f, Rule f, Term f, CriticalPair f, Bool)
-findCriticalPair config state g =
-  (st_problem_term state >>= \t -> fmap snd (unGen (test (return t) False) g1 0)) `mplus`
-  (listToMaybe <$> map snd <$> sortBy (comparing fst) <$> take (cfg_random_mode_best_of config) <$> catMaybes $
-   unGen (sequence [resize n (test gen True) | n <- sizes]) g2 0)
+findCriticalPair :: Function f => Config f -> State f -> QCGen -> Maybe (Info, CriticalPair f, Bool, ConfluenceFailure f)
+findCriticalPair config state g = retry `mplus` random
   where
     trace _ x = x
     traceM _ = return ()
-    (g1, g2) = Random.split g
     sizes = concat [replicate 10 i | i <- [1..100]]
 
-    test g changed = do
-      !t <- g
+    retry = (hasUNFRetry strat <$> st_problem_term state) >>= toOverlap False >>= return . snd
+    random = pickBest randoms
+      where
+        pickBest =
+          listToMaybe . map snd . sortBy (comparing fst) . take (cfg_random_mode_best_of config) . catMaybes
+        randoms = unGen (sequence [resize n test | n <- sizes]) g 0
+
+    test = do
+      !t <- gen
       () <- traceM ("checking " ++ prettyShow t)
-      r <- hasUNF strat t
-      case r of
-        UniqueNormalForm -> return Nothing
-        HasCriticalPair r1 (r2, n) u v -> do
-          () <- traceM ("Term " ++ prettyShow t ++ " has critical pair (" ++ prettyShow r1 ++ ", " ++ prettyShow r2 ++ ", " ++ show n ++ ")")
-          let r2' = renameAvoiding r1 r2
-          let Just o = overlapAt (How n Forwards Forwards) r1 r2' r1 r2'
-          case simplifyOverlap (index_oriented (st_rules state)) o of
-            Nothing -> do
-              () <- traceM ("Overlap " ++ prettyShow (overlap_eqn o) ++ " was spurious")
-              return Nothing -- should be rare
-            Just o' ->
-              return $ Just (cfg_score_cp config 0 (overlap_eqn o'), (Info 0 IntSet.empty, t, r1, u, r2, v, makeCriticalPair o, changed))
+      toOverlap True <$> hasUNFRandom strat t
 
     gen =
       if cfg_random_mode_goal_directed config then
@@ -876,6 +866,17 @@ findCriticalPair config state g =
 
     strat = basic (rewrite reducesSkolem (index_all (st_rules state)))
     lhss = map lhs (Index.elems (index_all (st_rules state)))
+
+    toOverlap _ UniqueNormalForm = Nothing
+    toOverlap changed (HasCriticalPair r1 (r2, n) cf) =
+      trace ("Term " ++ prettyShow (cf_term cf) ++ " has critical pair (" ++ prettyShow r1 ++ ", " ++ prettyShow r2 ++ ", " ++ show n ++ ")") $
+      let r2' = renameAvoiding r1 r2 in
+      let Just o = overlapAt (How n Forwards Forwards) r1 r2' r1 r2' in
+      case simplifyOverlap (index_oriented (st_rules state)) o of
+        Nothing ->
+          trace ("Overlap " ++ prettyShow (overlap_eqn o) ++ " was spurious") Nothing -- should be rare
+        Just o' ->
+          Just (cfg_score_cp config 0 (overlap_eqn o'), (Info 0 IntSet.empty, makeCriticalPair o, changed, cf))
 
 -- Return all goal terms. Handles the $equals coding.
 goalTerms :: Function f => State f -> [Term f]

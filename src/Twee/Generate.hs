@@ -7,6 +7,7 @@ import Twee.Rule
 import Data.Maybe
 import Twee.Profile
 import Twee.Utils
+import Debug.Trace
 
 type Pat f = Term f
 type LHS f = Term f
