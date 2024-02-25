@@ -1,7 +1,7 @@
 name:                twee
 version:             2.4.2
 synopsis:            An equational theorem prover
-homepage:            http://github.com/nick8325/twee
+homepage:            https://github.com/nick8325/twee
 license:             BSD3
 license-file:        LICENSE
 author:              Nick Smallbone
@@ -23,9 +23,10 @@ description:
    http://www.tptp.org). You can use types and quantifiers, but apart
    from that the problem must be equational.
 
+
 source-repository head
   type:     git
-  location: git://github.com/nick8325/twee.git
+  location: https://github.com/nick8325/twee.git
   branch:   master
 
 flag static
@@ -54,7 +55,8 @@ executable twee
   hs-source-dirs:      executable
   other-modules:       SequentialMain
   default-language:    Haskell2010
-  build-depends:       base < 5,
+  build-depends:       base >= 4.12 && < 5,
+                         -- need at least GHC 8.6 because of GHC flag late-specialise
                        twee-lib == 2.4.2,
                        containers,
                        pretty,
@@ -76,7 +78,7 @@ Test-Suite twee-test
     hs-source-dirs:
         misc
     main-is: Test.hs
-    build-depends: base < 5, QuickCheck, twee-lib == 2.4.2, containers, pretty
+    build-depends: base >= 4.12 && < 5, QuickCheck, twee-lib == 2.4.2, containers, pretty
     ghc-options:
       -threaded
       -rtsopts
