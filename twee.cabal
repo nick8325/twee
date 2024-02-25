@@ -23,6 +23,15 @@ description:
    http://www.tptp.org). You can use types and quantifiers, but apart
    from that the problem must be equational.
 
+tested-with:
+  GHC == 9.8.2
+  GHC == 9.6.4
+  GHC == 9.4.8
+  GHC == 9.2.8
+  GHC == 9.0.2
+  GHC == 8.10.7
+  GHC == 8.8.4
+  GHC == 8.6.5
 
 source-repository head
   type:     git
