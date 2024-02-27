@@ -74,7 +74,8 @@ library
     Data.PackedSequence
 
   build-depends:
-    base >= 4 && < 5,
+    -- base >= 4.11 for Semigroup in Prelude
+    base >= 4.11 && < 5,
     containers,
     transformers,
     dlist,
