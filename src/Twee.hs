@@ -1,5 +1,5 @@
 -- | The main prover loop.
-{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables, GeneralizedNewtypeDeriving, PatternGuards, TypeFamilies, FlexibleInstances, RankNTypes #-}
+{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables, GeneralizedNewtypeDeriving, PatternGuards, TypeFamilies, FlexibleInstances, RankNTypes, TupleSections #-}
 module Twee where
 
 import Twee.Base
@@ -188,8 +188,14 @@ instance Function f => Pretty (Message f) where
   pPrint (NewProblemTerm cf) =
     text "" $$
     text "Problem term:" <+> pPrint (cf_term cf) $$
-    text "  -->" <+> pPrint (cf_left_term cf) $$
-    text "  -->" <+> pPrint (cf_right_term cf)
+    text "  NF 1:" $$ ppR (cf_term cf) (cf_left cf) $$
+    text "  NF 2:" $$ ppR (cf_term cf) (cf_right cf)
+    where
+      ppR _ [] = pPrintEmpty
+      ppR t (rr@(r,_,_):rs) =
+        text "    -> {by" <+> pPrint r <#> text "}" $$
+        text "       " <#> pPrint (ruleResult1 t rr) $$
+        ppR (ruleResult1 t rr) rs
 
 -- | Emit a message.
 message :: PrettyTerm f => Message f -> State f -> State f
@@ -844,7 +850,7 @@ findCriticalPair config state g = retry `mplus` random
   where
     trace _ x = x
     traceM _ = return ()
-    sizes = concat [replicate 10 i | i <- [1..100]]
+    sizes = concat [replicate 10 i | i <- [0..100]]
 
     retry = (hasUNFRetry strat <$> st_problem_term state) >>= toOverlap False >>= return . snd
     random = pickBest randoms
@@ -854,21 +860,29 @@ findCriticalPair config state g = retry `mplus` random
         randoms = unGen (sequence [resize n test | n <- sizes]) g 0
 
     test = do
-      !t <- gen
+      !(t, _) <- gen
       () <- traceM ("checking " ++ prettyShow t)
       toOverlap True <$> hasUNFRandom strat t
 
     gen =
       if cfg_random_mode_goal_directed config then
-        generateGoalTerm (goalTerms state) (Index.elems (index_all (st_rules state)))
+        generateGoalTerm (goalTerms state) (Index.elems (index_oriented (st_rules state)))
       else
-        generateTerm lhss
+        fmap (,[]) (generateTerm lhss)
 
     strat = basic (rewrite reducesSkolem (index_all (st_rules state)))
     lhss = map lhs (Index.elems (index_all (st_rules state)))
 
     toOverlap _ UniqueNormalForm = Nothing
     toOverlap changed (HasCriticalPair r1 (r2, n) cf) =
+    {-
+      Debug.Trace.trace
+        (prettyShow $
+          text "" $$
+          text "Problem term before shrinking:" <+> pPrint (cf_orig_term cf) $$
+          text "  NF 1:" <+> pPrint (cf_orig_left_term cf) $$
+          text "  NF 2:" <+> pPrint (cf_orig_right_term cf)) $
+      -}
       trace ("Term " ++ prettyShow (cf_term cf) ++ " has critical pair (" ++ prettyShow r1 ++ ", " ++ prettyShow r2 ++ ", " ++ show n ++ ")") $
       let r2' = renameAvoiding r1 r2 in
       let Just o = overlapAt (How n Forwards Forwards) r1 r2' r1 r2' in

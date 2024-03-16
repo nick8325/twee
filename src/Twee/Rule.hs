@@ -513,6 +513,14 @@ normaliseWith1Random ok strat t = aux t
           (p, u) <- elements choices
           fmap (p `trans1`) (aux u)
 
+rematchReduction1 :: Term f -> Reduction1 f -> Reduction1 f
+rematchReduction1 _ [] = []
+rematchReduction1 t ((r, _, pos):rs) =
+  red:rematchReduction1 (ruleResult1 t red) rs
+  where
+    Just sub = match (lhs r) (t `atPath` pos)
+    red = (r, sub, pos)
+
 --------------------------------------------------------------------------------
 -- * Testing whether a term has a unique normal form.
 --------------------------------------------------------------------------------
@@ -527,11 +535,19 @@ data ConfluenceFailure f =
   ConfluenceFailure {
     cf_term  :: Term f,
     cf_left  :: Reduction1 f,
-    cf_right :: Reduction1 f }
+    cf_right :: Reduction1 f,
+
+    cf_orig_term :: Term f,
+    cf_orig_left :: Reduction1 f,
+    cf_orig_right :: Reduction1 f }
 
 cf_left_term, cf_right_term :: ConfluenceFailure f -> Term f
 cf_left_term ConfluenceFailure{..} = result1 cf_term cf_left
 cf_right_term ConfluenceFailure{..} = result1 cf_term cf_right
+
+cf_orig_left_term, cf_orig_right_term :: ConfluenceFailure f -> Term f
+cf_orig_left_term ConfluenceFailure{..} = result1 cf_orig_term cf_orig_left
+cf_orig_right_term ConfluenceFailure{..} = result1 cf_orig_term cf_orig_right
 
 instance Semigroup (UNF f) where
   -- mconcat finds the first HasCriticalPair in the list
@@ -558,9 +574,8 @@ hasUNFRandom strat t =
     _ <- [1..5] ]
 
 hasUNF :: (HasCallStack, Function f) => Strategy1 f -> Term f -> Reduction1 f -> UNF f
-hasUNF strat =
-  \t r -> -- don't bind in where-clause
-  let res = magic t r
+hasUNF strat t0 r0 =
+  let res = magic t0 r0
   in stamp (case res of { UniqueNormalForm -> "hasUNF.UNF"; HasCriticalPair{} -> "hasUNF.CP" }) res
   where
     trace _ x = x
@@ -608,7 +623,9 @@ hasUNF strat =
     conflict' t rr1@(r1, sub1, []) rr2@(r2, sub2, p)
       | criticalOverlap (lhs r1) p =
         trace ("Critical pair " ++ prettyShow (r1, r2, p)) $
-        HasCriticalPair r1 (r2, pathToPosition (lhs r1) p) (ConfluenceFailure t (normStepsVia [rr1] t) (normStepsVia [rr2] t))
+        HasCriticalPair r1 (r2, pathToPosition (lhs r1) p) $
+        ConfluenceFailure t (normStepsVia [rr1] t) (normStepsVia [rr2] t)
+        t0 (normStepsVia r0 t0) (normSteps t0)
       | otherwise = nonOverlapping t (r1, sub1, []) (r2, sub2, p)
     -- Rewrites apply to parallel subterms and can be easily commuted
     conflict' t r1 r2 = nonOverlapping t r1 r2

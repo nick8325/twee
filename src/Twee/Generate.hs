@@ -64,13 +64,15 @@ genList n lhss (p:ps) =
 
 -- Generate a term by starting with a goal term and rewriting
 -- backwawrds a certain number of times.
-generateGoalTerm :: Function f => [Term f] -> [Rule f] -> Gen (Term f)
+generateGoalTerm :: Function f => [Term f] -> [Rule f] -> Gen (Term f, Reduction1 f)
 generateGoalTerm goals rules = stampGen "generateGoalTerm" $ sized $ \n -> do
   t <- frequency [(len u, return u) | u <- goals]
   -- () <- traceM ("Goal term: " ++ prettyShow t)
-  u <- loop (n `div` 5 + 1) (rewriteBackwards n rules) t
+  let ok u = len u <= n
+  (u, r) <- loop (n `div` 5 + 1) (rewriteBackwardsWithReduction ok rules) (t, [])
   -- fill in any holes with randomly-generated terms
-  generateTerm' (map lhs rules) u
+  v <- generateTerm' (map lhs rules) u
+  return (v, rematchReduction1 v r)
 
 loop :: Monad m => Int -> (a -> m a) -> a -> m a
 loop 0 _ x = return x
@@ -78,24 +80,34 @@ loop n f x | n > 0 = f x >>= loop (n-1) f
 
 -- Apply a rule backwards at a given position in a term.
 -- The goal rhs and the subterm must be unifiable.
-tryBackwardsRewrite :: Rule f -> Term f -> Int -> Maybe (Term f)
+tryBackwardsRewrite :: Rule f -> Term f -> Int -> Maybe (Term f, Reduction1 f)
 tryBackwardsRewrite rule t n = do
   sub <- unify (rhs rule) (t `at` n)
-  return (build (replacePositionSub sub n (singleton (lhs rule)) (singleton t)))
+  return $
+    (build (replacePositionSub sub n (singleton (lhs rule)) (singleton t)),
+     [(rule, sub, positionToPath t n)])
+
+rewriteBackwardsWithReduction :: Function f => (Term f -> Bool) -> [Rule f] -> (Term f, Reduction1 f) -> Gen (Term f, Reduction1 f)
+rewriteBackwardsWithReduction ok rules (t, r) = do
+  res <- rewriteBackwards ok rules t
+  case res of
+    Nothing -> return (t, r)
+    Just (u, r') -> return (u, r' `trans1` r)
 
 -- Pick a random rule and rewrite the term backwards using it.
-rewriteBackwards :: Function f => Int -> [Rule f] -> Term f -> Gen (Term f)
-rewriteBackwards maxSize rules t0
-  | len t0 >= maxSize = return t0
+rewriteBackwards :: Function f => (Term f -> Bool) -> [Rule f] -> Term f -> Gen (Maybe (Term f, Reduction1 f))
+rewriteBackwards ok rules t0
+  | not (ok t0) = return Nothing
   | otherwise = 
     frequency $
-      [(1, return t0)] ++ -- in case no rules work
+      [(1, return Nothing)] ++ -- in case no rules work
       [ -- penalise unification with a variable as it can result in "type-incorrect" terms
-        (if isVar (t `at` n) then 1 else 10*(overlap (t `at` n) (rhs rule)+1)*(if n == 0 then 2 else 1), return u)
+        (if isVar (t `at` n) then 1 else 10*(overlap (t `at` n) (rhs rule)+1)*(if n == 0 then 2 else 1),
+         return (Just (u, r)))
       | n <- [0..len t-1],
         rule <- rules,
-        u <- maybeToList (tryBackwardsRewrite rule t n),
-        len u <= maxSize ]
+        (u, r) <- maybeToList (tryBackwardsRewrite rule t n),
+        ok u ]
   where
     t = renameAvoiding rules t0
     overlap (App f ts) (App g us) | f == g =
