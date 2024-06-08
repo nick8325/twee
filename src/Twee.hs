@@ -866,9 +866,11 @@ findCriticalPair config state g = retry `mplus` random
 
     gen =
       if cfg_random_mode_goal_directed config then
-        generateGoalTerm (goalTerms state) (Index.elems (index_oriented (st_rules state)))
-      else
-        fmap (,[]) (generateTerm lhss)
+        generateGoalTerm (goalTerms state) (Index.elems (index_all (st_rules state)))
+      else do
+        t <- generateTerm lhss
+        r <- normaliseWith1Random (const True) strat t
+        return (t, r)
 
     strat = basic (rewrite reducesSkolem (index_all (st_rules state)))
     lhss = map lhs (Index.elems (index_all (st_rules state)))
@@ -886,7 +888,7 @@ findCriticalPair config state g = retry `mplus` random
       trace ("Term " ++ prettyShow (cf_term cf) ++ " has critical pair (" ++ prettyShow r1 ++ ", " ++ prettyShow r2 ++ ", " ++ show n ++ ")") $
       let r2' = renameAvoiding r1 r2 in
       let Just o = overlapAt (How n Forwards Forwards) r1 r2' r1 r2' in
-      case simplifyOverlap (index_oriented (st_rules state)) o of
+      case simplifyOverlap (index_all (st_rules state)) o of
         Nothing ->
           trace ("Overlap " ++ prettyShow (overlap_eqn o) ++ " was spurious") Nothing -- should be rare
         Just o' ->

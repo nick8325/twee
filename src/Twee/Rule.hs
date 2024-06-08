@@ -578,7 +578,7 @@ hasUNF strat t0 r0 =
   let res = magic t0 r0
   in stamp (case res of { UniqueNormalForm{} -> "hasUNF.UNF"; HasCriticalPair{} -> "hasUNF.CP" }) res
   where
-    -- trace _ x = x
+    trace _ x = x
     --normFirstStep t = trace (prettyShow (t, take 1 $ anywhere1 strat t)) $ head (head (anywhere1 strat t))
     normSteps t = normaliseWith1 (const True) strat t
     normStepsVia r t = r `trans1` normSteps (result1 t r)
