@@ -873,7 +873,7 @@ findCriticalPair config state g = retry `mplus` random
     strat = basic (rewrite reducesSkolem (index_all (st_rules state)))
     lhss = map lhs (Index.elems (index_all (st_rules state)))
 
-    toOverlap _ UniqueNormalForm = Nothing
+    toOverlap _ UniqueNormalForm{} = Nothing
     toOverlap changed (HasCriticalPair r1 (r2, n) cf) =
     {-
       Debug.Trace.trace

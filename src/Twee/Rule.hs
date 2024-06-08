@@ -30,6 +30,8 @@ import GHC.Stack
 import Test.QuickCheck hiding (Function, subterms, Fun)
 import Twee.Profile
 import Test.QuickCheck.Gen
+import Data.Semigroup
+import qualified Data.List.NonEmpty as NonEmpty
 
 --------------------------------------------------------------------------------
 -- * Rewrite rules.
@@ -473,20 +475,20 @@ ruleProof1 t (r0, sub, p)
     r = subst sub r0
 
 -- | A strategy gives a set of possible reductions for a term.
-type Strategy1 f = Term f -> [Reduction1 f]
+type Strategy1 f = Term f -> [(Rule f, Subst f, [Int])]
 
 -- | Apply a strategy anywhere in a term.
 anywhere1 :: Strategy1 f -> Strategy1 f
 anywhere1 strat t =
   stamp "anywhere1 (whnf)"
-  [ [(r, sub, p ++ p') | (r, sub, p') <- red]
+  [ (r, sub, p ++ p')
   | n <- reverse [0..len t-1], -- innermost
     let p = positionToPath t n,
-    red <- strat (t `at` n) ]
+    (r, sub, p') <- strat (t `at` n) ]
 
 -- | Apply a basic strategy to a term.
 basic :: Strategy f -> Strategy1 f
-basic strat t = [[(r, sub, [])] | [(r, sub)] <- strat t]
+basic strat t = [(r, sub, []) | [(r, sub)] <- strat t]
 
 -- | Normalise a term wrt a particular strategy.
 {-# INLINE normaliseWith1 #-}
@@ -495,8 +497,8 @@ normaliseWith1 ok strat t = aux t
   where
     aux t =
       case anywhere1 strat t of
-        (p:_) | u <- result1 t p, ok u ->
-          p `trans1` aux u
+        (p:_) | u <- ruleResult1 t p, ok u ->
+          [p] `trans1` aux u
         _ -> []
 
 -- | Normalise a term wrt a particular strategy, picking random
@@ -506,12 +508,12 @@ normaliseWith1Random :: Function f => (Term f -> Bool) -> Strategy1 f -> Term f 
 normaliseWith1Random ok strat t = aux t
   where
     aux t =
-      let choices = [(p, u) | p <- anywhere1 strat t, let u = stamp "normaliseWith1Random.result1" (result1 t p), ok u] in
+      let choices = [(p, u) | p <- anywhere1 strat t, let u = stamp "normaliseWith1Random.result1" (ruleResult1 t p), ok u] in
       case choices of
         [] -> return []
         _ -> do
           (p, u) <- elements choices
-          fmap (p `trans1`) (aux u)
+          fmap ([p] `trans1`) (aux u)
 
 rematchReduction1 :: Term f -> Reduction1 f -> Reduction1 f
 rematchReduction1 _ [] = []
@@ -527,7 +529,7 @@ rematchReduction1 t ((r, _, pos):rs) =
 
 data UNF f =
     -- Function has a unique normal form
-    UniqueNormalForm
+    UniqueNormalForm (Term f)
   | -- This pair of rules has an unjoinable critical pair
     HasCriticalPair (Rule f) (Rule f, Int) (ConfluenceFailure f)
 
@@ -535,39 +537,37 @@ data ConfluenceFailure f =
   ConfluenceFailure {
     cf_term  :: Term f,
     cf_left  :: Reduction1 f,
-    cf_right :: Reduction1 f,
-
+    cf_right :: Reduction1 f }
+{-
     cf_orig_term :: Term f,
     cf_orig_left :: Reduction1 f,
     cf_orig_right :: Reduction1 f }
-
+-}
 cf_left_term, cf_right_term :: ConfluenceFailure f -> Term f
 cf_left_term ConfluenceFailure{..} = result1 cf_term cf_left
 cf_right_term ConfluenceFailure{..} = result1 cf_term cf_right
-
+{-
 cf_orig_left_term, cf_orig_right_term :: ConfluenceFailure f -> Term f
 cf_orig_left_term ConfluenceFailure{..} = result1 cf_orig_term cf_orig_left
 cf_orig_right_term ConfluenceFailure{..} = result1 cf_orig_term cf_orig_right
-
+-}
 instance Semigroup (UNF f) where
   -- mconcat finds the first HasCriticalPair in the list
-  UniqueNormalForm <> x = x
+  UniqueNormalForm{} <> x = x
   x@HasCriticalPair{} <> _ = x
-instance Monoid (UNF f) where
-  mempty = UniqueNormalForm
 
 instance Function f => Pretty (UNF f) where
-  pPrint UniqueNormalForm = text "unique normal form"
+  pPrint UniqueNormalForm{} = text "unique normal form"
   pPrint (HasCriticalPair r1 (r2, n) _) = text "critical pair" <+> pPrint r1 <+> pPrint (r2, n)
 
 hasUNFRetry :: Function f => Strategy1 f -> ConfluenceFailure f -> UNF f
 hasUNFRetry strat ConfluenceFailure{..} =
-  hasUNF strat cf_term cf_left `mappend`
+  hasUNF strat cf_term cf_left <>
   hasUNF strat cf_term cf_right
 
 hasUNFRandom :: Function f => Strategy1 f -> Term f -> Gen (UNF f)
 hasUNFRandom strat t =
-  mconcat <$> sequence
+  sconcat . NonEmpty.fromList <$> sequence
   [ do r <- normaliseWith1Random (const True) strat u
        return (hasUNF strat u r)
   | u <- reverseSubterms t,
@@ -576,59 +576,95 @@ hasUNFRandom strat t =
 hasUNF :: (HasCallStack, Function f) => Strategy1 f -> Term f -> Reduction1 f -> UNF f
 hasUNF strat t0 r0 =
   let res = magic t0 r0
-  in stamp (case res of { UniqueNormalForm -> "hasUNF.UNF"; HasCriticalPair{} -> "hasUNF.CP" }) res
+  in stamp (case res of { UniqueNormalForm{} -> "hasUNF.UNF"; HasCriticalPair{} -> "hasUNF.CP" }) res
   where
-    trace _ x = x
-    normFirstStep t = trace (prettyShow (t, take 1 $ anywhere1 strat t)) $ head (head (anywhere1 strat t))
+    -- trace _ x = x
+    --normFirstStep t = trace (prettyShow (t, take 1 $ anywhere1 strat t)) $ head (head (anywhere1 strat t))
     normSteps t = normaliseWith1 (const True) strat t
     normStepsVia r t = r `trans1` normSteps (result1 t r)
-    norm = memo $ \t -> stamp "hasUNF.norm" (result1 t (normSteps t))
+    norm =
+      memo $ \t ->
+        stamp "hasUNF.norm" $
+        case anywhere1 strat t of
+          [] -> t
+          r:_ -> norm (ruleResult1 t r)
 
-    magic t r
-      | norm t == norm u = UniqueNormalForm
-      | otherwise = badPath t u r
-      where
-        u = stamp "hasUNF.result1" (result1 t r)
+    --magic :: Term f -> Reduction1 f -> UNF f
+    magic t [] = UniqueNormalForm (norm t)
+    magic t (r:rs) =
+      let u = ruleResult1 t r in
+      case magic u rs of
+        res@HasCriticalPair{} -> res
+        UniqueNormalForm v -> magic1 t r u v
+
+    magic1 t (r, sub, p) u v
+      | norm t == v = UniqueNormalForm v
+      | not (oriented (orientation r)) && not (reducesSkolem r sub) =
+        -- v <-* u -> t, norm t /= v: 
+        --   * if norm t = goal then ok
+        --   * otherwise u has two normal forms
+        conflict u (normSteps u) (norm u) ([(backwards r, sub, p)] `trans1` normSteps t) (norm t)
+      | otherwise = conflict t ([(r, sub, p)] `trans1` normSteps u) (norm u) (normSteps t) (norm t)
       
-    -- precondition: r is a proof of t->*u where norm t /= norm u
-    badPath t u rs = stamp "badPath" (badPath' t u rs)
-    badPath' t u rs
-      | trace ("bad path " ++ prettyShow t ++ " -> " ++ prettyShow u ++ " (normal forms = " ++ prettyShow (norm t, norm u) ++ "): " ++ prettyShow rs) False = undefined
-    badPath' _ _ [] = error "badPath: empty list"
-    badPath' t u (r:rs)
-      | norm v == norm u = conflict t r (normFirstStep t)
-      | otherwise =
-        trace ("v = " ++ prettyShow v ++ ", u = " ++ prettyShow u ++ ", norm v = " ++ prettyShow (norm v) ++ ", norm u = " ++ prettyShow (norm u)) $
-        badPath' v u rs
-      where
-        v = result1 t [r]
-
     -- precondition: normR t r1 /= normR t r2
-    conflict t r1 r2 = stamp "conflict" (conflict' t r1 r2)
-    conflict' t r1 r2
+    --conflict, conflict' :: Term f -> Reduction1 f -> Term f -> Reduction1 f -> Term f -> UNF f
+    conflict t rs1 u rs2 v = stamp "conflict" (conflict' t rs1 u rs2 v)
+    conflict' t (r1:rs1) u (r2:rs2) v
       | trace "" $
         trace ("Conflicting term: " ++ prettyShow t) $
         trace ("Rule 1: " ++ prettyShow r1) $
         trace ("Rule 2: " ++ prettyShow r2) $
         trace "" False = undefined
 
-    -- Both rewrites apply to the same subterm.
-    -- Hypothesis: descending into the subterm will still find a conflict as long as norm is innermost
-    conflict' t (r1, sub1, (p1:ps1)) (r2, sub2, (p2:ps2)) | p1 == p2 =
-      conflict' (unpack (children t) !! p1) (r1, sub1, ps1) (r2, sub2, ps2)
+    conflict' t (r1:rs1) u (r2:rs2) v
+      | not ok = error "not ok"
+      | r1 == r2 = conflict' (ruleResult1 t r1) rs1 u rs2 v
+      | otherwise =
+        case commute t r1 r2 of
+          Nothing -> criticalPair t r1 r2
+          Just (rs1', rs2') ->
+            let w = result1 t (r1:rs1') in
+            if norm w == u then
+              conflict' (ruleResult1 t r2) (rs2' ++ normSteps w) u rs2 v
+            else
+              conflict' (ruleResult1 t r1) rs1 u (rs1' ++ normSteps w) (norm w)
+      where
+        ok =
+          norm u == u && norm v == v &&
+          result1 t (r1:rs1) == u &&
+          result1 t (r2:rs2) == v
 
-    -- One rule is at the root (first normalise so that r1 is at the root)
-    conflict' t (r1, sub1, p@(_:_)) (r2, sub2, []) =
-      conflict' t (r2, sub2, []) (r1, sub1, p)
-    conflict' t rr1@(r1, sub1, []) rr2@(r2, sub2, p)
-      | criticalOverlap (lhs r1) p =
-        trace ("Critical pair " ++ prettyShow (r1, r2, p)) $
-        HasCriticalPair r1 (r2, pathToPosition (lhs r1) p) $
-        ConfluenceFailure t (normStepsVia [rr1] t) (normStepsVia [rr2] t)
-        t0 (normStepsVia r0 t0) (normSteps t0)
-      | otherwise = nonOverlapping t (r1, sub1, []) (r2, sub2, p)
-    -- Rewrites apply to parallel subterms and can be easily commuted
-    conflict' t r1 r2 = nonOverlapping t r1 r2
+    criticalPair t (r1, sub1, (p1:ps1)) (r2, sub2, (p2:ps2))
+      | p1 == p2 = criticalPair (unpack (children t) !! p1) (r1, sub1, ps1) (r2, sub2, ps2)
+    criticalPair t (r1, sub1, []) (r2, sub2, p) =
+      makeCriticalPair t r1 sub1 r2 sub2 p
+    criticalPair t (r1, sub1, p) (r2, sub2, []) =
+      makeCriticalPair t r2 sub2 r1 sub1 p
+
+    makeCriticalPair t r1 sub1 r2 sub2 p =
+      HasCriticalPair r1 (r2, pathToPosition (lhs r1) p) $
+      ConfluenceFailure t (normStepsVia [(r1, sub1, [])] t) (normStepsVia [(r2, sub2, p)] t)
+      
+    --commute :: Term f -> (Rule f, Subst f, [Int]) -> (Rule f, Subst f, [Int]) -> Maybe (Reduction1 f, Reduction1 f)
+    commute t r1@(rule1, sub1, (p1:ps1)) r2@(rule2, sub2, (p2:ps2))
+      | p1 == p2 =
+        -- descend into same subterm
+        fmap (both (map (atPos p1))) (commute (unpack (children t) !! p1) (rule1, sub1, ps1) (rule2, sub2, ps2))
+      | otherwise =
+        -- parallel subterms
+        Just ([r2], [r1])
+    commute t r1@(_, _, _:_) r2@(_, _, []) =
+      -- swap rules so the one which rewrites the root comes first
+      commute t r2 r1
+    commute t r1@(rule1, _, []) r2@(_, _, ps)
+      | not (criticalOverlap (lhs rule1) ps) =
+        Just (nonOverlapping t r1 r2)
+    commute t r1 r2
+      | norm u == norm v = Just (normSteps u, normSteps v)
+        where
+          u = ruleResult1 t r1
+          v = ruleResult1 t r2
+    commute _ _ _ = Nothing
 
     -- Precondition: r1 can be commuted with some number of parallel
     -- rewrites of r2
@@ -646,8 +682,7 @@ hasUNF strat t0 r0 =
         trace ("Rules after: " ++ prettyShow rs2After) $
         trace ("Final term: " ++ prettyShow w) $
         False = undefined
-      | norm w /= norm u = trace "1" $ badPath u w conf1
-      | norm w /= norm v = trace "2" $ badPath v w conf2
+      | otherwise = (conf1, conf2)
       where
         u = result1 t [r1]
         v = result1 t [r2]
@@ -663,7 +698,7 @@ hasUNF strat t0 r0 =
         -- (2) rs2Before
 
         -- TODO don't code term ordering
-        correctlyOriented = reducesSkolem rule1 sub1After
+        correctlyOriented = oriented (orientation rule1) || reducesSkolem rule1 sub1After
         sub1After = rematch rule1 p1 (result1 v rs2Before)
 
         -- The two reductions are: [red1] `trans` conf1, [red2] `trans` conf2
@@ -678,6 +713,9 @@ hasUNF strat t0 r0 =
     criticalOverlap (Var _) _ = False
     criticalOverlap App{} [] = True
     criticalOverlap t (p:ps) = criticalOverlap (unpack (children t) !! p) ps
+
+    atPos p (r, sub, ps) = (r, sub, p:ps)
+    both f (x, y) = (f x, f y)
 
     -- find the substitution for a rewrite
     rematch r pos t = sub
