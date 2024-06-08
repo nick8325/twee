@@ -643,7 +643,7 @@ hasUNF strat t0 r0 =
 
     makeCriticalPair t r1 sub1 r2 sub2 p =
       HasCriticalPair r1 (r2, pathToPosition (lhs r1) p) $
-      ConfluenceFailure t (normStepsVia [(r1, sub1, [])] t) (normStepsVia [(r2, sub2, p)] t)
+      ConfluenceFailure t [(r1, sub1, [])] [(r2, sub2, p)]
       
     --commute :: Term f -> (Rule f, Subst f, [Int]) -> (Rule f, Subst f, [Int]) -> Maybe (Reduction1 f, Reduction1 f)
     commute t r1@(rule1, sub1, (p1:ps1)) r2@(rule2, sub2, (p2:ps2))
