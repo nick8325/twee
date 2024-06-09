@@ -32,6 +32,7 @@ import Twee.Profile
 import Test.QuickCheck.Gen
 import Data.Semigroup
 import qualified Data.List.NonEmpty as NonEmpty
+import Test.QuickCheck.Random
 
 --------------------------------------------------------------------------------
 -- * Rewrite rules.
@@ -515,13 +516,14 @@ normaliseWith1Random ok strat t = aux t
           (p, u) <- elements choices
           fmap ([p] `trans1`) (aux u)
 
-rematchReduction1 :: Term f -> Reduction1 f -> Reduction1 f
+rematchReduction1 :: HasCallStack => Term f -> Reduction1 f -> Reduction1 f
 rematchReduction1 _ [] = []
 rematchReduction1 t ((r, _, pos):rs) =
-  red:rematchReduction1 (ruleResult1 t red) rs
-  where
-    Just sub = match (lhs r) (t `atPath` pos)
-    red = (r, sub, pos)
+  case match (lhs r) (t `atPath` pos) of
+    Just sub ->
+      let red = (r, sub, pos) in
+      red:rematchReduction1 (ruleResult1 t red) rs
+    Nothing -> error "rematch failed"
 
 --------------------------------------------------------------------------------
 -- * Testing whether a term has a unique normal form.
@@ -529,7 +531,7 @@ rematchReduction1 t ((r, _, pos):rs) =
 
 data UNF f =
     -- Function has a unique normal form
-    UniqueNormalForm (Term f)
+    UniqueNormalForm (Term f) (Reduction1 f)
   | -- This pair of rules has an unjoinable critical pair
     HasCriticalPair (Rule f) (Rule f, Int) (ConfluenceFailure f)
 
@@ -537,12 +539,10 @@ data ConfluenceFailure f =
   ConfluenceFailure {
     cf_term  :: Term f,
     cf_left  :: Reduction1 f,
-    cf_right :: Reduction1 f }
-{-
+    cf_right :: Reduction1 f,
     cf_orig_term :: Term f,
-    cf_orig_left :: Reduction1 f,
-    cf_orig_right :: Reduction1 f }
--}
+    cf_orig_left :: Reduction1 f }
+
 cf_left_term, cf_right_term :: ConfluenceFailure f -> Term f
 cf_left_term ConfluenceFailure{..} = result1 cf_term cf_left
 cf_right_term ConfluenceFailure{..} = result1 cf_term cf_right
@@ -562,8 +562,8 @@ instance Function f => Pretty (UNF f) where
 
 hasUNFRetry :: Function f => Strategy1 f -> ConfluenceFailure f -> UNF f
 hasUNFRetry strat ConfluenceFailure{..} =
-  hasUNF strat cf_term cf_left <>
-  hasUNF strat cf_term cf_right
+  hasUNF strat cf_orig_term cf_orig_left {- <>
+  hasUNF strat cf_term cf_right -}
 
 hasUNFRandom :: Function f => Strategy1 f -> Term f -> Gen (UNF f)
 hasUNFRandom strat t =
@@ -589,22 +589,26 @@ hasUNF strat t0 r0 =
           [] -> t
           r:_ -> norm (ruleResult1 t r)
 
+    normStepsR t = unGen (replicateM 10 (normaliseWith1Random (const True) strat t)) (mkQCGen 1234) 10
+    --normR t = result1 t (normStepsR t)
+
     --magic :: Term f -> Reduction1 f -> UNF f
-    magic t [] = UniqueNormalForm (norm t)
+    magic t [] = UniqueNormalForm (norm t) (normSteps t)
     magic t (r:rs) =
       let u = ruleResult1 t r in
       case magic u rs of
         res@HasCriticalPair{} -> res
-        UniqueNormalForm v -> magic1 t r u v
+        UniqueNormalForm v rsu ->
+          sconcat (NonEmpty.fromList [magic1 t rst r u rsu v | rst <- normStepsR t])
 
-    magic1 t (r, sub, p) u v
-      | norm t == v = UniqueNormalForm v
+    magic1 t rst (r, sub, p) u rsu v
+      | nt == v = UniqueNormalForm v rst
       | not (oriented (orientation r)) && not (reducesSkolem r sub) =
-        -- v <-* u -> t, norm t /= v: 
-        --   * if norm t = goal then ok
-        --   * otherwise u has two normal forms
-        conflict u (normSteps u) (norm u) ([(backwards r, sub, p)] `trans1` normSteps t) (norm t)
-      | otherwise = conflict t ([(r, sub, p)] `trans1` normSteps u) (norm u) (normSteps t) (norm t)
+        -- v <-* u -> t, nt /= v
+        conflict u rsu v ([(backwards r, sub, p)] `trans1` rst) nt
+      | otherwise = conflict t ([(r, sub, p)] `trans1` rsu) v rst nt
+      where
+        nt = result1 t rst
       
     -- precondition: normR t r1 /= normR t r2
     --conflict, conflict' :: Term f -> Reduction1 f -> Term f -> Reduction1 f -> Term f -> UNF f
@@ -623,6 +627,14 @@ hasUNF strat t0 r0 =
         case commute t r1 r2 of
           Nothing -> criticalPair t r1 r2
           Just (rs1', rs2') ->
+            trace "" $
+            trace ("t = " ++ prettyShow t) $
+            trace ("r1 = " ++ prettyShow r1) $
+            trace ("u = " ++ prettyShow (ruleResult1 t r1)) $
+            trace ("r2 = " ++ prettyShow r2) $
+            trace ("v = " ++ prettyShow (ruleResult1 t r2)) $
+            trace ("rs1' = " ++ prettyShow rs1') $
+            trace ("rs2' = " ++ prettyShow rs2') $
             let w = result1 t (r1:rs1') in
             if norm w == u then
               conflict' (ruleResult1 t r2) (rs2' ++ normSteps w) u rs2 v
@@ -643,7 +655,7 @@ hasUNF strat t0 r0 =
 
     makeCriticalPair t r1 sub1 r2 sub2 p =
       HasCriticalPair r1 (r2, pathToPosition (lhs r1) p) $
-      ConfluenceFailure t [(r1, sub1, [])] [(r2, sub2, p)]
+      ConfluenceFailure t [(r1, sub1, [])] [(r2, sub2, p)] t0 r0
       
     --commute :: Term f -> (Rule f, Subst f, [Int]) -> (Rule f, Subst f, [Int]) -> Maybe (Reduction1 f, Reduction1 f)
     commute t r1@(rule1, sub1, (p1:ps1)) r2@(rule2, sub2, (p2:ps2))
@@ -652,15 +664,15 @@ hasUNF strat t0 r0 =
         fmap (both (map (atPos p1))) (commute (unpack (children t) !! p1) (rule1, sub1, ps1) (rule2, sub2, ps2))
       | otherwise =
         -- parallel subterms
-        Just ([r2], [r1])
+        trace "parallel subterms" $ Just ([r2], [r1])
     commute t r1@(_, _, _:_) r2@(_, _, []) =
       -- swap rules so the one which rewrites the root comes first
-      commute t r2 r1
+      fmap (\(x, y) -> (y, x)) $ commute t r2 r1
     commute t r1@(rule1, _, []) r2@(_, _, ps)
       | not (criticalOverlap (lhs rule1) ps) =
-        Just (nonOverlapping t r1 r2)
+        trace "non-overlapping" $ Just (nonOverlapping t r1 r2)
     commute t r1 r2
-      | norm u == norm v = Just (normSteps u, normSteps v)
+      | norm u == norm v = trace "joinable" $ Just (normSteps u, normSteps v)
         where
           u = ruleResult1 t r1
           v = ruleResult1 t r2
@@ -680,7 +692,13 @@ hasUNF strat t0 r0 =
         trace ("Positions after: " ++ prettyShow ps2After) $
         trace ("Rules before: " ++ prettyShow rs2Before) $
         trace ("Rules after: " ++ prettyShow rs2After) $
+        trace ("Final step: " ++
+          if correctlyOriented && not reflexivity then "right " ++ prettyShow [(rule1, sub1After, p1)]
+          else if not (correctlyOriented || reflexivity) then "left " ++ prettyShow [(backwards rule1, sub1After, p1)]
+          else "none") $
         trace ("Final term: " ++ prettyShow w) $
+        trace ("Rewrite proof:\n" ++ prettyShow (Proof.certify (reductionProof1 t ([r1] `trans1` conf1)))) $
+        trace ("Rewrite proof:\n" ++ prettyShow (Proof.certify (reductionProof1 t ([r2] `trans1` conf2)))) $
         False = undefined
       | otherwise = (conf1, conf2)
       where
@@ -699,11 +717,12 @@ hasUNF strat t0 r0 =
 
         -- TODO don't code term ordering
         correctlyOriented = oriented (orientation rule1) || reducesSkolem rule1 sub1After
+        reflexivity = subst sub1After (lhs rule1) == subst sub1After (rhs rule1)
         sub1After = rematch rule1 p1 (result1 v rs2Before)
 
         -- The two reductions are: [red1] `trans` conf1, [red2] `trans` conf2
-        conf1 = rs2After `trans1` (if correctlyOriented then [] else [(backwards rule1, sub1After, p1)])
-        conf2 = rs2Before `trans1` (if correctlyOriented then [(rule1, sub1After, p1)] else [])
+        conf1 = rs2After `trans1` (if correctlyOriented || reflexivity then [] else [(backwards rule1, sub1After, p1)])
+        conf2 = rs2Before `trans1` (if correctlyOriented && not reflexivity then [(rule1, sub1After, p1)] else [])
 
         -- Check that both reductions give the same result
         w1 = result1 u conf1

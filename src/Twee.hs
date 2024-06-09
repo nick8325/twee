@@ -850,7 +850,7 @@ findCriticalPair config state g = retry `mplus` random
   where
     trace _ x = x
     traceM _ = return ()
-    sizes = concat [replicate 10 i | i <- [0..100]]
+    sizes = concat [replicate 10 i | i <- [10,20..100]]
 
     retry = (hasUNFRetry strat <$> st_problem_term state) >>= toOverlap False >>= return . snd
     random = pickBest randoms
@@ -860,9 +860,10 @@ findCriticalPair config state g = retry `mplus` random
         randoms = unGen (sequence [resize n test | n <- sizes]) g 0
 
     test = do
-      !(t, _) <- gen
+      !(t, rs) <- gen
       () <- traceM ("checking " ++ prettyShow t)
-      toOverlap True <$> hasUNFRandom strat t
+      --toOverlap True <$> (hasUNF strat t rs <>) <$> hasUNFRandom strat t
+      return $ toOverlap True $ hasUNF strat t rs
 
     gen =
       if cfg_random_mode_goal_directed config then

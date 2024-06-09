@@ -21,29 +21,25 @@ generateTerm' :: Function f => [LHS f] -> Pat f -> Gen (Term f)
 generateTerm' lhss pat =
   stampGen "generateTerm'" $ do
   sized $ \n -> do
-    (t, _) <- gen n lhss pat
-    permuteVars (build t)
+    sub <- gen n lhss pat emptyTriangleSubst
+    permuteVars (subst sub pat)
 
-gen :: Function f => Int -> [LHS f] -> Pat f -> Gen (Builder f, Subst f) -- a random Term, plus a subst relating it to Pat
-gen n lhss p =
+gen :: Function f => Int -> [LHS f] -> Pat f -> TriangleSubst f -> Gen (TriangleSubst f)
+gen n lhss p sub =
   -- TODO: play around with frequencies
   frequency $
-  [ (1, return (builder p, emptySubst)) ] ++
+  [ (1, return sub) ] ++
   -- commit to top-level function...
-  [ (n,
-     do (ts,sub) <- genList (reduce n (length ps)) lhss ps
-        return (app f ts, sub))
+  [ (n, genList (reduce n (length ps)) lhss ps sub)
   | App f psl <- [p]
   , let ps = unpack psl
   ] ++
   -- ...or use a LHS for inspiration
-  [ (n,
-     do (t,sub') <- gen n lhss p'
-        return (t,subst sub' sub))
+  [ (n, gen n lhss p' sub')
   | n > 0
   , lhs <- map (renameAvoiding p) lhss
-  , Just sub <- [unify lhs p]
-  , let p' = subst sub p
+  , Just sub' <- [unifyTriFrom lhs p sub]
+  , let p' = subst sub' p
   , n >= (len p' - len p)
   , not (isVariantOf p' p) -- make progress
   ]
@@ -53,14 +49,14 @@ gen n lhss p =
       | otherwise = n `div` m
 
 -- just a helper function
-genList :: Function f => Int -> [LHS f] -> [Pat f] -> Gen (Builder f, Subst f)
-genList _n _lhss [] =
-  do return (mempty,emptySubst)
+genList :: Function f => Int -> [LHS f] -> [Pat f] -> TriangleSubst f -> Gen (TriangleSubst f)
+genList _n _lhss [] sub =
+  do return sub
 
-genList n lhss (p:ps) =
-  do (t,sub) <- gen n lhss p
-     (ts,sub') <- genList n lhss (map (subst sub) ps)
-     return (t `mappend` ts,sub `substUnion` sub')
+genList n lhss (p:ps) sub =
+  do sub' <- gen n lhss (subst sub p) sub
+     sub'' <- genList n lhss ps sub'
+     return sub''
 
 -- Generate a term by starting with a goal term and rewriting
 -- backwawrds a certain number of times.
@@ -70,8 +66,11 @@ generateGoalTerm goals rules = stampGen "generateGoalTerm" $ sized $ \n -> do
   -- () <- traceM ("Goal term: " ++ prettyShow t)
   let ok u = len u <= n
   (u, r) <- loop (n `div` 5 + 1) (rewriteBackwardsWithReduction ok rules) (t, [])
+  -- () <- traceM ("intermediate generated " ++ prettyShow u)
   -- fill in any holes with randomly-generated terms
   v <- generateTerm' (map lhs rules) u
+  -- () <- traceM ("generated " ++ prettyShow v)
+  -- () <- traceM ("proof " ++ prettyShow r)
   return (v, rematchReduction1 v r)
 
 loop :: Monad m => Int -> (a -> m a) -> a -> m a
