@@ -573,6 +573,39 @@ hasUNFRandom strat t =
   | u <- reverseSubterms t,
     _ <- [1..5] ]
 
+hasUNFSimple :: Function f => Strategy1 f -> Term f -> Reduction1 f -> UNF f
+hasUNFSimple strat t0 r0 = magic t0 r0
+  where
+    normSteps t = normaliseWith1 (const True) strat t
+    norm =
+      memo $ \t ->
+        stamp "hasUNF.norm" $
+        case anywhere1 strat t of
+          [] -> t
+          r:_ -> norm (ruleResult1 t r)
+
+    magic t [] = UniqueNormalForm (norm t) (normSteps t)
+    magic t (r@(rule, sub, pos):rs) =
+      case magic (ruleResult1 t r) rs of
+        res@HasCriticalPair{} -> res
+        UniqueNormalForm v rsu ->
+          let t' = t `atPath` pos in
+          maybe (UniqueNormalForm v (r:rsu)) sconcat $ NonEmpty.nonEmpty $ do
+            n <- [0..len t'-1]
+            let pos' = positionToPath t' n
+            guard (not (isVar (t' `at` n)))
+            guard (criticalOverlap (lhs rule) pos')
+            (rule', sub', []) <- strat (t' `at` n)
+            guard (norm (ruleResult1 t (rule', sub', pos ++ pos')) /= norm (ruleResult1 t r))
+
+            return $
+              HasCriticalPair rule (rule', pathToPosition (lhs rule) pos') $
+              ConfluenceFailure t' [(rule, sub, [])] [(rule', sub', pos')] t0 r0
+
+    criticalOverlap (Var _) _ = False
+    criticalOverlap App{} [] = True
+    criticalOverlap t (p:ps) = criticalOverlap (unpack (children t) !! p) ps
+
 hasUNF :: (HasCallStack, Function f) => Strategy1 f -> Term f -> Reduction1 f -> UNF f
 hasUNF strat t0 r0 =
   let res = magic t0 r0

@@ -69,6 +69,7 @@ data Config f =
     cfg_eliminate_axioms          :: [Axiom f],
     cfg_random_mode               :: Bool,
     cfg_random_mode_goal_directed :: Bool,
+    cfg_random_mode_simple        :: Bool,
     cfg_random_mode_best_of       :: Int }
 
 -- | The prover state.
@@ -863,7 +864,7 @@ findCriticalPair config state g = retry `mplus` random
       !(t, rs) <- gen
       () <- traceM ("checking " ++ prettyShow t)
       --toOverlap True <$> (hasUNF strat t rs <>) <$> hasUNFRandom strat t
-      return $ toOverlap True $ hasUNF strat t rs
+      return $ toOverlap True $ if cfg_random_mode_simple config then hasUNFSimple strat t rs else hasUNF strat t rs
 
     gen =
       if cfg_random_mode_goal_directed config then
