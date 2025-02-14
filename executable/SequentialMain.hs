@@ -149,7 +149,7 @@ parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> maxRules <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
     pure undefined <*> -- scoring function - filled in later, in runTwee
     (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join) <*>
-    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses) <*> pure [] <*> randomMode <*> randomModeGoalDirected <*> randomModeSimple <*> randomModeBestOf
+    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses) <*> pure [] <*> randomMode <*> randomModeGoalDirected <*> randomModeSimple <*> randomModeBestOf <*> alwaysComplete
   where
     maxSize =
       inGroup "Resource limits" $
@@ -278,6 +278,11 @@ parseConfig =
     randomModeBestOf =
       inGroup "Completion heuristics" $
       defaultFlag "random-mode-best-of" "Generate this many critical pairs at a time and pick the best one" cfg_random_mode_best_of argNum
+    alwaysComplete =
+      inGroup "Input and clausifier options" $
+      bool "complete"
+        ["Don't stop until the rewrite system is confluent"]
+        False
     colour = fromMaybe <$> io colourSupported <*> colourFlag
     colourFlag =
       inGroup "Proof presentation" $

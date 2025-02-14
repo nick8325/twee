@@ -70,7 +70,8 @@ data Config f =
     cfg_random_mode               :: Bool,
     cfg_random_mode_goal_directed :: Bool,
     cfg_random_mode_simple        :: Bool,
-    cfg_random_mode_best_of       :: Int }
+    cfg_random_mode_best_of       :: Int,
+    cfg_always_complete           :: Bool }
 
 -- | The prover state.
 data State f =
@@ -112,7 +113,9 @@ defaultConfig =
     cfg_eliminate_axioms = [],
     cfg_random_mode = False,
     cfg_random_mode_goal_directed = False,
-    cfg_random_mode_best_of = 1 }
+    cfg_random_mode_best_of = 1,
+    cfg_random_mode_simple = False,
+    cfg_always_complete = False }
 
 -- | Does this configuration run the prover in a complete mode?
 configIsComplete :: Config f -> Bool
@@ -823,7 +826,7 @@ complete1 config@Config{..} state
     (False, state)
   | st_considered state >= cfg_max_critical_pairs =
     (False, state)
-  | solved state = (False, state)
+  | solved state && not cfg_always_complete = (False, state)
   | otherwise =
     case st_random_seed state of
       Nothing -> -- normal mode
