@@ -589,18 +589,32 @@ hasUNFSimple strat t0 r0 = magic t0 r0
       case magic (ruleResult1 t r) rs of
         res@HasCriticalPair{} -> res
         UniqueNormalForm v rsu ->
-          let t' = t `atPath` pos in
-          maybe (UniqueNormalForm v (r:rsu)) sconcat $ NonEmpty.nonEmpty $ do
-            n <- [0..len t'-1]
-            let pos' = positionToPath t' n
-            guard (not (isVar (t' `at` n)))
-            guard (criticalOverlap (lhs rule) pos')
-            (rule', sub', []) <- strat (t' `at` n)
-            guard (norm (ruleResult1 t (rule', sub', pos ++ pos')) /= norm (ruleResult1 t r))
+          maybe (UniqueNormalForm v (r:rsu)) sconcat $ NonEmpty.nonEmpty $ outer `mplus` inner
+      where
+        outer = do
+          let t' = t `atPath` pos
+          n <- [1..len t'-1] -- 0 case is handled in inner
+          let pos' = positionToPath t' n
+          guard (not (isVar (t' `at` n)))
+          guard (criticalOverlap (lhs rule) pos')
+          (rule', sub', []) <- strat (t' `at` n)
 
-            return $
-              HasCriticalPair rule (rule', pathToPosition (lhs rule) pos') $
-              ConfluenceFailure t' [(rule, sub, [])] [(rule', sub', pos')] t0 r0
+          guard (norm (ruleResult1 t (rule', sub', pos ++ pos')) /= norm (ruleResult1 t r))
+          return $
+            HasCriticalPair rule (rule', pathToPosition (lhs rule) pos') $
+            ConfluenceFailure t' [(rule, sub, [])] [(rule', sub', pos')] t0 r0
+
+        inner = do
+          pos' <- inits pos
+          let t' = t `atPath` pos'
+          (rule', sub', []) <- strat t'
+          let posInner = drop (length pos') pos
+          guard (criticalOverlap (lhs rule') posInner)
+
+          guard (norm (ruleResult1 t (rule', sub', pos')) /= norm (ruleResult1 t r))
+          return $
+            HasCriticalPair rule' (rule, pathToPosition (lhs rule') posInner) $
+            ConfluenceFailure t' [(rule', sub', [])] [(rule, sub, posInner)] t0 r0
 
     criticalOverlap (Var _) _ = False
     criticalOverlap App{} [] = True
