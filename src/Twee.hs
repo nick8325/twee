@@ -173,6 +173,7 @@ data Message f =
 
 instance Function f => Pretty (Message f) where
   pPrint (NewActive rule) = pPrint rule
+ --   $$ case cp_top (active_cp rule) of { Just t -> text "  (normal forms of term" <+> pPrint t <#> text ")"; Nothing -> pPrintEmpty }
   pPrint (NewEquation eqn) =
     text "  (hard)" <+> pPrint eqn
   pPrint (DeleteActive rule) =
