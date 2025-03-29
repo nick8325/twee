@@ -360,7 +360,7 @@ data Constant =
     con_bonus  :: !Bool }
   deriving (Eq, Ord, Labelled)
 
-data Precedence = Precedence !Bool !Bool !(Maybe Int) !Int
+data Precedence = Precedence !Bool !Bool !Bool !(Maybe Int) !Int
   deriving (Eq, Ord)
 
 instance KBO.Sized Constant where
@@ -425,13 +425,16 @@ tweeConstant MainFlags{..} flags TweeContext{..} prec fun
       con_prec = prec,
       con_id = fun,
       con_arity = Jukebox.arity fun,
-      con_size = if flags_kbo_weight0 && Jukebox.arity fun >= 2 then 0 else 1,
+      con_size = if flags_kbo_weight0 && Jukebox.arity fun >= 2 then 0 else if isInv then 0 else 1,
       con_weight = 1,
       con_bonus = bonus fun }
   where
     bonus fun =
       (isIfeq fun && encoding flags /= Asymmetric2) ||
       SequentialMain.isEquals fun
+    isInv =
+      case prec of
+        Precedence _ x _ _ _ -> x
 
 isType :: Jukebox.Function -> Bool
 isType fun =
@@ -699,11 +702,16 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
     prec c =
       Precedence
         (isType c)
+        (Just c == maxUnary)
         (isNothing (elemIndex (base c) precedence))
         (fmap negate (elemIndex (base c) precedence))
         (maybeNegate (Map.findWithDefault 0 c funOccs))
     maybeNegate = if flags_flip_ordering then negate else id
     funOccs = funsOcc prob
+    maxUnary =
+      case filter (\(f, _) -> arity f == 1 && not (isType f)) (Map.toList funOccs) of
+        [] -> Nothing
+        xs -> Just (fst (maximumBy (comparing snd) xs))
 
     -- Translate everything to Twee.
     toEquation (t, u) =
