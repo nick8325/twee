@@ -497,6 +497,16 @@ addActiveOnly state@State{..} active@Active{..} =
     insertRule rules rule =
       RuleIndex.insert (lhs rule) rule rules
 
+-- Add an active without generating critical pairs. Used in interreduction.
+{-# INLINEABLE addActiveSimp #-}
+addActiveSimp :: Function f => State f -> Active f -> State f
+addActiveSimp state@State{..} active@Active{..} =
+  state {
+    st_rules = foldl' insertRule st_rules (activeRules active) }
+  where
+    insertRule rules rule =
+      RuleIndex.insert (lhs rule) rule rules
+
 -- Delete an active. Used in interreduction, not suitable for general use.
 {-# INLINE deleteActive #-}
 deleteActive :: Function f => State f -> Active f -> State f
@@ -754,11 +764,13 @@ interreduce1 config@Config{..} state active@Active{..} =
       (Just active_model) (active_cp active)
   of
     Right (_, cps) ->
+      flip addActiveSimp active $
       flip (foldl' (\state cp -> consider config state active_info cp)) cps $
       message (DeleteActive active) $
       deleteActive state active
     Left (cp, model)
       | cp_eqn cp `simplerThan` cp_eqn (active_cp active) ->
+        flip addActiveSimp active $
         flip (foldl' (\state cp -> consider config state active_info cp)) (split cp) $
         message (DeleteActive active) $
         deleteActive state active
