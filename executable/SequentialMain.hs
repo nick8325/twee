@@ -718,12 +718,15 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
       canonicalise (tweeTerm flags horn ctx prec t :=: tweeTerm flags horn ctx prec u)
 
     axiomCompare ax1 ax2
+      | isEquality ax1' && not (isEquality ax2') = GT
+      | isEquality ax2' && not (isEquality ax1') = LT
       | ax1' `simplerThan` ax2' = LT
       | ax2' `simplerThan` ax1' = GT
       | otherwise = EQ
       where
         ax1' = toEquation (pre_eqn ax1)
         ax2' = toEquation (pre_eqn ax2)
+        isEquality ax = isJust (decodeEquality (eqn_lhs ax)) || isJust (decodeEquality (eqn_rhs ax))
     axioms0 = sortBy axiomCompare unsortedAxioms0
 
     goals =
