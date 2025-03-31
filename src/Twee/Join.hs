@@ -141,7 +141,8 @@ subsumed ::
   (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a -> Equation f -> Bool
 subsumed (eqns, complete) idx (t :=: u)
   | t == u = True
-  | otherwise = subsumed1 eqns idx (norm t :=: norm u)
+  | norm t == norm u = True
+  | otherwise = subsumed1 eqns idx (t :=: u)
   where
     norm t
       | Index.null complete = t
