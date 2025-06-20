@@ -149,7 +149,7 @@ parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> maxRules <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
     pure undefined <*> -- scoring function - filled in later, in runTwee
     (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join) <*>
-    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses) <*> pure [] <*> randomMode <*> randomModeGoalDirected <*> randomModeSimple <*> randomModeBestOf <*> alwaysComplete
+    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses <*> show_peaks) <*> pure [] <*> randomMode <*> randomModeGoalDirected <*> randomModeSimple <*> randomModeBestOf <*> alwaysComplete
   where
     maxSize =
       inGroup "Resource limits" $
@@ -257,6 +257,11 @@ parseConfig =
         (splitOn "," <$> arg "<axioms>" "expected a list of axiom names" Just)
       where
         interpret xss ax = axiom_name ax `elem` xss || "all" `elem` xss
+    show_peaks =
+      inGroup "Proof presentation" $
+      bool "show-peaks"
+        ["Show peak terms in a proof (off by default)."]
+        False
     randomMode =
       expert $
       inGroup "Completion heuristics" $

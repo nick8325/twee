@@ -8,7 +8,7 @@ module Twee.Proof(
   lemma, autoSubst, simpleLemma, axiom, symm, trans, cong, congPath,
 
   -- * Analysing proofs
-  simplify, steps, usedLemmas, usedAxioms, usedLemmasAndSubsts, usedAxiomsAndSubsts,
+  simplify, steps, stepTerms, usedLemmas, usedAxioms, usedLemmasAndSubsts, usedAxiomsAndSubsts,
   groundAxiomsAndSubsts, eliminateDefinitions, eliminateDefinitionsFromGoal,
   simplifyProof, generaliseProof,
 
@@ -312,6 +312,28 @@ fromSteps :: Equation f -> [Derivation f] -> Derivation f
 fromSteps (t :=: _) [] = Refl t
 fromSteps _ ps = foldr1 Trans ps
 
+-- | Given a derivation, compute which terms it goes through.
+stepTerms :: Function f => Derivation f -> [Term f]
+stepTerms p =
+  case steps p of
+    [] -> [eqn_lhs (equation (certify p))]
+    s:ss ->
+      eqn_lhs (equation (certify s)):
+      map (eqn_rhs . equation . certify) (s:ss)
+
+-- | Find peak terms in a derivation.
+peakTerms :: Function f => Derivation f -> [Term f]
+peakTerms = peaks . stepTerms
+  where
+    peaks [] = []
+    peaks [t] = [t]
+    peaks (t:u:ts)
+      | lessEq t u = peaks (u:ts)
+      | lessEq u t = peaks (t:ts)
+      | otherwise = t:peaks (u:ts)
+      -- TODO do more carefully?
+      -- handle this case t --> v <-- u where e.g. t <= u (should still be counted as a peak perhaps)
+
 -- | Find all lemmas which are used in a derivation.
 usedLemmas :: Derivation f -> [Proof f]
 usedLemmas p = map fst (usedLemmasAndSubsts p)
@@ -445,7 +467,9 @@ data Config f =
     -- | Print out proofs in colour.
     cfg_use_colour :: !Bool,
     -- | Print out which instances of some axioms were used.
-    cfg_show_uses_of_axioms :: Axiom f -> Bool }
+    cfg_show_uses_of_axioms :: Axiom f -> Bool,
+    -- | Print out peaks of each lemma.
+    cfg_show_peaks :: !Bool }
 
 -- | The default configuration.
 defaultConfig :: Config f
@@ -456,7 +480,8 @@ defaultConfig =
     cfg_ground_proof = False,
     cfg_show_instances = False,
     cfg_use_colour = False,
-    cfg_show_uses_of_axioms = const False }
+    cfg_show_uses_of_axioms = const False,
+    cfg_show_peaks = False }
 
 -- | A proof, with all axioms and lemmas explicitly listed.
 data Presentation f =
@@ -742,15 +767,16 @@ pPrintLemma :: Function f => Config f -> (Axiom f -> String) -> (Proof f -> Stri
 pPrintLemma Config{..} axiomNum lemmaNum p
   | null qs = text "Reflexivity."
   | equation (certify (fromSteps (equation p) qs)) == equation p =
-    vcat (zipWith pp hl qs) $$ ppTerm (eqn_rhs (equation p))
+    vcat (zipWith pp hl qs) $$ ppTerm (HighlightedTerm [] Nothing) (eqn_rhs (equation p))
   | otherwise = error "lemma changed by pretty-printing!"
   where
     qs = steps (derivation p)
     hl = map highlightStep qs
+    peaks = Set.fromList (peakTerms (derivation p))
 
     pp _ p | invisible (equation (certify p)) = pPrintEmpty
     pp h p =
-      ppTerm (HighlightedTerm [green | cfg_use_colour] (Just h) (eqn_lhs (equation (certify p)))) $$
+      ppTerm (HighlightedTerm [green | cfg_use_colour] (Just h)) (eqn_lhs (equation (certify p))) $$
       text "=" <+> highlight [bold | cfg_use_colour] (text "{ by" <+> ppStep p <+> text "}")
 
     highlightStep UseAxiom{} = []
@@ -760,7 +786,7 @@ pPrintLemma Config{..} axiomNum lemmaNum p
       where
         [(i, p)] = filter (not . isRefl . snd) (zip [0..] ps)
 
-    ppTerm t = text "  " <#> pPrint t
+    ppTerm decorate t = text "  " <#> pPrint (decorate t) <+> (if cfg_show_peaks && t `Set.member` peaks then text "(peak)" else pPrintEmpty)
 
     ppStep = pp True
       where
