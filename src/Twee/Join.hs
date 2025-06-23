@@ -22,7 +22,9 @@ data Config =
     cfg_ground_join :: !Bool,
     cfg_use_connectedness_standalone :: !Bool,
     cfg_use_connectedness_in_ground_joining :: !Bool,
-    cfg_set_join :: !Bool }
+    cfg_set_join :: !Bool,
+    cfg_ground_join_limit :: !Int,
+    cfg_ground_join_incomplete_limit :: !Int }
 
 defaultConfig :: Config
 defaultConfig =
@@ -30,7 +32,9 @@ defaultConfig =
     cfg_ground_join = True,
     cfg_use_connectedness_standalone = True,
     cfg_use_connectedness_in_ground_joining = False,
-    cfg_set_join = False }
+    cfg_set_join = False,
+    cfg_ground_join_limit = maxBound,
+    cfg_ground_join_incomplete_limit = maxBound }
 
 {-# INLINEABLE joinCriticalPair #-}
 joinCriticalPair ::
@@ -58,9 +62,9 @@ joinCriticalPair config eqns idx mmodel cp@CriticalPair{cp_eqn = t :=: u} =
           (normalForms (rewrite reduces (index_all idx)) (Map.singleton u []))) ->
       Right (Just cp, [])
     Just cp ->
-      case groundJoinFromMaybe config eqns idx mmodel (branches (And [])) cp of
-        Left model -> Left (cp, model)
-        Right (mcp, cps) -> Right (mcp, cps)
+      case groundJoinFromMaybe config 0 eqns idx mmodel (branches (And [])) cp of
+        (_, Left model) -> Left (cp, model)
+        (_, Right (mcp, cps)) -> Right (mcp, cps)
 
 {-# INLINEABLE step1 #-}
 {-# INLINEABLE step2 #-}
@@ -169,22 +173,25 @@ subsumed1 _ _ _ = False
 {-# INLINEABLE groundJoin #-}
 groundJoin ::
   (Function f, Has a (Rule f)) =>
-  Config -> (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
-groundJoin config eqns idx ctx cp@CriticalPair{cp_eqn = t :=: u, ..} =
+  Config -> Int -> (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a -> [Branch f] -> CriticalPair f -> (Int, Either (Model f) (Maybe (CriticalPair f), [CriticalPair f]))
+groundJoin config ticks _ _ _ cp
+  | ticks >= cfg_ground_join_incomplete_limit config =
+    (ticks, Right (Just cp, []))
+groundJoin config ticks eqns idx ctx cp@CriticalPair{cp_eqn = t :=: u, ..} =
   case partitionEithers (map (solve (usort (atoms t ++ atoms u))) ctx) of
     ([], instances) ->
       let cps = [ subst sub cp | sub <- instances ] in
-      Right (Just cp, usortBy (comparing (order . cp_eqn)) cps)
+      (ticks, Right (Just cp, usortBy (comparing (order . cp_eqn)) cps))
     (model:_, _) ->
-      groundJoinFrom config eqns idx model ctx cp
+      groundJoinFrom config (ticks+1) eqns idx model ctx cp
 
 {-# INLINEABLE groundJoinFrom #-}
 groundJoinFrom ::
   (Function f, Has a (Rule f)) =>
-  Config -> (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a -> Model f -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
-groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :=: u, ..}
-  | not cfg_ground_join = Left model
-  | modelOK model && isJust (allSteps config' eqns idx cp { cp_eqn = t' :=: u' }) = Left model
+  Config -> Int -> (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a -> Model f -> [Branch f] -> CriticalPair f -> (Int, Either (Model f) (Maybe (CriticalPair f), [CriticalPair f]))
+groundJoinFrom config@Config{..} ticks eqns idx model ctx cp@CriticalPair{cp_eqn = t :=: u, ..}
+  | ticks >= cfg_ground_join_limit || not cfg_ground_join = (ticks, Left model)
+  | modelOK model && isJust (allSteps config' eqns idx cp { cp_eqn = t' :=: u' }) = (ticks, Left model)
   | otherwise =
       let
         model'
@@ -200,9 +207,9 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
         weaken x = x
         ctx' = formAnd (diag (modelToLiterals model')) ctx in
 
-      case groundJoin config eqns idx ctx' cp of
-        Right (_, cps) | not (modelOK model) ->
-          Right (Nothing, cps)
+      case groundJoin config ticks eqns idx ctx' cp of
+        (ticks', Right (_, cps)) | not (modelOK model) ->
+          (ticks', Right (Nothing, cps))
         res -> res
   where
     config' = config{cfg_use_connectedness_standalone = False}
@@ -231,9 +238,9 @@ groundJoinFrom config@Config{..} eqns idx model ctx cp@CriticalPair{cp_eqn = t :
 {-# INLINEABLE groundJoinFromMaybe #-}
 groundJoinFromMaybe ::
   (Function f, Has a (Rule f)) =>
-  Config -> (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a -> Maybe (Model f) -> [Branch f] -> CriticalPair f -> Either (Model f) (Maybe (CriticalPair f), [CriticalPair f])
-groundJoinFromMaybe config eqns idx Nothing = groundJoin config eqns idx
-groundJoinFromMaybe config eqns idx (Just model) = groundJoinFrom config eqns idx model
+  Config -> Int -> (Index f (Equation f), Index f (Rule f)) -> RuleIndex f a -> Maybe (Model f) -> [Branch f] -> CriticalPair f -> (Int, Either (Model f) (Maybe (CriticalPair f), [CriticalPair f]))
+groundJoinFromMaybe config ticks eqns idx Nothing = groundJoin config ticks eqns idx
+groundJoinFromMaybe config ticks eqns idx (Just model) = groundJoinFrom config ticks eqns idx model
 
 {-# INLINEABLE valid #-}
 valid :: Function f => Model f -> Reduction f -> Bool

@@ -14,6 +14,9 @@ import Data.Graph
 import Data.Map.Strict(Map)
 import Data.Ord
 import Twee.Term hiding (lookup)
+import Test.QuickCheck(shuffle)
+import Test.QuickCheck.Gen(unGen)
+import Test.QuickCheck.Random(mkQCGen)
 
 data Atom f = Constant (Fun f) | Variable Var deriving (Show, Eq, Ord)
 
@@ -274,8 +277,9 @@ solve xs branch@Branch{..}
       sub = fromMaybe undefined . listToSubst $
         [(x, toTerm y) | (Variable x, y) <- equals] ++
         [(y, toTerm x) | (x@Constant{}, Variable y) <- equals]
-      vs = Constant minimal:reverse (flattenSCCs (stronglyConnComp edges))
+      vs = Constant minimal:reverse (flattenSCCs (stronglyConnComp edges'))
       edges = [(x, x, [y | (x', y) <- less', x == x']) | x <- as, x /= Constant minimal]
+      edges' = unGen (shuffle edges) (mkQCGen 12345) 0
       less' = less ++ [(Constant x, Constant y) | Constant x <- as, Constant y <- as, x << y]
       as = usort $ xs ++ map fst less ++ map snd less
       model = modelFromOrder vs

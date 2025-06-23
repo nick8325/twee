@@ -148,7 +148,7 @@ parseConfig :: OptionParser (Config Constant)
 parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> maxRules <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
     pure undefined <*> -- scoring function - filled in later, in runTwee
-    (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join) <*>
+    (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join <*> ground_join_limit <*> ground_join_incomplete_limit) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses <*> show_peaks) <*> pure [] <*> randomMode <*> randomModeGoalDirected <*> randomModeSimple <*> randomModeBestOf <*> alwaysComplete
   where
     maxSize =
@@ -188,6 +188,12 @@ parseConfig =
       bool "ground-joining"
         ["Test terms for ground joinability (on by default)."]
         True
+    ground_join_limit =
+      inGroup "Critical pair joining heuristics" $
+      flag "ground-joining-limit" ["Assume not ground joinable after considering this many orderings (unlimited by default)."] maxBound argNum
+    ground_join_incomplete_limit =
+      inGroup "Critical pair joining heuristics" $
+      flag "ground-joining-incomplete-limit" ["Assume ground joinable after considering this many orderings (unlimited by default)."] maxBound argNum
     connectedness =
       expert $
       inGroup "Critical pair joining heuristics" $
