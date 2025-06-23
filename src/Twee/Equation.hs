@@ -32,15 +32,15 @@ order (l :=: r)
   -- If the two terms have the same skeleton,
   -- then take whichever orientation gives a simpler equation
   | gl == gr =
-    let eq1 = canonicalise (l :=: r)
-        eq2 = canonicalise (r :=: l) in
     if eq1 == eq2 || orderedSimplerThan eq1 eq2 then eq1 else eq2
   -- Otherwise, the LHS should be the term with the greater skeleton
-  | gl `lessEq` gr = r :=: l
-  | otherwise = l :=: r
+  | gl `lessEq` gr = eq2
+  | otherwise = eq1
   where
     gl = ground l
     gr = ground r
+    eq1 = canonicalise (l :=: r)
+    eq2 = canonicalise (r :=: l)
 
 -- Helper for 'order' and 'simplerThan'
 orderedSimplerThan :: Function f => Equation f -> Equation f -> Bool
