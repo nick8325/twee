@@ -149,7 +149,7 @@ parseConfig =
   Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> maxRules <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
     pure undefined <*> -- scoring function - filled in later, in runTwee
     (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join <*> ground_join_limit <*> ground_join_incomplete_limit) <*>
-    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses <*> show_peaks) <*> pure [] <*> randomMode <*> randomModeGoalDirected <*> randomModeSimple <*> randomModeBestOf <*> alwaysComplete
+    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses <*> show_peaks <*> eliminate_existentials_coding) <*> pure [] <*> randomMode <*> randomModeGoalDirected <*> randomModeSimple <*> randomModeBestOf <*> alwaysComplete
   where
     maxSize =
       inGroup "Resource limits" $
@@ -268,6 +268,11 @@ parseConfig =
       bool "show-peaks"
         ["Show peak terms in a proof (off by default)."]
         False
+    eliminate_existentials_coding =
+      inGroup "Proof presentation" $
+      bool "eliminate-existentials-coding"
+        ["Eliminate $equals from proofs (on by default)."]
+        True
     randomMode =
       expert $
       inGroup "Completion heuristics" $
@@ -629,7 +634,7 @@ addNarrowing alwaysNarrow TweeContext{..} prob =
           -- Equisatisfiable to the input clauses
           justification =
             Input {
-              ident = Nothing,
+              ident = Just (name "addNarrowing2"),
               tag  = "new_negated_conjecture",
               kind = Jukebox.Ax NegatedConjecture,
               what =
@@ -639,16 +644,16 @@ addNarrowing alwaysNarrow TweeContext{..} prob =
                 inference "encode_existential" "esa"
                   (map (fmap toForm . fst) nonGroundGoals) }
 
-          input tag form =
+          input tag form i =
             Input {
-              ident = Nothing,
+              ident = Just (variant "addNarrowing3" [i :: Int]),
               tag = tag,
-              kind = Conj Conjecture,
+              kind = Jukebox.Ax NegatedConjecture,
               what = clause [form],
               source =
                 inference "split_conjunct" "thm" [justification] }
 
-        in [input tag form | (tag, form) <- equalityLiterals]
+        in [input tag form i | ((tag, form), i) <- zip equalityLiterals [0..]]
 
 data PreEquation =
   PreEquation {

@@ -469,7 +469,9 @@ data Config f =
     -- | Print out which instances of some axioms were used.
     cfg_show_uses_of_axioms :: Axiom f -> Bool,
     -- | Print out peaks of each lemma.
-    cfg_show_peaks :: !Bool }
+    cfg_show_peaks :: !Bool,
+    -- | Eliminate $equals from the proofs.
+    cfg_eliminate_existentials_coding :: !Bool }
 
 -- | The default configuration.
 defaultConfig :: Config f
@@ -481,7 +483,8 @@ defaultConfig =
     cfg_show_instances = False,
     cfg_use_colour = False,
     cfg_show_uses_of_axioms = const False,
-    cfg_show_peaks = False }
+    cfg_show_peaks = False,
+    cfg_eliminate_existentials_coding = True }
 
 -- | A proof, with all axioms and lemmas explicitly listed.
 data Presentation f =
@@ -548,7 +551,7 @@ present config@Config{..} goals =
       simplifyProof config $ map (derivation . pg_proof) goals
 
     goals' =
-      [ decodeGoal (goal{pg_proof = certify p})
+      [ decodeGoal config (goal{pg_proof = certify p})
       | (goal, p) <- zip goals ps ]
 
     axioms = usort $
@@ -623,9 +626,10 @@ inlineTrivialLemmas Config{..} =
     shouldInline p =
       cfg_no_lemmas ||
       length (filter (not . invisible) (map (equation . certify) (steps (derivation p)))) <= 1 ||
-      any (isJust . decodeEquality) [eqn_lhs (equation p), eqn_rhs (equation p)] ||
-      any isFalseTerm [eqn_lhs (equation p), eqn_rhs (equation p)] ||
-      any isTrueTerm [eqn_lhs (equation p), eqn_rhs (equation p)]
+      (cfg_eliminate_existentials_coding &&
+        (any (isJust . decodeEquality) [eqn_lhs (equation p), eqn_rhs (equation p)] ||
+         any isFalseTerm [eqn_lhs (equation p), eqn_rhs (equation p)] ||
+         any isTrueTerm [eqn_lhs (equation p), eqn_rhs (equation p)]))
 
     subsuming lem (t :=: u) =
       subsuming1 lem (t :=: u) ++
@@ -921,9 +925,9 @@ describeEquation kind num mname eqn =
 
 -- Tries to transform a proof of $true = $false into a proof of
 -- the original existentially-quantified formula.
-decodeGoal :: Function f => ProvedGoal f -> ProvedGoal f
-decodeGoal pg =
-  case maybeDecodeGoal pg of
+decodeGoal :: Function f => Config f -> ProvedGoal f -> ProvedGoal f
+decodeGoal config pg =
+  case maybeDecodeGoal config pg of
     Nothing -> pg
     Just (name, witness, goal, deriv) ->
       checkProvedGoal $
@@ -934,8 +938,9 @@ decodeGoal pg =
         pg_witness_hint = witness }
 
 maybeDecodeGoal :: forall f. Function f =>
-  ProvedGoal f -> Maybe (String, Subst f, Equation f, Derivation f)
-maybeDecodeGoal ProvedGoal{..}
+  Config f -> ProvedGoal f -> Maybe (String, Subst f, Equation f, Derivation f)
+maybeDecodeGoal Config{..} ProvedGoal{..}
+  | not cfg_eliminate_existentials_coding = Nothing
   --  N.B. presentWithGoals takes care of expanding any lemma which mentions
   --  $equals, and flattening the proof.
   | isFalseTerm u = extract (steps deriv)
