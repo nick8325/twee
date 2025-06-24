@@ -539,7 +539,7 @@ flattenGoals backwardsGoal flattenNonGround flattenAll full prob =
       let vs  = Jukebox.vars ts
           g = name ::: FunType (map typ vs) (typ f)
           c = clause [Pos (g :@: map Jukebox.Var vs Jukebox.:=: f :@: ts)]
-      return Input{tag = "flattening", kind = Jukebox.Ax Definition,
+      return Input{ident = Nothing, tag = "flattening", kind = Jukebox.Ax Definition,
                    what = c, source = Unknown }
 
     backwards 0 _ t = [t]
@@ -593,7 +593,7 @@ addDistributivityHeuristic prob =
       let vs  = Jukebox.vars t
           g = name ::: FunType (map typ vs) (typ t)
           c = clause [Pos (g :@: map Jukebox.Var vs Jukebox.:=: t)]
-      return Input{tag = "distributivity_heuristic", kind = Jukebox.Ax Definition,
+      return Input{ident = Nothing, tag = "distributivity_heuristic", kind = Jukebox.Ax Definition,
                    what = c, source = Unknown }
 
 -- Encode existentials so that all goals are ground.
@@ -601,7 +601,9 @@ addNarrowing :: Bool -> TweeContext -> Problem Clause -> Problem Clause
 addNarrowing alwaysNarrow TweeContext{..} prob =
   unchanged ++ equalityClauses
   where
-    (unchanged, nonGroundGoals) = partitionEithers (map f prob)
+    prob' = [inp { ident = Just (variant "addNarrowing" [i :: Int]) } | (i, inp) <- zip [0..] prob]
+
+    (unchanged, nonGroundGoals) = partitionEithers (map f prob')
       where
         f inp@Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])}
           | not (ground x) || not (ground y) || alwaysNarrow =
@@ -627,6 +629,7 @@ addNarrowing alwaysNarrow TweeContext{..} prob =
           -- Equisatisfiable to the input clauses
           justification =
             Input {
+              ident = Nothing,
               tag  = "new_negated_conjecture",
               kind = Jukebox.Ax NegatedConjecture,
               what =
@@ -638,6 +641,7 @@ addNarrowing alwaysNarrow TweeContext{..} prob =
 
           input tag form =
             Input {
+              ident = Nothing,
               tag = tag,
               kind = Conj Conjecture,
               what = clause [form],
@@ -948,7 +952,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
       print $ pPrintProof $
         map pre_form axioms0 ++
         map pre_form goals0 ++
-        [ Input "rule" (Jukebox.Ax Jukebox.Axiom) Unknown $
+        [ Input Nothing "rule" (Jukebox.Ax Jukebox.Axiom) Unknown $
             toForm $ clause
               [Pos (jukeboxTerm ctx (lhs rule) Jukebox.:=: jukeboxTerm ctx (rhs rule))]
         | rule <- rules state ]
@@ -981,6 +985,7 @@ presentToJukebox ::
   Problem Form
 presentToJukebox ctx toEquation axioms goals Presentation{..} =
   [ Input {
+      ident = Nothing,
       tag = pg_name,
       kind = Jukebox.Ax Jukebox.Axiom,
       what = false,
@@ -995,11 +1000,15 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
   where
     axiom_proofs =
       Map.fromList
-        [ (axiom_number, fromJust (lookup axiom_number axioms))
+        [ (axiom_number, (fromJust (lookup axiom_number axioms)) { ident = Just (ident axiom_number) })
         | Axiom{..} <- pres_axioms ]
+      where
+        ident i = variant "axiom" [i]
 
     lemma_proofs =
-      Map.fromList [(p, tstp p) | p <- pres_lemmas]
+      Map.fromList [(p, (tstp p) { ident = Just (ident i) }) | (i, p) <- zip [0..] pres_lemmas]
+      where
+        ident i = variant "lemma" [i :: Int]
 
     goal_proofs =
       Map.fromList [(pg_number, tstp pg_proof) | ProvedGoal{..} <- pres_goals]
@@ -1010,6 +1019,7 @@ presentToJukebox ctx toEquation axioms goals Presentation{..} =
     deriv :: Derivation Constant -> Input Form
     deriv p =
       Input {
+        ident = Nothing,
         tag = "step",
         kind = Jukebox.Ax Jukebox.Axiom,
         what = jukeboxEquation (equation (certify p)),
