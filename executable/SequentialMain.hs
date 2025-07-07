@@ -56,11 +56,12 @@ data MainFlags =
     flags_equals_transformation :: Bool,
     flags_distributivity_heuristic :: Bool,
     flags_kbo_weight0 :: Bool,
+    flags_kbo_weight0_unary :: Bool,
     flags_goal_heuristic :: Bool }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> flattenRegeneralise <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic <*> kboWeight0 <*> goalHeuristic
+  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> flattenRegeneralise <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic <*> kboWeight0 <*> kboWeight0Unary <*> goalHeuristic
   where
     proof =
       inGroup "Output options" $
@@ -88,6 +89,10 @@ parseMainFlags =
       expert $
       inGroup "Term order options" $
       bool "kbo-weight0" ["Give functions of arity >= 2 a weight of 0."] False
+    kboWeight0Unary =
+      expert $
+      inGroup "Term order options" $
+      bool "kbo-weight0-unary" ["Give one function of arity 1 a weight of 0."] False
     giveUp =
       expert $
       inGroup "Output options" $
@@ -451,7 +456,7 @@ tweeConstant MainFlags{..} flags TweeContext{..} prec fun
       con_prec = prec,
       con_id = fun,
       con_arity = Jukebox.arity fun,
-      con_size = if flags_kbo_weight0 && Jukebox.arity fun >= 2 then 0 else if isInv then 0 else 1,
+      con_size = if flags_kbo_weight0 && Jukebox.arity fun >= 2 then 0 else if flags_kbo_weight0_unary && isInv then 0 else 1,
       con_weight = 1,
       con_bonus = bonus fun }
   where
