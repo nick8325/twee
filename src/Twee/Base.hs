@@ -12,7 +12,7 @@ module Twee.Base(
   -- * General-purpose functionality
   Id(..), Has(..),
   -- * Typeclasses
-  Minimal(..), minimalTerm, isMinimal, erase, eraseExcept, ground,
+  Minimal(..), minimalTerm, isMinimal, erase, eraseExcept, ground, skolemise,
   Ordered(..), lessThan, orientTerms,
   EqualsBonus(..), isTrueTerm, isFalseTerm, decodeEquality,
   Strictness(..), Function) where
@@ -238,6 +238,10 @@ eraseExcept xs t =
 -- | Replace all variables in the argument with the minimal constant.
 ground :: (Symbolic a, ConstantOf a ~ f, Minimal f) => a -> a
 ground t = erase (vars t) t
+
+-- | Skolemise the argument.
+skolemise :: (Symbolic a, ConstantOf a ~ f, Minimal f) => a -> a
+skolemise t = subst (\(V x) -> con (skolem x)) t
 
 -- | For types which have a notion of size.
 -- | The collection of constraints which the type of function symbols must

@@ -367,6 +367,7 @@ parsePrecedence =
 
 data Constant =
   Minimal |
+  Skolem Int |
   Constant {
     con_prec   :: {-# UNPACK #-} !Precedence,
     con_id     :: {-# UNPACK #-} !Jukebox.Function,
@@ -381,13 +382,16 @@ data Precedence = Precedence !Bool !Bool !Bool !(Maybe Int) !Int
 
 instance KBO.Sized Constant where
   size Minimal = 1
+  size Skolem{} = 1
   size Constant{..} = con_size
 instance KBO.Weighted Constant where
   argWeight Minimal = 1
+  argWeight Skolem{} = 1
   argWeight Constant{..} = con_weight
 
 instance Pretty Constant where
   pPrint Minimal = text "?"
+  pPrint (Skolem n) = text ("sk" ++ show n)
   pPrint Constant{..} = text (removePostfix (base con_id))
     where
       removePostfix ('_':x:xs) | con_arity == 1 = x:xs
@@ -395,6 +399,7 @@ instance Pretty Constant where
 
 instance PrettyTerm Constant where
   termStyle Minimal = uncurried
+  termStyle Skolem{} = uncurried
   termStyle Constant{..}
     | hasLabel "type_tag" con_id = invisible
     | "_" `isPrefixOf` base con_id && con_arity == 1 = postfix
@@ -407,6 +412,7 @@ instance PrettyTerm Constant where
 
 instance Minimal Constant where
   minimal = fun Minimal
+  skolem = fun . Skolem
 
 instance Ordered Constant where
   lessEq t u = KBO.lessEq t u
@@ -415,12 +421,16 @@ instance Ordered Constant where
 
 instance EqualsBonus Constant where
   hasEqualsBonus Minimal = False
+  hasEqualsBonus Skolem{} = False
   hasEqualsBonus c = con_bonus c
   isEquals Minimal = False
+  isEquals Skolem{} = False
   isEquals c = SequentialMain.isEquals (con_id c)
   isTrue Minimal = False
+  isTrue Skolem{} = False
   isTrue c = SequentialMain.isTrue (con_id c)
   isFalse Minimal = False
+  isFalse Skolem{} = False
   isFalse c = SequentialMain.isFalse (con_id c)
 
 data TweeContext =

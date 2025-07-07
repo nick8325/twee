@@ -219,10 +219,23 @@ groundJoinFrom config@Config{..} ticks eqns idx model ctx cp@CriticalPair{cp_eqn
           normaliseWith (connectedIn m top) (rewrite (ok t u model) (index_all idx)) t
         _ -> normaliseWith (const True) (rewrite (ok t u m) (index_all idx)) t
     ok t u m rule sub =
-      reducesInModel m rule sub &&
-      unorient rule `simplerThan` (t :=: u)
+      case cp_top of
+        Just top | cfg_use_connectedness_in_ground_joining ->
+          reducesWith lessEqSkolemModel rule sub &&
+          unorient rule `simplerThan` (t :=: u)
+        _ ->
+          reducesInModel m rule sub &&
+          unorient rule `simplerThan` (t :=: u)
     connectedIn m top t =
       lessIn m t top == Just Strict
+    lessEqSkolemModel t u =
+      lessEqSkolem (subst reorderVars t) (subst reorderVars u)
+    reorderVars x =
+      var $
+      case modelVarValue model x of
+        Nothing -> V (var_id x + firstUnusedVar)
+        Just y -> y
+    firstUnusedVar = modelVarMaxBound model
 
     nt = normaliseIn model t u
     nu = normaliseIn model u t

@@ -236,6 +236,13 @@ weakenModel (Model m) =
 varInModel :: (Minimal f, Ord f) => Model f -> Var -> Bool
 varInModel (Model m) x = Variable x `Map.member` m
 
+modelVarMaxBound :: Model f -> Int
+modelVarMaxBound (Model m) =
+  maximum (0:map (succ . fst) (Map.elems m))
+
+modelVarValue :: Model f -> Var -> Maybe Var
+modelVarValue (Model m) x = V . fst <$> Map.lookup (Variable x) m
+
 varGroups :: (Minimal f, Ord f) => Model f -> [(Fun f, [Var], Maybe (Fun f))]
 varGroups (Model m) = filter nonempty (go minimal (map fst (sortBy (comparing snd) (Map.toList m))))
   where
@@ -252,6 +259,7 @@ varGroups (Model m) = filter nonempty (go minimal (map fst (sortBy (comparing sn
 
 class Minimal f where
   minimal :: Fun f
+  skolem :: Int -> Fun f
 
 {-# INLINE lessEqInModel #-}
 lessEqInModel :: (Minimal f, Ordered f, Labelled f) => Model f -> Atom f -> Atom f -> Maybe Strictness
