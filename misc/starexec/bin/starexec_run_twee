@@ -1,2 +1,2 @@
 #!/bin/bash
-exec ./parallel-twee $1 --tstp --conditional-encoding if --smaller --drop-non-horn --give-up-on-saturation --explain-encoding
+exec ./parallel-twee $1 --tstp --conditional-encoding if --smaller --drop-non-horn --give-up-on-saturation --explain-encoding --formal-proof

@@ -83,24 +83,24 @@ greatProblemsBonus b p =
 bonuses :: [(String, (Int, Int, Int, Int, Int, Int))]
 bonuses =
   [("no bonus", (1, 1, 1, 1, 1, 1)),
-   ("low bonus", (1, 1, 2, 3, 5, 10)),
-   --("medium bonus", (1, 2, 4, 6, 8, 10)),
+   --("low bonus", (1, 1, 2, 3, 5, 10)),
+   ("medium bonus", (1, 2, 4, 6, 8, 10)),
    --("high bonus", (0, 1, 2, 3, 4, 5)),
    --("big fish", (0, 0, 0, 0, 1, 1)),
    ("rating 1", (0, 0, 0, 0, 0, 1))]
 
 readResults ok = do
-  filenames <- glob "/home/nick/writing/twee/times/*-twee-casc-extra-*"
+  filenames <- glob "/home/nick/twee-out/*/times"
   fmap (filter (\(x, _) -> x `notElem` banned)) $ forM filenames $ \filename -> do
-    let name = takeFileName filename
+    let name = takeFileName (takeDirectory filename)
     let unpack xs = (takeBaseName name, read time :: Double) where [name, time] = words xs
     solved <- filter (ok . fst) . map unpack . lines <$> readFile filename
     let solvedInTime t = [name | (name, time) <- solved, time < t]
 --    fast <- filterM (solvedInTime 120 directory) solved
 --    med  <- filterM (solvedInTime 240 directory) solved
 --    slow <- filterM (solvedInTime 600 directory) solved
-    let fast = solvedInTime 210
-    let med  = solvedInTime 300
+    let fast = solvedInTime 120
+    let med  = solvedInTime 210
     let slow = solvedInTime (1/0)
     
     return (name, (fast, med, slow))
@@ -117,8 +117,8 @@ levels results name names =
     find x = fromJust (lookup x results)
 
 main = do
-  probs <- lines <$> readFile "unsat"
-  results <- readResults (`elem` probs)
+  --probs <- lines <$> readFile "unsat"
+  results <- readResults (const True) -- `elem` probs)
   let
     options =
       [("fast", \(fast, _, _) -> (fast, [], [])),
@@ -140,7 +140,7 @@ main = do
         best = greedy results1
 
       putStrLn (option ++ "/" ++ bonus ++ ":")
-      forM_ (take 6 $ zip3 [1..] best (inits best)) $ \(i, name, names) -> do
+      forM_ (take 8 $ zip3 [1..] best (inits best)) $ \(i, name, names) -> do
         putStrLn (show i ++ ". " ++ name ++ " " ++ show (score results1 (name:names)) ++ ", useful at levels " ++ show (drop (length fixed) $ levels results1 name names))
 
       putStrLn ""
@@ -167,7 +167,11 @@ greedy results =
         Nothing -> Left (length probs)
 
 fixed :: [String]
-fixed = fixed_new
+fixed = [
+  "twee-250707-casc---lhs-weight-1---flip-ordering---normalise-queue-percent-10---cp-renormalise-threshold-10---complete-subsets---ground-joining-incomplete-limit-15",
+  "twee-250707-casc---no-flatten-goal---ground-joining-incomplete-limit-15"
+  ]
+
 fixed_new = take 6 [
   "twee-210619-twee-casc-extra-lhsnormal-flatten",
   "twee-210619-twee-casc-extra-lhs9-flip-nogoal-kbo0",

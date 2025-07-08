@@ -50,14 +50,15 @@ raceStdout xs = do
 variants :: [[String]]
 variants =
   map words
-  ["--lhs-weight 1 --flip-ordering --normalise-queue-percent 10 --cp-renormalise-threshold 10",
-   "--no-flatten-goal",
-   "--flatten",
+  ["--lhs-weight 1 --flip-ordering --normalise-queue-percent 10 --cp-renormalise-threshold 10 --complete-subsets --ground-joining-incomplete-limit 15",
+   "--no-flatten-goal --ground-joining-incomplete-limit 15 --ground-connectedness",
+   "--flatten --complete-subsets",
    "--lhs-weight 9 --flip-ordering --complete-subsets --normalise-queue-percent 10 --cp-renormalise-threshold 10",
    "--ground-connectedness --complete-subsets",
-   "--flip-ordering --lhs-weight 1 --depth-weight 60 --distributivity-heuristic",
+   "--flip-ordering --lhs-weight 1 --depth-weight 60 --distributivity-heuristic --ground-joining-limit 15",
    "--set-join --lhs-weight 1 --no-flatten-goal --complete-subsets --goal-heuristic",
-   "--random-mode --random-mode-goal-directed --no-flatten-goal --no-connectedness --no-ground-joining"]
+   "--kbo-weight0-unary --no-flatten-goal"]
+  -- "--random-mode --random-mode-goal-directed --no-flatten-goal --no-connectedness --no-ground-joining"]
 
 main = do
   hSetBuffering stdout LineBuffering
