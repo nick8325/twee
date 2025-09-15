@@ -542,8 +542,8 @@ instance Function f => Pretty (Presentation f) where
   pPrint = pPrintPresentation defaultConfig
 
 -- | Simplify and present a proof.
-present :: Function f => Config f -> [ProvedGoal f] -> Presentation f
-present config@Config{..} goals =
+present :: Function f => Config f -> [Proof f] -> [ProvedGoal f] -> Presentation f
+present config@Config{..} extraLemmas goals =
   Presentation axioms lemmas goals'
   where
     ps =
@@ -558,7 +558,7 @@ present config@Config{..} goals =
       concatMap (usedAxioms . derivation . pg_proof) goals' ++
       concatMap (usedAxioms . derivation) lemmas
 
-    lemmas = allLemmas (map (derivation . pg_proof) goals')
+    lemmas = allLemmas (map simpleLemma extraLemmas ++ map (derivation . pg_proof) goals')
 
 groundProof :: Function f => [Derivation f] -> [Derivation f]
 groundProof ds

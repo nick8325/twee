@@ -40,6 +40,7 @@ import Twee.Profile
 data MainFlags =
   MainFlags {
     flags_proof :: Bool,
+    flags_proof_on_saturation :: Bool,
     flags_trace :: Maybe (String, String),
     flags_formal_proof :: Bool,
     flags_explain_encoding :: Bool,
@@ -61,12 +62,17 @@ data MainFlags =
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags =
-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> flattenRegeneralise <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic <*> kboWeight0 <*> kboWeight0Unary <*> goalHeuristic
+  MainFlags <$> proof <*> proofOnSaturation <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> flattenRegeneralise <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic <*> kboWeight0 <*> kboWeight0Unary <*> goalHeuristic
   where
     proof =
       inGroup "Output options" $
       bool "proof" ["Produce proofs (on by default)."]
       True
+    proofOnSaturation =
+      expert $
+      inGroup "Output options" $
+      bool "proof-on-saturation" ["Produce proofs of all rewrite rules on saturation (off by default)."]
+      False
     trace =
       expert $
       inGroup "Output options" $
@@ -886,7 +892,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
           (cfg_proof_presentation config){cfg_all_lemmas = True}
         | otherwise =
           cfg_proof_presentation config
-      pres = present cfg_present $ map (eliminateDefinitionsFromGoal defs) $ solutions state
+      pres = present cfg_present [] $ map (eliminateDefinitionsFromGoal defs) $ solutions state
 
     sayTrace ""
     forM_ (pres_axioms pres) $ \p ->
@@ -988,6 +994,10 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
     forM_ actives $ \active ->
       putStrLn ("  " ++ prettyShow (canonicalise (active_rule active)))
     putStrLn ""
+    
+    when flags_proof_on_saturation $ do
+      let pres = present (cfg_proof_presentation config) (map active_proof actives) []
+      print $ pPrintPresentation (cfg_proof_presentation config) pres
 
   return $
     if solved state then Unsat Unsatisfiable Nothing
