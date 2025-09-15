@@ -56,6 +56,7 @@ data Config f =
     cfg_max_critical_pairs        :: Int64,
     cfg_max_cp_depth              :: Int,
     cfg_max_rules                 :: Int,
+    cfg_max_time                  :: Maybe Double,
     cfg_simplify                  :: Bool,
     cfg_renormalise_percent       :: Int,
     cfg_cp_sample_size            :: Int,
@@ -101,6 +102,7 @@ defaultConfig =
     cfg_max_critical_pairs = maxBound,
     cfg_max_cp_depth = maxBound,
     cfg_max_rules = maxBound,
+    cfg_max_time = Nothing,
     cfg_simplify = True,
     cfg_renormalise_percent = 5,
     cfg_renormalise_threshold = 20,
@@ -121,7 +123,8 @@ defaultConfig =
 -- | Does this configuration run the prover in a complete mode?
 configIsComplete :: Config f -> Bool
 configIsComplete Config{..} =
-  isNothing (cfg_accept_term) &&
+  isNothing cfg_accept_term &&
+  isNothing cfg_max_time &&
   cfg_max_critical_pairs == maxBound &&
   cfg_max_cp_depth == maxBound &&
   cfg_max_rules == maxBound
@@ -825,6 +828,13 @@ complete Output{..} config@Config{..} state =
           let !n = Queue.size st_queue
           lift $ output_message (Status n)]
 
+    checkTimeout <-
+      case cfg_max_time of
+        Nothing -> return (return False)
+        Just timeout -> do
+          task <- newTask timeout 100 (return ())
+          return $ fmap isJust (checkTask task)
+
     let
       loop = do
         progress <- StateM.state (complete1 config)
@@ -836,7 +846,8 @@ complete Output{..} config@Config{..} state =
         lift $ mapM_ output_message (messages state)
         StateM.put (clearMessages state)
         mapM_ checkTask tasks
-        when progress loop
+        timedOut <- checkTimeout
+        when (progress && not timedOut) loop
 
     loop
 

@@ -157,7 +157,7 @@ parseMainFlags =
 
 parseConfig :: OptionParser (Config Constant)
 parseConfig =
-  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> maxRules <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
+  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> maxRules <*> maxTime <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
     pure undefined <*> -- scoring function - filled in later, in runTwee
     (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join <*> ground_join_limit <*> ground_join_incomplete_limit) <*>
     (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses <*> show_peaks <*> eliminate_existentials_coding) <*> pure [] <*> randomMode <*> randomModeGoalDirected <*> randomModeSimple <*> randomModeBestOf <*> alwaysComplete
@@ -175,6 +175,9 @@ parseConfig =
     maxRules =
       inGroup "Resource limits" $
       flag "max-rules" ["Give up after generating this many rules (unlimited by default)."] maxBound argNum
+    maxTime =
+      inGroup "Resource limits" $
+      flag "max-time" ["Give up after running for this long in seconds (unlimited by default)."] Nothing (Just <$> argNum)
     simplify =
       expert $
       inGroup "Completion heuristics" $
