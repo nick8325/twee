@@ -63,7 +63,7 @@ data Config f =
     cfg_set_join_goals            :: Bool,
     cfg_always_simplify           :: Bool,
     cfg_complete_subsets          :: Bool,
-    cfg_score_cp                  :: Depth -> Equation f -> Float,
+    cfg_score_cp                  :: Depth -> Index f (Term f) -> Equation f -> Float,
     cfg_join                      :: Join.Config,
     cfg_proof_presentation        :: Proof.Config f,
     cfg_eliminate_axioms          :: [Axiom f],
@@ -82,6 +82,7 @@ data State f =
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
     st_queue          :: !(Queue Batch),
+    st_hints          :: !(Index f (Term f)),
     st_next_active    :: {-# UNPACK #-} !Id,
     st_considered     :: {-# UNPACK #-} !Int64,
     st_simplified_at  :: {-# UNPACK #-} !Id,
@@ -107,7 +108,7 @@ defaultConfig =
     cfg_set_join_goals = True,
     cfg_always_simplify = False,
     cfg_complete_subsets = False,
-    cfg_score_cp = \d eqn -> fromIntegral (score CP.defaultConfig d eqn),
+    cfg_score_cp = \d hints eqn -> fromIntegral (score CP.defaultConfig d hints eqn),
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig,
     cfg_eliminate_axioms = [],
@@ -135,6 +136,7 @@ initialState Config{..} =
     st_joinable = Index.empty,
     st_goals = [],
     st_queue = Queue.empty,
+    st_hints = Index.empty,
     st_next_active = 1,
     st_considered = 0,
     st_simplified_at = 1,
@@ -225,10 +227,10 @@ messages state = reverse (st_messages_rev state)
 makePassives :: Function f => Config f -> State f -> Active f -> [Passive]
 -- don't generate critical pairs when in random mode
 makePassives Config{cfg_random_mode = True} _ _ = []
-makePassives config@Config{..} State{..} rule =
+makePassives config@Config{..} state@State{..} rule =
 -- XXX factor out depth calculation
   stampWith "make critical pair" length
-  [ makePassive config overlap
+  [ makePassive config state overlap
   | ok rule,
     overlap <- overlaps (index_oriented st_rules) (filter ok rules) rule ]
   where
@@ -296,10 +298,10 @@ instance Queue.Batch Batch where
   batchSize Batch{..} = 1 + PackedSequence.size batch_rest
 
 {-# INLINEABLE makePassive #-}
-makePassive :: Function f => Config f -> Overlap (Active f) f -> Passive
-makePassive Config{..} Overlap{..} =
+makePassive :: Function f => Config f -> State f -> Overlap (Active f) f -> Passive
+makePassive Config{..} State{..} Overlap{..} =
   Passive {
-    passive_score = cfg_score_cp depth overlap_eqn,
+    passive_score = cfg_score_cp depth st_hints overlap_eqn,
     passive_rule1 = active_id overlap_rule1,
     passive_rule2 = active_id overlap_rule2,
     passive_how   = overlap_how }
@@ -328,7 +330,7 @@ simplifyPassive Config{..} state@State{..} passive = do
     passive_score =
       passive_score passive `min`
       -- XXX factor out depth calculation
-      cfg_score_cp (succ (the r1 `max` the r2)) (overlap_eqn overlap) }
+      cfg_score_cp (succ (the r1 `max` the r2)) st_hints (overlap_eqn overlap) }
 
 -- | Check if we should renormalise the queue.
 {-# INLINEABLE shouldSimplifyQueue #-}
@@ -587,6 +589,12 @@ addAxiom config state axiom =
       cp_eqn = axiom_eqn axiom,
       cp_top = Nothing,
       cp_proof = Proof.axiom axiom }
+
+-- Add a new hint.
+{-# INLINEABLE addHint #-}
+addHint :: Function f => State f -> Term f -> State f
+addHint state@State{..} hint =
+  state { st_hints = Index.insert hint hint st_hints }
 
 -- Record an equation as being joinable.
 {-# INLINEABLE addJoinable #-}
@@ -910,7 +918,7 @@ findCriticalPair config state g = retry `mplus` random
         Nothing ->
           trace ("Overlap " ++ prettyShow (overlap_eqn o) ++ " was spurious") Nothing -- should be rare
         Just o' ->
-          Just (cfg_score_cp config 0 (overlap_eqn o'), (Info 0 IntSet.empty, makeCriticalPair o, changed, cf))
+          Just (cfg_score_cp config 0 (st_hints state) (overlap_eqn o'), (Info 0 IntSet.empty, makeCriticalPair o, changed, cf))
 
 -- Return all goal terms. Handles the $equals coding.
 goalTerms :: Function f => State f -> [Term f]

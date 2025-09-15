@@ -700,8 +700,8 @@ identifyProblem TweeContext{..} prob =
       return $ Left (pre inp (Jukebox.Var ctx_var, ctx_minimal :@: []))
     identify inp = Left inp
 
-runTwee :: GlobalFlags -> TSTPFlags -> HornFlags -> [String] -> Config Constant -> CP.Config -> MainFlags -> (IO () -> IO ()) -> Problem Clause -> IO Answer
-runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlags{..} later obligs = {-# SCC runTwee #-} do
+runTwee :: GlobalFlags -> TSTPFlags -> HornFlags -> [String] -> Config Constant -> CP.Config -> MainFlags -> (IO () -> IO ()) -> [Jukebox.Term] -> Problem Clause -> IO Answer
+runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlags{..} later hints obligs = {-# SCC runTwee #-} do
   let
     -- Encode whatever needs encoding in the problem
     obligs1
@@ -720,7 +720,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
             Renaming xss xs ->
               Renaming (map (map toLower) xss) (map toLower xs)
       | otherwise = x
-    prob = prettyNames (mapName lowercaseSkolem (addNarrowing flags_equals_transformation ctx obligs2))
+    (hints', prob) = prettyNames (mapName lowercaseSkolem (hints, addNarrowing flags_equals_transformation ctx obligs2))
 
   (unsortedAxioms0, goals0) <-
     case identifyProblem ctx prob of
@@ -749,8 +749,8 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
         xs -> Just (fst (maximumBy (comparing snd) xs))
 
     -- Translate everything to Twee.
-    toEquation (t, u) =
-      canonicalise (tweeTerm flags horn ctx prec t :=: tweeTerm flags horn ctx prec u)
+    toTerm t = tweeTerm flags horn ctx prec t
+    toEquation (t, u) = canonicalise (toTerm t :=: toTerm u)
 
     axiomCompare ax1 ax2
       | isEquality ax1' && not (isEquality ax2') = GT
@@ -781,15 +781,15 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
   let
     goalNests = nests (map goal_eqn goals)
     goalOccs = occs (map goal_eqn goals)
-    score depth eqn
+    score depth hints eqn
       | flags_goal_heuristic =
-        fromIntegral (CP.score cpConfig depth eqn) *
+        fromIntegral (CP.score cpConfig depth hints eqn) *
         product
           [ pos (IntMap.findWithDefault 0 f eqnNests - IntMap.findWithDefault 0 f goalNests) *
             pos (IntMap.findWithDefault 0 f eqnOccs - IntMap.findWithDefault 0 f goalOccs)
           | f <- IntMap.keys eqnNests ] -- skip constants
       | otherwise = 
-        fromIntegral (CP.score cpConfig depth eqn)
+        fromIntegral (CP.score cpConfig depth hints eqn)
       where
         eqnNests = nests eqn
         eqnOccs = occs eqn
@@ -799,7 +799,8 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
     config = config0 { cfg_score_cp = score, cfg_eliminate_axioms = if flags_flatten_regeneralise then defs else [] }
 
   let
-    withGoals = foldl' (addGoal config) (initialState config) goals
+    withHints = foldl' addHint (initialState config) (map toTerm hints')
+    withGoals = foldl' (addGoal config) withHints goals
     withAxioms = foldl' (addAxiom config) withGoals axioms
     withBackwardsGoal = foldn rewriteGoalsBackwards withAxioms flags_backwards_goal
 
@@ -1114,8 +1115,12 @@ main = do
              (runTwee <$> globalFlags <*> tstpFlags <*> expert hornFlags <*> parsePrecedence)))
   profile
   where
+    getHint Input{what = Clause (Bind _ [Pos (Tru (hint :@: [t]))])}
+      | base (name hint) == "$hint" = Left t
+    getHint c = Right c
     combine horn config cpConfig main encode prove later prob0 = do
-      res <- horn prob0
+      let (hints, nonHints) = partitionEithers (map getHint prob0)
+      res <- horn nonHints
       case res of
         Left ans -> return ans
         Right prob -> do
@@ -1125,4 +1130,4 @@ main = do
             isUnitEquality _ = False
             isUnit = all isUnitEquality (map (toLiterals . what) prob0)
             main' = if isUnit then main{flags_explain_encoding = False} else main{flags_formal_proof = False}
-          encode prob >>= prove config cpConfig main' later
+          encode prob >>= prove config cpConfig main' later hints

@@ -22,12 +22,14 @@ module Twee.Index(
   delete,
   lookup,
   matches,
+  member,
   elems,
   fromList,
   fromListWith,
   invariant) where
 
 import Prelude hiding (null, lookup)
+import qualified Prelude (null)
 import Twee.Base hiding (var, fun, empty, singleton, prefix, funs, lookupList, lookup, at)
 import qualified Twee.Term as Term
 import Data.DynamicArray hiding (singleton)
@@ -291,6 +293,10 @@ matches t idx = matchesList (Term.singleton t) idx
 matchesList :: TermList f -> Index f a -> [(Subst f, a)]
 matchesList t idx =
   run (search t emptyBindings idx Stop)
+
+-- | Check if a term is present in the index.
+member :: Term f -> Index f a -> Bool
+member t idx = not (Prelude.null (matches t idx))
 
 -- | Return all elements of the index.
 elems :: Index f a -> [a]

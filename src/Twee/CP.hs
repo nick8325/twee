@@ -6,6 +6,7 @@ import qualified Twee.Term as Term
 import Twee.Base
 import Twee.Rule
 import Twee.Index(Index)
+import qualified Twee.Index as Index
 import qualified Data.Set as Set
 import Control.Monad
 import Data.List hiding (singleton)
@@ -223,8 +224,8 @@ defaultConfig =
 -- where l is the biggest term and r is the smallest,
 -- and variables have weight 1 and functions have weight cfg_funweight.
 {-# INLINEABLE score #-}
-score :: Function f => Config -> Depth -> Equation f -> Int
-score Config{..} depth (l :=: r) =
+score :: Function f => Config -> Depth -> Index f (Term f) -> Equation f -> Int
+score Config{..} depth hints (l :=: r) =
   fromIntegral depth * cfg_depthweight +
   (m + n) * cfg_rhsweight +
   intMax m n * (cfg_lhsweight - cfg_rhsweight)
@@ -236,6 +237,9 @@ score Config{..} depth (l :=: r) =
     size' n (Cons t ts)
       | len t > 1, t `isSubtermOfList` ts =
         size' (n+cfg_dupcost+cfg_dupfactor*len t) ts
+    size' n (Cons t@(App _ ts) us)
+      | len t > 1, t `Index.member` hints =
+        size' (n + size' cfg_funweight ts `div` 2) us
     size' n ts
       | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
         not (isVar a),
