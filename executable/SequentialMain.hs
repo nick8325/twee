@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards, DeriveAnyClass, RankNTypes #-}
+{-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards, DeriveAnyClass, RankNTypes, ApplicativeDo #-}
 {-# OPTIONS_GHC -flate-specialise #-}
 module SequentialMain(main) where
 
@@ -61,212 +61,230 @@ data MainFlags =
     flags_goal_heuristic :: Bool }
 
 parseMainFlags :: OptionParser MainFlags
-parseMainFlags =
-  MainFlags <$> proof <*> proofOnSaturation <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> flattenRegeneralise <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic <*> kboWeight0 <*> kboWeight0Unary <*> goalHeuristic
-  where
-    proof =
-      inGroup "Output options" $
-      bool "proof" ["Produce proofs (on by default)."]
-      True
-    proofOnSaturation =
-      expert $
-      inGroup "Output options" $
-      bool "proof-on-saturation" ["Produce proofs of all rewrite rules on saturation (off by default)."]
-      False
-    trace =
-      expert $
-      inGroup "Output options" $
-      flag "trace"
-        ["Write a Prolog-format execution trace to this file (off by default)."]
-        Nothing ((\x y -> Just (x, y)) <$> argFile <*> argModule)
-    formal =
-      expert $
-      inGroup "Output options" $
-      bool "formal-proof" ["Print proof as formal TSTP derivation (requires --tstp; off by default)."] False
-    explain =
-      expert $
-      inGroup "Output options" $
-      bool "explain-encoding" ["In CASC mode, explain the conditional encoding (off by default)."] False
-    flipOrdering =
-      expert $
-      inGroup "Term order options" $
-      bool "flip-ordering" ["Make more common function symbols smaller (off by default)."] False
-    kboWeight0 =
-      expert $
-      inGroup "Term order options" $
-      bool "kbo-weight0" ["Give functions of arity >= 2 a weight of 0."] False
-    kboWeight0Unary =
-      expert $
-      inGroup "Term order options" $
-      bool "kbo-weight0-unary" ["Give one function of arity 1 a weight of 0."] False
-    giveUp =
-      expert $
-      inGroup "Output options" $
-      bool "give-up-on-saturation" ["Report SZS status GiveUp rather than Unsatisfiable on saturation (off by default)."] False
-    flatten =
-      expert $
-      inGroup "Completion heuristics" $
-      bool "flatten-goal" ["Flatten goal by adding new axioms (on by default)."] True
-    flattenNonGround =
-      expert $
-      inGroup "Completion heuristics" $
-      bool "flatten-nonground" ["Flatten even non-ground clauses (off by default)."] False
-    flattenLightly =
-      expert $
-      inGroup "Completion heuristics" $
-      bool "flatten-goal-lightly" ["Flatten goal non-recursively by adding new axioms (off by default)."] False
-    flattenAll =
-      expert $
-      inGroup "Completion heuristics" $
-      bool "flatten" ["Flatten all clauses by adding new axioms (off by default)."] False
-    flattenRegeneralise =
-      expert $
-      inGroup "Completion heuristics" $
-      bool "flatten-regeneralise" ["Regeneralise rules involving flattened goal terms (off by default)."] False
-    backwardsGoal =
-      expert $
-      inGroup "Completion heuristics" $
-      flag "backwards-goal" ["Try rewriting backwards from the goal this many times (0 by default)."] 0 argNum
-    flattenBackwardsGoal =
-      expert $
-      inGroup "Completion heuristics" $
-      flag "flatten-backwards-goal" ["Try rewriting backwards from the goal this many times when flattening (0 by default)."] 0 argNum
-    equalsTransformation =
-      expert $
-      inGroup "Completion heuristics" $
-      bool "equals-transformation" ["Apply the 'equals transformation' even to ground goals (off by default)."] False
-    distributivityHeuristic =
-      expert $
-      inGroup "Completion heuristics" $
-      bool "distributivity-heuristic" ["Treat distributive operators specially (off by default)."] False
-    goalHeuristic =
-      expert $
-      inGroup "Completion heuristics" $
-      bool "goal-heuristic" ["Use the CP weighting heuristic from Anantharaman and Andrianarievelo (off by default)."] False
-    eliminate =
-      inGroup "Proof presentation" $
-      concat <$>
-      manyFlags "eliminate"
-        ["Treat these axioms as definitions and eliminate them from the proof.",
-         "The axiom must have the shape f(x1...xn) = t, where x1...xn are",
-         "distinct variables. The term f must not otherwise appear in the problem!",
-         "This is not checked."]
-        (splitOn "," <$> arg "<axioms>" "expected a list of axiom names" Just)
+parseMainFlags = do
+  let argModule = arg "<module>" "expected a Prolog module name" Just
+  flags_proof <-
+    inGroup "Output options" $
+    bool "proof" ["Produce proofs (on by default)."]
+    True
+  flags_proof_on_saturation <-
+    expert $
+    inGroup "Output options" $
+    bool "proof-on-saturation" ["Produce proofs of all rewrite rules on saturation (off by default)."]
+    False
+  flags_trace <-
+    expert $
+    inGroup "Output options" $
+    flag "trace"
+      ["Write a Prolog-format execution trace to this file (off by default)."]
+      Nothing ((\x y -> Just (x, y)) <$> argFile <*> argModule)
+  flags_formal_proof <-
+    expert $
+    inGroup "Output options" $
+    bool "formal-proof" ["Print proof as formal TSTP derivation (requires --tstp; off by default)."] False
+  flags_explain_encoding <-
+    expert $
+    inGroup "Output options" $
+    bool "explain-encoding" ["In CASC mode, explain the conditional encoding (off by default)."] False
+  flags_flip_ordering <-
+    expert $
+    inGroup "Term order options" $
+    bool "flip-ordering" ["Make more common function symbols smaller (off by default)."] False
+  flags_kbo_weight0 <-
+    expert $
+    inGroup "Term order options" $
+    bool "kbo-weight0" ["Give functions of arity >= 2 a weight of 0."] False
+  flags_kbo_weight0_unary <-
+    expert $
+    inGroup "Term order options" $
+    bool "kbo-weight0-unary" ["Give one function of arity 1 a weight of 0."] False
+  flags_give_up_on_saturation <-
+    expert $
+    inGroup "Output options" $
+    bool "give-up-on-saturation" ["Report SZS status GiveUp rather than Unsatisfiable on saturation (off by default)."] False
+  flags_flatten_goals <-
+    expert $
+    inGroup "Completion heuristics" $
+    bool "flatten-goal" ["Flatten goal by adding new axioms (on by default)."] True
+  flags_flatten_nonground <-
+    expert $
+    inGroup "Completion heuristics" $
+    bool "flatten-nonground" ["Flatten even non-ground clauses (off by default)."] False
+  flags_flatten_goals_lightly <-
+    expert $
+    inGroup "Completion heuristics" $
+    bool "flatten-goal-lightly" ["Flatten goal non-recursively by adding new axioms (off by default)."] False
+  flags_flatten_all <-
+    expert $
+    inGroup "Completion heuristics" $
+    bool "flatten" ["Flatten all clauses by adding new axioms (off by default)."] False
+  flags_flatten_regeneralise <-
+    expert $
+    inGroup "Completion heuristics" $
+    bool "flatten-regeneralise" ["Regeneralise rules involving flattened goal terms (off by default)."] False
+  flags_backwards_goal <-
+    expert $
+    inGroup "Completion heuristics" $
+    flag "backwards-goal" ["Try rewriting backwards from the goal this many times (0 by default)."] 0 argNum
+  flags_flatten_backwards_goal <-
+    expert $
+    inGroup "Completion heuristics" $
+    flag "flatten-backwards-goal" ["Try rewriting backwards from the goal this many times when flattening (0 by default)."] 0 argNum
+  flags_equals_transformation <-
+    expert $
+    inGroup "Completion heuristics" $
+    bool "equals-transformation" ["Apply the 'equals transformation' even to ground goals (off by default)."] False
+  flags_distributivity_heuristic <-
+    expert $
+    inGroup "Completion heuristics" $
+    bool "distributivity-heuristic" ["Treat distributive operators specially (off by default)."] False
+  flags_goal_heuristic <-
+    expert $
+    inGroup "Completion heuristics" $
+    bool "goal-heuristic" ["Use the CP weighting heuristic from Anantharaman and Andrianarievelo (off by default)."] False
+  flags_eliminate <-
+    inGroup "Proof presentation" $
+    concat <$>
+    manyFlags "eliminate"
+      ["Treat these axioms as definitions and eliminate them from the proof.",
+       "The axiom must have the shape f(x1...xn) = t, where x1...xn are",
+       "distinct variables. The term f must not otherwise appear in the problem!",
+       "This is not checked."]
+      (splitOn "," <$> arg "<axioms>" "expected a list of axiom names" Just)
 
-    argModule = arg "<module>" "expected a Prolog module name" Just
+  return MainFlags{..}
 
 parseConfig :: OptionParser (Config Constant)
-parseConfig =
-  Config <$> maxSize <*> maxCPs <*> maxCPDepth <*> maxRules <*> maxTime <*> simplify <*> normPercent <*> cpSampleSize <*> cpRenormaliseThreshold <*> set_join_goals <*> always_simplify <*> complete_subsets <*>
-    pure undefined <*> -- scoring function - filled in later, in runTwee
-    (Join.Config <$> ground_join <*> connectedness <*> ground_connectedness <*> set_join <*> ground_join_limit <*> ground_join_incomplete_limit) <*>
-    (Proof.Config <$> all_lemmas <*> flat_proof <*> ground_proof <*> show_instances <*> colour <*> show_axiom_uses <*> show_peaks <*> eliminate_existentials_coding) <*> pure [] <*> randomMode <*> randomModeGoalDirected <*> randomModeSimple <*> randomModeBestOf <*> alwaysComplete
-  where
-    maxSize =
-      inGroup "Resource limits" $
-      flag "max-term-size" ["Discard rewrite rules whose left-hand side is bigger than this limit (unlimited by default)."] Nothing (Just <$> checkSize <$> argNum)
-    checkSize n t = KBO.size t <= n
-    maxCPs =
-      inGroup "Resource limits" $
-      flag "max-cps" ["Give up after considering this many critical pairs (unlimited by default)."] maxBound argNum
-    maxCPDepth =
-      inGroup "Resource limits" $
-      flag "max-cp-depth" ["Only consider critical pairs up to this depth (unlimited by default)."] maxBound argNum
-    maxRules =
-      inGroup "Resource limits" $
-      flag "max-rules" ["Give up after generating this many rules (unlimited by default)."] maxBound argNum
-    maxTime =
-      inGroup "Resource limits" $
-      flag "max-time" ["Give up after running for this long in seconds (unlimited by default)."] Nothing (Just <$> argNum)
-    simplify =
-      expert $
-      inGroup "Completion heuristics" $
-      bool "simplify"
-        ["Simplify rewrite rules with respect to one another (on by default)."]
-        True
-    normPercent =
-      expert $
-      inGroup "Completion heuristics" $
-      defaultFlag "normalise-queue-percent" "Percent of time spent renormalising queued critical pairs" cfg_renormalise_percent argNum
-    cpSampleSize =
-      expert $
-      inGroup "Completion heuristics" $
-      defaultFlag "cp-sample-size" "Size of random CP sample used to trigger renormalisation" cfg_cp_sample_size argNum
-    cpRenormaliseThreshold =
-      expert $
-      inGroup "Completion heuristics" $
-      defaultFlag "cp-renormalise-threshold" "Trigger renormalisation when this percentage of CPs can be simplified" cfg_renormalise_threshold argNum
-    ground_join =
+parseConfig = do
+  cfg_accept_term <-
+    let checkSize n t = KBO.size (t :: Term Constant) <= n in
+    inGroup "Resource limits" $
+    flag "max-term-size" ["Discard rewrite rules whose left-hand side is bigger than this limit (unlimited by default)."] Nothing (Just <$> checkSize <$> argNum)
+  cfg_max_critical_pairs <-
+    inGroup "Resource limits" $
+    flag "max-cps" ["Give up after considering this many critical pairs (unlimited by default)."] maxBound argNum
+  cfg_max_cp_depth <-
+    inGroup "Resource limits" $
+    flag "max-cp-depth" ["Only consider critical pairs up to this depth (unlimited by default)."] maxBound argNum
+  cfg_max_rules <-
+    inGroup "Resource limits" $
+    flag "max-rules" ["Give up after generating this many rules (unlimited by default)."] maxBound argNum
+  cfg_max_time <-
+    inGroup "Resource limits" $
+    flag "max-time" ["Give up after running for this long in seconds (unlimited by default)."] Nothing (Just <$> argNum)
+  cfg_simplify <-
+    expert $
+    inGroup "Completion heuristics" $
+    bool "simplify"
+      ["Simplify rewrite rules with respect to one another (on by default)."]
+      True
+  cfg_renormalise_percent <-
+    expert $
+    inGroup "Completion heuristics" $
+    defaultFlag "normalise-queue-percent" "Percent of time spent renormalising queued critical pairs" cfg_renormalise_percent argNum
+  cfg_cp_sample_size <-
+    expert $
+    inGroup "Completion heuristics" $
+    defaultFlag "cp-sample-size" "Size of random CP sample used to trigger renormalisation" cfg_cp_sample_size argNum
+  cfg_renormalise_threshold <-
+    expert $
+    inGroup "Completion heuristics" $
+    defaultFlag "cp-renormalise-threshold" "Trigger renormalisation when this percentage of CPs can be simplified" cfg_renormalise_threshold argNum
+  cfg_set_join_goals <-
+    expert $
+    inGroup "Critical pair joining heuristics" $
+    bool "set-join-goals"
+      ["Compute all normal forms when joining goal terms (on by default)."]
+      True
+  cfg_always_simplify <-
+    expert $
+    inGroup "Debugging options" $
+    bool "always-simplify"
+      ["Interreduce rules after every step."]
+      False
+  cfg_complete_subsets <-
+    expert $
+    inGroup "Critical pair joining heuristics" $
+    bool "complete-subsets"
+      ["Identify and exploit complete subsets of the axioms in joining (off by default)."]
+      False
+  let cfg_score_cp = undefined -- filled in later, in runTwee
+
+  cfg_join <- do
+    cfg_ground_join <-
       expert $
       inGroup "Critical pair joining heuristics" $
       bool "ground-joining"
         ["Test terms for ground joinability (on by default)."]
         True
-    ground_join_limit =
-      inGroup "Critical pair joining heuristics" $
-      flag "ground-joining-limit" ["Assume not ground joinable after considering this many orderings (unlimited by default)."] maxBound argNum
-    ground_join_incomplete_limit =
-      inGroup "Critical pair joining heuristics" $
-      flag "ground-joining-incomplete-limit" ["Assume ground joinable after considering this many orderings (unlimited by default)."] maxBound argNum
-    connectedness =
+    cfg_use_connectedness_standalone <-
       expert $
       inGroup "Critical pair joining heuristics" $
       bool "connectedness"
         ["Test terms for subconnectedness, as a separate check (on by default)."]
         True
-    ground_connectedness =
+    cfg_use_connectedness_in_ground_joining <-
       expert $
       inGroup "Critical pair joining heuristics" $
       bool "ground-connectedness"
         ["Test terms for subconnectedness, as part of ground joinability testing (off by default)."]
         False
-    complete_subsets =
-      expert $
-      inGroup "Critical pair joining heuristics" $
-      bool "complete-subsets"
-        ["Identify and exploit complete subsets of the axioms in joining (off by default)."]
-        False
-    set_join =
+    cfg_set_join <-
       expert $
       inGroup "Critical pair joining heuristics" $
       bool "set-join"
         ["Compute all normal forms when joining critical pairs (off by default)."]
         False
-    set_join_goals =
-      expert $
+    cfg_ground_join_limit <-
       inGroup "Critical pair joining heuristics" $
-      bool "set-join-goals"
-        ["Compute all normal forms when joining goal terms (on by default)."]
-        True
-    always_simplify =
-      expert $
-      inGroup "Debugging options" $
-      bool "always-simplify"
-        ["Interreduce rules after every step."]
-        False
-    all_lemmas =
+      flag "ground-joining-limit" ["Assume not ground joinable after considering this many orderings (unlimited by default)."] maxBound argNum
+    cfg_ground_join_incomplete_limit <-
+      inGroup "Critical pair joining heuristics" $
+      flag "ground-joining-incomplete-limit" ["Assume ground joinable after considering this many orderings (unlimited by default)."] maxBound argNum
+    return Join.Config{..}
+
+  cfg_proof_presentation <- do
+    cfg_all_lemmas <-
       inGroup "Proof presentation" $
       bool "all-lemmas"
         ["Produce a proof with one lemma for each critical pair (off by default)."]
         False
-    flat_proof =
+    cfg_no_lemmas <-
       inGroup "Proof presentation" $
       bool "no-lemmas"
         ["Produce a proof with no lemmas (off by default).",
          "May lead to exponentially large proofs."]
         False
-    ground_proof =
+    cfg_ground_proof <-
       inGroup "Proof presentation" $
       bool "ground-proof"
         ["Produce a ground proof (off by default).",
          "May lead to exponentially large proofs."]
         False
-    show_instances =
+    cfg_show_instances <-
       inGroup "Proof presentation" $
       bool "show-instances"
         ["Show which instance of a lemma or axiom each rewrite step uses (off by default)."]
         False
-    show_axiom_uses =
+    cfg_use_colour <-
+      let
+        colourFlag =
+          inGroup "Proof presentation" $
+          primFlag "(no-)colour"
+            ["Produce output in colour (on by default if writing output to a terminal)."]
+            (`elem` map fst colourFlags)
+            (\_ y -> return y)
+            Nothing
+            (pure (`lookup` colourFlags))
+        colourFlags = [("--colour", True), ("--no-colour", False),
+                       ("--color", True), ("--no-color", False)]
+        colourSupported =
+          liftM2 (&&) (hSupportsANSIColor stdout)
+            (return (setSGRCode [] /= "")) -- Check for Windows terminal not supporting ANSI
+      in fromMaybe <$> io colourSupported <*> colourFlag
+
+    cfg_show_uses_of_axioms <-
+      let interpret xss ax = axiom_name ax `elem` xss || "all" `elem` xss in
       inGroup "Proof presentation" $
       interpret <$>
       concat <$>
@@ -275,59 +293,51 @@ parseConfig =
          "Separate multiple axiom names with commas.",
          "Use --show-uses-of all to show uses of all axioms."]
         (splitOn "," <$> arg "<axioms>" "expected a list of axiom names" Just)
-      where
-        interpret xss ax = axiom_name ax `elem` xss || "all" `elem` xss
-    show_peaks =
+
+    cfg_show_peaks <-
       inGroup "Proof presentation" $
       bool "show-peaks"
         ["Show peak terms in a proof (off by default)."]
         False
-    eliminate_existentials_coding =
+    cfg_eliminate_existentials_coding <-
       inGroup "Proof presentation" $
       bool "eliminate-existentials-coding"
         ["Eliminate $equals from proofs (on by default)."]
         True
-    randomMode =
-      expert $
-      inGroup "Completion heuristics" $
-      bool "random-mode"
-        ["Use random testing to find suitable CPs (doesn't work yet!) (off by default)."]
-        False
-    randomModeGoalDirected =
-      expert $
-      inGroup "Completion heuristics" $
-      bool "random-mode-goal-directed"
-        ["Use goal-direction in --random-mode (off by default)."]
-        False
-    randomModeSimple =
-      expert $
-      inGroup "Completion heuristics" $
-      bool "random-mode-simple"
-        ["Use simple version of --random-mode (off by default)."]
-        False
-    randomModeBestOf =
-      inGroup "Completion heuristics" $
-      defaultFlag "random-mode-best-of" "Generate this many critical pairs at a time and pick the best one" cfg_random_mode_best_of argNum
-    alwaysComplete =
-      inGroup "Input and clausifier options" $
-      bool "complete"
-        ["Don't stop until the rewrite system is confluent"]
-        False
-    colour = fromMaybe <$> io colourSupported <*> colourFlag
-    colourFlag =
-      inGroup "Proof presentation" $
-      primFlag "(no-)colour"
-        ["Produce output in colour (on by default if writing output to a terminal)."]
-        (`elem` map fst colourFlags)
-        (\_ y -> return y)
-        Nothing
-        (pure (`lookup` colourFlags))
-    colourFlags = [("--colour", True), ("--no-colour", False),
-                   ("--color", True), ("--no-color", False)]
-    colourSupported =
-      liftM2 (&&) (hSupportsANSIColor stdout)
-        (return (setSGRCode [] /= "")) -- Check for Windows terminal not supporting ANSI
 
+    return Proof.Config{..}
+
+  let cfg_eliminate_axioms = [] -- filled in later
+
+  cfg_random_mode <-
+    expert $
+    inGroup "Completion heuristics" $
+    bool "random-mode"
+      ["Use random testing to find suitable CPs (doesn't work yet!) (off by default)."]
+      False
+  cfg_random_mode_goal_directed <-
+    expert $
+    inGroup "Completion heuristics" $
+    bool "random-mode-goal-directed"
+      ["Use goal-direction in --random-mode (off by default)."]
+      False
+  cfg_random_mode_simple <-
+    expert $
+    inGroup "Completion heuristics" $
+    bool "random-mode-simple"
+      ["Use simple version of --random-mode (off by default)."]
+      False
+  cfg_random_mode_best_of <-
+    inGroup "Completion heuristics" $
+    defaultFlag "random-mode-best-of" "Generate this many critical pairs at a time and pick the best one" cfg_random_mode_best_of argNum
+  cfg_always_complete <-
+    inGroup "Input and clausifier options" $
+    bool "complete"
+      ["Don't stop until the rewrite system is confluent"]
+      False
+
+  return Config{..}
+  where
     defaultFlag :: Show a => String -> String -> (Config Constant -> a) -> ArgParser a -> OptionParser a
     defaultFlag name desc field parser =
       flag name [desc ++ " (" ++ show def ++ " by default)."] def parser
