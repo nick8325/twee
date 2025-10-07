@@ -197,13 +197,13 @@ termSubst sub t = build (Term.subst sub t)
 -- | The configuration for the critical pair weighting heuristic.
 data Config =
   Config {
-    cfg_lhsweight :: !Int,
-    cfg_rhsweight :: !Int,
-    cfg_funweight :: !Int,
-    cfg_varweight :: !Int,
-    cfg_depthweight :: !Int,
-    cfg_dupcost :: !Int,
-    cfg_dupfactor :: !Int }
+    cfg_lhsweight :: !Float,
+    cfg_rhsweight :: !Float,
+    cfg_funweight :: !Float,
+    cfg_varweight :: !Float,
+    cfg_depthweight :: !Float,
+    cfg_dupcost :: !Float,
+    cfg_dupfactor :: !Float }
 
 -- | The default heuristic configuration.
 defaultConfig :: Config
@@ -224,11 +224,11 @@ defaultConfig =
 -- where l is the biggest term and r is the smallest,
 -- and variables have weight 1 and functions have weight cfg_funweight.
 {-# INLINEABLE score #-}
-score :: Function f => Config -> Depth -> Index f (Term f) -> Equation f -> Int
+score :: Function f => Config -> Depth -> Index f (Term f) -> Equation f -> Float
 score Config{..} depth hints (l :=: r) =
   fromIntegral depth * cfg_depthweight +
   (m + n) * cfg_rhsweight +
-  intMax m n * (cfg_lhsweight - cfg_rhsweight)
+  max m n * (cfg_lhsweight - cfg_rhsweight)
   where
     m = size' 0 (singleton l)
     n = size' 0 (singleton r)
@@ -236,10 +236,10 @@ score Config{..} depth hints (l :=: r) =
     size' !n Empty = n
     size' n (Cons t ts)
       | len t > 1, t `isSubtermOfList` ts =
-        size' (n+cfg_dupcost+cfg_dupfactor*len t) ts
+        size' (n+cfg_dupcost+cfg_dupfactor*fromIntegral (len t)) ts
     size' n (Cons t@(App _ ts) us)
       | len t > 1, t `Index.member` hints =
-        size' (n + size' cfg_funweight ts `div` 2) us
+        size' (n + size' cfg_funweight ts/2) us
     size' n ts
       | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
         not (isVar a),

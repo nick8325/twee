@@ -802,13 +802,13 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
     goalOccs = occs (map goal_eqn goals)
     score depth hints eqn
       | flags_goal_heuristic =
-        fromIntegral (CP.score cpConfig depth hints eqn) *
+        CP.score cpConfig depth hints eqn *
         product
           [ pos (IntMap.findWithDefault 0 f eqnNests - IntMap.findWithDefault 0 f goalNests) *
             pos (IntMap.findWithDefault 0 f eqnOccs - IntMap.findWithDefault 0 f goalOccs)
           | f <- IntMap.keys eqnNests ] -- skip constants
       | otherwise = 
-        fromIntegral (CP.score cpConfig depth hints eqn)
+        CP.score cpConfig depth hints eqn
       where
         eqnNests = nests eqn
         eqnOccs = occs eqn
