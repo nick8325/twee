@@ -64,7 +64,7 @@ data Config f =
     cfg_set_join_goals            :: Bool,
     cfg_always_simplify           :: Bool,
     cfg_complete_subsets          :: Bool,
-    cfg_score_cp                  :: Depth -> Index f (Term f) -> Equation f -> Float,
+    cfg_score_cp                  :: Depth -> Index f (Hint f) -> Equation f -> Float,
     cfg_join                      :: Join.Config,
     cfg_proof_presentation        :: Proof.Config f,
     cfg_eliminate_axioms          :: [Axiom f],
@@ -72,7 +72,9 @@ data Config f =
     cfg_random_mode_goal_directed :: Bool,
     cfg_random_mode_simple        :: Bool,
     cfg_random_mode_best_of       :: Int,
-    cfg_always_complete           :: Bool }
+    cfg_always_complete           :: Bool,
+    cfg_hint_skel_cost            :: Float,
+    cfg_hint_skel_factor          :: Float }
 
 -- | The prover state.
 data State f =
@@ -83,7 +85,7 @@ data State f =
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
     st_queue          :: !(Queue Batch),
-    st_hints          :: !(Index f (Term f)),
+    st_hints          :: !(Index f (Hint f)),
     st_next_active    :: {-# UNPACK #-} !Id,
     st_considered     :: {-# UNPACK #-} !Int64,
     st_simplified_at  :: {-# UNPACK #-} !Id,
@@ -118,7 +120,9 @@ defaultConfig =
     cfg_random_mode_goal_directed = False,
     cfg_random_mode_best_of = 1,
     cfg_random_mode_simple = False,
-    cfg_always_complete = False }
+    cfg_always_complete = False,
+    cfg_hint_skel_cost = 1,
+    cfg_hint_skel_factor = 0 }
 
 -- | Does this configuration run the prover in a complete mode?
 configIsComplete :: Config f -> Bool
@@ -595,9 +599,11 @@ addAxiom config state axiom =
 
 -- Add a new hint.
 {-# INLINEABLE addHint #-}
-addHint :: Function f => State f -> Term f -> State f
-addHint state@State{..} hint =
-  state { st_hints = Index.insert hint hint st_hints }
+addHint :: Function f => Config f -> State f -> Term f -> State f
+addHint Config{..} state@State{..} hint =
+  state { st_hints = Index.insert hint (Hint hint cost) st_hints }
+  where
+    cost = fromIntegral (len hint - length (vars hint)) * cfg_hint_skel_factor + cfg_hint_skel_cost
 
 -- Record an equation as being joinable.
 {-# INLINEABLE addJoinable #-}

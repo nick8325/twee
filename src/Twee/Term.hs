@@ -39,7 +39,7 @@ module Twee.Term(
   subst,
   Subst(..),
   -- ** Constructing and querying substitutions
-  emptySubst, listToSubst, substToList,
+  emptySubst, listToSubst, substToList, substToList',
   lookup, lookupList,
   extend, extendList, unsafeExtendList,
   retract,

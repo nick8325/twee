@@ -19,6 +19,7 @@ import Twee.Proof(Derivation, congPath)
 import Data.Bits
 import Data.Serialize
 import Data.Int
+--import Debug.Trace
 
 -- | The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
@@ -203,7 +204,18 @@ data Config =
     cfg_varweight :: !Float,
     cfg_depthweight :: !Float,
     cfg_dupcost :: !Float,
-    cfg_dupfactor :: !Float }
+    cfg_dupfactor :: !Float,
+    cfg_hintfactor :: !Float }
+
+data Hint f =
+  Hint {
+    hint_term :: {-# UNPACK #-} !(Term f),
+    hint_cost :: {-# UNPACK #-} !Float }
+
+instance Symbolic (Hint f) where
+  type ConstantOf (Hint f) = f
+  termsDL Hint{..} = termsDL hint_term
+  subst_ sub (Hint t c) = Hint (subst_ sub t) c
 
 -- | The default heuristic configuration.
 defaultConfig :: Config
@@ -211,11 +223,12 @@ defaultConfig =
   Config {
     cfg_lhsweight = 4,
     cfg_rhsweight = 1,
-    cfg_funweight = 7,
-    cfg_varweight = 6,
-    cfg_depthweight = 16,
-    cfg_dupcost = 7,
-    cfg_dupfactor = 0 }
+    cfg_funweight = 1,
+    cfg_varweight = 6/7,
+    cfg_depthweight = 2,
+    cfg_dupcost = 1,
+    cfg_dupfactor = 0,
+    cfg_hintfactor = 1 }
 
 -- | Compute a score for a critical pair.
 
@@ -224,7 +237,7 @@ defaultConfig =
 -- where l is the biggest term and r is the smallest,
 -- and variables have weight 1 and functions have weight cfg_funweight.
 {-# INLINEABLE score #-}
-score :: Function f => Config -> Depth -> Index f (Term f) -> Equation f -> Float
+score :: Function f => Config -> Depth -> Index f (Hint f) -> Equation f -> Float
 score Config{..} depth hints (l :=: r) =
   fromIntegral depth * cfg_depthweight +
   (m + n) * cfg_rhsweight +
@@ -237,9 +250,11 @@ score Config{..} depth hints (l :=: r) =
     size' n (Cons t ts)
       | len t > 1, t `isSubtermOfList` ts =
         size' (n+cfg_dupcost+cfg_dupfactor*fromIntegral (len t)) ts
-    size' n (Cons t@(App _ ts) us)
-      | len t > 1, t `Index.member` hints =
-        size' (n + size' cfg_funweight ts/2) us
+    size' n (Cons t us)
+      | len t > 1, (sub, Hint{..}):_ <- Index.matches t hints =
+        let new_cost = hint_cost + cfg_hintfactor * sum [size' 0 u | (_, u) <- Term.substToList' sub] in
+        --trace ("hint: len " ++ show (len t) ++ ", new cost " ++ show new_cost ++ ": " ++ prettyShow t) $
+        size' (n + new_cost) us
     size' n ts
       | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
         not (isVar a),

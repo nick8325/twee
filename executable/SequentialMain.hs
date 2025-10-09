@@ -335,6 +335,14 @@ parseConfig = do
     bool "complete"
       ["Don't stop until the rewrite system is confluent"]
       False
+  cfg_hint_skel_cost <-
+    expert $
+    inGroup "Critical pair weighting heuristics" $
+    defaultFlag "hint-skel-cost" "Size of hint skeletons" cfg_hint_skel_cost argNum
+  cfg_hint_skel_factor <-
+    expert $
+    inGroup "Critical pair weighting heuristics" $
+    defaultFlag "hint-skel-factor" "Size factor of hint skeletons" cfg_hint_skel_factor argNum
 
   return Config{..}
   where
@@ -345,38 +353,41 @@ parseConfig = do
         def = field defaultConfig
 
 parseCPConfig :: OptionParser CP.Config
-parseCPConfig =
-  CP.Config <$> lweight <*> rweight <*> funweight <*> varweight <*> depthweight <*> dupcost <*> dupfactor
+parseCPConfig = do
+  cfg_lhsweight <-
+    expert $
+    inGroup "Critical pair weighting heuristics" $
+    defaultFlag "lhs-weight" "Weight given to LHS of critical pair" CP.cfg_lhsweight argNum
+  cfg_rhsweight <-
+    expert $
+    inGroup "Critical pair weighting heuristics" $
+    defaultFlag "rhs-weight" "Weight given to RHS of critical pair" CP.cfg_rhsweight argNum
+  cfg_funweight <-
+    expert $
+    inGroup "Critical pair weighting heuristics" $
+    defaultFlag "fun-weight" "Weight given to function symbols" CP.cfg_funweight argNum
+  cfg_varweight <-
+    expert $
+    inGroup "Critical pair weighting heuristics" $
+    defaultFlag "var-weight" "Weight given to variable symbols" CP.cfg_varweight argNum
+  cfg_depthweight <-
+    expert $
+    inGroup "Critical pair weighting heuristics" $
+    defaultFlag "depth-weight" "Weight given to critical pair depth" CP.cfg_depthweight argNum
+  cfg_dupcost <-
+    expert $
+    inGroup "Critical pair weighting heuristics" $
+    defaultFlag "dup-cost" "Cost of duplicate subterms" CP.cfg_dupcost argNum
+  cfg_dupfactor <-
+    expert $
+    inGroup "Critical pair weighting heuristics" $
+    defaultFlag "dup-factor" "Size factor of duplicate subterms" CP.cfg_dupfactor argNum
+  cfg_hintfactor <-
+    expert $
+    inGroup "Critical pair weighting heuristics" $
+    defaultFlag "hint-factor" "Size factor of hint substitutions" CP.cfg_hintfactor argNum
+  return CP.Config{..}
   where
-    lweight =
-      expert $
-      inGroup "Critical pair weighting heuristics" $
-      defaultFlag "lhs-weight" "Weight given to LHS of critical pair" CP.cfg_lhsweight argNum
-    rweight =
-      expert $
-      inGroup "Critical pair weighting heuristics" $
-      defaultFlag "rhs-weight" "Weight given to RHS of critical pair" CP.cfg_rhsweight argNum
-    funweight =
-      expert $
-      inGroup "Critical pair weighting heuristics" $
-      defaultFlag "fun-weight" "Weight given to function symbols" CP.cfg_funweight argNum
-    varweight =
-      expert $
-      inGroup "Critical pair weighting heuristics" $
-      defaultFlag "var-weight" "Weight given to variable symbols" CP.cfg_varweight argNum
-    depthweight =
-      expert $
-      inGroup "Critical pair weighting heuristics" $
-      defaultFlag "depth-weight" "Weight given to critical pair depth" CP.cfg_depthweight argNum
-    dupcost =
-      expert $
-      inGroup "Critical pair weighting heuristics" $
-      defaultFlag "dup-cost" "Cost of duplicate subterms" CP.cfg_dupcost argNum
-    dupfactor =
-      expert $
-      inGroup "Critical pair weighting heuristics" $
-      defaultFlag "dup-factor" "Size factor of duplicate subterms" CP.cfg_dupfactor argNum
-
     defaultFlag name desc field parser =
       flag name [desc ++ " (" ++ show def ++ " by default)."] def parser
       where
@@ -818,7 +829,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
     config = config0 { cfg_score_cp = score, cfg_eliminate_axioms = if flags_flatten_regeneralise then defs else [] }
 
   let
-    withHints = foldl' addHint (initialState config) (map toTerm hints')
+    withHints = foldl' (addHint config) (initialState config) (map toTerm hints')
     withGoals = foldl' (addGoal config) withHints goals
     withAxioms = foldl' (addAxiom config) withGoals axioms
     withBackwardsGoal = foldn rewriteGoalsBackwards withAxioms flags_backwards_goal
