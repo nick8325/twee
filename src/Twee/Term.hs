@@ -121,7 +121,7 @@ build x =
 -- | Build a termlist.
 {-# INLINE buildList #-}
 buildList :: Build a => a -> TermList (BuildFun a)
-buildList x = buildTermList (builder x)
+buildList x = buildTermList 16 (builder x)
 
 -- | Build a constant (a function with no arguments).
 {-# INLINE con #-}
@@ -298,7 +298,7 @@ canonicalise (t:ts) = loop emptySubst vars t ts
   where
     (V m, V n) = boundLists (t:ts)
     vars =
-      buildTermList $
+      buildTermList (n-m+2) $
         -- Produces two variables when the term is ground
         -- (n = minBound, m = maxBound), which is OK.
         mconcat [emitVar (V x) | x <- [0..n-m+1]]

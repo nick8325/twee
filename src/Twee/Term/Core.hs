@@ -277,11 +277,10 @@ instance Monoid (Builder f) where
 
 -- Build a termlist from a Builder.
 {-# INLINE buildTermList #-}
-buildTermList :: Builder f -> TermList f
-buildTermList (Builder m) = stamp "build term" $ runST $ do
+buildTermList :: Int -> Builder f -> TermList f
+buildTermList initialSize (Builder m) = stamp "build term" $ runST $ do
   MutableByteArray marr# <-
-    -- Start with a capacity of 16 symbols (arbitrary choice)
-    newByteArray (16 * symbolSize)
+    newByteArray (max 1 initialSize * symbolSize)
   (marr, n) <-
     ST $ \s ->
       case m s marr# 0# of
