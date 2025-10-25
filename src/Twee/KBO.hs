@@ -19,9 +19,9 @@ lessEqSkolem !t !u
   where
     m = size t
     n = size u
-lessEqSkolem (App x Empty) _
+lessEqSkolem (App x Nil) _
   | x == minimal = True
-lessEqSkolem _ (App x Empty)
+lessEqSkolem _ (App x Nil)
   | x == minimal = False
 lessEqSkolem (Var x) (Var y) = x <= y
 lessEqSkolem (Var _) _ = True
@@ -31,7 +31,7 @@ lessEqSkolem (App (F _ f) ts) (App (F _ g) us) =
     LT -> True
     GT -> False
     EQ ->
-      let loop Empty Empty = True
+      let loop Nil Nil = True
           loop (Cons t ts) (Cons u us)
             | t == u = loop ts us
             | otherwise = lessEqSkolem t u
@@ -39,7 +39,7 @@ lessEqSkolem (App (F _ f) ts) (App (F _ g) us) =
 
 -- | Check if one term is less than another in KBO.
 lessEq :: (Function f, Sized f, Weighted f) => Term f -> Term f -> Bool
-lessEq (App f Empty) _ | f == minimal = True
+lessEq (App f Nil) _ | f == minimal = True
 lessEq (Var x) (Var y) | x == y = True
 lessEq _ (Var _) = False
 lessEq (Var x) t = x `elem` vars t
@@ -49,7 +49,7 @@ lessEq t@(App f ts) u@(App g us) =
    (st == su && f == g && lexLess ts us)) &&
   xs `lessVars` ys
   where
-    lexLess Empty Empty = True
+    lexLess Nil Nil = True
     lexLess (Cons t ts) (Cons u us)
       | t == u = lexLess ts us
       | otherwise =
@@ -57,7 +57,7 @@ lessEq t@(App f ts) u@(App g us) =
         case unify t u of
           Nothing -> True
           Just sub
-            | not (allSubst (\_ (Cons t Empty) -> isMinimal t) sub) -> error "weird term inequality"
+            | not (allSubst (\_ (Cons t Nil) -> isMinimal t) sub) -> error "weird term inequality"
             | otherwise -> lexLess (subst sub ts) (subst sub us)
     lexLess _ _ = error "incorrect function arity"
     xs = weightedVars t
@@ -138,7 +138,7 @@ lexLessIn cond (App f ts) (App g us)
   | f << g = Just Strict
   | otherwise = Nothing
   where
-    loop Empty Empty = Just Nonstrict
+    loop Nil Nil = Just Nonstrict
     loop (Cons t ts) (Cons u us)
       | t == u = loop ts us
       | otherwise =
@@ -175,7 +175,7 @@ instance (Labelled f, Sized f) => Sized (Fun f) where
 instance (Labelled f, Sized f, Weighted f) => Sized (TermList f) where
   size = aux 0
     where
-      aux n Empty = n
+      aux n Nil = n
       aux n (Cons (App f t) u) =
         aux (n + size f + argWeight f * size t) u
       aux n (Cons (Var _) t) = aux (n+1) t

@@ -149,7 +149,7 @@ orient (t :=: u) pf = Rule o pf t u
         case unify t u of
           Nothing -> Oriented
           Just sub
-            | allSubst (\_ (Cons t Empty) -> isMinimal t) sub ->
+            | allSubst (\_ (Cons t Nil) -> isMinimal t) sub ->
               WeaklyOriented minimal (map (build . var . fst) (substToList sub))
             | otherwise -> Unoriented
       | lessEq t u = error "wrongly-oriented rule"
@@ -212,7 +212,7 @@ simplifyOutermost !idx !t
   where
     u = build (simp (singleton t))
 
-    simp Empty = mempty
+    simp Nil = mempty
     simp (Cons (Var x) t) = var x `mappend` simp t
     simp (Cons t u)
       | Just (rule, sub) <- simpleRewrite idx t =
@@ -385,7 +385,7 @@ reducesWith _ (Rule (WeaklyOriented min ts) _ _ _) sub =
     expand t@(Var x) = fromMaybe t (Term.lookup x sub)
     expand t = t
 
-    isMinimal (App f Empty) = f == min
+    isMinimal (App f Nil) = f == min
     isMinimal _ = False
 reducesWith p (Rule (Permutative ts) _ _ _) sub =
   aux ts

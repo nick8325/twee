@@ -35,7 +35,7 @@ positions :: Term f -> Positions f
 positions t = aux 0 Set.empty (singleton t)
   where
     -- Consider only general superpositions.
-    aux !_ !_ Empty = NilP
+    aux !_ !_ Nil = NilP
     aux n m (Cons (Var _) t) = aux (n+1) m t
     aux n m ConsSym{hd = t@App{}, rest = u}
       | t `Set.member` m = aux (n+1) m u
@@ -246,7 +246,7 @@ score Config{..} depth hints (l :=: r) =
     m = size' 0 (singleton l)
     n = size' 0 (singleton r)
 
-    size' !n Empty = n
+    size' !n Nil = n
     size' n (Cons t ts)
       | len t > 1, t `isSubtermOfList` ts =
         size' (n+cfg_dupcost+cfg_dupfactor*fromIntegral (len t)) ts

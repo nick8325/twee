@@ -72,7 +72,7 @@ symbolSize = sizeOf (fromSymbol undefined)
 --------------------------------------------------------------------------------
 
 -- | @'TermList' f@ is a list of terms whose function symbols have type @f@.
--- It is either a 'Cons' or an 'Empty'. You can turn it into a @['Term' f]@
+-- It is either a 'Cons' or an 'Nil'. You can turn it into a @['Term' f]@
 -- with 'Twee.Term.unpack'.
 
 -- A TermList is a slice of an unboxed array of symbols.
@@ -120,8 +120,8 @@ instance Ord (Term f) where
   compare = comparing termlist
 
 -- Pattern synonyms for termlists:
--- * Empty :: TermList f
---   Empty is the empty termlist.
+-- * Nil :: TermList f
+--   Nil is the empty termlist.
 -- * Cons t ts :: Term f -> TermList f -> TermList f
 --   Cons t ts is the termlist t:ts.
 -- * ConsSym t ts :: Term f -> TermList f -> TermList f
@@ -131,15 +131,15 @@ instance Ord (Term f) where
 --   that the termlist is non-empty.
 
 -- | Matches the empty termlist.
-pattern Empty :: TermList f
-pattern Empty <- (patHead -> Nothing)
+pattern Nil :: TermList f
+pattern Nil <- (patHead -> Nothing)
 
 -- | Matches a non-empty termlist, unpacking it into head and tail.
 pattern Cons :: Term f -> TermList f -> TermList f
 pattern Cons t ts <- (patHead -> Just (t, _, ts))
 
-{-# COMPLETE Empty, Cons #-}
-{-# COMPLETE Empty, ConsSym #-}
+{-# COMPLETE Nil, Cons #-}
+{-# COMPLETE Nil, ConsSym #-}
 
 -- | Like 'Cons', but does not check that the termlist is non-empty. Use only if
 -- you are sure the termlist is non-empty.
@@ -393,5 +393,5 @@ occursList :: Var -> TermList f -> Bool
 occursList (V x) t = symbolOccursList (fromSymbol (Symbol False x 1)) t
 
 symbolOccursList :: Int64 -> TermList f -> Bool
-symbolOccursList !_ Empty = False
+symbolOccursList !_ Nil = False
 symbolOccursList n ConsSym{hd = t, rest = ts} = root t == n || symbolOccursList n ts

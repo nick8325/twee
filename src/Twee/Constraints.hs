@@ -24,8 +24,8 @@ data Atom f = Constant (Fun f) | Variable Var deriving (Show, Eq, Ord)
 atoms :: Term f -> [Atom f]
 atoms t = aux (singleton t)
   where
-    aux Empty = []
-    aux (Cons (App f Empty) t) = Constant f:aux t
+    aux Nil = []
+    aux (Cons (App f Nil) t) = Constant f:aux t
     aux (Cons (Var x) t) = Variable x:aux t
     aux ConsSym{rest = t} = aux t
 
@@ -34,7 +34,7 @@ toTerm (Constant f) = build (con f)
 toTerm (Variable x) = build (var x)
 
 fromTerm :: Flat.Term f -> Maybe (Atom f)
-fromTerm (App f Empty) = Just (Constant f)
+fromTerm (App f Nil) = Just (Constant f)
 fromTerm (Var x) = Just (Variable x)
 fromTerm _ = Nothing
 

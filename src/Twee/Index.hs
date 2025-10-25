@@ -95,26 +95,26 @@ data Index f a =
     -- The array is indexed by function number.
     fun      :: {-# UNPACK #-} !(Array (Index f a)),
     -- List of variable edges indexed by variable number.
-    -- Invariant: all edges present in the list are non-Nil.
+    -- Invariant: all edges present in the list are non-Empty.
     --
     -- Invariant: variables in terms are introduced in ascending
     -- order, with no gaps (i.e. if the term so far has the variables
     -- x1..xn, then the edges here must be drawn from x1...x{n+1}).
     var      :: {-# UNPACK #-} !(Numbered (Index f a)) } |
   -- An empty index.
-  Nil
+  Empty
   deriving Show
 
 minSize :: Index f a -> Int
-minSize Nil = maxBound
+minSize Empty = maxBound
 minSize idx = minSize_ idx
 
 -- | Check the invariant of an index. For debugging purposes.
 invariant :: Index f a -> Bool
-invariant Nil = True
+invariant Empty = True
 invariant Index{..} =
   nonEmpty &&
-  noNilVars &&
+  noEmptyVars &&
   maxPrefix &&
   sizeCorrect &&
   all invariant (map snd (toList fun)) &&
@@ -124,7 +124,7 @@ invariant Index{..} =
       not (List.null here) ||
       not (List.null (filter (not . null . snd) (toList fun))) ||
       not (List.null (Numbered.toList var))
-    noNilVars = -- the var field should not contain any Nils
+    noEmptyVars = -- the var field should not contain any Emptys
       all (not . null . snd) (Numbered.toList var)
     maxPrefix -- prefix should be used if possible
       | List.null here =
@@ -139,15 +139,15 @@ invariant Index{..} =
       | otherwise =
         minSize_ == lenList prefix
 
-instance Default (Index f a) where def = Nil
+instance Default (Index f a) where def = Empty
 
 -- | An empty index.
 empty :: Index f a
-empty = Nil
+empty = Empty
 
 -- | Is the index empty?
 null :: Index f a -> Bool
-null Nil = True
+null Empty = True
 null _ = False
 
 -- | An index with one entry.
@@ -156,12 +156,12 @@ singleton !t x = leaf (Term.singleton t) [x]
 
 -- A leaf node, perhaps with a prefix.
 leaf :: TermList f -> [a] -> Index f a
-leaf !_ [] = Nil
+leaf !_ [] = Empty
 leaf t xs = Index (lenList t) t xs newArray Numbered.empty
 
 -- Add a prefix (given as a list of symbols) to all terms in an index.
 addPrefix :: [Term f] -> Index f a -> Index f a
-addPrefix _ Nil = Nil
+addPrefix _ Empty = Empty
 addPrefix [] idx = idx
 addPrefix ts idx =
   idx {
@@ -176,7 +176,7 @@ index :: [a] -> Array (Index f a) -> Numbered (Index f a) -> Index f a
 index here fun var =
   case (here, fun', Numbered.toList var') of
     ([], [], []) ->
-      Nil
+      Empty
     ([], [(f, idx)], []) ->
       idx{minSize_ = succ (minSize_ idx),
           prefix = buildList (con (Core.F f) `mappend` builder (prefix idx))}
@@ -218,7 +218,7 @@ modify f !t0 !v0 !idx = aux [] (Term.singleton t) idx
   where
     (!t, !v) = canonicalise (t0, v0) 
 
-    aux [] t Nil =
+    aux [] t Empty =
       leaf t (f v [])
 
     -- Non-empty prefix
@@ -235,8 +235,8 @@ modify f !t0 !v0 !idx = aux [] (Term.singleton t) idx
     aux syms@(_:_) t idx =
       addPrefix (reverse syms) $ aux [] t idx
 
-    -- Empty prefix
-    aux [] Empty idx =
+    -- Nil prefix
+    aux [] Nil idx =
       index (f v (here idx)) (fun idx) (var idx)
     aux [] ConsSym{hd = App f _, rest = u} idx =
       index (here idx)
@@ -246,7 +246,7 @@ modify f !t0 !v0 !idx = aux [] (Term.singleton t) idx
         idx' = aux [] u (fun idx ! fun_id f)
     aux [] ConsSym{hd = Var x, rest = u} idx =
       index (here idx) (fun idx)
-        (Numbered.modify (var_id x) Nil (aux [] u) (var idx))
+        (Numbered.modify (var_id x) Empty (aux [] u) (var idx))
 
 -- Helper for modify:
 -- Take an index with a prefix and pull out the first symbol of the prefix,
@@ -300,7 +300,7 @@ member t idx = not (Prelude.null (matches t idx))
 
 -- | Return all elements of the index.
 elems :: Index f a -> [a]
-elems Nil = []
+elems Empty = []
 elems idx =
   here idx ++
   concatMap elems (map snd (toList (fun idx))) ++
@@ -408,7 +408,7 @@ search :: TermList f -> Bindings f -> Index f a -> Stack f a -> Stack f a
 search !_ !_ !_ _ | False = undefined
 search t binds idx rest =
   case idx of
-    Nil -> rest
+    Empty -> rest
     Index{..}
       | lenList t < minSize idx ->
         rest -- the search term is smaller than any in this index
@@ -459,7 +459,7 @@ searchLoop binds t prefix here fun var rest =
                 _ -> searchVars thd ttl binds var 0 rest
     _ ->
       case prefix of
-        Empty ->
+        Nil ->
           -- The search term matches this node.
           case here of
             [] -> rest

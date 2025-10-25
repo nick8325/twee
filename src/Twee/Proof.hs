@@ -405,7 +405,7 @@ eliminateDefinitions axioms p = head (mapLemmas elim [p])
       case find (build (app f (map var vs))) of
         Nothing -> Cong f (map elim ps)
         Just (rhs, Subst sub) ->
-          let proof (Cons (Var (V x)) Empty) = qs !! x in
+          let proof (Cons (Var (V x)) Nil) = qs !! x in
           replace (proof <$> sub) rhs
       where
         vs = map V [0..length ps-1]
@@ -413,7 +413,7 @@ eliminateDefinitions axioms p = head (mapLemmas elim [p])
 
     elimSubst (Subst sub) = Subst (singleton <$> term <$> unsingleton <$> sub)
       where
-        unsingleton (Cons t Empty) = t
+        unsingleton (Cons t Nil) = t
 
     term = build . term'
     term' (Var x) = var x

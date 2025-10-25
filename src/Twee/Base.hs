@@ -165,9 +165,9 @@ nests t = foldl' (hnest 0 0) IntMap.empty (terms t)
 
 -- helper function for nests
 hnest :: Int -> Int -> IntMap.IntMap Int -> TermList f -> IntMap.IntMap Int
-hnest !f !c !as Empty = IntMap.insertWith max f c as
+hnest !f !c !as Nil = IntMap.insertWith max f c as
 hnest f c as (Cons (Var _) ts) = hnest f c as ts
-hnest f c as (Cons (App _ Empty) ts) = hnest f c as ts
+hnest f c as (Cons (App _ Nil) ts) = hnest f c as ts
 hnest f c as (Cons (App g ts) us) =
   let as' = hnest (fun_id g) (if f == fun_id g then c+1 else 1) as ts
   in hnest f c as' us
@@ -214,7 +214,7 @@ renameManyAvoiding (t:ts) = u:us
   
 -- | Check if a term is the minimal constant.
 isMinimal :: Minimal f => Term f -> Bool
-isMinimal (App f Empty) | f == minimal = True
+isMinimal (App f Nil) | f == minimal = True
 isMinimal _ = False
 
 -- | Build the minimal constant as a term.
@@ -266,7 +266,7 @@ isTrueTerm _ = False
 
 -- Decode $equals(t,u) into an equation t=u.
 decodeEquality :: (EqualsBonus f, Labelled f) => Term f -> Maybe (Term f, Term f)
-decodeEquality (App equals (Cons t (Cons u Empty)))
+decodeEquality (App equals (Cons t (Cons u Nil)))
   | isEquals equals = Just (t, u)
 decodeEquality _ = Nothing
 

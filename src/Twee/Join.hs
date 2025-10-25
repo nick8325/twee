@@ -162,7 +162,7 @@ subsumed1 eqns idx (t :=: u)
 subsumed1 eqns idx (App f ts :=: App g us)
   | f == g =
     let
-      sub Empty Empty = True
+      sub Nil Nil = True
       sub (Cons t ts) (Cons u us) =
         subsumed1 eqns idx (t :=: u) && sub ts us
       sub _ _ = error "Function used with multiple arities"

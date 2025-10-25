@@ -1,7 +1,7 @@
 -- | Terms and substitutions.
 --
 -- Terms in twee are represented as arrays rather than as an algebraic data
--- type. This module defines pattern synonyms ('App', 'Var', 'Cons', 'Empty')
+-- type. This module defines pattern synonyms ('App', 'Var', 'Cons', 'Nil')
 -- which means that pattern matching on terms works just as normal.
 -- The pattern synonyms can not be used to create new terms; for that you
 -- have to use a builder interface ('Build').
@@ -22,7 +22,7 @@ module Twee.Term(
   -- * Terms
   Term, pattern Var, pattern App, isApp, isVar, singleton, len,
   -- * Termlists
-  TermList, pattern Empty, pattern Cons, pattern ConsSym, hd, tl, rest,
+  TermList, pattern Nil, pattern Cons, pattern ConsSym, hd, tl, rest,
   pattern UnsafeCons, pattern UnsafeConsSym, uhd, utl, urest,
   empty, unpack, lenList,
   -- * Function symbols and variables
@@ -116,7 +116,7 @@ instance Build a => Build [a] where
 build :: Build a => a -> Term (BuildFun a)
 build x =
   case buildList x of
-    Cons t Empty -> t
+    Cons t Nil -> t
 
 -- | Build a termlist.
 {-# INLINE buildList #-}
@@ -149,7 +149,7 @@ substToList' (Subst sub) = [(V x, t) | (x, t) <- IntMap.toList sub]
 {-# INLINE substToList #-}
 substToList :: Subst f -> [(Var, Term f)]
 substToList sub =
-  [(x, t) | (x, Cons t Empty) <- substToList' sub]
+  [(x, t) | (x, Cons t Nil) <- substToList' sub]
 
 -- | Fold a function over a substitution.
 {-# INLINE foldSubst #-}
@@ -185,7 +185,7 @@ class Substitution s where
   substList :: s -> TermList (SubstFun s) -> Builder (SubstFun s)
   substList sub ts = aux ts
     where
-      aux Empty = mempty
+      aux Nil = mempty
       aux (Cons (Var x) ts) = evalSubst sub x <> aux ts
       aux (Cons (App f ts) us) = app f (aux ts) <> aux us
 
@@ -277,7 +277,7 @@ idempotent !sub = allSubst (\_ t -> sub `idempotentOn` t) sub
 idempotentOn :: Subst f -> TermList f -> Bool
 idempotentOn !sub = aux
   where
-    aux Empty = True
+    aux Nil = True
     aux ConsSym{hd = App{}, rest = t} = aux t
     aux (Cons (Var x) t) = isNothing (lookupList x sub) && aux t
 
@@ -304,9 +304,9 @@ canonicalise (t:ts) = loop emptySubst vars t ts
         mconcat [emitVar (V x) | x <- [0..n-m+1]]
 
     loop !_ !_ !_ !_ | never = undefined
-    loop sub _ Empty [] = sub
-    loop sub Empty _ _ = sub
-    loop sub vs Empty (t:ts) = loop sub vs t ts
+    loop sub _ Nil [] = sub
+    loop sub Nil _ _ = sub
+    loop sub vs Nil (t:ts) = loop sub vs t ts
     loop sub vs ConsSym{hd = App{}, rest = t} ts = loop sub vs t ts
     loop sub vs0@(Cons v vs) (Cons (Var x) t) ts =
       case extend x v sub of
@@ -364,7 +364,7 @@ matchListIn !sub !pat !t
               sub <- extend x t sub
               loop sub pats ts
             _ -> Nothing
-        loop sub _ Empty = Just sub
+        loop sub _ Nil = Just sub
         loop _ _ _ = Nothing
     in loop sub pat t
 
@@ -416,7 +416,7 @@ instance Substitution (TriangleSubst f) where
   {-# INLINE substList #-}
   substList (Triangle sub) ts = aux ts
     where
-      aux Empty = mempty
+      aux Nil = mempty
       aux (Cons (Var x) ts) = auxVar x <> aux ts
       aux (Cons (App f ts) us) = app f (aux ts) <> aux us
 
@@ -480,7 +480,7 @@ unifyListTriFrom !t !u (Triangle !sub) =
           sub <- var sub x t
           loop sub ts us
         _ -> Nothing
-    loop sub _ Empty = Just sub
+    loop sub _ Nil = Just sub
     loop _ _ _ = Nothing
 
     {-# INLINE var #-}
@@ -539,12 +539,12 @@ children t =
 unpack :: TermList f -> [Term f]
 unpack t = unfoldr op t
   where
-    op Empty = Nothing
+    op Nil = Nothing
     op (Cons t ts) = Just (t, ts)
 
 instance (Labelled f, Show f) => Show (Term f) where
   show (Var x) = show x
-  show (App f Empty) = show f
+  show (App f Nil) = show f
   show (App f ts) = show f ++ "(" ++ intercalate "," (map show (unpack ts)) ++ ")"
 
 instance (Labelled f, Show f) => Show (TermList f) where
@@ -561,7 +561,7 @@ instance (Labelled f, Show f) => Show (Subst f) where
 {-# INLINE lookup #-}
 lookup :: Var -> Subst f -> Maybe (Term f)
 lookup x s = do
-  Cons t Empty <- lookupList x s
+  Cons t Nil <- lookupList x s
   return t
 
 -- | Add a new binding to a substitution.
@@ -604,7 +604,7 @@ occurs x t = occursList x (singleton t)
 subtermsList :: TermList f -> [Term f]
 subtermsList t = unfoldr op t
   where
-    op Empty = Nothing
+    op Nil = Nothing
     op ConsSym{hd = t, rest = u} = Just (t, u)
 
 -- | Find all subterms of a term.
@@ -659,13 +659,13 @@ mapFun f = mapFunList f . singleton
 mapFunList :: (Fun f -> Fun g) -> TermList f -> Builder g
 mapFunList f ts = aux ts
   where
-    aux Empty = mempty
+    aux Nil = mempty
     aux (Cons (Var x) ts) = var x `mappend` aux ts
     aux (Cons (App ff ts) us) = app (f ff) (aux ts) `mappend` aux us
 
 {-# INLINE replace #-}
 replace :: (Build a, BuildFun a ~ f) => Term f -> a -> TermList f -> Builder f
-replace !_ !_ Empty = mempty
+replace !_ !_ Nil = mempty
 replace t u (Cons v vs)
   | t == v = builder u `mappend` replace t u vs
   | len v < len t = builder v `mappend` replace t u vs
@@ -680,7 +680,7 @@ replacePosition :: (Build a, BuildFun a ~ f) => Int -> a -> TermList f -> Builde
 replacePosition n !x = aux n
   where
     aux !_ !_ | never = undefined
-    aux _ Empty = mempty
+    aux _ Nil = mempty
     aux 0 (Cons _ t) = builder x `mappend` builder t
     aux n (Cons (Var x) t) = var x `mappend` aux (n-1) t
     aux n (Cons t@(App f ts) u)
@@ -696,7 +696,7 @@ replacePositionSub :: (Substitution sub, SubstFun sub ~ f) => sub -> Int -> Term
 replacePositionSub sub n !x = aux n
   where
     aux !_ !_ | never = undefined
-    aux _ Empty = mempty
+    aux _ Nil = mempty
     aux n (Cons t u)
       | n < len t = inside n t `mappend` outside u
       | otherwise = outside (singleton t) `mappend` aux (n-len t) u
@@ -714,7 +714,7 @@ positionToPath t n = term t n
     term _ 0 = []
     term t n = list 0 (children t) (n-1)
 
-    list _ Empty _ = error "bad position"
+    list _ Nil _ = error "bad position"
     list k (Cons t u) n
       | n < len t = k:term t n
       | otherwise = list (k+1) u (n-len t)
@@ -726,7 +726,7 @@ pathToPosition t ns = term 0 t ns
     term k _ [] = k
     term k t (n:ns) = list (k+1) (children t) n ns
 
-    list _ Empty _ _ = error "bad path"
+    list _ Nil _ _ = error "bad path"
     list k (Cons t _) 0 ns = term k t ns
     list k (Cons t u) n ns =
       list (k+len t) u (n-1) ns
