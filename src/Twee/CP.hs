@@ -205,7 +205,8 @@ data Config =
     cfg_depthweight :: !Float,
     cfg_dupcost :: !Float,
     cfg_dupfactor :: !Float,
-    cfg_hintfactor :: !Float }
+    cfg_hintfactor :: !Float,
+    cfg_resonance :: !Bool }
 
 data Hint f =
   Hint {
@@ -228,7 +229,8 @@ defaultConfig =
     cfg_depthweight = 2,
     cfg_dupcost = 1,
     cfg_dupfactor = 0,
-    cfg_hintfactor = 1 }
+    cfg_hintfactor = 1,
+    cfg_resonance = False }
 
 -- | Compute a score for a critical pair.
 
@@ -251,7 +253,8 @@ score Config{..} depth hints (l :=: r) =
       | len t > 1, t `isSubtermOfList` ts =
         size' (n+cfg_dupcost+cfg_dupfactor*fromIntegral (len t)) ts
     size' n (Cons t us)
-      | len t > 1, (sub, Hint{..}):_ <- Index.matches t hints =
+      | len t > 1, (sub, Hint{..}):_ <- Index.matches t hints,
+        not cfg_resonance || allSubst (\_ t -> case t of { UnsafeCons (Var _) _ -> True; _ -> False }) sub =
         let new_cost = hint_cost + cfg_hintfactor * sum [size' 0 u | (_, u) <- Term.substToList' sub] in
         --trace ("hint: len " ++ show (len t) ++ ", new cost " ++ show new_cost ++ ": " ++ prettyShow t) $
         size' (n + new_cost) us

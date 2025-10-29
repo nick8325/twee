@@ -386,6 +386,10 @@ parseCPConfig = do
     expert $
     inGroup "Critical pair weighting heuristics" $
     defaultFlag "hint-factor" "Size factor of hint substitutions" CP.cfg_hintfactor argNum
+  cfg_resonance <-
+    expert $
+    inGroup "Critical pair weighting heuristics" $
+    bool "resonance" ["Interpret hints as resonators by only allowing substitutions which map variables to variables (off by default)."] False
   return CP.Config{..}
   where
     defaultFlag name desc field parser =
