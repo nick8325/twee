@@ -541,8 +541,8 @@ jukeboxTerm ctx@TweeContext{..} (App f t) =
   where
     ts = unpack t
 
-makeContext :: Problem Clause -> TweeContext
-makeContext prob = run prob $ \prob -> do
+makeContext :: [Jukebox.Term] -> Problem Clause -> TweeContext
+makeContext hints prob = run (hints, prob) $ \(_, prob) -> do
   let
     ty =
       case types' prob of
@@ -563,9 +563,9 @@ makeContext prob = run prob $ \prob -> do
     ctx_equals = equals,
     ctx_type = ty }
 
-flattenGoals :: Int -> Bool -> Bool -> Bool -> Problem Clause -> Problem Clause
-flattenGoals backwardsGoal flattenNonGround flattenAll full prob =
-  run prob $ \prob -> do
+flattenGoals :: Int -> Bool -> Bool -> Bool -> [Jukebox.Term] -> Problem Clause -> Problem Clause
+flattenGoals backwardsGoal flattenNonGround flattenAll full hints prob =
+  run (hints, prob) $ \(_, prob) -> do
     let ts = usort $ extraTerms prob
     cs <- mapM define ts
     return (prob ++ cs)
@@ -608,9 +608,9 @@ flattenGoals backwardsGoal flattenNonGround flattenAll full prob =
         ground u,
         v <- backwards (n-1) cs u ]
 
-addDistributivityHeuristic :: Problem Clause -> Problem Clause
-addDistributivityHeuristic prob =
-  run prob $ \prob -> do
+addDistributivityHeuristic :: [Jukebox.Term] -> Problem Clause -> Problem Clause
+addDistributivityHeuristic hints prob =
+  run (hints, prob) $ \(_, prob) -> do
     cs <- mapM add prob
     return (prob ++ catMaybes cs)
 
@@ -739,14 +739,14 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
   let
     -- Encode whatever needs encoding in the problem
     obligs1
-      | flags_flatten_goals_lightly = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground False False obligs
-      | flags_flatten_all = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground True True obligs
-      | flags_flatten_goals = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground False True obligs
+      | flags_flatten_goals_lightly = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground False False hints obligs
+      | flags_flatten_all = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground True True hints obligs
+      | flags_flatten_goals = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground False True hints obligs
       | otherwise = obligs
     obligs2
-      | flags_distributivity_heuristic = addDistributivityHeuristic obligs1
+      | flags_distributivity_heuristic = addDistributivityHeuristic hints obligs1
       | otherwise = obligs1
-    ctx = makeContext obligs2
+    ctx = makeContext hints obligs2
     lowercaseSkolem x
       | hasLabel "skolem" x =
         withRenamer x $ \s i ->
