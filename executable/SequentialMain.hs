@@ -97,7 +97,7 @@ parseMainFlags = do
   flags_kbo_weight0_unary <-
     expert $
     inGroup "Term order options" $
-    bool "kbo-weight0-unary" ["Give one function of arity 1 a weight of 0."] False
+    bool "kbo-weight0-unary" ["Give one function of arity 1 a weight of 0."] True
   flags_give_up_on_saturation <-
     expert $
     inGroup "Output options" $
