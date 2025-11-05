@@ -343,6 +343,10 @@ parseConfig = do
     expert $
     inGroup "Critical pair weighting heuristics" $
     defaultFlag "hint-skel-factor" "Size factor of hint skeletons" cfg_hint_skel_factor argNum
+  cfg_print_score <-
+    expert $
+    inGroup "Output options" $
+    bool "print-score" ["Print score of each generated rule (off by default)."] False
 
   return Config{..}
   where
@@ -862,7 +866,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
         say (prettyShow msg)
         sayTrace (show (traceMsg msg)) }
 
-    traceMsg (NewActive active) =
+    traceMsg (NewActive _ active) =
       step "add" [traceActive active]
     traceMsg (NewEquation eqn) =
       step "hard" [traceEqn eqn]

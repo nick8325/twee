@@ -74,7 +74,8 @@ data Config f =
     cfg_random_mode_best_of       :: Int,
     cfg_always_complete           :: Bool,
     cfg_hint_skel_cost            :: Float,
-    cfg_hint_skel_factor          :: Float }
+    cfg_hint_skel_factor          :: Float,
+    cfg_print_score               :: Bool }
 
 -- | The prover state.
 data State f =
@@ -122,7 +123,8 @@ defaultConfig =
     cfg_random_mode_simple = False,
     cfg_always_complete = False,
     cfg_hint_skel_cost = 1,
-    cfg_hint_skel_factor = 0 }
+    cfg_hint_skel_factor = 0,
+    cfg_print_score = False }
 
 -- | Does this configuration run the prover in a complete mode?
 configIsComplete :: Config f -> Bool
@@ -164,7 +166,7 @@ initialState Config{..} =
 -- | A message which is produced by the prover when something interesting happens.
 data Message f =
     -- | A new rule.
-    NewActive !(Active f)
+    NewActive !(Maybe Float) !(Active f)
     -- | A new joinable equation.
   | NewEquation !(Equation f)
     -- | A rule was deleted.
@@ -181,7 +183,10 @@ data Message f =
   | NewProblemTerm !(ConfluenceFailure f)
 
 instance Function f => Pretty (Message f) where
-  pPrint (NewActive rule) = pPrint rule
+  pPrint (NewActive mscore rule) =
+    case mscore of
+      Nothing -> pPrint rule
+      Just score -> parens (pPrint score) <+> pPrint rule
  --   $$ case cp_top (active_cp rule) of { Just t -> text "  (normal forms of term" <+> pPrint t <#> text ")"; Nothing -> pPrintEmpty }
   pPrint (NewEquation eqn) =
     text "  (hard)" <+> pPrint eqn
@@ -416,6 +421,10 @@ active_cp Active{..} =
     cp_top = active_top,
     cp_proof = derivation active_proof }
 
+activeScore :: Config f -> State f -> Active f -> Float
+activeScore Config{..} State{..} Active{..} =
+  cfg_score_cp (info_depth active_info) st_hints (equation active_proof)
+
 activeRules :: Active f -> [Rule f]
 activeRules Active{..} =
   case active_positions of
@@ -445,8 +454,11 @@ addActive :: Function f => Config f -> State f -> (Id -> Active f) -> State f
 addActive config state@State{..} active0 =
   let
     active@Active{..} = active0 st_next_active
+    mscore
+      | cfg_print_score config = Just (activeScore config state active)
+      | otherwise = Nothing
     state' =
-      message (NewActive active) $
+      message (NewActive mscore active) $
       addActiveOnly state{st_next_active = st_next_active+1} active
   in if subsumed (st_joinable, st_complete) st_rules (unorient active_rule) then
     state
