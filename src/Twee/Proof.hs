@@ -471,7 +471,9 @@ data Config f =
     -- | Print out peaks of each lemma.
     cfg_show_peaks :: !Bool,
     -- | Eliminate $equals from the proofs.
-    cfg_eliminate_existentials_coding :: !Bool }
+    cfg_eliminate_existentials_coding :: !Bool,
+    -- | Show which subterm is rewritten.
+    cfg_show_subterms :: !Bool }
 
 -- | The default configuration.
 defaultConfig :: Config f
@@ -484,7 +486,8 @@ defaultConfig =
     cfg_use_colour = False,
     cfg_show_uses_of_axioms = const False,
     cfg_show_peaks = False,
-    cfg_eliminate_existentials_coding = True }
+    cfg_eliminate_existentials_coding = True,
+    cfg_show_subterms = False }
 
 -- | A proof, with all axioms and lemmas explicitly listed.
 data Presentation f =
@@ -781,7 +784,12 @@ pPrintLemma Config{..} axiomNum lemmaNum p
     pp _ p | invisible (equation (certify p)) = pPrintEmpty
     pp h p =
       ppTerm (HighlightedTerm [green | cfg_use_colour] (Just h)) (eqn_lhs (equation (certify p))) $$
-      text "=" <+> highlight [bold | cfg_use_colour] (text "{ by" <+> ppStep p <+> text "}")
+      text "=" <+> highlight [bold | cfg_use_colour] (text "{" <+> ((text "by" <+> ppStep p) $$ if cfg_show_subterms then subtermInfo else pPrintEmpty) <+> text "}")
+      where
+        subtermInfo =
+          (text "from" <+> pPrint t) $$
+          (text "to" <+> pPrint u)
+        t :=: u = rewrittenSubterms p
 
     highlightStep UseAxiom{} = []
     highlightStep UseLemma{} = []
@@ -789,6 +797,14 @@ pPrintLemma Config{..} axiomNum lemmaNum p
     highlightStep (Cong _ ps) = i:highlightStep p
       where
         [(i, p)] = filter (not . isRefl . snd) (zip [0..] ps)
+
+    rewrittenSubterms (Symm p) = u :=: t
+      where
+        t :=: u = rewrittenSubterms p
+    rewrittenSubterms (Cong _ ps) = rewrittenSubterms p
+      where
+        [p] = filter (not . isRefl) ps
+    rewrittenSubterms p = equation (certify p)
 
     ppTerm decorate t = text "  " <#> pPrint (decorate t) <+> (if cfg_show_peaks && t `Set.member` peaks then text "(peak)" else pPrintEmpty)
 

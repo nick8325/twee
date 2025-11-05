@@ -304,6 +304,11 @@ parseConfig = do
       bool "eliminate-existentials-coding"
         ["Eliminate $equals from proofs (on by default)."]
         True
+    cfg_show_subterms <-
+      inGroup "Proof presentation" $
+      bool "show-subterms"
+        ["Show which subterm is rewritten at each step (off by default)."]
+        False
 
     return Proof.Config{..}
 
