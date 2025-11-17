@@ -205,7 +205,6 @@ data Config =
     cfg_depthweight :: !Float,
     cfg_dupcost :: !Float,
     cfg_dupfactor :: !Float,
-    cfg_hintfactor :: !Float,
     cfg_resonance :: !Bool }
 
 data Hint f =
@@ -229,7 +228,6 @@ defaultConfig =
     cfg_depthweight = 2,
     cfg_dupcost = 1,
     cfg_dupfactor = 0,
-    cfg_hintfactor = 1,
     cfg_resonance = False }
 
 -- | Compute a score for a critical pair.
@@ -245,31 +243,34 @@ score Config{..} depth hints (l :=: r) =
   (m + n) * cfg_rhsweight +
   max m n * (cfg_lhsweight - cfg_rhsweight)
   where
-    m = size' 0 (singleton l)
-    n = size' 0 (singleton r)
+    m = size' 0 (singleton l) []
+    n = size' 0 (singleton r) []
 
-    size' !n Nil = n
-    size' n (Cons t ts)
-      | len t > 1, t `isSubtermOfList` ts =
-        size' (n+cfg_dupcost+cfg_dupfactor*fromIntegral (len t)) ts
-    size' n (Cons t us)
+    size' !_ !_ !_ | False = undefined
+    size' n Nil ts =
+      case ts of
+        [] -> n
+        u:us -> size' n u us
+    size' n (Cons t ts) us
+      | len t > 1, t `isSubtermOfList` ts || any (t `isSubtermOfList`) us =
+        size' (n+cfg_dupcost+cfg_dupfactor*fromIntegral (len t)) ts us
+    size' n (Cons t ts) us
       | len t > 1, (sub, Hint{..}):_ <- Index.matches t hints,
         not cfg_resonance || allSubst (\_ t -> case t of { UnsafeCons (Var _) _ -> True; _ -> False }) sub =
-        let new_cost = hint_cost + cfg_hintfactor * sum [size' 0 u | (_, u) <- Term.substToList' sub] in
+        size' (n + hint_cost) ts (map snd (Term.substToList' sub) ++ us)
         --trace ("hint: len " ++ show (len t) ++ ", new cost " ++ show new_cost ++ ": " ++ prettyShow t) $
-        size' (n + new_cost) us
-    size' n ts
+    size' n ts xs
       | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
         not (isVar a),
         not (isVar b),
         hasEqualsBonus (fun_value f),
         Just sub <- unify a b =
-        size' (n+cfg_funweight) ws `min`
-        size' (size' (n+1) (subst sub us)) (subst sub vs)
-    size' n (Cons (Var _) ts) =
-      size' (n+cfg_varweight) ts
-    size' n ConsSym{hd = App{}, rest = ts} =
-      size' (n+cfg_funweight) ts
+        size' (n+cfg_funweight) ws xs `min`
+        size' (n+1) (subst sub us) (subst sub (vs:xs))
+    size' n (Cons (Var _) ts) us =
+      size' (n+cfg_varweight) ts us
+    size' n ConsSym{hd = App{}, rest = ts} us =
+      size' (n+cfg_funweight) ts us
 
 ----------------------------------------------------------------------
 -- * Higher-level handling of critical pairs.

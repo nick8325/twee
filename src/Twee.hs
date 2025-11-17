@@ -615,7 +615,9 @@ addHint :: Function f => Config f -> State f -> Term f -> State f
 addHint Config{..} state@State{..} hint =
   state { st_hints = Index.insert hint (Hint hint cost) st_hints }
   where
-    cost = fromIntegral (len hint - length (vars hint)) * cfg_hint_skel_factor + cfg_hint_skel_cost
+    cost = fromIntegral (len hint - length (vars hint)) * cfg_hint_skel_factor + cfg_hint_skel_cost +
+      -- Add a cost for duplicated variables (since they only get counted once otherwise)
+      fromIntegral (length (vars hint) - length (usort (vars hint)))
 
 -- Record an equation as being joinable.
 {-# INLINEABLE addJoinable #-}

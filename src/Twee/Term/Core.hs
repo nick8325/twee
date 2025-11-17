@@ -90,11 +90,21 @@ t `listAt` n
   | n < 0 || low t + n >= high t = error "term index out of bounds"
   | otherwise = t `unsafeListAt` n
 
+-- | Get a suffix of a termlist.
+listDrop :: TermList f -> Int -> TermList f
+t `listDrop` n
+  | n < 0 || low t + n > high t = error "term index out of bounds"
+  | otherwise = t `unsafeListDrop` n
+
 -- | Index into a termlist, without bounds checking.
 unsafeListAt :: TermList f -> Int -> Term f
 TermList lo hi arr `unsafeListAt` n =
   case TermList (lo+n) hi arr of
     UnsafeCons t _ -> t
+
+-- | Get a suffix of a termlist, without bounds checking.
+unsafeListDrop :: TermList f -> Int -> TermList f
+TermList lo hi arr `unsafeListDrop` n = TermList (lo+n) hi arr
 
 {-# INLINE lenList #-}
 -- | The length of (number of symbols in) a termlist.

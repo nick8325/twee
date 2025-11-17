@@ -33,7 +33,7 @@ module Twee.Term(
   build, buildList,
   con, app, var,
   -- * Access to subterms
-  children, properSubterms, subtermsList, subterms, reverseSubtermsList, reverseSubterms, occurs, isSubtermOf, isSubtermOfList, at, listAt, atPath,
+  children, properSubterms, subtermsList, subterms, reverseSubtermsList, reverseSubterms, occurs, isSubtermOf, isSubtermOfList, at, listAt, atPath, listDrop,
   -- * Substitutions
   Substitution(..),
   subst,

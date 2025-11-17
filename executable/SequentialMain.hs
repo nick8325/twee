@@ -391,10 +391,6 @@ parseCPConfig = do
     expert $
     inGroup "Critical pair weighting heuristics" $
     defaultFlag "dup-factor" "Size factor of duplicate subterms" CP.cfg_dupfactor argNum
-  cfg_hintfactor <-
-    expert $
-    inGroup "Critical pair weighting heuristics" $
-    defaultFlag "hint-factor" "Size factor of hint substitutions" CP.cfg_hintfactor argNum
   cfg_resonance <-
     expert $
     inGroup "Critical pair weighting heuristics" $
