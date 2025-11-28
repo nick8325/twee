@@ -77,7 +77,7 @@ import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Control.Arrow((&&&))
 import Twee.Utils
-import qualified Data.Label as Label
+import qualified Data.Sym as Sym
 import Data.Typeable
 import GHC.Stack
 
@@ -732,9 +732,9 @@ pathToPosition t ns = term 0 t ns
       list (k+len t) u (n-1) ns
 
 class Labelled f where
-  label :: f -> Label.Label f
-  default label :: (Ord f, Typeable f) => f -> Label.Label f
-  label = Label.label
+  label :: f -> Sym.Sym f
+  default label :: (Ord f, Typeable f) => f -> Sym.Sym f
+  label = Sym.intern
 
 instance (Labelled f, Show f) => Show (Fun f) where show = show . fun_value
 
@@ -750,9 +750,9 @@ f << g = fun_value f < fun_value g
 -- | Construct a 'Fun' from a function symbol.
 {-# NOINLINE fun #-}
 fun :: Labelled f => f -> Fun f
-fun f = Core.F (fromIntegral (Label.labelNum (label f)))
+fun f = Core.F (Sym.symId (label f))
 
 -- | The underlying function symbol of a 'Fun'.
 {-# INLINE fun_value #-}
 fun_value :: Labelled f => Fun f -> f
-fun_value x = Label.find (Label.unsafeMkLabel (fromIntegral (fun_id x)))
+fun_value x = Sym.unintern (Sym.unsafeMkSym (fromIntegral (fun_id x)))

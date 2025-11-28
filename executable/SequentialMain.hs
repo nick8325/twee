@@ -32,7 +32,7 @@ import qualified Data.IntMap.Strict as IntMap
 import System.IO
 import System.Exit
 import qualified Data.Set as Set
-import qualified Data.Label as Label
+import qualified Data.Sym as Sym
 import System.Console.ANSI
 import Data.Symbol
 import Twee.Profile
@@ -534,7 +534,7 @@ tweeTerm :: MainFlags -> HornFlags -> TweeContext -> (Jukebox.Function -> Preced
 tweeTerm flags horn ctx prec t = build (tm t)
   where
     tm (Jukebox.Var (x ::: _)) =
-      var (V (fromIntegral (Label.labelNum (Label.label x))))
+      var (V (Sym.symId (Sym.intern x)))
     tm (f :@: ts) =
       app (fun (tweeConstant flags horn ctx (prec f) f)) (map tm ts)
 

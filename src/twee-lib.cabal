@@ -64,7 +64,7 @@ library
     Twee.Task
     Twee.Utils
     Twee.Term.Core
-    Data.Label
+    Data.Sym
   other-modules:
     Data.BatchedQueue
     Data.ChurchList

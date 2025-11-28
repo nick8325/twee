@@ -1,8 +1,7 @@
--- | Assignment of unique IDs to values.
--- Inspired by the 'intern' package.
+-- | Interning, annotating values with unique IDs.
 
-{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash, RoleAnnotations, CPP #-}
-module Data.Label(Label, unsafeMkLabel, labelNum, label, find) where
+{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash, RoleAnnotations, CPP, PatternSynonyms, ViewPatterns #-}
+module Data.Sym(Sym, pattern Sym, intern, unintern, unsafeMkSym, symId) where
 
 import Data.IORef
 import System.IO.Unsafe
@@ -15,21 +14,22 @@ import GHC.Exts
 import GHC.Int
 import Unsafe.Coerce
 
--- | A value of type @a@ which has been given a unique ID.
-newtype Label a =
-  Label {
-    -- | The unique ID of a label.
-    labelNum :: Int32 }
+-- | An interned value of type @a@.
+newtype Sym a = MkSym Int32
   deriving (Eq, Ord, Show)
 
-type role Label nominal
+-- | The unique ID of a symbol.
+symId :: Sym a -> Int
+symId (MkSym x) = fromIntegral x
 
--- | Construct a @'Label' a@ from its unique ID, which must be the 'labelNum' of
--- an already existing 'Label'. Extremely unsafe!
-unsafeMkLabel :: Int32 -> Label a
-unsafeMkLabel = Label
+type role Sym nominal -- no coercions please
 
--- The global cache of labels.
+-- | Construct a @'Sym' a@ from its unique ID, which must be the 'symId' of
+-- an already existing 'Sym'. Extremely unsafe!
+unsafeMkSym :: Int -> Sym a
+unsafeMkSym = MkSym . fromIntegral
+
+-- The global cache of interned values.
 {-# NOINLINE cachesRef #-}
 cachesRef :: IORef Caches
 cachesRef = unsafePerformIO (newIORef (Caches 0 Map.empty DynamicArray.newArray))
@@ -38,9 +38,9 @@ data Caches =
   Caches {
     -- The next id number to assign.
     caches_nextId :: {-# UNPACK #-} !Int32,
-    -- A map from values to labels.
+    -- A map from values to IDs.
     caches_from   :: !(Map TypeRep (Cache Any)),
-    -- The reverse map from labels to values.
+    -- The reverse map from IDs to values.
     caches_to     :: !(Array Any) }
 
 type Cache a = Map a Int32
@@ -48,15 +48,15 @@ type Cache a = Map a Int32
 atomicModifyCaches :: (Caches -> (Caches, a)) -> IO a
 atomicModifyCaches f = do
   -- N.B. atomicModifyIORef' ref f evaluates f ref *after* doing the
-  -- compare-and-swap. This causes bad things to happen when 'label'
-  -- is used reentrantly (i.e. the Ord instance itself calls label).
+  -- compare-and-swap. This causes bad things to happen when 'intern'
+  -- is used reentrantly (i.e. the Ord instance itself calls intern).
   -- This function only lets the swap happen if caches_nextId didn't
   -- change (i.e., no new values were inserted).
   !caches <- readIORef cachesRef
   -- First compute the update.
   let !(!caches', !x) = f caches
   -- Now see if anyone else updated the cache in between
-  -- (can happen if f called 'label', or in a concurrent setting).
+  -- (can happen if f called 'intern', or in a concurrent setting).
   ok <- atomicModifyIORef' cachesRef $ \cachesNow ->
     if caches_nextId caches == caches_nextId cachesNow
     then (caches', True)
@@ -76,20 +76,20 @@ toAny = unsafeCoerce
 fromAny :: Any -> a
 fromAny = unsafeCoerce
 
--- | Assign a label to a value.
-{-# NOINLINE label #-}
-label :: forall a. (Typeable a, Ord a) => a -> Label a
-label x =
+-- | Intern a value.
+{-# NOINLINE intern #-}
+intern :: forall a. (Typeable a, Ord a) => a -> Sym a
+intern x =
   unsafeDupablePerformIO $ do
-    -- Common case: label is already there.
+    -- Common case: symbol is already interned.
     caches <- readIORef cachesRef
     case tryFind caches of
-      Just l -> return l
+      Just s -> return s
       Nothing -> do
-        -- Rare case: label was not there.
+        -- Rare case: symbol has not yet been interned.
         x <- atomicModifyCaches $ \caches ->
           case tryFind caches of
-            Just l -> (caches, l)
+            Just s -> (caches, s)
             Nothing ->
               insert caches
         return x
@@ -97,41 +97,45 @@ label x =
   where
     ty = typeOf x
 
-    tryFind :: Caches -> Maybe (Label a)
+    tryFind :: Caches -> Maybe (Sym a)
     tryFind Caches{..} =
-      Label <$> (Map.lookup ty caches_from >>= Map.lookup x . fromAnyCache)
+      MkSym <$> (Map.lookup ty caches_from >>= Map.lookup x . fromAnyCache)
 
-    insert :: Caches -> (Caches, Label a)
+    insert :: Caches -> (Caches, Sym a)
     insert caches@Caches{..} =
       if n < 0 then error "label overflow" else
       (caches {
          caches_nextId = n+1,
          caches_from = Map.insert ty (toAnyCache (Map.insert x n cache)) caches_from,
          caches_to = DynamicArray.updateWithDefault undefined (fromIntegral n) (toAny x) caches_to },
-       Label n)
+       MkSym n)
       where
         n = caches_nextId
         cache =
           fromAnyCache $
           Map.findWithDefault Map.empty ty caches_from
 
--- | Recover the underlying value from a label.
-find :: Label a -> a
+-- | Recover the underlying value from a 'Sym'.
+unintern :: Sym a -> a
 -- N.B. must force n before calling readIORef, otherwise a call of
 -- the form
---   find (label x)
+--   unintern (intern x)
 -- doesn't work.
-find (Label !(I32# n#)) = findWorker n#
+unintern (MkSym !(I32# n#)) = uninternWorker n#
 
-{-# NOINLINE findWorker #-}
+{-# NOINLINE uninternWorker #-}
 #if __GLASGOW_HASKELL__ >= 902
-findWorker :: Int32# -> a
+uninternWorker :: Int32# -> a
 #else
-findWorker :: Int# -> a
+uninternWorker :: Int# -> a
 #endif
-findWorker n# =
+uninternWorker n# =
   unsafeDupablePerformIO $ do
     let n = I32# n#
     Caches{..} <- readIORef cachesRef
     x <- return $! fromAny (DynamicArray.getWithDefault undefined (fromIntegral n) caches_to)
     return x
+
+pattern Sym :: (Ord a, Typeable a) => a -> Sym a
+pattern Sym x <- (unintern -> x) where
+  Sym x = intern x
