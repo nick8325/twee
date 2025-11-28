@@ -17,7 +17,7 @@ import Twee.Term hiding (lookup)
 import Test.QuickCheck(shuffle)
 import Test.QuickCheck.Gen(unGen)
 import Test.QuickCheck.Random(mkQCGen)
-import Data.Sym(Intern)
+import Data.Intern(Intern)
 
 data Atom f = Constant (Fun f) | Variable Var deriving (Show, Eq, Ord)
 

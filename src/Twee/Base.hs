@@ -31,7 +31,7 @@ import Data.List hiding (singleton)
 import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
 import Data.Serialize
-import Data.Sym(Intern)
+import Data.Intern(Intern)
 
 -- | Represents a unique identifier (e.g., for a rule).
 newtype Id = Id { unId :: Int32 }

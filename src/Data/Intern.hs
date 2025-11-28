@@ -1,7 +1,7 @@
 -- | Interning, annotating values with unique IDs.
 
 {-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash, RoleAnnotations, CPP, PatternSynonyms, ViewPatterns, ConstraintKinds #-}
-module Data.Sym(Intern, Sym, pattern Sym, intern, unintern, unsafeMkSym, symId) where
+module Data.Intern(Intern, Sym, pattern Sym, intern, unintern, unsafeMkSym, symId) where
 
 import Data.IORef
 import System.IO.Unsafe

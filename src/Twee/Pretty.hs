@@ -11,7 +11,7 @@ import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.Ratio
 import Twee.Term
-import Data.Sym(Intern)
+import Data.Intern(Intern)
 
 -- * Miscellaneous 'Pretty' instances and utilities.
 

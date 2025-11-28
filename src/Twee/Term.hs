@@ -77,8 +77,8 @@ import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Control.Arrow((&&&))
 import Twee.Utils
-import qualified Data.Sym as Sym
-import Data.Sym(Intern)
+import qualified Data.Intern as Intern
+import Data.Intern(Intern)
 import GHC.Stack
 
 --------------------------------------------------------------------------------
@@ -745,9 +745,9 @@ f << g = fun_value f < fun_value g
 -- | Construct a 'Fun' from a function symbol.
 {-# NOINLINE fun #-}
 fun :: Intern f => f -> Fun f
-fun f = Core.F (Sym.symId (Sym.intern f))
+fun f = Core.F (Intern.symId (Intern.intern f))
 
 -- | The underlying function symbol of a 'Fun'.
 {-# INLINE fun_value #-}
 fun_value :: Intern f => Fun f -> f
-fun_value x = Sym.unintern (Sym.unsafeMkSym (fromIntegral (fun_id x)))
+fun_value x = Intern.unintern (Intern.unsafeMkSym (fromIntegral (fun_id x)))
