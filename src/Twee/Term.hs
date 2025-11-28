@@ -26,7 +26,7 @@ module Twee.Term(
   pattern UnsafeCons, pattern UnsafeConsSym, uhd, utl, urest,
   empty, unpack, lenList,
   -- * Function symbols and variables
-  Fun, fun, fun_id, fun_value, pattern F, Var(..), Labelled(..),
+  Fun, fun, fun_id, fun_value, pattern F, Var(..),
   -- * Building terms
   Build(..),
   Builder,
@@ -78,7 +78,7 @@ import qualified Data.IntMap.Strict as IntMap
 import Control.Arrow((&&&))
 import Twee.Utils
 import qualified Data.Sym as Sym
-import Data.Typeable
+import Data.Sym(Intern)
 import GHC.Stack
 
 --------------------------------------------------------------------------------
@@ -542,15 +542,15 @@ unpack t = unfoldr op t
     op Nil = Nothing
     op (Cons t ts) = Just (t, ts)
 
-instance (Labelled f, Show f) => Show (Term f) where
+instance (Intern f, Show f) => Show (Term f) where
   show (Var x) = show x
   show (App f Nil) = show f
   show (App f ts) = show f ++ "(" ++ intercalate "," (map show (unpack ts)) ++ ")"
 
-instance (Labelled f, Show f) => Show (TermList f) where
+instance (Intern f, Show f) => Show (TermList f) where
   show = show . unpack
 
-instance (Labelled f, Show f) => Show (Subst f) where
+instance (Intern f, Show f) => Show (Subst f) where
   show subst =
     show
       [ (i, t)
@@ -731,28 +731,23 @@ pathToPosition t ns = term 0 t ns
     list k (Cons t u) n ns =
       list (k+len t) u (n-1) ns
 
-class Labelled f where
-  label :: f -> Sym.Sym f
-  default label :: (Ord f, Typeable f) => f -> Sym.Sym f
-  label = Sym.intern
-
-instance (Labelled f, Show f) => Show (Fun f) where show = show . fun_value
+instance (Intern f, Show f) => Show (Fun f) where show = show . fun_value
 
 -- | A pattern which extracts the 'fun_value' from a 'Fun'.
-pattern F :: Labelled f => Int -> f -> Fun f
+pattern F :: Intern f => Int -> f -> Fun f
 pattern F x y <- (fun_id &&& fun_value -> (x, y))
 {-# COMPLETE F #-}
 
 -- | Compare the 'fun_value's of two 'Fun's.
-(<<) :: (Labelled f, Ord f) => Fun f -> Fun f -> Bool
+(<<) :: (Intern f, Ord f) => Fun f -> Fun f -> Bool
 f << g = fun_value f < fun_value g
 
 -- | Construct a 'Fun' from a function symbol.
 {-# NOINLINE fun #-}
-fun :: Labelled f => f -> Fun f
-fun f = Core.F (Sym.symId (label f))
+fun :: Intern f => f -> Fun f
+fun f = Core.F (Sym.symId (Sym.intern f))
 
 -- | The underlying function symbol of a 'Fun'.
 {-# INLINE fun_value #-}
-fun_value :: Labelled f => Fun f -> f
+fun_value :: Intern f => Fun f -> f
 fun_value x = Sym.unintern (Sym.unsafeMkSym (fromIntegral (fun_id x)))

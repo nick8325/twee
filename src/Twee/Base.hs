@@ -10,7 +10,7 @@ module Twee.Base(
   TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
   vars, isGround, funs, occ, occVar, occs, nests, canonicalise, renameAvoiding, renameManyAvoiding, freshVar,
   -- * General-purpose functionality
-  Id(..), Has(..),
+  Id(..), Has(..), Intern,
   -- * Typeclasses
   Minimal(..), minimalTerm, isMinimal, erase, eraseExcept, ground, skolemise,
   Ordered(..), lessThan, orientTerms,
@@ -31,6 +31,7 @@ import Data.List hiding (singleton)
 import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
 import Data.Serialize
+import Data.Sym(Intern)
 
 -- | Represents a unique identifier (e.g., for a rule).
 newtype Id = Id { unId :: Int32 }
@@ -246,7 +247,7 @@ skolemise t = subst (\(V x) -> con (skolem x)) t
 -- | For types which have a notion of size.
 -- | The collection of constraints which the type of function symbols must
 -- satisfy in order to be used by twee.
-type Function f = (Ordered f, Minimal f, PrettyTerm f, EqualsBonus f, Labelled f)
+type Function f = (Ordered f, Minimal f, PrettyTerm f, EqualsBonus f, Intern f)
 
 -- | A hack for encoding Horn clauses. See 'Twee.CP.Score'.
 -- The default implementation of 'hasEqualsBonus' should work OK.
@@ -258,19 +259,19 @@ class EqualsBonus f where
   isTrue _ = False
   isFalse _ = False
 
-isFalseTerm, isTrueTerm :: (EqualsBonus f, Labelled f) => Term f -> Bool
+isFalseTerm, isTrueTerm :: (EqualsBonus f, Intern f) => Term f -> Bool
 isFalseTerm (App false _) = isFalse false
 isFalseTerm _ = False
 isTrueTerm (App true _) = isTrue true
 isTrueTerm _ = False
 
 -- Decode $equals(t,u) into an equation t=u.
-decodeEquality :: (EqualsBonus f, Labelled f) => Term f -> Maybe (Term f, Term f)
+decodeEquality :: (EqualsBonus f, Intern f) => Term f -> Maybe (Term f, Term f)
 decodeEquality (App equals (Cons t (Cons u Nil)))
   | isEquals equals = Just (t, u)
 decodeEquality _ = Nothing
 
-instance (Labelled f, EqualsBonus f) => EqualsBonus (Fun f) where
+instance (Intern f, EqualsBonus f) => EqualsBonus (Fun f) where
   hasEqualsBonus = hasEqualsBonus . fun_value
   isEquals = isEquals . fun_value
   isTrue = isTrue . fun_value

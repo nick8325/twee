@@ -124,7 +124,7 @@ instance Symbolic (Orientation f) where
   subst_ sub (Permutative ts) = Permutative (subst_ sub ts)
   subst_ _   Unoriented = Unoriented
 
-instance (Labelled f, PrettyTerm f) => Pretty (Rule f) where
+instance (Intern f, PrettyTerm f) => Pretty (Rule f) where
   pPrint (Rule or _ l r) =
     pPrint l <+> text (showOrientation or) <+> pPrint r
     where

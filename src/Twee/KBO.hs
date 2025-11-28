@@ -159,20 +159,20 @@ class Sized a where
 class Weighted f where
   argWeight :: f -> Integer
 
-instance (Weighted f, Labelled f) => Weighted (Fun f) where
+instance (Weighted f, Intern f) => Weighted (Fun f) where
   argWeight = argWeight . fun_value
 
-weightedVars :: (Weighted f, Labelled f) => Term f -> [(Var, Integer)]
+weightedVars :: (Weighted f, Intern f) => Term f -> [(Var, Integer)]
 weightedVars t = collate sum (loop 1 t)
   where
     loop k (Var x) = [(x, k)]
     loop k (App f ts) =
       concatMap (loop (k * argWeight f)) (unpack ts)
 
-instance (Labelled f, Sized f) => Sized (Fun f) where
+instance (Intern f, Sized f) => Sized (Fun f) where
   size = size . fun_value
 
-instance (Labelled f, Sized f, Weighted f) => Sized (TermList f) where
+instance (Intern f, Sized f, Weighted f) => Sized (TermList f) where
   size = aux 0
     where
       aux n Nil = n
@@ -180,9 +180,9 @@ instance (Labelled f, Sized f, Weighted f) => Sized (TermList f) where
         aux (n + size f + argWeight f * size t) u
       aux n (Cons (Var _) t) = aux (n+1) t
 
-instance (Labelled f, Sized f, Weighted f) => Sized (Term f) where
+instance (Intern f, Sized f, Weighted f) => Sized (Term f) where
   size = size . singleton
 
-instance (Labelled f, Sized f, Weighted f) => Sized (Equation f) where
+instance (Intern f, Sized f, Weighted f) => Sized (Equation f) where
   size (x :=: y) = size x + size y
 

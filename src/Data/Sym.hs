@@ -1,7 +1,7 @@
 -- | Interning, annotating values with unique IDs.
 
-{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash, RoleAnnotations, CPP, PatternSynonyms, ViewPatterns #-}
-module Data.Sym(Sym, pattern Sym, intern, unintern, unsafeMkSym, symId) where
+{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash, RoleAnnotations, CPP, PatternSynonyms, ViewPatterns, ConstraintKinds #-}
+module Data.Sym(Intern, Sym, pattern Sym, intern, unintern, unsafeMkSym, symId) where
 
 import Data.IORef
 import System.IO.Unsafe
@@ -13,6 +13,9 @@ import Data.Typeable
 import GHC.Exts
 import GHC.Int
 import Unsafe.Coerce
+
+-- | Type class constraints for a value to be internable.
+type Intern a = (Typeable a, Ord a)
 
 -- | An interned value of type @a@.
 newtype Sym a = MkSym Int32
@@ -78,7 +81,7 @@ fromAny = unsafeCoerce
 
 -- | Intern a value.
 {-# NOINLINE intern #-}
-intern :: forall a. (Typeable a, Ord a) => a -> Sym a
+intern :: forall a. Intern a => a -> Sym a
 intern x =
   unsafeDupablePerformIO $ do
     -- Common case: symbol is already interned.
@@ -136,6 +139,6 @@ uninternWorker n# =
     x <- return $! fromAny (DynamicArray.getWithDefault undefined (fromIntegral n) caches_to)
     return x
 
-pattern Sym :: (Ord a, Typeable a) => a -> Sym a
+pattern Sym :: Intern a => a -> Sym a
 pattern Sym x <- (unintern -> x) where
   Sym x = intern x

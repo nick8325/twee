@@ -419,7 +419,7 @@ data Constant =
     con_size   :: !Integer,
     con_weight :: !Integer,
     con_bonus  :: !Bool }
-  deriving (Eq, Ord, Labelled)
+  deriving (Eq, Ord)
 
 data Precedence = Precedence !Bool !Bool !Bool !(Maybe Int) !Int
   deriving (Eq, Ord)

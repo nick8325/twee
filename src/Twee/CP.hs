@@ -297,7 +297,7 @@ instance Symbolic (CriticalPair f) where
       cp_top = subst_ sub cp_top,
       cp_proof = subst_ sub cp_proof }
 
-instance (Labelled f, PrettyTerm f) => Pretty (CriticalPair f) where
+instance (Intern f, PrettyTerm f) => Pretty (CriticalPair f) where
   pPrint CriticalPair{..} =
     vcat [
       pPrint cp_eqn,

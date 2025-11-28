@@ -148,7 +148,7 @@ instance Symbolic (Derivation f) where
 
 instance Function f => Pretty (Proof f) where
   pPrint = pPrintLemma defaultConfig (prettyShow . axiom_number) (prettyShow . equation)
-instance (Labelled f, PrettyTerm f) => Pretty (Derivation f) where
+instance (Intern f, PrettyTerm f) => Pretty (Derivation f) where
   pPrint (UseLemma lemma sub) =
     text "subst" <#> pPrintTuple [text "lemma" <+> pPrint (equation lemma), pPrint sub]
   pPrint (UseAxiom axiom sub) =
@@ -162,12 +162,12 @@ instance (Labelled f, PrettyTerm f) => Pretty (Derivation f) where
   pPrint (Cong f ps) =
     text "cong" <#> pPrintTuple (pPrint f:map pPrint ps)
 
-instance (Labelled f, PrettyTerm f) => Pretty (Axiom f) where
+instance (Intern f, PrettyTerm f) => Pretty (Axiom f) where
   pPrint Axiom{..} =
     text "axiom" <#>
     pPrintTuple [pPrint axiom_number, text axiom_name, pPrint axiom_eqn]
 
-foldLemmas :: (Labelled f, PrettyTerm f) => (Map (Proof f) a -> Derivation f -> a) -> [Derivation f] -> Map (Proof f) a
+foldLemmas :: (Intern f, PrettyTerm f) => (Map (Proof f) a -> Derivation f -> a) -> [Derivation f] -> Map (Proof f) a
 foldLemmas op ds =
   execState (mapM_ foldGoal ds) Map.empty
   where

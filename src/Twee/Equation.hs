@@ -21,7 +21,7 @@ instance Symbolic (Equation f) where
   termsDL (t :=: u) = termsDL t `mplus` termsDL u
   subst_ sub (t :=: u) = subst_ sub t :=: subst_ sub u
 
-instance (Labelled f, PrettyTerm f) => Pretty (Equation f) where
+instance (Intern f, PrettyTerm f) => Pretty (Equation f) where
   pPrint (x :=: y) = pPrint x <+> text "=" <+> pPrint y
 
 -- | Order an equation roughly left-to-right, and

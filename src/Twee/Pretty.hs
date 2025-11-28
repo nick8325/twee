@@ -11,6 +11,7 @@ import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.Ratio
 import Twee.Term
+import Data.Sym(Intern)
 
 -- * Miscellaneous 'Pretty' instances and utilities.
 
@@ -69,10 +70,10 @@ supply names =
 
 -- * Pretty-printing of terms.
 
-instance (Pretty f, Labelled f) => Pretty (Fun f) where
+instance (Pretty f, Intern f) => Pretty (Fun f) where
   pPrintPrec l p = pPrintPrec l p . fun_value
 
-instance (Labelled f, PrettyTerm f) => Pretty (Term f) where
+instance (Intern f, PrettyTerm f) => Pretty (Term f) where
   pPrintPrec l p (Var x) = pPrintPrec l p x
   pPrintPrec l p (App f xs) =
     pPrintTerm (termStyle (fun_value f)) l p (pPrint f) (unpack xs)
@@ -94,7 +95,7 @@ maybeHighlight :: [ANSICode] -> Maybe [Int] -> Doc -> Doc
 maybeHighlight cs (Just []) d = highlight cs d
 maybeHighlight _ _ d = d
 
-instance (Labelled f, PrettyTerm f) => Pretty (HighlightedTerm f) where
+instance (Intern f, PrettyTerm f) => Pretty (HighlightedTerm f) where
   pPrintPrec l p (HighlightedTerm cs h (Var x)) =
     maybeHighlight cs h (pPrintPrec l p x)
   pPrintPrec l p (HighlightedTerm cs h (App f xs)) =
@@ -107,10 +108,10 @@ instance (Labelled f, PrettyTerm f) => Pretty (HighlightedTerm f) where
           Just (n:ns) | i == n -> HighlightedTerm cs (Just ns) t
           _ -> HighlightedTerm cs Nothing t
 
-instance (Labelled f, PrettyTerm f) => Pretty (TermList f) where
+instance (Intern f, PrettyTerm f) => Pretty (TermList f) where
   pPrintPrec _ _ = pPrint . unpack
 
-instance (Labelled f, PrettyTerm f) => Pretty (Subst f) where
+instance (Intern f, PrettyTerm f) => Pretty (Subst f) where
   pPrint sub = text "{" <#> fsep (punctuate (text ",") docs) <#> text "}"
     where
       docs =
