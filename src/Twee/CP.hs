@@ -263,7 +263,7 @@ score Config{..} depth hints (l :=: r) =
       | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
         not (isVar a),
         not (isVar b),
-        hasEqualsBonus (fun_value f),
+        hasEqualsBonus f,
         Just sub <- unify a b =
         size' (n+cfg_funweight) ws xs `min`
         size' (n+1) (subst sub us) (subst sub (vs:xs))

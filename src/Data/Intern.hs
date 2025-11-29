@@ -19,7 +19,10 @@ type Intern a = (Typeable a, Ord a)
 
 -- | An interned value of type @a@.
 newtype Sym a = MkSym Int32
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
+
+instance Show a => Show (Sym a) where
+  show = show . unintern
 
 -- | The unique ID of a symbol.
 symId :: Sym a -> Int

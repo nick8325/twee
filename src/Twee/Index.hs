@@ -38,8 +38,8 @@ import qualified Data.List as List
 import Data.Numbered(Numbered)
 import qualified Data.Numbered as Numbered
 import qualified Data.IntMap.Strict as IntMap
-import qualified Twee.Term.Core as Core
 import Twee.Profile
+import Data.Intern
 
 -- The term index in this module is a _perfect discrimination tree_.
 -- This is a trie whose keys are terms, represented as flat lists of symbols
@@ -179,7 +179,7 @@ index here fun var =
       Empty
     ([], [(f, idx)], []) ->
       idx{minSize_ = succ (minSize_ idx),
-          prefix = buildList (con (Core.F f) `mappend` builder (prefix idx))}
+          prefix = buildList (con (unsafeMkSym f) `mappend` builder (prefix idx))}
     ([], [], [(x, idx)]) ->
       idx{minSize_ = succ (minSize_ idx),
           prefix = buildList (Term.var (V x) `mappend` builder (prefix idx))}
@@ -240,10 +240,10 @@ modify f !t0 !v0 !idx = aux [] (Term.singleton t) idx
       index (f v (here idx)) (fun idx) (var idx)
     aux [] ConsSym{hd = App f _, rest = u} idx =
       index (here idx)
-        (update (fun_id f) idx' (fun idx))
+        (update (symId f) idx' (fun idx))
         (var idx)
       where
-        idx' = aux [] u (fun idx ! fun_id f)
+        idx' = aux [] u (fun idx ! symId f)
     aux [] ConsSym{hd = Var x, rest = u} idx =
       index (here idx) (fun idx)
         (Numbered.modify (var_id x) Empty (aux [] u) (var idx))
@@ -267,7 +267,7 @@ expand idx@Index{minSize_ = size, prefix = ConsSym{hd = t, rest = ts}} =
         minSize_ = size,
         prefix = Term.empty,
         here = [],
-        fun = Array.singleton (fun_id f) idx { prefix = ts, minSize_ = size - 1 },
+        fun = Array.singleton (symId f) idx { prefix = ts, minSize_ = size - 1 },
         var = Numbered.empty }
 
 -- | Look up a term in the index. Finds all key-value such that the search term
@@ -448,7 +448,7 @@ searchLoop binds t prefix here fun var rest =
           -- We've exhausted the prefix, so let's descend into the tree.
           -- Seems to work better to explore the function node first.
           case thd of
-            App f _ | idx@Index{} <- fun ! fun_id f ->
+            App f _ | idx@Index{} <- fun ! symId f ->
               -- Avoid creating a frame unnecessarily.
               case Numbered.size var of
                 0 -> search trest binds idx rest

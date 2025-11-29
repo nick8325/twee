@@ -25,6 +25,7 @@ import GHC.Prim
 import GHC.ST hiding (liftST)
 import Data.Ord
 import Twee.Profile
+import Data.Intern
 
 --------------------------------------------------------------------------------
 -- Symbols. A symbol is a single function or variable in a flatterm.
@@ -193,17 +194,7 @@ patHead t@TermList{..}
 
 -- Pattern synonyms for single terms.
 -- * Var :: Var -> Term f
--- * App :: Fun f -> TermList f -> Term f
-
--- | A function symbol. @f@ is the underlying type of function symbols defined
--- by the user; @'Fun' f@ is an @f@ together with an automatically-generated unique number.
-newtype Fun f =
-  F {
-    -- | The unique number of a 'Fun'. Must fit in 32 bits.
-    fun_id :: Int }
-  deriving (Eq, Ord)
-
-type role Fun nominal
+-- * App :: Sym f -> TermList f -> Term f
 
 -- | A variable.
 newtype Var =
@@ -220,16 +211,16 @@ pattern Var :: Var -> Term f
 pattern Var x <- (patTerm -> Left x)
 
 -- | Matches a function application.
-pattern App :: Fun f -> TermList f -> Term f
+pattern App :: Sym f -> TermList f -> Term f
 pattern App f ts <- (patTerm -> Right (f, ts))
 
 {-# COMPLETE Var, App #-}
 
 -- A helper function for Var and App.
 {-# INLINE patTerm #-}
-patTerm :: Term f -> Either Var (Fun f, TermList f)
+patTerm :: Term f -> Either Var (Sym f, TermList f)
 patTerm Term{..}
-  | isFun     = Right (F index, ts)
+  | isFun     = Right (unsafeMkSym index, ts)
   | otherwise = Left (V index)
   where
     Symbol{..} = toSymbol root
@@ -335,8 +326,8 @@ emitSymbolBuilder x (Builder inner) =
 
 -- Emit a function application.
 {-# INLINE emitApp #-}
-emitApp :: Fun f -> Builder f -> Builder f
-emitApp (F n) inner = emitSymbolBuilder (Symbol True n 0) inner
+emitApp :: Sym f -> Builder f -> Builder f
+emitApp f inner = emitSymbolBuilder (Symbol True (symId f) 0) inner
 
 -- Emit a variable.
 {-# INLINE emitVar #-}

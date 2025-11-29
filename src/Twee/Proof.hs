@@ -64,7 +64,7 @@ data Derivation f =
     -- | Congruence.
     -- Parallel, i.e., takes a function symbol and one derivation for each
     -- argument of that function.
-  | Cong {-# UNPACK #-} !(Fun f) ![Derivation f]
+  | Cong {-# UNPACK #-} !(Sym f) ![Derivation f]
   deriving (Eq, Show)
 
 --  | An axiom, which comes without proof.
@@ -247,7 +247,7 @@ trans (Trans p q) r =
   Trans p (trans q r)
 trans p q = Trans p q
 
-cong :: Fun f -> [Derivation f] -> Derivation f
+cong :: Sym f -> [Derivation f] -> Derivation f
 cong f ps =
   case sequence (map unRefl ps) of
     Nothing -> Cong f ps
@@ -872,7 +872,7 @@ pPrintPresentation config (Presentation axioms lemmas goals) =
               [ pPrint x <+> text "=" <+> pPrint t
               | (x, t) <- substToList sub ],
             if minimal `elem` funs sub then
-              text "where" <+> doubleQuotes (pPrint (minimal :: Fun f)) <+>
+              text "where" <+> doubleQuotes (pPrint (minimal :: Sym f)) <+>
               text "stands for an arbitrary term of your choice."
             else pPrintEmpty,
             text ""]

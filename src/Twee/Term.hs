@@ -20,13 +20,11 @@
 #endif
 module Twee.Term(
   -- * Terms
-  Term, pattern Var, pattern App, isApp, isVar, singleton, len,
+  Term, Var(..), pattern Var, pattern App, isApp, isVar, singleton, len,
   -- * Termlists
   TermList, pattern Nil, pattern Cons, pattern ConsSym, hd, tl, rest,
   pattern UnsafeCons, pattern UnsafeConsSym, uhd, utl, urest,
   empty, unpack, lenList,
-  -- * Function symbols and variables
-  Fun, fun, fun_id, fun_value, pattern F, Var(..),
   -- * Building terms
   Build(..),
   Builder,
@@ -77,8 +75,7 @@ import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Control.Arrow((&&&))
 import Twee.Utils
-import qualified Data.Intern as Intern
-import Data.Intern(Intern)
+import Data.Intern
 import GHC.Stack
 
 --------------------------------------------------------------------------------
@@ -125,12 +122,12 @@ buildList x = buildTermList 16 (builder x)
 
 -- | Build a constant (a function with no arguments).
 {-# INLINE con #-}
-con :: Fun f -> Builder f
+con :: Sym f -> Builder f
 con x = emitApp x mempty
 
 -- | Build a function application.
 {-# INLINE app #-}
-app :: Build a => Fun (BuildFun a) -> a -> Builder (BuildFun a)
+app :: Build a => Sym (BuildFun a) -> a -> Builder (BuildFun a)
 app f ts = emitApp f (builder ts)
 
 -- | Build a variable.
@@ -652,11 +649,11 @@ isSubtermOf :: Term f -> Term f -> Bool
 t `isSubtermOf` u = t `isSubtermOfList` singleton u
 
 -- | Map a function over the function symbols in a term.
-mapFun :: (Fun f -> Fun g) -> Term f -> Builder g
+mapFun :: (Sym f -> Sym g) -> Term f -> Builder g
 mapFun f = mapFunList f . singleton
 
 -- | Map a function over the function symbols in a termlist.
-mapFunList :: (Fun f -> Fun g) -> TermList f -> Builder g
+mapFunList :: (Sym f -> Sym g) -> TermList f -> Builder g
 mapFunList f ts = aux ts
   where
     aux Nil = mempty
@@ -731,23 +728,6 @@ pathToPosition t ns = term 0 t ns
     list k (Cons t u) n ns =
       list (k+len t) u (n-1) ns
 
-instance (Intern f, Show f) => Show (Fun f) where show = show . fun_value
-
--- | A pattern which extracts the 'fun_value' from a 'Fun'.
-pattern F :: Intern f => Int -> f -> Fun f
-pattern F x y <- (fun_id &&& fun_value -> (x, y))
-{-# COMPLETE F #-}
-
--- | Compare the 'fun_value's of two 'Fun's.
-(<<) :: (Intern f, Ord f) => Fun f -> Fun f -> Bool
-f << g = fun_value f < fun_value g
-
--- | Construct a 'Fun' from a function symbol.
-{-# NOINLINE fun #-}
-fun :: Intern f => f -> Fun f
-fun f = Core.F (Intern.symId (Intern.intern f))
-
--- | The underlying function symbol of a 'Fun'.
-{-# INLINE fun_value #-}
-fun_value :: Intern f => Fun f -> f
-fun_value x = Intern.unintern (Intern.unsafeMkSym (fromIntegral (fun_id x)))
+-- | Compare the values of two 'Sym's.
+(<<) :: (Intern f, Ord f) => Sym f -> Sym f -> Bool
+f << g = unintern f < unintern g

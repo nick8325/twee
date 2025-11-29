@@ -1,16 +1,16 @@
 -- | Useful operations on terms and similar. Also re-exports some generally
 -- useful modules such as 'Twee.Term' and 'Twee.Pretty'.
 
-{-# LANGUAGE TypeFamilies, FlexibleInstances, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ConstraintKinds, RecordWildCards, BangPatterns #-}
+{-# LANGUAGE TypeFamilies, FlexibleInstances, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ConstraintKinds, RecordWildCards, BangPatterns, PatternSynonyms #-}
 module Twee.Base(
   -- * Re-exported functionality
   module Twee.Term, module Twee.Pretty,
   -- * The 'Symbolic' typeclass
   Symbolic(..), subst, terms,
-  TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, FunOf,
+  TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, SymOf,
   vars, isGround, funs, occ, occVar, occs, nests, canonicalise, renameAvoiding, renameManyAvoiding, freshVar,
   -- * General-purpose functionality
-  Id(..), Has(..), Intern,
+  Id(..), Has(..), Intern, Sym, pattern Sym,
   -- * Typeclasses
   Minimal(..), minimalTerm, isMinimal, erase, eraseExcept, ground, skolemise,
   Ordered(..), lessThan, orientTerms,
@@ -31,7 +31,7 @@ import Data.List hiding (singleton)
 import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
 import Data.Serialize
-import Data.Intern(Intern)
+import Data.Intern
 
 -- | Represents a unique identifier (e.g., for a rule).
 newtype Id = Id { unId :: Int32 }
@@ -73,7 +73,7 @@ type TriangleSubstOf a = TriangleSubst (ConstantOf a)
 -- | A builder compatible with a given 'Symbolic'.
 type BuilderOf a = Builder (ConstantOf a)
 -- | The underlying type of function symbols of a given 'Symbolic'.
-type FunOf a = Fun (ConstantOf a)
+type SymOf a = Sym (ConstantOf a)
 
 instance Symbolic (Term f) where
   type ConstantOf (Term f) = f
@@ -137,12 +137,12 @@ isGround = null . vars
 
 -- | Find the function symbols occurring in the argument.
 {-# INLINE funs #-}
-funs :: Symbolic a => a -> [FunOf a]
+funs :: Symbolic a => a -> [SymOf a]
 funs x = [ f | t <- DList.toList (termsDL x), App f _ <- subtermsList t ]
 
 -- | Count how many times a function symbol occurs in the argument.
 {-# INLINE occ #-}
-occ :: Symbolic a => FunOf a -> a -> Int
+occ :: Symbolic a => SymOf a -> a -> Int
 occ x t = length (filter (== x) (funs t))
 
 -- | Count how many times a variable occurs in the argument.
@@ -155,7 +155,7 @@ occVar x t = length (filter (== x) (vars t))
 occs :: Symbolic a => a -> IntMap.IntMap Int
 occs = foldl' insert IntMap.empty . funs
   where
-    insert !m !f = IntMap.insertWith (+) (fun_id f) 1 m
+    insert !m !f = IntMap.insertWith (+) (symId f) 1 m
 
 -- | 'nest' from Fuchs, "The application of goal-oriented heuristics
 -- for proving equational theorems via the unfailing Knuth-Bendix
@@ -170,7 +170,7 @@ hnest !f !c !as Nil = IntMap.insertWith max f c as
 hnest f c as (Cons (Var _) ts) = hnest f c as ts
 hnest f c as (Cons (App _ Nil) ts) = hnest f c as ts
 hnest f c as (Cons (App g ts) us) =
-  let as' = hnest (fun_id g) (if f == fun_id g then c+1 else 1) as ts
+  let as' = hnest (symId g) (if f == symId g then c+1 else 1) as ts
   in hnest f c as' us
 
 -- | Rename the argument so that variables are introduced in a canonical order
@@ -271,8 +271,8 @@ decodeEquality (App equals (Cons t (Cons u Nil)))
   | isEquals equals = Just (t, u)
 decodeEquality _ = Nothing
 
-instance (Intern f, EqualsBonus f) => EqualsBonus (Fun f) where
-  hasEqualsBonus = hasEqualsBonus . fun_value
-  isEquals = isEquals . fun_value
-  isTrue = isTrue . fun_value
-  isFalse = isFalse . fun_value
+instance (Intern f, EqualsBonus f) => EqualsBonus (Sym f) where
+  hasEqualsBonus = hasEqualsBonus . unintern
+  isEquals = isEquals . unintern
+  isTrue = isTrue . unintern
+  isFalse = isFalse . unintern

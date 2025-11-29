@@ -455,8 +455,8 @@ instance PrettyTerm Constant where
         _ -> uncurried
 
 instance Minimal Constant where
-  minimal = fun Minimal
-  skolem = fun . Skolem
+  minimal = Sym Minimal
+  skolem = Sym . Skolem
 
 instance Ordered Constant where
   lessEq t u = KBO.lessEq t u
@@ -536,13 +536,13 @@ tweeTerm flags horn ctx prec t = build (tm t)
     tm (Jukebox.Var (x ::: _)) =
       var (V (Intern.symId (Intern.intern x)))
     tm (f :@: ts) =
-      app (fun (tweeConstant flags horn ctx (prec f) f)) (map tm ts)
+      app (Sym (tweeConstant flags horn ctx (prec f) f)) (map tm ts)
 
 jukeboxTerm :: TweeContext -> Term Constant -> Jukebox.Term
 jukeboxTerm TweeContext{..} (Var (V x)) =
   Jukebox.Var (Unique (fromIntegral x) (intern "X") Nothing defaultRenamer ::: ctx_type)
-jukeboxTerm ctx@TweeContext{..} (App f t) =
-  jukeboxFunction ctx (fun_value f) :@: map (jukeboxTerm ctx) ts
+jukeboxTerm ctx@TweeContext{..} (App (Sym f) t) =
+  jukeboxFunction ctx f :@: map (jukeboxTerm ctx) ts
   where
     ts = unpack t
 

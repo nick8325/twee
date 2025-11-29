@@ -84,7 +84,7 @@ data Orientation f =
     -- 
     -- A rule with orientation @'WeaklyOriented' k ts@ can be used unless
     -- all terms in @ts@ are equal to @k@.
-  | WeaklyOriented {-# UNPACK #-} !(Fun f) [Term f]
+  | WeaklyOriented {-# UNPACK #-} !(Sym f) [Term f]
     -- | A permutative rule.
     --
     -- A rule with orientation @'Permutative' ts@ can be used if

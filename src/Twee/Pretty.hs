@@ -11,7 +11,7 @@ import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.Ratio
 import Twee.Term
-import Data.Intern(Intern)
+import Data.Intern
 
 -- * Miscellaneous 'Pretty' instances and utilities.
 
@@ -70,13 +70,13 @@ supply names =
 
 -- * Pretty-printing of terms.
 
-instance (Pretty f, Intern f) => Pretty (Fun f) where
-  pPrintPrec l p = pPrintPrec l p . fun_value
+instance (Pretty f, Intern f) => Pretty (Sym f) where
+  pPrintPrec l p = pPrintPrec l p . unintern
 
 instance (Intern f, PrettyTerm f) => Pretty (Term f) where
   pPrintPrec l p (Var x) = pPrintPrec l p x
   pPrintPrec l p (App f xs) =
-    pPrintTerm (termStyle (fun_value f)) l p (pPrint f) (unpack xs)
+    pPrintTerm (termStyle f) l p (pPrint f) (unpack xs)
 
 data HighlightedTerm f = HighlightedTerm [ANSICode] (Maybe [Int]) (Term f)
 
@@ -100,7 +100,7 @@ instance (Intern f, PrettyTerm f) => Pretty (HighlightedTerm f) where
     maybeHighlight cs h (pPrintPrec l p x)
   pPrintPrec l p (HighlightedTerm cs h (App f xs)) =
     maybeHighlight cs h $
-    pPrintTerm (termStyle (fun_value f)) l p (pPrint f)
+    pPrintTerm (termStyle f) l p (pPrint f)
       (zipWith annotate [0..] (unpack xs))
     where
       annotate i t =
@@ -123,6 +123,9 @@ class Pretty f => PrettyTerm f where
   -- | The style of the function symbol. Defaults to 'curried'.
   termStyle :: f -> TermStyle
   termStyle _ = curried
+
+instance (Intern f, PrettyTerm f) => PrettyTerm (Sym f) where
+  termStyle = termStyle . unintern
 
 -- | Defines how to print out a function symbol.
 newtype TermStyle =

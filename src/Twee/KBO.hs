@@ -11,6 +11,7 @@ import Data.Map.Strict(Map)
 import Data.Maybe
 import Control.Monad
 import Twee.Utils
+import Data.Intern
 
 lessEqSkolem :: (Function f, Sized f, Weighted f) => Term f -> Term f -> Bool
 lessEqSkolem !t !u
@@ -26,7 +27,7 @@ lessEqSkolem _ (App x Nil)
 lessEqSkolem (Var x) (Var y) = x <= y
 lessEqSkolem (Var _) _ = True
 lessEqSkolem _ (Var _) = False
-lessEqSkolem (App (F _ f) ts) (App (F _ g) us) =
+lessEqSkolem (App (Sym f) ts) (App (Sym g) us) =
   case compare f g of
     LT -> True
     GT -> False
@@ -159,8 +160,8 @@ class Sized a where
 class Weighted f where
   argWeight :: f -> Integer
 
-instance (Weighted f, Intern f) => Weighted (Fun f) where
-  argWeight = argWeight . fun_value
+instance (Weighted f, Intern f) => Weighted (Sym f) where
+  argWeight = argWeight . unintern
 
 weightedVars :: (Weighted f, Intern f) => Term f -> [(Var, Integer)]
 weightedVars t = collate sum (loop 1 t)
@@ -169,8 +170,8 @@ weightedVars t = collate sum (loop 1 t)
     loop k (App f ts) =
       concatMap (loop (k * argWeight f)) (unpack ts)
 
-instance (Intern f, Sized f) => Sized (Fun f) where
-  size = size . fun_value
+instance (Intern f, Sized f) => Sized (Sym f) where
+  size = size . unintern
 
 instance (Intern f, Sized f, Weighted f) => Sized (TermList f) where
   size = aux 0

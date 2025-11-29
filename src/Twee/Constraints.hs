@@ -17,9 +17,9 @@ import Twee.Term hiding (lookup)
 import Test.QuickCheck(shuffle)
 import Test.QuickCheck.Gen(unGen)
 import Test.QuickCheck.Random(mkQCGen)
-import Data.Intern(Intern)
+import Data.Intern
 
-data Atom f = Constant (Fun f) | Variable Var deriving (Show, Eq, Ord)
+data Atom f = Constant (Sym f) | Variable Var deriving (Show, Eq, Ord)
 
 {-# INLINE atoms #-}
 atoms :: Term f -> [Atom f]
@@ -102,7 +102,7 @@ false = Or []
 data Branch f =
   -- Branches are kept normalised wrt equals
   Branch {
-    funs        :: [Fun f],
+    funs        :: [Sym f],
     less        :: [(Atom f, Atom f)],  -- sorted
     equals      :: [(Atom f, Atom f)] } -- sorted, greatest atom first in each pair
   deriving (Eq, Ord)
@@ -244,7 +244,7 @@ modelVarMaxBound (Model m) =
 modelVarValue :: Model f -> Var -> Maybe Var
 modelVarValue (Model m) x = V . fst <$> Map.lookup (Variable x) m
 
-varGroups :: (Minimal f, Ord f) => Model f -> [(Fun f, [Var], Maybe (Fun f))]
+varGroups :: (Minimal f, Ord f) => Model f -> [(Sym f, [Var], Maybe (Sym f))]
 varGroups (Model m) = filter nonempty (go minimal (map fst (sortBy (comparing snd) (Map.toList m))))
   where
     go f xs =
@@ -259,8 +259,8 @@ varGroups (Model m) = filter nonempty (go minimal (map fst (sortBy (comparing sn
     nonempty _ = True
 
 class Minimal f where
-  minimal :: Fun f
-  skolem :: Int -> Fun f
+  minimal :: Sym f
+  skolem :: Int -> Sym f
 
 {-# INLINE lessEqInModel #-}
 lessEqInModel :: (Minimal f, Ordered f, Intern f) => Model f -> Atom f -> Atom f -> Maybe Strictness
