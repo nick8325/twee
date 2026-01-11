@@ -26,7 +26,7 @@ description:
 
 source-repository head
   type:     git
-  location: git://github.com/nick8325/twee.git
+  location: https://github.com/nick8325/twee.git
   branch:   master
 
 flag llvm
@@ -90,7 +90,7 @@ library
   hs-source-dirs:      .
   ghc-options:         -W -fno-warn-incomplete-patterns -fno-warn-dodgy-imports -fno-warn-x-partial
   default-language:    Haskell2010
-  extensions:          TypeOperators
+  default-extensions:  TypeOperators
 
   if flag(llvm)
     cpp-options: -DUSE_LLVM

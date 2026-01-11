@@ -25,7 +25,7 @@ description:
 
 source-repository head
   type:     git
-  location: git://github.com/nick8325/twee.git
+  location: https://github.com/nick8325/twee.git
   branch:   master
 
 flag static
