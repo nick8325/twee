@@ -22,16 +22,16 @@ option `--flag twee-lib:llvm` to `stack install` to get a somewhat
 faster binary.
 
 If you want a tarball of the latest version, you can get it
-[here](https://github.com/nick8325/twee/archive/twee-2.4.1.tar.gz).
+[here](https://github.com/nick8325/twee/archive/2.6.1/twee-2.6.1.tar.gz).
 To install it, just type `stack install`.
 
 ## Installing from binary
 
 If you use Linux on amd64 you can download a
-<a href="https://github.com/nick8325/twee/releases/download/twee-2.4.1/twee-2.4.1-linux-amd64">binary</a> release.
+<a href="https://github.com/nick8325/twee/releases/download/2.6.1/twee-2.6.1-linux-amd64.tar.gz">binary</a> release.
 
 ## System on TPTP
 
 Twee is also available on
-[System on TPTP](http://www.cs.miami.edu/~tptp/cgi-bin/SystemOnTPTP)
+[System on TPTP](https://tptp.org/cgi-bin/SystemOnTPTP)
 (thanks Geoff!)
