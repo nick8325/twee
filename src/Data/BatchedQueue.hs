@@ -83,7 +83,7 @@ removeMinFilter ok (Queue q) = do
   if not (ok (batchLabel batch)) then removeMinFilter ok (Queue q) else
     case unconsBatch batch of
       (entry, Just batch') ->
-        Just (entry, Queue (Heap.insert (Best batch') q))
+        Just (entry, Queue (Heap.insert (Best batch') q)) -- TODO: investigate if this can be made more efficient (removeMin+insert causes two merges even if the same batch is at the root before and after
       (entry, Nothing) ->
         Just (entry, Queue q)
 
