@@ -46,6 +46,7 @@ data MainFlags =
     flags_explain_encoding :: Bool,
     flags_flip_ordering :: Bool,
     flags_give_up_on_saturation :: Bool,
+    flags_hint_goals :: Bool,
     flags_flatten_goals :: Bool,
     flags_flatten_nonground :: Bool,
     flags_flatten_goals_lightly :: Bool,
@@ -102,6 +103,10 @@ parseMainFlags = do
     expert $
     inGroup "Output options" $
     bool "give-up-on-saturation" ["Report SZS status GiveUp rather than Unsatisfiable on saturation (off by default)."] False
+  flags_hint_goals <-
+    expert $
+    inGroup "Completion heuristics" $
+    bool "hint-goal" ["Add hints representing goal terms (off by default)."] False
   flags_flatten_goals <-
     expert $
     inGroup "Completion heuristics" $
@@ -612,6 +617,24 @@ flattenGoals backwardsGoal flattenNonGround flattenAll full hints prob =
         let u = k (Jukebox.subst sub y),
         ground u,
         v <- backwards (n-1) cs u ]
+
+hintGoals :: Problem Clause -> Problem Clause
+hintGoals prob =
+  prob ++ map define extraTerms
+  where
+    extraTerms = usort (concatMap input prob)
+    input Input{what = Clause (Bind _ [Neg (x Jukebox.:=: y)])} =
+      term x ++ term y
+    input _ = []
+
+    term t@(_f :@: ts) = t:concatMap term ts
+    term _ = []
+
+    define t =
+      Input{ident = Nothing, tag = "flattening", kind = Jukebox.Ax Definition, what = c, source = Unknown}
+      where
+        c = clause [Pos (Tru (hint :@: [t]))]
+        hint = name "$hint" ::: FunType [Jukebox.typ t] O
 
 addDistributivityHeuristic :: [Jukebox.Term] -> Problem Clause -> Problem Clause
 addDistributivityHeuristic hints prob =
@@ -1162,7 +1185,8 @@ main = do
       | base (name hint) == "$hint" = Left t
     getHint c = Right c
     combine horn config cpConfig main encode prove later prob0 = do
-      let (hints, nonHints) = partitionEithers (map getHint prob0)
+      let prob1 = if flags_hint_goals main then hintGoals prob0 else prob0
+      let (hints, nonHints) = partitionEithers (map getHint prob1)
       res <- horn nonHints
       case res of
         Left ans -> return ans
@@ -1171,6 +1195,6 @@ main = do
             isUnitEquality [Pos (_ Jukebox.:=: _)] = True
             isUnitEquality [Neg (_ Jukebox.:=: _)] = True
             isUnitEquality _ = False
-            isUnit = all isUnitEquality (map (toLiterals . what) prob0)
+            isUnit = all isUnitEquality (map (toLiterals . what) prob1)
             main' = if isUnit then main{flags_explain_encoding = False} else main{flags_formal_proof = False}
           encode prob >>= prove config cpConfig main' later hints
