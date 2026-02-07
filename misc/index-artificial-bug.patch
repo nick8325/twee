@@ -1,0 +1,68 @@
+diff -r d845f4b303d6 misc/Test.hs
+--- a/misc/Test.hs	Tue Jun 20 15:58:21 2023 +0200
++++ b/misc/Test.hs	Tue Nov 28 16:44:11 2023 +0100
+@@ -165,11 +165,14 @@
+           [(2, do { t <- arbitrary; ops <- arbOps (t:ts); return (Add t:ops) })] ++
+           [(1, do { t <- elements ts; ops <- arbOps (delete t ts); return (Delete t:ops) }) | not (null ts)]
+   shrink (IndexOps ops) =
+-    IndexOps <$> shrinkList shr ops
++    IndexOps <$> filter (ok []) (shrinkList shr ops)
+     where
+       shr (Add t) = Add <$> shrink t
+       shr (Delete t) = Delete <$> shrink t
+ 
++      ok ts (Add t:ops) = ok (t:ts) ops
++      ok ts (Delete t:ops) = t `elem` ts && ok (delete t ts) ops
++      ok _ [] = True
+ 
+ prop_index_invariant :: IndexOps Func -> Property
+ prop_index_invariant (IndexOps ops) =
+diff -r d845f4b303d6 src/Twee/Index.hs
+--- a/src/Twee/Index.hs	Tue Jun 20 15:58:21 2023 +0200
++++ b/src/Twee/Index.hs	Tue Nov 28 16:44:11 2023 +0100
+@@ -170,12 +170,12 @@
+     atom (App f _) = con f
+ 
+ -- Smart constructor for Index.
+-index :: [a] -> Array (Index f a) -> Numbered (Index f a) -> Index f a
+-index here fun var =
++index :: Bool -> [a] -> Array (Index f a) -> Numbered (Index f a) -> Index f a
++index buggy here fun var =
+   case (here, fun', Numbered.toList var') of
+     ([], [], []) ->
+       Nil
+-    ([], [(f, idx)], []) ->
++    ([], [(f, idx)], []) | not buggy ->
+       idx{minSize_ = succ (minSize_ idx),
+           prefix = buildList (con (Core.F f) `mappend` builder (prefix idx))}
+     ([], [], [(x, idx)]) ->
+@@ -230,20 +230,26 @@
+         aux (t:syms) ts idx{prefix = us, minSize_ = minSize_ idx-1}
+     aux [] t idx@Index{prefix = Cons{}} =
+       aux [] t (expand idx)
++    aux (sym:syms) t idx =
++      addPrefix (reverse syms) $ addSym sym $ aux [] t idx
++      where
++        addSym (Var x) idx = index False [] Array.newArray (Numbered.singleton (var_id x) idx)
++        addSym (App f _) idx = index buggy [] (Array.singleton (fun_id f) idx) Numbered.empty
++        buggy = length syms >= 3
+     aux syms@(_:_) t idx =
+       addPrefix (reverse syms) $ aux [] t idx
+ 
+     -- Empty prefix
+     aux [] Empty idx =
+-      index (f v (here idx)) (fun idx) (var idx)
++      index False (f v (here idx)) (fun idx) (var idx)
+     aux [] ConsSym{hd = App f _, rest = u} idx =
+-      index (here idx)
++      index False (here idx)
+         (update (fun_id f) idx' (fun idx))
+         (var idx)
+       where
+         idx' = aux [] u (fun idx ! fun_id f)
+     aux [] ConsSym{hd = Var x, rest = u} idx =
+-      index (here idx) (fun idx)
++      index False (here idx) (fun idx)
+         (Numbered.modify (var_id x) Nil (aux [] u) (var idx))
+ 
+ -- Helper for modify:

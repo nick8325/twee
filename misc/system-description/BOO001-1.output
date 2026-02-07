@@ -1,0 +1,34 @@
+Command-line arguments: --lhs-weight 9 --flip-ordering --complete-subsets --normalise-queue-percent 10 --cp-renormalise-threshold 10
+
+% SZS status Unsatisfiable
+
+% SZS output start CNFRefutation
+cnf(c1, negated_conjecture, inverse(inverse(a))!=a, file('BOO001-1.p', prove_inverse_is_self_cancelling)).
+cnf(c2, axiom, multiply(X, Y, inverse(Y))=X, file('BOO001-1.p', right_inverse)).
+cnf(c3, plain, multiply(X2, X3, inverse(X3))=X2, inference(substitution, [status(thm)], [c2])).
+cnf(c4, plain, X2=multiply(X2, X3, inverse(X3)), inference(symmetry, [status(thm)], [c3])).
+cnf(c5, plain, multiply(X3, inverse(X3), X2)=multiply(X3, inverse(X3), multiply(X2, X3, inverse(X3))), inference(congruence, [status(thm)], [c4])).
+cnf(c6, axiom, multiply(Y2, X2, X2)=X2, file('BOO001-1.p', ternary_multiply_1)).
+cnf(c7, plain, multiply(X3, X2, X2)=X2, inference(substitution, [status(thm)], [c6])).
+cnf(c8, plain, X2=multiply(X3, X2, X2), inference(symmetry, [status(thm)], [c7])).
+cnf(c9, plain, multiply(X2, X5, multiply(X3, X2, X4))=multiply(multiply(X3, X2, X2), X5, multiply(X3, X2, X4)), inference(congruence, [status(thm)], [c8])).
+cnf(c10, axiom, multiply(multiply(V, W, X2), Y2, multiply(V, W, Z))=multiply(V, W, multiply(X2, Y2, Z)), file('BOO001-1.p', associativity)).
+cnf(c11, plain, multiply(multiply(X5, X4, X4), X3, multiply(X5, X4, X2))=multiply(X5, X4, multiply(X4, X3, X2)), inference(substitution, [status(thm)], [c10])).
+cnf(c12, plain, multiply(X4, X3, multiply(X5, X4, X2))=multiply(X5, X4, multiply(X4, X3, X2)), inference(transitivity, [status(thm)], [c9, c11])).
+cnf(c13, plain, multiply(X4, X3, multiply(X2, X4, X3))=multiply(X2, X4, multiply(X4, X3, X3)), inference(substitution, [status(thm)], [c12])).
+cnf(c14, plain, multiply(X3, X2, X2)=X2, inference(substitution, [status(thm)], [c6])).
+cnf(c15, plain, multiply(X2, X4, multiply(X4, X3, X3))=multiply(X2, X4, X3), inference(congruence, [status(thm)], [c14])).
+cnf(c16, plain, multiply(X4, X3, multiply(X2, X4, X3))=multiply(X2, X4, X3), inference(transitivity, [status(thm)], [c13, c15])).
+cnf(c17, plain, multiply(X3, inverse(X3), multiply(X2, X3, inverse(X3)))=multiply(X2, X3, inverse(X3)), inference(substitution, [status(thm)], [c16])).
+cnf(c18, plain, multiply(X2, X3, inverse(X3))=X2, inference(substitution, [status(thm)], [c2])).
+cnf(c19, plain, multiply(X3, inverse(X3), multiply(X2, X3, inverse(X3)))=X2, inference(transitivity, [status(thm)], [c17, c18])).
+cnf(c20, plain, multiply(X3, inverse(X3), X2)=X2, inference(transitivity, [status(thm)], [c5, c19])).
+cnf(c21, plain, multiply(X2, inverse(X2), inverse(inverse(X2)))=inverse(inverse(X2)), inference(substitution, [status(thm)], [c20])).
+cnf(c22, plain, inverse(inverse(X2))=multiply(X2, inverse(X2), inverse(inverse(X2))), inference(symmetry, [status(thm)], [c21])).
+cnf(c23, plain, multiply(X2, inverse(X2), inverse(inverse(X2)))=X2, inference(substitution, [status(thm)], [c2])).
+cnf(c24, plain, inverse(inverse(X2))=X2, inference(transitivity, [status(thm)], [c22, c23])).
+cnf(c25, plain, inverse(inverse(a))=a, inference(substitution, [status(thm)], [c24])).
+cnf(c26, plain, $false, inference(resolution, [status(thm)], [c1, c25])).
+% SZS output end CNFRefutation
+
+RESULT: Unsatisfiable (the axioms are contradictory).

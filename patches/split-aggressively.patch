@@ -1,0 +1,64 @@
+diff -r fd313a3808d0 src/Twee.hs
+--- a/src/Twee.hs	Thu Feb 05 10:22:18 2026 +0100
++++ b/src/Twee.hs	Sat Feb 07 10:56:10 2026 +0100
+@@ -800,7 +800,7 @@
+       message (DeleteActive active) $
+       deleteActive state active
+     Left (cp, model)
+-      | cp_eqn cp `simplerThan` cp_eqn (active_cp active) ->
++      | all (`simplerThan` cp_eqn (active_cp active)) (map cp_eqn (split cp)) ->
+         flip addActiveSimp active $
+         flip (foldl' (\state cp -> consider config state active_info cp)) (split cp) $
+         message (DeleteActive active) $
+diff -r fd313a3808d0 src/Twee/CP.hs
+--- a/src/Twee/CP.hs	Thu Feb 05 10:22:18 2026 +0100
++++ b/src/Twee/CP.hs	Sat Feb 07 10:56:10 2026 +0100
+@@ -331,32 +331,21 @@
+ 
+     -- The main rule l -> r' or r -> l' or l' = r'
+     [ CriticalPair {
+-        cp_eqn   = l :=: r',
+-        cp_top   = eraseExcept (vars l) cp_top,
+-        cp_proof = eraseExcept (vars l) cp_proof }
+-    | ord == Just GT ] ++
+-    [ CriticalPair {
+-        cp_eqn   = r :=: l',
+-        cp_top   = eraseExcept (vars r) cp_top,
+-        cp_proof = Proof.symm (eraseExcept (vars r) cp_proof) }
+-    | ord == Just LT ] ++
+-    [ CriticalPair {
+-        cp_eqn   = l' :=: r',
++        cp_eqn   = if ord == Just LT then r' :=: l' else l' :=: r',
+         cp_top   = eraseExcept (vars l) $ eraseExcept (vars r) cp_top,
+-        cp_proof = eraseExcept (vars l) $ eraseExcept (vars r) cp_proof }
+-    | ord == Nothing ] ++
++        cp_proof = eraseExcept (vars l) $ eraseExcept (vars r) (if ord == Just LT then Proof.symm cp_proof else cp_proof) } ] ++
+ 
+     -- Weak rules l -> l' or r -> r'
+     [ CriticalPair {
+         cp_eqn   = l :=: l',
+         cp_top   = Nothing,
+         cp_proof = cp_proof `Proof.trans` Proof.symm (erase ls cp_proof) }
+-    | not (null ls), ord /= Just GT ] ++
++    | not (null ls) ] ++
+     [ CriticalPair {
+         cp_eqn   = r :=: r',
+         cp_top   = Nothing,
+         cp_proof = Proof.symm cp_proof `Proof.trans` erase rs cp_proof }
+-    | not (null rs), ord /= Just LT ]
++    | not (null rs) ]
+     where
+       ord = orientTerms l' r'
+       l' = erase ls l
+diff -r fd313a3808d0 src/Twee/Equation.hs
+--- a/src/Twee/Equation.hs	Thu Feb 05 10:22:18 2026 +0100
++++ b/src/Twee/Equation.hs	Sat Feb 07 10:56:10 2026 +0100
+@@ -32,7 +32,7 @@
+   -- If the two terms have the same skeleton,
+   -- then take whichever orientation gives a simpler equation
+   | gl == gr =
+-    if eq1 == eq2 || orderedSimplerThan eq1 eq2 then eq1 else eq2
++    if eq1 == eq2 || orderedSimplerThan eq1 eq2 then eq2 else eq1
+   -- Otherwise, the LHS should be the term with the greater skeleton
+   | gl `lessEq` gr = eq2
+   | otherwise = eq1

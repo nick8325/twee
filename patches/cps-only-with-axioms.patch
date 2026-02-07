@@ -1,0 +1,63 @@
+diff -r d845f4b303d6 src/Twee.hs
+--- a/src/Twee.hs	Tue Jun 20 15:58:21 2023 +0200
++++ b/src/Twee.hs	Fri Nov 03 18:02:17 2023 +0100
+@@ -185,7 +185,8 @@
+   stampWith "make critical pair" length
+   [ makePassive config overlap
+   | ok rule,
+-    overlap <- overlaps (index_oriented st_rules) (filter ok rules) rule ]
++    overlap <- overlaps (index_oriented st_rules) (filter ok rules) rule,
++    info_axiom (active_info (overlap_rule1 overlap)) ]
+   where
+     rules = IntMap.elems st_active_set
+     ok rule = the rule < Depth cfg_max_cp_depth
+@@ -338,7 +339,8 @@
+       Info {
+         -- XXX factor out depth calculation
+         info_depth = succ (max (info_depth i1) (info_depth i2)),
+-        info_max = IntSet.union (info_max i1) (info_max i2) }
++        info_max = IntSet.union (info_max i1) (info_max i2),
++        info_axiom = False }
+ 
+ ----------------------------------------------------------------------
+ -- * Active rewrite rules.
+@@ -371,14 +373,17 @@
+ data Info =
+   Info {
+     info_depth :: {-# UNPACK #-} !Depth,
+-    info_max   :: !IntSet }
++    info_max   :: !IntSet,
++    info_axiom :: !Bool }
+ 
+ instance Eq (Active f) where
+   (==) = (==) `on` active_id
+ 
+ instance Function f => Pretty (Active f) where
+   pPrint Active{..} =
+-    pPrint active_id <#> text "." <+> pPrint (canonicalise active_rule)
++    pPrint active_id <#> text "." <+> status <+> pPrint (canonicalise active_rule)
++    where
++      status = if info_axiom active_info then "(axiom)" else mempty
+ 
+ instance Has (Active f) Id where the = active_id
+ instance Has (Active f) Depth where the = info_depth . active_info
+@@ -513,7 +518,7 @@
+ addAxiom :: Function f => Config f -> State f -> Axiom f -> State f
+ addAxiom config state axiom =
+   consider config state
+-    Info { info_depth = 0, info_max = IntSet.fromList [axiom_number axiom | cfg_complete_subsets config] }
++    Info { info_depth = 0, info_max = IntSet.fromList [axiom_number axiom | cfg_complete_subsets config], info_axiom = True }
+     CriticalPair {
+       cp_eqn = axiom_eqn axiom,
+       cp_top = Nothing,
+@@ -685,7 +690,9 @@
+ 
+ {-# INLINEABLE interreduce1 #-}
+ interreduce1 :: Function f => Config f -> State f -> Active f -> State f
+-interreduce1 config@Config{..} state active@Active{..} =
++interreduce1 config@Config{..} state active@Active{..}
++  | info_axiom active_info = state
++  | otherwise =
+   -- Exclude the active from the rewrite rules when testing
+   -- joinability, otherwise it will be trivially joinable.
+   case

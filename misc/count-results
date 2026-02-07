@@ -1,0 +1,35 @@
+#!/bin/zsh
+for i in default/*; do
+    prob=$(basename $i)
+    printf "%s " $prob
+    for dir in $*; do
+        printf "%s " $(wc -l $dir/$prob | awk '{print $1}')
+    done
+    printf "\n"
+done | awk '
+    {
+        winner=1
+        min=$2
+        tie=0
+        for (i = 3; i <= NF; i++) {
+            if ($i < min) {
+                winner=i-1
+                min=$i
+                tie=0
+            } else if ($i == min) {
+                tie=1
+            }
+        }
+
+        if (!tie) {
+            print $1, winner
+            count[winner]++
+        }
+    }
+
+    END {
+        for (i in count) {
+            print i, count[i]
+        }
+    }
+'

@@ -1,0 +1,113 @@
+<HR><!------------------------------------------------------------------------>
+<H2>Twee 2.6</H2>
+Nick Smallbone<BR>
+Chalmers University of Technology, Sweden<BR>
+
+<H3>Architecture</H3>
+
+Twee 2.6 [Sma21] is a theorem prover for unit equality problems
+based on unfailing completion [BDP89]. It implements a DISCOUNT loop,
+where the active set contains rewrite rules (and unorientable
+equations) and the passive set contains critical pairs.
+The basic calculus is not goal-directed, but Twee implements a
+transformation which improves goal direction for many problems.
+<P>
+Twee features ground joinability testing [MN90] and a connectedness test
+[BD88], which together eliminate many redundant inferences in the
+presence of unorientable equations.
+The ground joinability test performs case splits on the order of
+variables, in the style of [MN90], and discharges individual cases by
+rewriting modulo a variable ordering.
+<P>
+This year's version has fixes for some completeness bugs which allows
+some slightly more aggressive redundancy criteria to be used.
+
+<H3>Strategies</H3>
+
+Twee's strategy is simple and it does not tune its heuristics or
+strategy based on the input problem.
+The term ordering is always KBO; by default, functions are ordered by
+number of occurrences and have weight 1. 
+The proof loop repeats the following steps:
+<UL>
+    <LI> Select and normalise the lowest-scored critical pair, and if
+         it is not redundant, add it as a rewrite rule to the active set.
+    <LI> Normalise the active rules with respect to each other.
+    <LI> Normalise the goal with respect to the active rules.
+</UL>
+<P>
+Each critical pair is scored using a weighted sum of the weight of
+both of its terms. Terms are treated as DAGs when
+computing weights, i.e., duplicate subterms are only counted once per
+term.
+<P>
+For CASC, to take advantage of multiple cores, several
+versions of Twee run in parallel using different parameters (e.g.,
+with the goal-directed transformation on or off).
+
+<H3>Implementation</H3>
+
+Twee is written in Haskell. Terms are represented as array-based
+flatterms for efficient unification and matching. Rewriting uses a
+perfect discrimination tree.
+<P>
+The passive set is represented compactly (12 bytes per critical pair)
+by only storing the information needed to reconstruct the critical pair,
+not the critical pair itself. Because of this, Twee can run for an
+hour or more without exhausting memory.
+<P>
+Twee uses an LCF-style kernel: all rules in the active set come with a
+certified proof object which traces back to the input axioms. When a
+conjecture is proved, the proof object is transformed into a
+human-readable proof. Proof construction does not harm efficiency
+because the proof kernel is invoked only when a new rule is accepted.
+In particular, reasoning about the passive set does not invoke the
+kernel.
+<P>
+Twee can be downloaded as open source from:
+<PRE><A HREF="https://nick8325.github.io/twee/">https://nick8325.github.io/twee</A></PRE>
+
+<H3>Expected Competition Performance</H3>
+
+Competing with the top provers.
+
+<H3>References</H3>
+<DL>
+<DT> Sma21
+</DT><DD> Smallbone, N. (2021),
+     <STRONG>Twee: An Equational Theorem Prover (System Description)</STRONG>,
+     Platzer, A., Sutcliffe, G.,
+     <EM>Proceeedings of the 28th International Conference on Automated Deduction</EM>,
+     Lecture Notes in Computer Science 12699,
+     Springer.
+</DD>
+<DT> BDP89
+</DT><DD> Bachmair L., Dershowitz N., Plaisted D.A. (1989),
+     <STRONG>Completion Without Failure</STRONG>,
+     Ait-Kaci H., Nivat M.,
+     <EM>Resolution of Equations in Algebraic Structures</EM>,
+     pp.1-30,
+     Academic Press.
+</DD>
+<DT> MN90
+</DT><DD> Martin U., Nipkow T. (1990),
+     <STRONG>Ordered Rewriting and Confluence</STRONG>,
+     Stickel M.E.,
+     <EM>10th International Conference on Automated Deduction</EM>
+     (Kaiserslautern, Germany),
+     pp.366-380,
+     Lecture Notes in Computer Science 449,
+     Springer.
+</DD>
+<DT> BD88
+</DT><DD> Bachmair L., Dershowitz N. (1988),
+     <STRONG>Critical Pair Criteria for Completion</STRONG>,
+     <EM>Journal of Symbolic Computation</EM> 6(1),
+     pp.1-18,
+     Elsevier.
+</DD>
+</DL>
+<P>
+
+<HR><!------------------------------------------------------------------------>
+

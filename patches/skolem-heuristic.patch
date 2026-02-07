@@ -1,0 +1,387 @@
+diff -r c12fe9fb28c7 executable/SequentialMain.hs
+--- a/executable/SequentialMain.hs	Sat Mar 16 10:00:48 2024 +0100
++++ b/executable/SequentialMain.hs	Fri Jun 07 22:21:27 2024 +0200
+@@ -2,6 +2,7 @@
+ {-# OPTIONS_GHC -flate-specialise #-}
+ module SequentialMain(main) where
+ 
++import Debug.Trace
+ import Control.Monad
+ import Data.Char
+ import Data.Either
+@@ -36,6 +37,7 @@
+ import System.Console.ANSI
+ import Data.Symbol
+ import Twee.Profile
++import Data.Set(Set)
+ 
+ data MainFlags =
+   MainFlags {
+@@ -56,11 +58,12 @@
+     flags_equals_transformation :: Bool,
+     flags_distributivity_heuristic :: Bool,
+     flags_kbo_weight0 :: Bool,
+-    flags_goal_heuristic :: Bool }
++    flags_goal_heuristic :: Bool,
++    flags_skolem_heuristic :: Bool }
+ 
+ parseMainFlags :: OptionParser MainFlags
+ parseMainFlags =
+-  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> flattenRegeneralise <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic <*> kboWeight0 <*> goalHeuristic
++  MainFlags <$> proof <*> trace <*> formal <*> explain <*> flipOrdering <*> giveUp <*> flatten <*> flattenNonGround <*> flattenLightly <*> flattenAll <*> flattenRegeneralise <*> eliminate <*> backwardsGoal <*> flattenBackwardsGoal <*> equalsTransformation <*> distributivityHeuristic <*> kboWeight0 <*> goalHeuristic <*> skolemHeuristic
+   where
+     proof =
+       inGroup "Output options" $
+@@ -132,6 +135,10 @@
+       expert $
+       inGroup "Completion heuristics" $
+       bool "goal-heuristic" ["Use the CP weighting heuristic from Anantharaman and Andrianarievelo (off by default)."] False
++    skolemHeuristic =
++      expert $
++      inGroup "Completion heuristics" $
++      bool "skolem-heuristic" ["Use special heuristics for Skolem functions (off by default)."] False
+     eliminate =
+       inGroup "Proof presentation" $
+       concat <$>
+@@ -345,8 +352,10 @@
+     con_id     :: {-# UNPACK #-} !Jukebox.Function,
+     con_arity  :: {-# UNPACK #-} !Int,
+     con_size   :: !Integer,
+-    con_weight :: !Integer,
+-    con_bonus  :: !Bool }
++    con_weight :: !Rational,
++    con_weight' :: !Float,
++    con_bonus  :: !Bool,
++    con_skolem :: !Bool }
+   deriving (Eq, Ord, Labelled)
+ 
+ data Precedence = Precedence !Bool !Bool !(Maybe Int) !Int
+@@ -354,10 +363,12 @@
+ 
+ instance KBO.Sized Constant where
+   size Minimal = 1
+-  size Constant{..} = con_size
++  size Constant{..} = fromIntegral con_size
+ instance KBO.Weighted Constant where
+   argWeight Minimal = 1
+   argWeight Constant{..} = con_weight
++  argWeight' Minimal = 1
++  argWeight' Constant{..} = con_weight'
+ 
+ instance Pretty Constant where
+   pPrint Minimal = text "?"
+@@ -395,6 +406,8 @@
+   isTrue c = SequentialMain.isTrue (con_id c)
+   isFalse Minimal = False
+   isFalse c = SequentialMain.isFalse (con_id c)
++  isSkolem Minimal = False
++  isSkolem c = con_skolem c
+ 
+ data TweeContext =
+   TweeContext {
+@@ -406,8 +419,8 @@
+     ctx_type    :: Type }
+ 
+ -- Convert back and forth between Twee and Jukebox.
+-tweeConstant :: MainFlags -> HornFlags -> TweeContext -> Precedence -> Jukebox.Function -> Constant
+-tweeConstant MainFlags{..} flags TweeContext{..} prec fun
++tweeConstant :: MainFlags -> HornFlags -> TweeContext -> Set Jukebox.Function -> Precedence -> Jukebox.Function -> Constant
++tweeConstant MainFlags{..} flags TweeContext{..} skolem prec fun
+   | fun == ctx_minimal = Minimal
+   | otherwise =
+     Constant {
+@@ -415,12 +428,19 @@
+       con_id = fun,
+       con_arity = Jukebox.arity fun,
+       con_size = if flags_kbo_weight0 && Jukebox.arity fun >= 2 then 0 else 1,
+-      con_weight = 1,
+-      con_bonus = bonus fun }
++      con_weight = weight,
++      con_weight' = fromRational weight,
++      con_bonus = bonus fun,
++      con_skolem = False } -- isSkolem fun }
+   where
+     bonus fun =
+       (isIfeq fun && encoding flags /= Asymmetric2) ||
+       SequentialMain.isEquals fun
++    isSkolem fun = flags_skolem_heuristic && (fun `Set.member` skolem || hasLabel "skolem" (name fun))
++    weight
++      | isSkolem fun = 0.5
++      -- | flags_skolem_heuristic && hasLabel "equals" (name fun) = 0.7
++      | otherwise = 1
+ 
+ isType :: Jukebox.Function -> Bool
+ isType fun =
+@@ -446,13 +466,13 @@
+ jukeboxFunction _ Constant{..} = con_id
+ jukeboxFunction TweeContext{..} Minimal = ctx_minimal
+ 
+-tweeTerm :: MainFlags -> HornFlags -> TweeContext -> (Jukebox.Function -> Precedence) -> Jukebox.Term -> Term Constant
+-tweeTerm flags horn ctx prec t = build (tm t)
++tweeTerm :: MainFlags -> HornFlags -> TweeContext -> (Jukebox.Function -> Precedence) -> Set Jukebox.Function -> Jukebox.Term -> Term Constant
++tweeTerm flags horn ctx prec skolem t = build (tm t)
+   where
+     tm (Jukebox.Var (x ::: _)) =
+       var (V (fromIntegral (Label.labelNum (Label.label x))))
+     tm (f :@: ts) =
+-      app (fun (tweeConstant flags horn ctx (prec f) f)) (map tm ts)
++      app (fun (tweeConstant flags horn ctx skolem (prec f) f)) (map tm ts)
+ 
+ jukeboxTerm :: TweeContext -> Term Constant -> Jukebox.Term
+ jukeboxTerm TweeContext{..} (Var (V x)) =
+@@ -654,6 +674,11 @@
+ runTwee :: GlobalFlags -> TSTPFlags -> HornFlags -> [String] -> Config Constant -> CP.Config -> MainFlags -> (IO () -> IO ()) -> Problem Clause -> IO Answer
+ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlags{..} later obligs = {-# SCC runTwee #-} do
+   let
++    -- Treat functions only occurring in the goal as Skolem functions 
++    skolems =
++      Set.fromList [ f | Input{what = Clause (Bind _ [Neg eq])} <- obligs, f <- functions eq ] Set.\\ --
++      Set.fromList [ f | Input{what = Clause (Bind _ [Pos eq])} <- obligs, f <- functions eq ]
++
+     -- Encode whatever needs encoding in the problem
+     obligs1
+       | flags_flatten_goals_lightly = flattenGoals flags_flatten_backwards_goal flags_flatten_nonground False False obligs
+@@ -696,7 +721,7 @@
+ 
+     -- Translate everything to Twee.
+     toEquation (t, u) =
+-      canonicalise (tweeTerm flags horn ctx prec t :=: tweeTerm flags horn ctx prec u)
++      canonicalise (tweeTerm flags horn ctx prec skolems t :=: tweeTerm flags horn ctx prec skolems u)
+ 
+     axiomCompare ax1 ax2
+       | ax1' `simplerThan` ax2' = LT
+@@ -726,13 +751,13 @@
+     goalOccs = occs (map goal_eqn goals)
+     score depth eqn
+       | flags_goal_heuristic =
+-        fromIntegral (CP.score cpConfig depth eqn) *
++        (CP.score cpConfig depth eqn) *
+         product
+           [ pos (IntMap.findWithDefault 0 f eqnNests - IntMap.findWithDefault 0 f goalNests) *
+             pos (IntMap.findWithDefault 0 f eqnOccs - IntMap.findWithDefault 0 f goalOccs)
+           | f <- IntMap.keys eqnNests ] -- skip constants
+       | otherwise = 
+-        fromIntegral (CP.score cpConfig depth eqn)
++        (CP.score cpConfig depth eqn)
+       where
+         eqnNests = nests eqn
+         eqnOccs = occs eqn
+diff -r c12fe9fb28c7 src/Twee.hs
+--- a/src/Twee.hs	Sat Mar 16 10:00:48 2024 +0100
++++ b/src/Twee.hs	Fri Jun 07 22:21:27 2024 +0200
+@@ -105,7 +105,7 @@
+     cfg_set_join_goals = True,
+     cfg_always_simplify = False,
+     cfg_complete_subsets = False,
+-    cfg_score_cp = \d eqn -> fromIntegral (score CP.defaultConfig d eqn),
++    cfg_score_cp = score CP.defaultConfig,
+     cfg_join = Join.defaultConfig,
+     cfg_proof_presentation = Proof.defaultConfig,
+     cfg_eliminate_axioms = [],
+@@ -169,6 +169,7 @@
+ 
+ instance Function f => Pretty (Message f) where
+   pPrint (NewActive rule) = pPrint rule
++    $$ case cp_top (active_cp rule) of { Just t -> text "  (normal forms of term" <+> pPrint t <#> text ")"; Nothing -> pPrintEmpty }
+   pPrint (NewEquation eqn) =
+     text "  (hard)" <+> pPrint eqn
+   pPrint (DeleteActive rule) =
+diff -r c12fe9fb28c7 src/Twee/Base.hs
+--- a/src/Twee/Base.hs	Sat Mar 16 10:00:48 2024 +0100
++++ b/src/Twee/Base.hs	Fri Jun 07 22:21:27 2024 +0200
+@@ -15,7 +15,7 @@
+   Minimal(..), minimalTerm, isMinimal, erase, eraseExcept, ground,
+   Ordered(..), lessThan, orientTerms,
+   EqualsBonus(..), isTrueTerm, isFalseTerm, decodeEquality,
+-  Strictness(..), Function) where
++  Strictness(..), Function, Weighted(..)) where
+ 
+ import Prelude hiding (lookup)
+ import Control.Monad
+@@ -242,17 +242,18 @@
+ -- | For types which have a notion of size.
+ -- | The collection of constraints which the type of function symbols must
+ -- satisfy in order to be used by twee.
+-type Function f = (Ordered f, Minimal f, PrettyTerm f, EqualsBonus f, Labelled f)
++type Function f = (Ordered f, Minimal f, PrettyTerm f, EqualsBonus f, Labelled f, Weighted f)
+ 
+ -- | A hack for encoding Horn clauses. See 'Twee.CP.Score'.
+ -- The default implementation of 'hasEqualsBonus' should work OK.
+ class EqualsBonus f where
+   hasEqualsBonus :: f -> Bool
+   hasEqualsBonus _ = False
+-  isEquals, isTrue, isFalse :: f -> Bool
++  isEquals, isTrue, isFalse, isSkolem :: f -> Bool
+   isEquals _ = False
+   isTrue _ = False
+   isFalse _ = False
++  isSkolem _ = False
+ 
+ isFalseTerm, isTrueTerm :: (EqualsBonus f, Labelled f) => Term f -> Bool
+ isFalseTerm (App false _) = isFalse false
+@@ -271,3 +272,13 @@
+   isEquals = isEquals . fun_value
+   isTrue = isTrue . fun_value
+   isFalse = isFalse . fun_value
++  isSkolem = isSkolem . fun_value
++
++class Weighted f where
++  argWeight :: f -> Rational
++  argWeight' :: f -> Float
++
++instance (Weighted f, Labelled f) => Weighted (Fun f) where
++  argWeight = argWeight . fun_value
++  argWeight' = argWeight' . fun_value
++
+diff -r c12fe9fb28c7 src/Twee/CP.hs
+--- a/src/Twee/CP.hs	Sat Mar 16 10:00:48 2024 +0100
++++ b/src/Twee/CP.hs	Fri Jun 07 22:21:27 2024 +0200
+@@ -16,8 +16,10 @@
+ import qualified Twee.Proof as Proof
+ import Twee.Proof(Derivation, congPath)
+ import Data.Bits
++import Debug.Trace
+ import Data.Serialize
+ import Data.Int
++import Twee.KBO
+ 
+ -- | The set of positions at which a term can have critical overlaps.
+ data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
+@@ -29,18 +31,19 @@
+   show = show . ChurchList.toList . positionsChurch
+ 
+ -- | Calculate the set of positions for a term.
+-positions :: Term f -> Positions f
++positions :: Function f => Term f -> Positions f
+ positions t = aux 0 Set.empty (singleton t)
+   where
+     -- Consider only general superpositions.
+     aux !_ !_ Empty = NilP
+     aux n m (Cons (Var _) t) = aux (n+1) m t
+-    aux n m ConsSym{hd = t@App{}, rest = u}
+-      | t `Set.member` m = aux (n+1) m u
+-      | otherwise = ConsP n (aux (n+1) (Set.insert t m) u)
++    aux n m ConsSym{hd = t@(App f _), tl = u, rest = v}
++      | t `Set.member` m = aux (n+1) m v
++      | isSkolem f = trace ("skipping over " ++ prettyShow f) $ ConsP n (aux (n+len t) (Set.insert t m) u)
++      | otherwise = ConsP n (aux (n+1) (Set.insert t m) v)
+ 
+ -- | Calculate the set of positions for a rule.
+-positionsRule :: Rule f -> Positions2 f
++positionsRule :: Function f => Rule f -> Positions2 f
+ positionsRule rule
+   | oriented (orientation rule) ||
+     canonicalise rule == canonicalise (backwards rule) =
+@@ -223,11 +226,11 @@
+ -- where l is the biggest term and r is the smallest,
+ -- and variables have weight 1 and functions have weight cfg_funweight.
+ {-# INLINEABLE score #-}
+-score :: Function f => Config -> Depth -> Equation f -> Int
++score :: (Function f, Weighted f) => Config -> Depth -> Equation f -> Float
+ score Config{..} depth (l :=: r) =
+-  fromIntegral depth * cfg_depthweight +
+-  (m + n) * cfg_rhsweight +
+-  intMax m n * (cfg_lhsweight - cfg_rhsweight)
++  fromIntegral depth * fromIntegral cfg_depthweight +
++  (m + n) * fromIntegral cfg_rhsweight +
++  max m n * fromIntegral (cfg_lhsweight - cfg_rhsweight)
+   where
+     m = size' 0 (singleton l)
+     n = size' 0 (singleton r)
+@@ -235,19 +238,22 @@
+     size' !n Empty = n
+     size' n (Cons t ts)
+       | len t > 1, t `isSubtermOfList` ts =
+-        size' (n+cfg_dupcost+cfg_dupfactor*len t) ts
++        size' (n+fromIntegral (cfg_dupcost+cfg_dupfactor*len t)) ts
+     size' n ts
+       | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
+         not (isVar a),
+         not (isVar b),
+         hasEqualsBonus (fun_value f),
+         Just sub <- unify a b =
+-        size' (n+cfg_funweight) ws `min`
++        size' (n+fromIntegral cfg_funweight) ws `min`
+         size' (size' (n+1) (subst sub us)) (subst sub vs)
+     size' n (Cons (Var _) ts) =
+-      size' (n+cfg_varweight) ts
+-    size' n ConsSym{hd = App{}, rest = ts} =
+-      size' (n+cfg_funweight) ts
++      size' (n+fromIntegral cfg_varweight) ts
++    size' n ConsSym{hd = App f ts, tl = us, rest = vs} =
++      case argWeight' f of
++        1 -> size' (n+fromIntegral cfg_funweight) vs
++        0 -> size' n us
++        w -> size' (n+fromIntegral cfg_funweight+w*size' 0 ts) us
+ 
+ ----------------------------------------------------------------------
+ -- * Higher-level handling of critical pairs.
+diff -r c12fe9fb28c7 src/Twee/KBO.hs
+--- a/src/Twee/KBO.hs	Sat Mar 16 10:00:48 2024 +0100
++++ b/src/Twee/KBO.hs	Fri Jun 07 22:21:27 2024 +0200
+@@ -97,7 +97,7 @@
+       foldr (add (a * argWeight f)) (k + a * size f, m) (unpack ts)
+     add a (Var x) (k, m) = (k, Map.insertWith (+) x a m)
+ 
+-minimumIn :: (Function f, Sized f) => Model f -> Map Var Integer -> Maybe Integer
++minimumIn :: (Function f, Sized f) => Model f -> Map Var Rational -> Maybe Rational
+ minimumIn model t =
+   liftM2 (+)
+     (fmap sum (mapM minGroup (varGroups model)))
+@@ -154,15 +154,9 @@
+ 
+ class Sized a where
+   -- | Compute the size.
+-  size  :: a -> Integer
+-
+-class Weighted f where
+-  argWeight :: f -> Integer
++  size  :: a -> Rational
+ 
+-instance (Weighted f, Labelled f) => Weighted (Fun f) where
+-  argWeight = argWeight . fun_value
+-
+-weightedVars :: (Weighted f, Labelled f) => Term f -> [(Var, Integer)]
++weightedVars :: (Weighted f, Labelled f) => Term f -> [(Var, Rational)]
+ weightedVars t = collate sum (loop 1 t)
+   where
+     loop k (Var x) = [(x, k)]
+diff -r c12fe9fb28c7 tests/factor.p
+--- a/tests/factor.p	Sat Mar 16 10:00:48 2024 +0100
++++ b/tests/factor.p	Fri Jun 07 22:21:27 2024 +0200
+@@ -19,21 +19,21 @@
+ cnf('minus', axiom,
+     X + -X = '0').
+ 
+-cnf(two, axiom, two = '1'+'1').
+-cnf(three, axiom, three = '1'+two).
+-cnf(four, axiom, four = '1'+three).
+-cnf(five, axiom, five = '1'+four).
+-cnf(six, axiom, six = '1'+five).
+-cnf(seven, axiom, seven = '1'+six).
+-cnf(eight, axiom, eight = '1'+seven).
+-cnf(nine, axiom, nine = '1'+eight).
+-cnf(minus_six, axiom, minus_four = -four).
+-cnf(minus_six, axiom, minus_six = -six).
++%cnf(two, axiom, two = '1'+'1').
++%cnf(three, axiom, three = '1'+two).
++%cnf(four, axiom, four = '1'+three).
++%cnf(five, axiom, five = '1'+four).
++%cnf(six, axiom, six = '1'+five).
++%cnf(seven, axiom, seven = '1'+six).
++%cnf(eight, axiom, eight = '1'+seven).
++%cnf(nine, axiom, nine = '1'+eight).
++%cnf(minus_six, axiom, minus_four = -four).
++%cnf(minus_six, axiom, minus_six = -six).
+ 
+-fof(factoring, conjecture,
+-    ?[A,B,C]: ![X]:
+-      (X*(X*X)) + ((minus_six*(X*X)) + ((nine*X) + minus_four)) = ((X +
+-      -'1')*((X + -'1') * (X + -four)))).
++%fof(factoring, conjecture,
++%    ?[A,B,C]: ![X]:
++%      (X*(X*X)) + ((minus_six*(X*X)) + ((nine*X) + minus_four)) = ((X +
++%      -'1')*((X + -'1') * (X + -four)))).
+ 
+ fof(factoring, conjecture,
+     ?[A,B,C]: ![X]:
