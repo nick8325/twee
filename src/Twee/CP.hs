@@ -238,14 +238,20 @@ defaultConfig =
 -- and variables have weight 1 and functions have weight cfg_funweight.
 {-# INLINEABLE score #-}
 score :: Function f => Config -> Depth -> Index f (Hint f) -> Equation f -> Float
-score Config{..} depth hints (l :=: r) =
+score config@Config{..} depth hints (l :=: r) =
   fromIntegral depth * cfg_depthweight +
   (m + n) * cfg_rhsweight +
   max m n * (cfg_lhsweight - cfg_rhsweight)
   where
-    m = size' 0 (singleton l) []
-    n = size' 0 (singleton r) []
+    m = termScore config hints l
+    n = termScore config hints r
 
+-- | Compute a score for a single term.
+{-# INLINE termScore #-}
+termScore :: Function f => Config -> Index f (Hint f) -> Term f -> Float
+termScore Config{..} hints t =
+  size' 0 (singleton t) []
+  where
     size' !_ !_ !_ | False = undefined
     size' n Nil ts =
       case ts of
@@ -257,8 +263,8 @@ score Config{..} depth hints (l :=: r) =
     size' n (Cons t ts) us
       | len t > 1, (sub, Hint{..}):_ <- Index.matches t hints,
         not cfg_resonance || allSubst (\_ t -> case t of { UnsafeCons (Var _) _ -> True; _ -> False }) sub =
+        --trace ("hint: len " ++ show (len t) ++ ", term " ++ prettyShow hint_term ++ ", sub " ++ prettyShow sub) $
         size' (n + hint_cost) ts (map snd (Term.substToList' sub) ++ us)
-        --trace ("hint: len " ++ show (len t) ++ ", new cost " ++ show new_cost ++ ": " ++ prettyShow t) $
     size' n ts xs
       | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
         not (isVar a),
