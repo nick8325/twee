@@ -1,7 +1,7 @@
 -- | An implementation of Knuth-Bendix ordering.
 
 {-# LANGUAGE PatternGuards, BangPatterns #-}
-module Twee.KBO(lessEq, lessIn, lessEqSkolem, Sized(..), Weighted(..)) where
+module Twee.KBO(lessEq, lessIn, lessEqSkolem, Sized(..), ArgWeighted(..)) where
 
 import Twee.Base hiding (lessEq, lessIn, lessEqSkolem)
 import Twee.Equation
@@ -13,7 +13,7 @@ import Control.Monad
 import Twee.Utils
 import Data.Intern
 
-lessEqSkolem :: (Function f, Sized f, Weighted f) => Term f -> Term f -> Bool
+lessEqSkolem :: (Function f, Sized f, ArgWeighted f) => Term f -> Term f -> Bool
 lessEqSkolem !t !u
   | m < n = True
   | m > n = False
@@ -39,7 +39,7 @@ lessEqSkolem (App (Sym f) ts) (App (Sym g) us) =
       in loop ts us
 
 -- | Check if one term is less than another in KBO.
-lessEq :: (Function f, Sized f, Weighted f) => Term f -> Term f -> Bool
+lessEq :: (Function f, Sized f, ArgWeighted f) => Term f -> Term f -> Bool
 lessEq (App f Nil) _ | f == minimal = True
 lessEq (Var x) (Var y) | x == y = True
 lessEq _ (Var _) = False
@@ -76,14 +76,14 @@ lessEq t@(App f ts) u@(App g us) =
 
 -- See "notes/kbo under assumptions" for how this works.
 
-lessIn :: (Function f, Sized f, Weighted f) => Model f -> Term f -> Term f -> Maybe Strictness
+lessIn :: (Function f, Sized f, ArgWeighted f) => Model f -> Term f -> Term f -> Maybe Strictness
 lessIn model t u =
   case sizeLessIn model t u of
     Nothing -> Nothing
     Just Strict -> Just Strict
     Just Nonstrict -> lexLessIn model t u
 
-sizeLessIn :: (Function f, Sized f, Weighted f) => Model f -> Term f -> Term f -> Maybe Strictness
+sizeLessIn :: (Function f, Sized f, ArgWeighted f) => Model f -> Term f -> Term f -> Maybe Strictness
 sizeLessIn model t u =
   case minimumIn model m of
     Just l
@@ -123,7 +123,7 @@ minimumIn model t =
       | k < 0 = Nothing
       | otherwise = Just k
 
-lexLessIn :: (Function f, Sized f, Weighted f) => Model f -> Term f -> Term f -> Maybe Strictness
+lexLessIn :: (Function f, Sized f, ArgWeighted f) => Model f -> Term f -> Term f -> Maybe Strictness
 lexLessIn _ t u | t == u = Just Nonstrict
 lexLessIn cond t u
   | Just a <- fromTerm t,
@@ -157,13 +157,13 @@ class Sized a where
   -- | Compute the size.
   size  :: a -> Integer
 
-class Weighted f where
+class ArgWeighted f where
   argWeight :: f -> Integer
 
-instance (Weighted f, Intern f) => Weighted (Sym f) where
+instance (ArgWeighted f, Intern f) => ArgWeighted (Sym f) where
   argWeight = argWeight . unintern
 
-weightedVars :: (Weighted f, Intern f) => Term f -> [(Var, Integer)]
+weightedVars :: (ArgWeighted f, Intern f) => Term f -> [(Var, Integer)]
 weightedVars t = collate sum (loop 1 t)
   where
     loop k (Var x) = [(x, k)]
@@ -173,7 +173,7 @@ weightedVars t = collate sum (loop 1 t)
 instance (Intern f, Sized f) => Sized (Sym f) where
   size = size . unintern
 
-instance (Intern f, Sized f, Weighted f) => Sized (TermList f) where
+instance (Intern f, Sized f, ArgWeighted f) => Sized (TermList f) where
   size = aux 0
     where
       aux n Nil = n
@@ -181,9 +181,9 @@ instance (Intern f, Sized f, Weighted f) => Sized (TermList f) where
         aux (n + size f + argWeight f * size t) u
       aux n (Cons (Var _) t) = aux (n+1) t
 
-instance (Intern f, Sized f, Weighted f) => Sized (Term f) where
+instance (Intern f, Sized f, ArgWeighted f) => Sized (Term f) where
   size = size . singleton
 
-instance (Intern f, Sized f, Weighted f) => Sized (Equation f) where
+instance (Intern f, Sized f, ArgWeighted f) => Sized (Equation f) where
   size (x :=: y) = size x + size y
 

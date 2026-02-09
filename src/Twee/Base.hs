@@ -14,7 +14,7 @@ module Twee.Base(
   -- * Typeclasses
   Minimal(..), minimalTerm, isMinimal, erase, eraseExcept, ground, skolemise,
   Ordered(..), lessThan, orientTerms,
-  EqualsBonus(..), isTrueTerm, isFalseTerm, decodeEquality,
+  EqualsBonus(..), Weighted(..), isTrueTerm, isFalseTerm, decodeEquality,
   Strictness(..), Function) where
 
 import Prelude hiding (lookup)
@@ -247,7 +247,16 @@ skolemise t = subst (\(V x) -> con (skolem x)) t
 -- | For types which have a notion of size.
 -- | The collection of constraints which the type of function symbols must
 -- satisfy in order to be used by twee.
-type Function f = (Ordered f, Minimal f, PrettyTerm f, EqualsBonus f, Intern f)
+type Function f = (Ordered f, Minimal f, PrettyTerm f, EqualsBonus f, Intern f, Weighted f)
+
+-- | For functions which have a notion of weight.
+-- Used for weighing terms in CP selection.
+class Weighted f where
+  weight :: f -> Float
+  weight _ = 1
+
+instance Weighted f => Weighted (Sym f) where
+  weight = weight . unintern
 
 -- | A hack for encoding Horn clauses. See 'Twee.CP.Score'.
 -- The default implementation of 'hasEqualsBonus' should work OK.

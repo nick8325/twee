@@ -200,22 +200,10 @@ data Config =
   Config {
     cfg_lhsweight :: !Float,
     cfg_rhsweight :: !Float,
-    cfg_funweight :: !Float,
     cfg_varweight :: !Float,
     cfg_depthweight :: !Float,
     cfg_dupcost :: !Float,
-    cfg_dupfactor :: !Float,
-    cfg_resonance :: !Bool }
-
-data Hint f =
-  Hint {
-    hint_term :: {-# UNPACK #-} !(Term f),
-    hint_cost :: {-# UNPACK #-} !Float }
-
-instance Symbolic (Hint f) where
-  type ConstantOf (Hint f) = f
-  termsDL Hint{..} = termsDL hint_term
-  subst_ sub (Hint t c) = Hint (subst_ sub t) c
+    cfg_dupfactor :: !Float }
 
 -- | The default heuristic configuration.
 defaultConfig :: Config
@@ -223,33 +211,31 @@ defaultConfig =
   Config {
     cfg_lhsweight = 4,
     cfg_rhsweight = 1,
-    cfg_funweight = 1,
     cfg_varweight = 6/7,
     cfg_depthweight = 2,
     cfg_dupcost = 1,
-    cfg_dupfactor = 0,
-    cfg_resonance = False }
+    cfg_dupfactor = 0 }
 
 -- | Compute a score for a critical pair.
 
 -- We compute:
 --   cfg_lhsweight * size l + cfg_rhsweight * size r
 -- where l is the biggest term and r is the smallest,
--- and variables have weight 1 and functions have weight cfg_funweight.
+-- and variables have weight cfg_varweight.
 {-# INLINEABLE score #-}
-score :: Function f => Config -> Depth -> Index f (Hint f) -> Equation f -> Float
-score config@Config{..} depth hints (l :=: r) =
+score :: Function f => Config -> Depth -> Equation f -> Float
+score config@Config{..} depth (l :=: r) =
   fromIntegral depth * cfg_depthweight +
   (m + n) * cfg_rhsweight +
   max m n * (cfg_lhsweight - cfg_rhsweight)
   where
-    m = termScore config hints l
-    n = termScore config hints r
+    m = termScore config l
+    n = termScore config r
 
 -- | Compute a score for a single term.
 {-# INLINE termScore #-}
-termScore :: Function f => Config -> Index f (Hint f) -> Term f -> Float
-termScore Config{..} hints t =
+termScore :: Function f => Config -> Term f -> Float
+termScore Config{..} t =
   size' 0 (singleton t) []
   where
     size' !_ !_ !_ | False = undefined
@@ -260,23 +246,18 @@ termScore Config{..} hints t =
     size' n (Cons t ts) us
       | len t > 1, t `isSubtermOfList` ts || any (t `isSubtermOfList`) us =
         size' (n+cfg_dupcost+cfg_dupfactor*fromIntegral (len t)) ts us
-    size' n (Cons t ts) us
-      | len t > 1, (sub, Hint{..}):_ <- Index.matches t hints,
-        not cfg_resonance || allSubst (\_ t -> case t of { UnsafeCons (Var _) _ -> True; _ -> False }) sub =
-        --trace ("hint: len " ++ show (len t) ++ ", term " ++ prettyShow hint_term ++ ", sub " ++ prettyShow sub) $
-        size' (n + hint_cost) ts (map snd (Term.substToList' sub) ++ us)
     size' n ts xs
       | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
         not (isVar a),
         not (isVar b),
         hasEqualsBonus f,
         Just sub <- unify a b =
-        size' (n+cfg_funweight) ws xs `min`
+        size' (n+weight f) ws xs `min`
         size' (n+1) (subst sub us) (subst sub (vs:xs))
     size' n (Cons (Var _) ts) us =
       size' (n+cfg_varweight) ts us
-    size' n ConsSym{hd = App{}, rest = ts} us =
-      size' (n+cfg_funweight) ts us
+    size' n ConsSym{hd = App f _, rest = ts} us =
+      size' (n+weight f) ts us
 
 ----------------------------------------------------------------------
 -- * Higher-level handling of critical pairs.

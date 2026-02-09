@@ -64,7 +64,7 @@ data Config f =
     cfg_set_join_goals            :: Bool,
     cfg_always_simplify           :: Bool,
     cfg_complete_subsets          :: Bool,
-    cfg_score_cp                  :: Depth -> Index f (Hint f) -> Equation f -> Float,
+    cfg_score_cp                  :: Depth -> Hints f -> Equation f -> Float,
     cfg_join                      :: Join.Config,
     cfg_proof_presentation        :: Proof.Config f,
     cfg_eliminate_axioms          :: [Axiom f],
@@ -86,7 +86,7 @@ data State f =
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
     st_queue          :: !(Queue Batch),
-    st_hints          :: !(Index f (Hint f)),
+    st_hints          :: !(Hints f),
     st_next_active    :: {-# UNPACK #-} !Id,
     st_considered     :: {-# UNPACK #-} !Int64,
     st_simplified_at  :: {-# UNPACK #-} !Id,
@@ -113,7 +113,7 @@ defaultConfig =
     cfg_set_join_goals = True,
     cfg_always_simplify = False,
     cfg_complete_subsets = False,
-    cfg_score_cp = \d hints eqn -> score CP.defaultConfig d hints eqn,
+    cfg_score_cp = scoreCP CP.defaultConfig,
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig,
     cfg_eliminate_axioms = [],
@@ -125,6 +125,10 @@ defaultConfig =
     cfg_hint_skel_cost = 1,
     cfg_hint_skel_factor = 0,
     cfg_print_score = False }
+
+-- | Compute cfg_score_cp from the CP configuration.
+scoreCP :: Function f => CP.Config -> Depth -> Hints f -> Equation f -> Float
+scoreCP cfg d hints eqn = score cfg d (bothSides (applyHints hints) eqn)
 
 -- | Does this configuration run the prover in a complete mode?
 configIsComplete :: Config f -> Bool
@@ -609,16 +613,6 @@ addAxiom config state axiom =
       cp_top = Nothing,
       cp_proof = Proof.axiom axiom }
 
--- Add a new hint.
-{-# INLINEABLE addHint #-}
-addHint :: Function f => Config f -> State f -> Term f -> State f
-addHint Config{..} state@State{..} hint =
-  state { st_hints = Index.insert hint (Hint hint cost) st_hints }
-  where
-    cost = fromIntegral (len hint - length (vars hint)) * cfg_hint_skel_factor + cfg_hint_skel_cost +
-      -- Add a cost for duplicated variables (since they only get counted once otherwise)
-      fromIntegral (length (vars hint) - length (usort (vars hint)))
-
 -- Record an equation as being joinable.
 {-# INLINEABLE addJoinable #-}
 addJoinable :: Function f => State f -> Equation f -> State f
@@ -764,6 +758,48 @@ goal n name (t :=: u) =
     goal_expanded_rhs = Map.singleton u (Proof.Refl u),
     goal_lhs = Map.singleton t (t, []),
     goal_rhs = Map.singleton u (u, []) }
+
+----------------------------------------------------------------------
+-- Hints.
+----------------------------------------------------------------------
+
+type Hints f = Index f (Rule f)
+{-
+data Hint f =
+  Hint {
+    hint_rule     :: {-# UNPACK #-} !(Rule f),
+    hint_sym      :: {-# UNPACK #-} !(Sym f),
+    hint_sym_cost :: {-# UNPACK #-} !Float }
+-}
+-- Add a new hint.
+{-# INLINEABLE addHint #-}
+addHint :: Function f => Config f -> State f -> (Float -> Sym f) -> Term f -> State f
+addHint Config{..} state@State{..} hintFunc hint =
+  trace ("hint: " ++ prettyShow hint) $
+  trace ("cost: " ++ show cost) $
+  trace ("hint term: " ++ prettyShow hintTerm) $
+  state { st_hints = Index.insert hint rule st_hints }
+  where
+    args = usort (vars hint)
+
+    -- The cost that we want the hint term itself to have
+    termCost = max (if length (usort (vars hint)) == 1 then 2 else 1) (fromIntegral (len hint - length (vars hint)) * cfg_hint_skel_factor + cfg_hint_skel_cost)
+
+    -- How much the hint function must cost to get the hint term to cost that much
+    cost = termCost - fromIntegral (length (usort (vars hint)))
+
+    hintTerm = build (app (hintFunc cost) (map var args))
+
+    -- A rule expressing applying the hint. Uses a dummy value for the proof
+    -- field since this rule should never be used in a proof anyway. 
+    rule = Rule Oriented (certify (Proof.Refl hintTerm)) hint hintTerm
+
+-- Apply hints to a term.
+applyHints :: Function f => Hints f -> Term f -> Term f
+applyHints idx t =
+  {-let u = simplify idx t in
+  if t == u then u else traceShow ("hint: " ++ prettyShow t ++ " => " ++ prettyShow u) u-}
+  simplify idx t
 
 ----------------------------------------------------------------------
 -- Interreduction.

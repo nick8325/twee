@@ -7,6 +7,7 @@ import Data.Char
 import Data.Either
 import Twee hiding (message)
 import Twee.Base hiding (char, lookup, vars, ground)
+import qualified Twee.Base as Twee
 import Twee.Rule(lhs, rhs, unorient)
 import Twee.Equation
 import qualified Twee.Proof as Proof
@@ -59,7 +60,8 @@ data MainFlags =
     flags_distributivity_heuristic :: Bool,
     flags_kbo_weight0 :: Bool,
     flags_kbo_weight0_unary :: Bool,
-    flags_goal_heuristic :: Bool }
+    flags_goal_heuristic :: Bool,
+    flags_funweight :: Float }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags = do
@@ -156,6 +158,10 @@ parseMainFlags = do
        "distinct variables. The term f must not otherwise appear in the problem!",
        "This is not checked."]
       (splitOn "," <$> arg "<axioms>" "expected a list of axiom names" Just)
+  flags_funweight <-
+   expert $
+   inGroup "Critical pair weighting heuristics" $
+   flag "fun-weight" ["Weight given to function symbols"] 1 argNum
 
   return MainFlags{..}
 
@@ -376,10 +382,6 @@ parseCPConfig = do
     expert $
     inGroup "Critical pair weighting heuristics" $
     defaultFlag "rhs-weight" "Weight given to RHS of critical pair" CP.cfg_rhsweight argNum
-  cfg_funweight <-
-    expert $
-    inGroup "Critical pair weighting heuristics" $
-    defaultFlag "fun-weight" "Weight given to function symbols" CP.cfg_funweight argNum
   cfg_varweight <-
     expert $
     inGroup "Critical pair weighting heuristics" $
@@ -396,10 +398,6 @@ parseCPConfig = do
     expert $
     inGroup "Critical pair weighting heuristics" $
     defaultFlag "dup-factor" "Size factor of duplicate subterms" CP.cfg_dupfactor argNum
-  cfg_resonance <-
-    expert $
-    inGroup "Critical pair weighting heuristics" $
-    bool "resonance" ["Interpret hints as resonators by only allowing substitutions which map variables to variables (off by default)."] False
   return CP.Config{..}
   where
     defaultFlag name desc field parser =
@@ -417,13 +415,15 @@ parsePrecedence =
 data Constant =
   Minimal |
   Skolem Int |
+  Hint Int Float |
   Constant {
-    con_prec   :: {-# UNPACK #-} !Precedence,
-    con_id     :: {-# UNPACK #-} !Jukebox.Function,
-    con_arity  :: {-# UNPACK #-} !Int,
-    con_size   :: !Integer,
-    con_weight :: !Integer,
-    con_bonus  :: !Bool }
+    con_prec    :: {-# UNPACK #-} !Precedence,
+    con_id      :: {-# UNPACK #-} !Jukebox.Function,
+    con_arity   :: {-# UNPACK #-} !Int,
+    con_size    :: !Integer,
+    con_weight  :: !Integer,
+    con_fweight :: {-# UNPACK #-} !Float,
+    con_bonus   :: !Bool }
   deriving (Eq, Ord)
 
 data Precedence = Precedence !Bool !Bool !Bool !(Maybe Int) !Int
@@ -432,15 +432,24 @@ data Precedence = Precedence !Bool !Bool !Bool !(Maybe Int) !Int
 instance KBO.Sized Constant where
   size Minimal = 1
   size Skolem{} = 1
+  size Hint{} = 1
   size Constant{..} = con_size
-instance KBO.Weighted Constant where
+instance KBO.ArgWeighted Constant where
   argWeight Minimal = 1
   argWeight Skolem{} = 1
+  argWeight Hint{} = 1
   argWeight Constant{..} = con_weight
+
+instance Weighted Constant where
+  weight Minimal = 1
+  weight (Skolem _) = 1
+  weight (Hint _ x) = x
+  weight Constant{..} = con_fweight
 
 instance Pretty Constant where
   pPrint Minimal = text "?"
   pPrint (Skolem n) = text ("sk" ++ show n)
+  pPrint (Hint n _) = text ("H" ++ show n)
   pPrint Constant{..} = text (removePostfix (base con_id))
     where
       removePostfix ('_':x:xs) | con_arity == 1 = x:xs
@@ -449,6 +458,7 @@ instance Pretty Constant where
 instance PrettyTerm Constant where
   termStyle Minimal = uncurried
   termStyle Skolem{} = uncurried
+  termStyle Hint{} = uncurried
   termStyle Constant{..}
     | hasLabel "type_tag" con_id = invisible
     | "_" `isPrefixOf` base con_id && con_arity == 1 = postfix
@@ -471,15 +481,19 @@ instance Ordered Constant where
 instance EqualsBonus Constant where
   hasEqualsBonus Minimal = False
   hasEqualsBonus Skolem{} = False
+  hasEqualsBonus Hint{} = False
   hasEqualsBonus c = con_bonus c
   isEquals Minimal = False
   isEquals Skolem{} = False
+  isEquals Hint{} = False
   isEquals c = SequentialMain.isEquals (con_id c)
   isTrue Minimal = False
   isTrue Skolem{} = False
+  isTrue Hint{} = False
   isTrue c = SequentialMain.isTrue (con_id c)
   isFalse Minimal = False
   isFalse Skolem{} = False
+  isFalse Hint{} = False
   isFalse c = SequentialMain.isFalse (con_id c)
 
 data TweeContext =
@@ -502,6 +516,7 @@ tweeConstant MainFlags{..} flags TweeContext{..} prec fun
       con_arity = Jukebox.arity fun,
       con_size = if flags_kbo_weight0 && Jukebox.arity fun >= 2 then 0 else if flags_kbo_weight0_unary && isInv then 0 else 1,
       con_weight = 1,
+      con_fweight = flags_funweight,
       con_bonus = bonus fun }
   where
     bonus fun =
@@ -845,13 +860,13 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
     goalOccs = occs (map goal_eqn goals)
     score depth hints eqn
       | flags_goal_heuristic =
-        CP.score cpConfig depth hints eqn *
+        scoreCP cpConfig depth hints eqn *
         product
           [ pos (IntMap.findWithDefault 0 f eqnNests - IntMap.findWithDefault 0 f goalNests) *
             pos (IntMap.findWithDefault 0 f eqnOccs - IntMap.findWithDefault 0 f goalOccs)
           | f <- IntMap.keys eqnNests ] -- skip constants
       | otherwise = 
-        CP.score cpConfig depth hints eqn
+        scoreCP cpConfig depth hints eqn
       where
         eqnNests = nests eqn
         eqnOccs = occs eqn
@@ -861,7 +876,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
     config = config0 { cfg_score_cp = score, cfg_eliminate_axioms = if flags_flatten_regeneralise then defs else [] }
 
   let
-    withHints = foldl' (addHint config) (initialState config) (map toTerm hints')
+    withHints = foldl' (\s (i, t) -> addHint config s (Intern.intern . Hint i) t) (initialState config) (zip [0..] (map toTerm hints'))
     withGoals = foldl' (addGoal config) withHints goals
     withAxioms = foldl' (addAxiom config) withGoals axioms
     withBackwardsGoal = foldn rewriteGoalsBackwards withAxioms flags_backwards_goal
