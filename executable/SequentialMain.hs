@@ -61,7 +61,8 @@ data MainFlags =
     flags_kbo_weight0 :: Bool,
     flags_kbo_weight0_unary :: Bool,
     flags_goal_heuristic :: Bool,
-    flags_funweight :: Float }
+    flags_funweight :: Float,
+    flags_cp_config :: CP.Config }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags = do
@@ -159,9 +160,9 @@ parseMainFlags = do
        "This is not checked."]
       (splitOn "," <$> arg "<axioms>" "expected a list of axiom names" Just)
   flags_funweight <-
-   expert $
-   inGroup "Critical pair weighting heuristics" $
-   flag "fun-weight" ["Weight given to function symbols"] 1 argNum
+    expert $
+    inGroup "Critical pair weighting heuristics" $
+    flag "fun-weight" ["Weight given to function symbols"] 1 argNum
 
   return MainFlags{..}
 
@@ -219,7 +220,7 @@ parseConfig = do
     bool "complete-subsets"
       ["Identify and exploit complete subsets of the axioms in joining (off by default)."]
       False
-  let cfg_score_cp = undefined -- filled in later, in runTwee
+  let cfg_hint_func i x = Intern.intern (Hint i x)
 
   cfg_join <- do
     cfg_ground_join <-
@@ -363,6 +364,7 @@ parseConfig = do
     expert $
     inGroup "Output options" $
     bool "print-score" ["Print score of each generated rule (off by default)."] False
+  cfg_cp_config <- parseCPConfig
 
   return Config{..}
   where
@@ -777,8 +779,8 @@ identifyProblem TweeContext{..} prob =
       return $ Left (pre inp (Jukebox.Var ctx_var, ctx_minimal :@: []))
     identify inp = Left inp
 
-runTwee :: GlobalFlags -> TSTPFlags -> HornFlags -> [String] -> Config Constant -> CP.Config -> MainFlags -> (IO () -> IO ()) -> [Jukebox.Term] -> Problem Clause -> IO Answer
-runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlags{..} later hints obligs = {-# SCC runTwee #-} do
+runTwee :: GlobalFlags -> TSTPFlags -> HornFlags -> [String] -> Config Constant -> MainFlags -> (IO () -> IO ()) -> [Jukebox.Term] -> Problem Clause -> IO Answer
+runTwee globals (TSTPFlags tstp) horn precedence config0 flags@MainFlags{..} later hints obligs = {-# SCC runTwee #-} do
   let
     -- Encode whatever needs encoding in the problem
     obligs1
@@ -858,6 +860,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
   let
     goalNests = nests (map goal_eqn goals)
     goalOccs = occs (map goal_eqn goals)
+    {-
     score depth hints eqn
       | flags_goal_heuristic =
         scoreCP cpConfig depth hints eqn *
@@ -873,10 +876,11 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 cpConfig flags@MainFlag
 
         pos :: Int -> Float
         pos n = if n <= 0 then 1 else fromIntegral n+1
-    config = config0 { cfg_score_cp = score, cfg_eliminate_axioms = if flags_flatten_regeneralise then defs else [] }
+    -}
+    config = config0 { cfg_eliminate_axioms = if flags_flatten_regeneralise then defs else [] }
 
   let
-    withHints = foldl' (\s (i, t) -> addHint config s (Intern.intern . Hint i) t) (initialState config) (zip [0..] (map toTerm hints'))
+    withHints = foldl' (addHint config) (initialState config) (map toTerm hints')
     withGoals = foldl' (addGoal config) withHints goals
     withAxioms = foldl' (addAxiom config) withGoals axioms
     withBackwardsGoal = foldn rewriteGoalsBackwards withAxioms flags_backwards_goal
@@ -1188,7 +1192,6 @@ main = do
            (combine <$>
              expert hornToUnitBox <*>
              parseConfig <*>
-             parseCPConfig <*>
              parseMainFlags <*>
              (toFormulasBox =>>=
               expert (toFof <$> clausifyBox <*> pure (tags True)) =>>=
@@ -1199,7 +1202,7 @@ main = do
     getHint Input{what = Clause (Bind _ [Pos (Tru (hint :@: [t]))])}
       | base (name hint) == "$hint" = Left t
     getHint c = Right c
-    combine horn config cpConfig main encode prove later prob0 = do
+    combine horn config main encode prove later prob0 = do
       let prob1 = if flags_hint_goals main then hintGoals prob0 else prob0
       let (hints, nonHints) = partitionEithers (map getHint prob1)
       res <- horn nonHints
@@ -1212,4 +1215,4 @@ main = do
             isUnitEquality _ = False
             isUnit = all isUnitEquality (map (toLiterals . what) prob1)
             main' = if isUnit then main{flags_explain_encoding = False} else main{flags_formal_proof = False}
-          encode prob >>= prove config cpConfig main' later hints
+          encode prob >>= prove config main' later hints

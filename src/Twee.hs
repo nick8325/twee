@@ -64,7 +64,8 @@ data Config f =
     cfg_set_join_goals            :: Bool,
     cfg_always_simplify           :: Bool,
     cfg_complete_subsets          :: Bool,
-    cfg_score_cp                  :: Depth -> Hints f -> Equation f -> Float,
+    cfg_hint_func                 :: Int -> Float -> Sym f,
+    cfg_cp_config                 :: !CP.Config,
     cfg_join                      :: Join.Config,
     cfg_proof_presentation        :: Proof.Config f,
     cfg_eliminate_axioms          :: [Axiom f],
@@ -86,7 +87,7 @@ data State f =
     st_joinable       :: !(Index f (Equation f)),
     st_goals          :: ![Goal f],
     st_queue          :: !(Queue Batch),
-    st_hints          :: !(Hints f),
+    st_hints          :: {-# UNPACK #-} !(Hints f),
     st_next_active    :: {-# UNPACK #-} !Id,
     st_considered     :: {-# UNPACK #-} !Int64,
     st_simplified_at  :: {-# UNPACK #-} !Id,
@@ -113,7 +114,8 @@ defaultConfig =
     cfg_set_join_goals = True,
     cfg_always_simplify = False,
     cfg_complete_subsets = False,
-    cfg_score_cp = scoreCP CP.defaultConfig,
+    cfg_hint_func = \_ _ -> error "cfg_hint_func not configured",
+    cfg_cp_config = CP.defaultConfig,
     cfg_join = Join.defaultConfig,
     cfg_proof_presentation = Proof.defaultConfig,
     cfg_eliminate_axioms = [],
@@ -127,8 +129,13 @@ defaultConfig =
     cfg_print_score = False }
 
 -- | Compute cfg_score_cp from the CP configuration.
-scoreCP :: Function f => CP.Config -> Depth -> Hints f -> Equation f -> Float
-scoreCP cfg d hints eqn = score cfg d (bothSides (applyHints hints) eqn)
+{-# INLINE scoreCP #-}
+scoreCP :: Function f => Config f -> Depth -> Hints f -> Equation f -> Float
+scoreCP config@Config{..} d hints eqn = score cfg_cp_config d (scoreTerm config hints) eqn
+
+{-# INLINE scoreTerm #-}
+scoreTerm :: Function f => Config f -> Hints f -> Term f -> Float
+scoreTerm config@Config{..} hints t = termScore cfg_cp_config (applyHints hints t)
 
 -- | Does this configuration run the prover in a complete mode?
 configIsComplete :: Config f -> Bool
@@ -149,7 +156,11 @@ initialState Config{..} =
     st_joinable = Index.empty,
     st_goals = [],
     st_queue = Queue.empty,
-    st_hints = Index.empty,
+    st_hints =
+      Hints {
+        hints_list = [],
+        hints_index = Index.empty,
+        hints_next = 0 },
     st_next_active = 1,
     st_considered = 0,
     st_simplified_at = 1,
@@ -315,9 +326,9 @@ instance Queue.Batch Batch where
 
 {-# INLINEABLE makePassive #-}
 makePassive :: Function f => Config f -> State f -> Overlap (Active f) f -> Passive
-makePassive Config{..} State{..} Overlap{..} =
+makePassive config@Config{..} State{..} Overlap{..} =
   Passive {
-    passive_score = cfg_score_cp depth st_hints overlap_eqn,
+    passive_score = scoreCP config depth st_hints overlap_eqn,
     passive_rule1 = active_id overlap_rule1,
     passive_rule2 = active_id overlap_rule2,
     passive_how   = overlap_how }
@@ -337,7 +348,7 @@ findPassive State{..} Passive{..} = do
 -- | Renormalise a queued Passive.
 {-# INLINEABLE simplifyPassive #-}
 simplifyPassive :: Function f => Config f -> State f -> Passive -> Maybe (Passive)
-simplifyPassive Config{..} state@State{..} passive = do
+simplifyPassive config@Config{..} state@State{..} passive = do
   overlap <- findPassive state passive
   overlap <- simplifyOverlap (index_oriented st_rules) overlap
   let r1 = overlap_rule1 overlap
@@ -346,7 +357,7 @@ simplifyPassive Config{..} state@State{..} passive = do
     passive_score =
       passive_score passive `min`
       -- XXX factor out depth calculation
-      cfg_score_cp (succ (the r1 `max` the r2)) st_hints (overlap_eqn overlap) }
+      scoreCP config (succ (the r1 `max` the r2)) st_hints (overlap_eqn overlap) }
 
 -- | Check if we should renormalise the queue.
 {-# INLINEABLE shouldSimplifyQueue #-}
@@ -425,9 +436,9 @@ active_cp Active{..} =
     cp_top = active_top,
     cp_proof = derivation active_proof }
 
-activeScore :: Config f -> State f -> Active f -> Float
-activeScore Config{..} State{..} Active{..} =
-  cfg_score_cp (info_depth active_info) st_hints (equation active_proof)
+activeScore :: Function f => Config f -> State f -> Active f -> Float
+activeScore config@Config{..} State{..} Active{..} =
+  scoreCP config (info_depth active_info) st_hints (equation active_proof)
 
 activeRules :: Active f -> [Rule f]
 activeRules Active{..} =
@@ -463,7 +474,7 @@ addActive config state@State{..} active0 =
       | otherwise = Nothing
     state' =
       message (NewActive mscore active) $
-      addActiveOnly state{st_next_active = st_next_active+1} active
+      addActiveOnly config state{st_next_active = st_next_active+1} active
   in if subsumed (st_joinable, st_complete) st_rules (unorient active_rule) then
     state
   else
@@ -513,8 +524,9 @@ simplifySample state@State{..} =
 
 -- Add an active without generating critical pairs. Used in interreduction.
 {-# INLINEABLE addActiveOnly #-}
-addActiveOnly :: Function f => State f -> Active f -> State f
-addActiveOnly state@State{..} active@Active{..} =
+addActiveOnly :: Function f => Config f -> State f -> Active f -> State f
+addActiveOnly config state@State{..} active@Active{..} =
+  addHintsRulePairs config active $
   state {
     st_rules = foldl' insertRule st_rules (activeRules active),
     st_active_set = IntMap.insert (fromIntegral active_id) active st_active_set }
@@ -524,8 +536,9 @@ addActiveOnly state@State{..} active@Active{..} =
 
 -- Add an active without generating critical pairs. Used in interreduction.
 {-# INLINEABLE addActiveSimp #-}
-addActiveSimp :: Function f => State f -> Active f -> State f
-addActiveSimp state@State{..} active@Active{..} =
+addActiveSimp :: Function f => Config f -> State f -> Active f -> State f
+addActiveSimp config state@State{..} active@Active{..} =
+  addHintsRulePairs config active $
   state {
     st_rules = foldl' insertRule st_rules (activeRules active) }
   where
@@ -763,43 +776,102 @@ goal n name (t :=: u) =
 -- Hints.
 ----------------------------------------------------------------------
 
-type Hints f = Index f (Rule f)
-{-
-data Hint f =
-  Hint {
-    hint_rule     :: {-# UNPACK #-} !(Rule f),
-    hint_sym      :: {-# UNPACK #-} !(Sym f),
-    hint_sym_cost :: {-# UNPACK #-} !Float }
--}
+data Hints f =
+  Hints {
+    -- contains only user-provided hints
+    hints_list  :: ![Rule f],
+    -- also contains hints formed through CPs
+    hints_index :: !(Index f (Rule f)),
+    hints_next   :: !Int }
+
+data HintKind = UserHint | DerivedHint deriving (Eq, Show)
+
 -- Add a new hint.
 {-# INLINEABLE addHint #-}
-addHint :: Function f => Config f -> State f -> (Float -> Sym f) -> Term f -> State f
-addHint Config{..} state@State{..} hintFunc hint =
+addHint :: Function f => Config f -> State f -> Term f -> State f
+addHint config@Config{..} state hint = addHint' config state hint UserHint hintCost
+  where
+    hintCost = max (if length (usort (vars hint)) == 1 then 2 else 1) (fromIntegral (len hint - length (vars hint)) * cfg_hint_skel_factor + cfg_hint_skel_cost)
+
+-- Add a new hint, with a specified kind and cost.
+{-# INLINEABLE addHint' #-}
+addHint' :: Function f => Config f -> State f -> Term f -> HintKind -> Float -> State f
+addHint' config@Config{..} state@State{st_hints = Hints{..}, ..} hint kind hintCost =
+  -- TODO only do this for user hints?
+  (if kind == UserHint then addHintRulesPairs config rule . addHintHintsPairs config rule else id) $
   trace ("hint: " ++ prettyShow hint) $
-  trace ("cost: " ++ show cost) $
+  trace ("kind: " ++ show kind) $
+  trace ("hint cost: " ++ show hintCost) $
+  trace ("symbol cost: " ++ show cost) $
   trace ("hint term: " ++ prettyShow hintTerm) $
-  state { st_hints = Index.insert hint rule st_hints }
+  trace "" $
+  state {
+    st_hints = Hints {
+      hints_list = if kind == UserHint then rule:hints_list else hints_list,
+      hints_index = Index.insert hint rule hints_index,
+      hints_next = hints_next + 1 } }
   where
     args = usort (vars hint)
 
     -- The cost that we want the hint term itself to have
-    termCost = max (if length (usort (vars hint)) == 1 then 2 else 1) (fromIntegral (len hint - length (vars hint)) * cfg_hint_skel_factor + cfg_hint_skel_cost)
-
     -- How much the hint function must cost to get the hint term to cost that much
-    cost = termCost - fromIntegral (length (usort (vars hint)))
+    cost = hintCost - fromIntegral (length (usort (vars hint)))*cfg_varweight cfg_cp_config
 
-    hintTerm = build (app (hintFunc cost) (map var args))
+    hintTerm = build (app (cfg_hint_func hints_next cost) (map var args))
 
     -- A rule expressing applying the hint. Uses a dummy value for the proof
     -- field since this rule should never be used in a proof anyway. 
     rule = Rule Oriented (certify (Proof.Refl hintTerm)) hint hintTerm
 
+-- Add various kiknds of derived hints.
+{-# INLINEABLE addHintsRulePairs #-}
+addHintsRulePairs :: Function f => Config f -> Active f -> State f -> State f
+addHintsRulePairs config active state =
+  foldl' (\state rule -> addHintRulePairs config rule active state) state (hints_list (st_hints state))
+
+{-# INLINEABLE addHintRulesPairs #-}
+addHintRulesPairs :: Function f => Config f -> Rule f -> State f -> State f
+addHintRulesPairs config rule state =
+  foldl' (\state active -> addHintRulePairs config rule active state) state (IntMap.elems (st_active_set state))
+
+{-# INLINEABLE addHintRulePairs #-}
+addHintRulePairs :: Function f => Config f -> Rule f -> Active f -> State f -> State f
+addHintRulePairs config rule active state =
+  foldl' considerTerm state (map overlap_top (overlaps (Index.empty :: Index f (Rule f)) [makeActive rule] active))
+    where
+      -- hack: need to turn the turn into an Active to invoke 'overlaps'
+      makeActive rule = Active 0 (Info 0 IntSet.empty) rule Nothing (rule_proof rule) (modelFromOrder []) (positionsRule rule)
+      considerTerm state t =
+        -- TODO: try applying hints, then normalising; and normalising, then applying hints.
+        -- Try both both ordered and unordered rewriting.
+        -- If normalising first gives a greater term, then introduce a new hint for "t"
+        considerNorm (result t . normaliseTerm state) t $
+        considerNorm (simplifyTerm state) t $
+        state
+      considerNorm norm t state
+        | sv > su =
+          trace ("term: " ++ prettyShow t) $
+          trace ("norm first: " ++ prettyShow v ++ " (cost " ++ show sv ++ ")") $
+          trace ("norm second: " ++ prettyShow u ++ " (cost " ++ show su ++ ")") $
+          addHint' config state v DerivedHint su
+        | otherwise = state
+        where
+          u = applyHints (st_hints state) (norm (applyHints (st_hints state) t))
+          su = scoreTerm config (st_hints state) u
+          v = applyHints (st_hints state) (norm t)
+          sv = scoreTerm config (st_hints state) v
+
+
+{-# INLINEABLE addHintHintsPairs #-}
+addHintHintsPairs :: Function f => Config f -> Rule f -> State f -> State f
+addHintHintsPairs _ _ state = state
+
 -- Apply hints to a term.
 applyHints :: Function f => Hints f -> Term f -> Term f
-applyHints idx t =
+applyHints Hints{..} t =
   {-let u = simplify idx t in
   if t == u then u else traceShow ("hint: " ++ prettyShow t ++ " => " ++ prettyShow u) u-}
-  simplify idx t
+  simplify hints_index t
 
 ----------------------------------------------------------------------
 -- Interreduction.
@@ -831,18 +903,18 @@ interreduce1 config@Config{..} state active@Active{..} =
       (Just active_model) (active_cp active)
   of
     Right (_, cps) ->
-      flip addActiveSimp active $
+      flip (addActiveSimp config) active $
       flip (foldl' (\state cp -> consider config state active_info cp)) cps $
       message (DeleteActive active) $
       deleteActive state active
     Left (cp, model)
       | cp_eqn cp `simplerThan` cp_eqn (active_cp active) ->
-        flip addActiveSimp active $
+        flip (addActiveSimp config) active $
         flip (foldl' (\state cp -> consider config state active_info cp)) (split cp) $
         message (DeleteActive active) $
         deleteActive state active
       | model /= active_model ->
-        flip addActiveOnly active { active_model = model } $
+        flip (addActiveOnly config) active { active_model = model } $
         deleteActive state active
       | otherwise ->
         state
@@ -985,7 +1057,7 @@ findCriticalPair config state g = retry `mplus` random
         Nothing ->
           trace ("Overlap " ++ prettyShow (overlap_eqn o) ++ " was spurious") Nothing -- should be rare
         Just o' ->
-          Just (cfg_score_cp config 0 (st_hints state) (overlap_eqn o'), (Info 0 IntSet.empty, makeCriticalPair o, changed, cf))
+          Just (scoreCP config 0 (st_hints state) (overlap_eqn o'), (Info 0 IntSet.empty, makeCriticalPair o, changed, cf))
 
 -- Return all goal terms. Handles the $equals coding.
 goalTerms :: Function f => State f -> [Term f]

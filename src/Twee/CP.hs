@@ -222,18 +222,18 @@ defaultConfig =
 --   cfg_lhsweight * size l + cfg_rhsweight * size r
 -- where l is the biggest term and r is the smallest,
 -- and variables have weight cfg_varweight.
-{-# INLINEABLE score #-}
-score :: Function f => Config -> Depth -> Equation f -> Float
-score config@Config{..} depth (l :=: r) =
+{-# INLINE score #-}
+score :: Function f => Config -> Depth -> (Term f -> Float) -> Equation f -> Float
+score config@Config{..} depth termScore (l :=: r) =
   fromIntegral depth * cfg_depthweight +
   (m + n) * cfg_rhsweight +
   max m n * (cfg_lhsweight - cfg_rhsweight)
   where
-    m = termScore config l
-    n = termScore config r
+    m = termScore l
+    n = termScore r
 
 -- | Compute a score for a single term.
-{-# INLINE termScore #-}
+{-# INLINEABLE termScore #-}
 termScore :: Function f => Config -> Term f -> Float
 termScore Config{..} t =
   size' 0 (singleton t) []
