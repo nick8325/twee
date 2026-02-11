@@ -48,6 +48,8 @@ data Rule f =
     -- For unoriented rules: vars lhs == vars rhs
     
     -- | A proof that the rule holds.
+    -- For efficiency, is not updated on substitution or on using 'backwards'.
+    -- Use 'ruleDerivation' to extract a proof which accounts for this.
     rule_proof :: !(Proof f),
 
     -- | The left-hand side of the rule.

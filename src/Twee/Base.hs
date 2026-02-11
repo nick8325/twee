@@ -244,7 +244,6 @@ ground t = erase (vars t) t
 skolemise :: (Symbolic a, ConstantOf a ~ f, Minimal f) => a -> a
 skolemise t = subst (\(V x) -> con (skolem x)) t
 
--- | For types which have a notion of size.
 -- | The collection of constraints which the type of function symbols must
 -- satisfy in order to be used by twee.
 type Function f = (Ordered f, Minimal f, PrettyTerm f, EqualsBonus f, Intern f, Weighted f)

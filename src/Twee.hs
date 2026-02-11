@@ -131,7 +131,13 @@ defaultConfig =
 -- | Compute cfg_score_cp from the CP configuration.
 {-# INLINE scoreCP #-}
 scoreCP :: Function f => Config f -> Depth -> Hints f -> Equation f -> Float
-scoreCP config@Config{..} d hints eqn = score cfg_cp_config d (scoreTerm config hints) eqn
+scoreCP config@Config{..} d hints eqn =
+  let s1 = score cfg_cp_config d (scoreTerm config hints) eqn
+      s2 = score cfg_cp_config d (scoreTerm config (Hints [] Index.empty 0)) eqn
+  {-
+  in if s1 /= s2 then trace ("used hint for " ++ prettyShow eqn) (trace (prettyShow eqn ++ " => " ++ prettyShow (bothSides (applyHints hints) eqn)) s1) else s1
+  -}
+  in s1
 
 {-# INLINE scoreTerm #-}
 scoreTerm :: Function f => Config f -> Hints f -> Term f -> Float
@@ -184,6 +190,8 @@ data Message f =
     NewActive !(Maybe Float) !(Active f)
     -- | A new joinable equation.
   | NewEquation !(Equation f)
+    -- | A new hint was added.
+  | NewHint !(Rule f) !HintKind
     -- | A rule was deleted.
   | DeleteActive !(Active f)
     -- | The CP queue was simplified.
@@ -205,6 +213,8 @@ instance Function f => Pretty (Message f) where
  --   $$ case cp_top (active_cp rule) of { Just t -> text "  (normal forms of term" <+> pPrint t <#> text ")"; Nothing -> pPrintEmpty }
   pPrint (NewEquation eqn) =
     text "  (hard)" <+> pPrint eqn
+  pPrint (NewHint rule kind) =
+    text "  (" <#> pPrint kind <+> text "hint)" <+> pPrint rule
   pPrint (DeleteActive rule) =
     text "  (delete rule " <#> pPrint (active_id rule) <#> text ")"
   pPrint SimplifyQueue =
@@ -786,25 +796,31 @@ data Hints f =
 
 data HintKind = UserHint | DerivedHint deriving (Eq, Show)
 
+instance Pretty HintKind where
+  pPrint UserHint = text "show"
+  pPrint DerivedHint = text "auto"
+
 -- Add a new hint.
 {-# INLINEABLE addHint #-}
 addHint :: Function f => Config f -> State f -> Term f -> State f
-addHint config@Config{..} state hint = addHint' config state hint UserHint hintCost
+addHint config@Config{..} state@State{..} hint =
+  addHint' config state hint UserHint cost
   where
-    hintCost = max (if length (usort (vars hint)) == 1 then 2 else 1) (fromIntegral (len hint - length (vars hint)) * cfg_hint_skel_factor + cfg_hint_skel_cost)
+    cost = fromIntegral (len hint - length (vars hint)) * cfg_hint_skel_factor + cfg_hint_skel_cost
 
 -- Add a new hint, with a specified kind and cost.
 {-# INLINEABLE addHint' #-}
 addHint' :: Function f => Config f -> State f -> Term f -> HintKind -> Float -> State f
-addHint' config@Config{..} state@State{st_hints = Hints{..}, ..} hint kind hintCost =
-  -- TODO only do this for user hints?
+addHint' config@Config{..} state@State{st_hints = Hints{..}, ..} hint kind cost =
   (if kind == UserHint then addHintRulesPairs config rule . addHintHintsPairs config rule else id) $
+  {-
   trace ("hint: " ++ prettyShow hint) $
   trace ("kind: " ++ show kind) $
-  trace ("hint cost: " ++ show hintCost) $
-  trace ("symbol cost: " ++ show cost) $
+  trace ("cost: " ++ show cost) $
   trace ("hint term: " ++ prettyShow hintTerm) $
   trace "" $
+  -}
+  message (NewHint rule kind) $
   state {
     st_hints = Hints {
       hints_list = if kind == UserHint then rule:hints_list else hints_list,
@@ -812,10 +828,6 @@ addHint' config@Config{..} state@State{st_hints = Hints{..}, ..} hint kind hintC
       hints_next = hints_next + 1 } }
   where
     args = usort (vars hint)
-
-    -- The cost that we want the hint term itself to have
-    -- How much the hint function must cost to get the hint term to cost that much
-    cost = hintCost - fromIntegral (length (usort (vars hint)))*cfg_varweight cfg_cp_config
 
     hintTerm = build (app (cfg_hint_func hints_next cost) (map var args))
 
@@ -837,29 +849,41 @@ addHintRulesPairs config rule state =
 {-# INLINEABLE addHintRulePairs #-}
 addHintRulePairs :: Function f => Config f -> Rule f -> Active f -> State f -> State f
 addHintRulePairs config rule active state =
-  foldl' considerTerm state (map overlap_top (overlaps (Index.empty :: Index f (Rule f)) [makeActive rule] active))
+  foldl' considerOverlap state (overlaps (Index.empty :: Index f (Rule f)) [makeActive rule] active)
     where
       -- hack: need to turn the turn into an Active to invoke 'overlaps'
       makeActive rule = Active 0 (Info 0 IntSet.empty) rule Nothing (rule_proof rule) (modelFromOrder []) (positionsRule rule)
-      considerTerm state t =
-        -- TODO: try applying hints, then normalising; and normalising, then applying hints.
-        -- Try both both ordered and unordered rewriting.
-        -- If normalising first gives a greater term, then introduce a new hint for "t"
-        considerNorm (result t . normaliseTerm state) t $
-        considerNorm (simplifyTerm state) t $
-        state
-      considerNorm norm t state
-        | sv > su =
-          trace ("term: " ++ prettyShow t) $
-          trace ("norm first: " ++ prettyShow v ++ " (cost " ++ show sv ++ ")") $
-          trace ("norm second: " ++ prettyShow u ++ " (cost " ++ show su ++ ")") $
-          addHint' config state v DerivedHint su
+      considerOverlap state Overlap{..}
+        -- Only consider if the hint is the inner rule, i.e. we have an instance
+        -- of the active
+        | active_rule overlap_rule2 == rule =
+          -- considerNorm (result t . normaliseTerm state) t u $
+          considerNorm (simplifyTerm state) t u $
+          state
         | otherwise = state
         where
-          u = applyHints (st_hints state) (norm (applyHints (st_hints state) t))
-          su = scoreTerm config (st_hints state) u
-          v = applyHints (st_hints state) (norm t)
-          sv = scoreTerm config (st_hints state) v
+          t = eqn_lhs overlap_eqn
+          u = eqn_rhs overlap_eqn
+          --t = overlap_top
+
+      -- t: term we are considering adding a hint for
+      -- u: version of the term where perhaps a hint has already been added
+      considerNorm norm t u state
+        | st > su =
+        {-
+          trace ("rule: " ++ prettyShow rule) $
+          trace ("active: " ++ prettyShow (active_id active)) $
+          trace ("term: " ++ prettyShow t) $
+          trace ("norm first: " ++ prettyShow t' ++ " (cost " ++ show st ++ ")") $
+          trace ("hint first: " ++ prettyShow u' ++ " (cost " ++ show su ++ ")") $
+        -}
+          addHint' config state t' DerivedHint su
+        | otherwise = state
+        where
+          t' = norm t
+          u' = norm u
+          st = scoreTerm config (st_hints state) t'
+          su = scoreTerm config (st_hints state) u'
 
 
 {-# INLINEABLE addHintHintsPairs #-}

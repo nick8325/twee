@@ -61,8 +61,7 @@ data MainFlags =
     flags_kbo_weight0 :: Bool,
     flags_kbo_weight0_unary :: Bool,
     flags_goal_heuristic :: Bool,
-    flags_funweight :: Float,
-    flags_cp_config :: CP.Config }
+    flags_funweight :: Float }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags = do
@@ -451,7 +450,7 @@ instance Weighted Constant where
 instance Pretty Constant where
   pPrint Minimal = text "?"
   pPrint (Skolem n) = text ("sk" ++ show n)
-  pPrint (Hint n _) = text ("H" ++ show n)
+  pPrint (Hint n _) = text ("hint" ++ show n)
   pPrint Constant{..} = text (removePostfix (base con_id))
     where
       removePostfix ('_':x:xs) | con_arity == 1 = x:xs
