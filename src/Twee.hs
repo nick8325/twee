@@ -849,7 +849,8 @@ addHintRulesPairs config rule state =
 {-# INLINEABLE addHintRulePairs #-}
 addHintRulePairs :: Function f => Config f -> Rule f -> Active f -> State f -> State f
 addHintRulePairs config rule active state =
-  foldl' considerOverlap state (overlaps (Index.empty :: Index f (Rule f)) [makeActive rule] active)
+  state
+  -- foldl' considerOverlap state (overlaps (Index.empty :: Index f (Rule f)) [makeActive rule] active)
     where
       -- hack: need to turn the turn into an Active to invoke 'overlaps'
       makeActive rule = Active 0 (Info 0 IntSet.empty) rule Nothing (rule_proof rule) (modelFromOrder []) (positionsRule rule)
