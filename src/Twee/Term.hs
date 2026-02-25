@@ -37,8 +37,8 @@ module Twee.Term(
   Subst(..),
   -- ** Constructing and querying substitutions
   emptySubst, listToSubst, substToList, substToList',
-  lookup, lookupList,
-  extend, extendList, unsafeExtendList,
+  lookup,
+  extend, unsafeExtendList,
   retract,
   -- ** Other operations on substitutions
   foldSubst, allSubst, substDomain,
@@ -273,7 +273,7 @@ idempotentOn :: Subst f -> TermList f -> Bool
 idempotentOn !sub = aux
   where
     aux Nil = True
-    aux ConsSym{hd = App{}, rest = t} = aux t
+    aux (Cons (App f ts) us) = aux ts && aux us
     aux (Cons (Var x) t) = isNothing (lookupList x sub) && aux t
 
 -- | Iterate a triangle substitution to make it idempotent.
@@ -302,7 +302,7 @@ canonicalise (t:ts) = loop emptySubst vars t ts
     loop sub _ Nil [] = sub
     loop sub Nil _ _ = sub
     loop sub vs Nil (t:ts) = loop sub vs t ts
-    loop sub vs ConsSym{hd = App{}, rest = t} ts = loop sub vs t ts
+    loop sub vs (Cons (App _ t) u) ts = loop sub vs t (u:ts)
     loop sub vs0@(Cons v vs) (Cons (Var x) t) ts =
       case extend x v sub of
         Just sub -> loop sub vs  t ts
@@ -346,22 +346,19 @@ matchList pat t = matchListIn emptySubst pat t
 -- | A variant of 'match' which works on termlists
 -- and extends an existing substitution.
 matchListIn :: Subst f -> TermList f -> TermList f -> Maybe (Subst f)
-matchListIn !sub !pat !t
-  | lenList t < lenList pat = Nothing
-  | otherwise =
+matchListIn !sub !pat !t =
     let 
-        loop !sub ConsSym{hd = pat, tl = pats, rest = pats1} !ts = do
-          ConsSym{hd = t, tl = ts, rest = ts1} <- Just ts
+        loop !sub (pat:pats) (t:ts) = do
           case (pat, t) of
-            (App f _, App g _) | f == g ->
-              loop sub pats1 ts1
+            (App f subpats, App g subts) | f == g ->
+              loop sub (unpack subpats ++ pats) (unpack subts ++ ts)
             (Var x, _) -> do
               sub <- extend x t sub
               loop sub pats ts
             _ -> Nothing
-        loop sub _ Nil = Just sub
+        loop sub _ [] = Just sub
         loop _ _ _ = Nothing
-    in loop sub pat t
+    in loop sub (unpack pat) (unpack t)
 
 -- | A variant of 'match' which works on lists of terms.
 matchMany :: [Term f] -> [Term f] -> Maybe (Subst f)
@@ -460,14 +457,13 @@ unifyListTri t u = unifyListTriFrom t u (Triangle emptySubst)
 
 unifyListTriFrom :: TermList f -> TermList f -> TriangleSubst f -> Maybe (TriangleSubst f)
 unifyListTriFrom !t !u (Triangle !sub) =
-  fmap Triangle (loop sub t u)
+  fmap Triangle (loop sub (unpack t) (unpack u))
   where
     loop !_ !_ !_ | never = undefined
-    loop sub (ConsSym{hd = t, tl = ts, rest = ts1}) u = do
-      ConsSym{hd = u, tl = us, rest =  us1} <- Just u
+    loop sub (t:ts) (u:us) = do
       case (t, u) of
-        (App f _, App g _) | f == g ->
-          loop sub ts1 us1
+        (App f subts, App g subus) | f == g ->
+          loop sub (unpack subts ++ ts) (unpack subus ++ us)
         (Var x, _) -> do
           sub <- var sub x u
           loop sub ts us
@@ -475,13 +471,13 @@ unifyListTriFrom !t !u (Triangle !sub) =
           sub <- var sub x t
           loop sub ts us
         _ -> Nothing
-    loop sub _ Nil = Just sub
+    loop sub _ [] = Just sub
     loop _ _ _ = Nothing
 
     {-# INLINE var #-}
     var sub x t =
-      case lookupList x sub of
-        Just u -> loop sub u (singleton t)
+      case lookup x sub of
+        Just u -> loop sub [u] [t]
         Nothing -> var1 sub x t
 
     var1 sub x t@(Var y)
@@ -492,19 +488,19 @@ unifyListTriFrom !t !u (Triangle !sub) =
           Nothing -> extend x t sub
 
     var1 sub x t = do
-      occurs sub x (singleton t)
+      occurs sub x [t]
       extend x t sub
 
-    occurs !sub !x (ConsSym{hd = t, rest = ts}) =
+    occurs !sub !x (t:us) =
       case t of
-        App{} -> occurs sub x ts
+        App _ ts -> occurs sub x (unpack ts ++ us)
         Var y
           | x == y -> Nothing
           | otherwise -> do
-            occurs sub x ts
-            case lookupList y sub of
+            occurs sub x us
+            case lookup y sub of
               Nothing -> Just ()
-              Just u  -> occurs sub x u
+              Just u  -> occurs sub x [u]
     occurs _ _ _ = Just ()
 
 --------------------------------------------------------------------------------
@@ -526,9 +522,8 @@ t `atPath` p = t `at` pathToPosition t p
 
 -- | Get the children (direct subterms) of a term.
 children :: Term f -> TermList f
-children t =
-  case singleton t of
-    UnsafeConsSym{urest = ts} -> ts
+children Var{} = empty
+children (App _ ts) = ts
 
 -- | Convert a termlist into an ordinary list of terms.
 unpack :: TermList f -> [Term f]
@@ -597,10 +592,10 @@ occurs x t = occursList x (singleton t)
 -- | Find all subterms of a termlist.
 {-# INLINE subtermsList #-}
 subtermsList :: TermList f -> [Term f]
-subtermsList t = unfoldr op t
+subtermsList t = unfoldr op (unpack t)
   where
-    op Nil = Nothing
-    op ConsSym{hd = t, rest = u} = Just (t, u)
+    op [] = Nothing
+    op (t:ts) = Just (t, unpack (children t) ++ ts)
 
 -- | Find all subterms of a term.
 {-# INLINE subterms #-}
