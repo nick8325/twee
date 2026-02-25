@@ -255,8 +255,8 @@ termScore Config{..} t =
         size' (n+1) (subst sub us) (subst sub (vs:xs))
     size' n (Cons (Var _) ts) us =
       size' (n+cfg_varweight) ts us
-    size' n ConsSym{hd = App f _, rest = ts} us =
-      size' (n+weight f) ts us
+    size' n (Cons (App f ts) us) vs =
+      size' (n+weight f) ts (us:vs)
 
 ----------------------------------------------------------------------
 -- * Higher-level handling of critical pairs.

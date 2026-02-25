@@ -141,10 +141,10 @@ null _ = False
 
 -- | An index with one entry.
 singleton :: Term f -> a -> Index f a
-singleton !t x = leaf (Term.singleton t) [x]
+singleton !t x = leaf [t] [x]
 
 -- A leaf node, perhaps with a prefix.
-leaf :: TermList f -> [a] -> Index f a
+leaf :: [Term f] -> [a] -> Index f a
 leaf !_ [] = Empty
 leaf t xs = modify' (xs ++) t (Index maxBound [] newArray Numbered.empty)
 
@@ -184,25 +184,25 @@ delete =
 modify :: (Symbolic a, ConstantOf a ~ f) =>
   (a -> [a] -> [a]) ->
   Term f -> a -> Index f a -> Index f a
-modify f !t0 !v0 !idx = modify' (f v) (Term.singleton t) idx
+modify f !t0 !v0 !idx = modify' (f v) [t] idx
   where
     (!t, !v) = canonicalise (t0, v0) 
 
-modify' :: ([a] -> [a]) -> TermList f -> Index f a -> Index f a
+modify' :: ([a] -> [a]) -> [Term f] -> Index f a -> Index f a
 modify' f !t !idx = aux t idx
   where
     aux t Empty =
       leaf t (f [])
 
-    aux Nil idx =
+    aux [] idx =
       index (f (here idx)) (fun idx) (var idx)
-    aux ConsSym{hd = App f _, rest = u} idx =
+    aux (App f ts:us) idx =
       index (here idx)
         (update (symId f) idx' (fun idx))
         (var idx)
       where
-        idx' = aux u (fun idx ! symId f)
-    aux ConsSym{hd = Var x, rest = u} idx =
+        idx' = aux (unpack ts ++ us) (fun idx ! symId f)
+    aux (Var x:u) idx =
       index (here idx) (fun idx)
         (Numbered.modify (var_id x) Empty (aux u) (var idx))
 

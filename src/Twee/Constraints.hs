@@ -28,7 +28,7 @@ atoms t = aux (singleton t)
     aux Nil = []
     aux (Cons (App f Nil) t) = Constant f:aux t
     aux (Cons (Var x) t) = Variable x:aux t
-    aux ConsSym{rest = t} = aux t
+    aux (Cons (App _ ts) us) = aux ts ++ aux us
 
 toTerm :: Atom f -> Term f
 toTerm (Constant f) = build (con f)
