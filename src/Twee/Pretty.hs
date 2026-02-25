@@ -108,9 +108,6 @@ instance (Intern f, PrettyTerm f) => Pretty (HighlightedTerm f) where
           Just (n:ns) | i == n -> HighlightedTerm cs (Just ns) t
           _ -> HighlightedTerm cs Nothing t
 
-instance (Intern f, PrettyTerm f) => Pretty (TermList f) where
-  pPrintPrec _ _ = pPrint . unpack
-
 instance (Intern f, PrettyTerm f) => Pretty (Subst f) where
   pPrint sub = text "{" <#> fsep (punctuate (text ",") docs) <#> text "}"
     where

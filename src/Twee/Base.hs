@@ -7,7 +7,7 @@ module Twee.Base(
   module Twee.Term, module Twee.Pretty,
   -- * The 'Symbolic' typeclass
   Symbolic(..), subst, terms,
-  TermOf, TermListOf, SubstOf, TriangleSubstOf, BuilderOf, SymOf,
+  TermOf, TermListOf, SubstOf, TriangleSubstOf, SymOf,
   vars, isGround, funs, occ, occVar, occs, nests, canonicalise, renameAvoiding, renameManyAvoiding, freshVar,
   -- * General-purpose functionality
   Id(..), Has(..), Intern, Sym, pattern Sym,
@@ -52,7 +52,7 @@ class Symbolic a where
 
   -- | Apply a substitution.
   -- When using the 'Symbolic' type class, you can use 'subst' instead.
-  subst_ :: (Var -> BuilderOf a) -> a -> a
+  subst_ :: (Var -> TermList (ConstantOf a)) -> a -> a
 
 -- | Apply a substitution.
 subst :: (Symbolic a, Substitution s, SubstFun s ~ ConstantOf a) => s -> a -> a
@@ -70,8 +70,6 @@ type TermListOf a = TermList (ConstantOf a)
 type SubstOf a = Subst (ConstantOf a)
 -- | A triangle substitution compatible with a given 'Symbolic'.
 type TriangleSubstOf a = TriangleSubst (ConstantOf a)
--- | A builder compatible with a given 'Symbolic'.
-type BuilderOf a = Builder (ConstantOf a)
 -- | The underlying type of function symbols of a given 'Symbolic'.
 type SymOf a = Sym (ConstantOf a)
 
@@ -79,11 +77,6 @@ instance Symbolic (Term f) where
   type ConstantOf (Term f) = f
   termsDL = return . singleton
   subst_ sub = build . Term.subst sub
-
-instance Symbolic (TermList f) where
-  type ConstantOf (TermList f) = f
-  termsDL = return
-  subst_ sub = buildList . Term.substList sub
 
 instance Symbolic (Subst f) where
   type ConstantOf (Subst f) = f

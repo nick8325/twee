@@ -13,24 +13,23 @@
 --   * substitutions ('Substitution', 'Subst', 'subst');
 --   * unification ('unify') and matching ('match');
 --   * miscellaneous useful functions on terms.
-{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables, CPP, DefaultSignatures #-}
+{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables, CPP, DefaultSignatures, TypeSynonymInstances, FlexibleInstances #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
 #ifdef USE_LLVM
 {-# OPTIONS_GHC -fllvm #-}
 #endif
 module Twee.Term(
   -- * Terms
-  Term, Var(..), pattern Var, pattern App, isApp, isVar, singleton,
+  Term(..), Var(..), isApp, isVar, singleton,
   -- * Termlists
   TermList, pattern Nil, pattern Cons,
   empty, unpack,
   -- * Building terms
   Build(..),
-  Builder,
-  build, buildList,
+  build,
   con, app, var,
   -- * Access to subterms
-  children, properSubterms, subtermsList, subterms, reverseSubtermsList, reverseSubterms, occurs, isSubtermOf, isSubtermOfList, atPath,
+  children, properSubterms, subtermsList, subterms, reverseSubterms, occurs, isSubtermOf, isSubtermOfList, atPath,
   -- * Substitutions
   Substitution(..),
   subst,
@@ -62,8 +61,6 @@ module Twee.Term(
   bound, boundList, boundLists, mapFun, mapFunList, (<<)) where
 
 import Prelude hiding (lookup)
-import Twee.Term.Core hiding (F)
-import qualified Twee.Term.Core as Core
 import Data.List hiding (lookup, find, singleton)
 import Data.Maybe
 #if __GLASGOW_HASKELL__ < 804
@@ -75,6 +72,17 @@ import Control.Arrow((&&&))
 import Twee.Utils
 import Data.Intern
 import GHC.Stack
+import Twee.Term.Core(Var(..))
+
+data Term f = App {-# UNPACK #-} !(Sym f) !(TermList f) | Var {-# UNPACK #-} !Var
+  deriving (Eq, Ord)
+
+type TermList f = [Term f]
+
+pattern Cons x xs = x:xs
+pattern Nil = []
+singleton :: Term f -> TermList f
+singleton t = [t]
 
 --------------------------------------------------------------------------------
 -- * A type class for builders
@@ -87,24 +95,16 @@ class Build a where
   -- | The underlying type of function symbols.
   type BuildFun a
   -- | Convert a value into a 'Builder'.
-  builder :: a -> Builder (BuildFun a)
-
-instance Build (Builder f) where
-  type BuildFun (Builder f) = f
-  builder = id
+  buildList :: a -> TermList (BuildFun a)
+type Builder f = TermList f
 
 instance Build (Term f) where
   type BuildFun (Term f) = f
-  builder = emitTermList . singleton
-
-instance Build (TermList f) where
-  type BuildFun (TermList f) = f
-  builder = emitTermList
+  buildList = return
 
 instance Build a => Build [a] where
   type BuildFun [a] = BuildFun a
-  {-# INLINE builder #-}
-  builder = mconcat . map builder
+  buildList = concatMap buildList
 
 -- | Build a term. The given builder must produce exactly one term.
 {-# INLINE build #-}
@@ -113,24 +113,19 @@ build x =
   case buildList x of
     Cons t Nil -> t
 
--- | Build a termlist.
-{-# INLINE buildList #-}
-buildList :: Build a => a -> TermList (BuildFun a)
-buildList x = buildTermList 16 (builder x)
-
 -- | Build a constant (a function with no arguments).
 {-# INLINE con #-}
 con :: Sym f -> Builder f
-con x = emitApp x mempty
+con x = [App x []]
 
 -- | Build a function application.
 {-# INLINE app #-}
 app :: Build a => Sym (BuildFun a) -> a -> Builder (BuildFun a)
-app f ts = emitApp f (builder ts)
+app f ts = [App f (buildList ts)]
 
 -- | Build a variable.
 var :: Var -> Builder f
-var = emitVar
+var x = [Var x]
 
 --------------------------------------------------------------------------------
 -- Functions for substitutions.
@@ -188,7 +183,7 @@ instance (Build a, v ~ Var) => Substitution (v -> a) where
   type SubstFun (v -> a) = BuildFun a
 
   {-# INLINE evalSubst #-}
-  evalSubst sub x = builder (sub x)
+  evalSubst sub x = buildList (sub x)
 
 instance Substitution (Subst f) where
   type SubstFun (Subst f) = f
@@ -197,7 +192,7 @@ instance Substitution (Subst f) where
   evalSubst sub x =
     case lookupList x sub of
       Nothing -> var x
-      Just ts -> builder ts
+      Just ts -> ts
 
 -- | Apply a substitution to a term.
 {-# INLINE subst #-}
@@ -293,10 +288,10 @@ canonicalise (t:ts) = loop emptySubst vars t ts
   where
     (V m, V n) = boundLists (t:ts)
     vars =
-      buildTermList (n-m+2) $
+      --buildTermList (n-m+2) $
         -- Produces two variables when the term is ground
         -- (n = minBound, m = maxBound), which is OK.
-        mconcat [emitVar (V x) | x <- [0..n-m+1]]
+        mconcat [var (V x) | x <- [0..n-m+1]]
 
     loop !_ !_ !_ !_ | never = undefined
     loop sub _ Nil [] = sub
@@ -512,13 +507,10 @@ unifyListTriFrom !t !u (Triangle !sub) =
 empty :: forall f. TermList f
 empty = buildList (mempty :: Builder f)
 
--- | Index into a term.
-at :: Term f -> Int -> Term f
-t `at` n = singleton t `listAt` n
-
 -- | Index into a term using a path.
 atPath :: Term f -> [Int] -> Term f
-t `atPath` p = t `at` pathToPosition t p
+t `atPath` [] = t
+App _ ts `atPath` (p:ps) = (ts !! p) `atPath` ps
 
 -- | Get the children (direct subterms) of a term.
 children :: Term f -> TermList f
@@ -536,9 +528,6 @@ instance Show (Term f) where
   show (Var x) = show x
   show (App f Nil) = show f
   show (App f ts) = show f ++ "(" ++ intercalate "," (map show (unpack ts)) ++ ")"
-
-instance Show (TermList f) where
-  show = show . unpack
 
 instance Show (Subst f) where
   show subst =
@@ -558,11 +547,6 @@ lookup x s = do
 {-# INLINE extend #-}
 extend :: Var -> Term f -> Subst f -> Maybe (Subst f)
 extend x t sub = extendList x (singleton t) sub
-
--- | Find the length of a term.
-{-# INLINE len #-}
-len :: Term f -> Int
-len = lenList . singleton
 
 -- | Return the lowest- and highest-numbered variables in a term.
 {-# INLINE bound #-}
@@ -587,7 +571,8 @@ boundListFrom (V !ex, V !ey) ts = (V x, V y)
 -- | Check if a variable occurs in a term.
 {-# INLINE occurs #-}
 occurs :: Var -> Term f -> Bool
-occurs x t = occursList x (singleton t)
+occurs x (Var y) = x == y
+occurs x (App _ ts) = any (occurs x) ts
 
 -- | Find all subterms of a termlist.
 {-# INLINE subtermsList #-}
@@ -602,17 +587,9 @@ subtermsList t = unfoldr op (unpack t)
 subterms :: Term f -> [Term f]
 subterms = subtermsList . singleton
 
--- | Find all subterms of a term, but in reverse order.
-{-# INLINE reverseSubtermsList #-}
-reverseSubtermsList :: TermList f -> [Term f]
-reverseSubtermsList t =
-  [ t `unsafeListAt` n | n <- [k-1,k-2..0] ]
-  where
-    k = lenList t
-
 {-# INLINE reverseSubterms #-}
 reverseSubterms :: Term f -> [Term f]
-reverseSubterms t = reverseSubtermsList (singleton t)
+reverseSubterms = reverse . subterms
 
 -- | Find all proper subterms of a term.
 {-# INLINE properSubterms #-}
@@ -639,7 +616,10 @@ t `isVariantOf` u = t `isInstanceOf` u && u `isInstanceOf` t
 
 -- | Is a term a subterm of another one?
 isSubtermOf :: Term f -> Term f -> Bool
-t `isSubtermOf` u = t `isSubtermOfList` singleton u
+t `isSubtermOf` u = t `elem` subterms u
+
+isSubtermOfList :: Term f -> TermList f -> Bool
+t `isSubtermOfList` us = any (t `isSubtermOf`) us
 
 -- | Map a function over the function symbols in a term.
 mapFun :: (Sym f -> Sym g) -> Term f -> Builder g
@@ -657,77 +637,27 @@ mapFunList f ts = aux ts
 replace :: (Build a, BuildFun a ~ f) => Term f -> a -> TermList f -> Builder f
 replace !_ !_ Nil = mempty
 replace t u (Cons v vs)
-  | t == v = builder u `mappend` replace t u vs
-  | len v < len t = builder v `mappend` replace t u vs
+  | t == v = buildList u `mappend` replace t u vs
   | otherwise =
     case v of
       Var x -> var x `mappend` replace t u vs
       App f ts -> app f (replace t u ts) `mappend` replace t u vs
 
--- | Replace the term at a given position in a term with a different term.
-{-# INLINE replacePosition #-}
-replacePosition :: (Build a, BuildFun a ~ f) => Int -> a -> TermList f -> Builder f
-replacePosition n !x = aux n
-  where
-    aux !_ !_ | never = undefined
-    aux _ Nil = mempty
-    aux 0 (Cons _ t) = builder x `mappend` builder t
-    aux n (Cons (Var x) t) = var x `mappend` aux (n-1) t
-    aux n (Cons t@(App f ts) u)
-      | n < len t =
-        app f (aux (n-1) ts) `mappend` builder u
-      | otherwise =
-        builder t `mappend` aux (n-len t) u
-
 {-# INLINE replacePath #-}
 replacePath :: (Build a, BuildFun a ~ f) => [Int] -> a -> TermList f -> Builder f
-replacePath n x ts@(Cons t Nil) = replacePosition (pathToPosition t n) x ts
-
--- | Replace the term at a given position in a term with a different term, while
--- simultaneously applying a substitution. Useful for building critical pairs.
-{-# INLINE replacePositionSub #-}
-replacePositionSub :: (Substitution sub, SubstFun sub ~ f) => sub -> Int -> TermList f -> TermList f -> Builder f
-replacePositionSub sub n !x = aux n
+replacePath p x [t] = [term p t]
   where
-    aux !_ !_ | never = undefined
-    aux _ Nil = mempty
-    aux n (Cons t u)
-      | n < len t = inside n t `mappend` outside u
-      | otherwise = outside (singleton t) `mappend` aux (n-len t) u
-
-    inside 0 _ = outside x
-    inside n (App f ts) = app f (aux (n-1) ts)
-    inside _ _ = undefined -- implies n >= len t
-
-    outside t = substList sub t
+    term [] _ = build x
+    term (p:ps) (App f ts) =
+      App f (take p ts ++ [term ps (ts !! p)] ++ drop (p+1) ts)
 
 {-# INLINE replacePathSub #-}
 replacePathSub :: (Substitution sub, SubstFun sub ~ f) => sub -> [Int] -> TermList f -> TermList f -> Builder f
-replacePathSub sub n x ts@(Cons t Nil) = replacePositionSub sub (pathToPosition t n) x ts
-
--- | Convert a position in a term, expressed as a single number, into a path.
-positionToPath :: Term f -> Int -> [Int]
-positionToPath t n = term t n
+replacePathSub sub p x [t] = [term p t]
   where
-    term _ 0 = []
-    term t n = list 0 (children t) (n-1)
-
-    list _ Nil _ = error "bad position"
-    list k (Cons t u) n
-      | n < len t = k:term t n
-      | otherwise = list (k+1) u (n-len t)
-
--- | Convert a path in a term into a position.
-pathToPosition :: HasCallStack => Term f -> [Int] -> Int
-pathToPosition t ns = term 0 t ns
-  where
-    term k _ [] = k
-    term k t (n:ns) = list (k+1) (children t) n ns
-
-    list _ Nil _ _ = error ("bad path: " ++ show ns ++ " " ++ show t)
-    list k (Cons t _) 0 ns = term k t ns
-    list k (Cons t u) n ns =
-      list (k+len t) u (n-1) ns
+    term [] _ = build (substList sub x)
+    term (p:ps) (App f ts) =
+      App f (substList sub (take p ts) ++ [term ps (ts !! p)] ++ substList sub (drop (p+1) ts))
 
 -- | Compare the values of two 'Sym's.
 (<<) :: (Intern f, Ord f) => Sym f -> Sym f -> Bool
