@@ -84,11 +84,6 @@ data Index f a =
   Index {
     -- The size of the smallest term in the index.
     minSize_ :: {-# UNPACK #-} !Int,
-    -- When all keys in the index start with the same sequence of symbols, we
-    -- compress them into this prefix; the "fun" and "var" fields below refer to
-    -- the first symbol _after_ the prefix, and the "here" field contains values
-    -- whose remaining key is exactly this prefix.
-    prefix   :: {-# UNPACK #-} !(TermList f),
     -- The values that are found at this node.
     here     :: [a],
     -- Function symbol edges.
@@ -115,7 +110,6 @@ invariant Empty = True
 invariant Index{..} =
   nonEmpty &&
   noEmptyVars &&
-  maxPrefix &&
   sizeCorrect &&
   all invariant (map snd (toList fun)) &&
   all invariant (map snd (Numbered.toList var))
@@ -126,18 +120,13 @@ invariant Index{..} =
       not (List.null (Numbered.toList var))
     noEmptyVars = -- the var field should not contain any Emptys
       all (not . null . snd) (Numbered.toList var)
-    maxPrefix -- prefix should be used if possible
-      | List.null here =
-        length (filter (not . null . snd) (toList fun)) +
-        length (Numbered.toList var) > 1
-      | otherwise = True
     sizeCorrect -- size field must be correct
       | List.null here =
-        (minSize_ - lenList prefix - 1) `elem`
+        (minSize_ - 1) `elem`
         map (minSize . snd) (toList fun) ++
         map (minSize . snd) (Numbered.toList var)
       | otherwise =
-        minSize_ == lenList prefix
+        minSize_ == 0
 
 instance Default (Index f a) where def = Empty
 
@@ -157,19 +146,7 @@ singleton !t x = leaf (Term.singleton t) [x]
 -- A leaf node, perhaps with a prefix.
 leaf :: TermList f -> [a] -> Index f a
 leaf !_ [] = Empty
-leaf t xs = Index (lenList t) t xs newArray Numbered.empty
-
--- Add a prefix (given as a list of symbols) to all terms in an index.
-addPrefix :: [Term f] -> Index f a -> Index f a
-addPrefix _ Empty = Empty
-addPrefix [] idx = idx
-addPrefix ts idx =
-  idx {
-    minSize_ = minSize_ idx + length ts,
-    prefix = buildList (mconcat (map atom ts) `mappend` builder (prefix idx)) }
-  where
-    atom (Var x) = Term.var x
-    atom (App f _) = con f
+leaf t xs = modify' (xs ++) t (Index maxBound [] newArray Numbered.empty)
 
 -- Smart constructor for Index.
 index :: [a] -> Array (Index f a) -> Numbered (Index f a) -> Index f a
@@ -177,16 +154,9 @@ index here fun var =
   case (here, fun', Numbered.toList var') of
     ([], [], []) ->
       Empty
-    ([], [(f, idx)], []) ->
-      idx{minSize_ = succ (minSize_ idx),
-          prefix = buildList (con (unsafeMkSym f) `mappend` builder (prefix idx))}
-    ([], [], [(x, idx)]) ->
-      idx{minSize_ = succ (minSize_ idx),
-          prefix = buildList (Term.var (V x) `mappend` builder (prefix idx))}
     _ ->
       Index {
         minSize_ = size,
-        prefix = Term.empty,
         here = here,
         fun = fun,
         var = var' }
@@ -214,61 +184,27 @@ delete =
 modify :: (Symbolic a, ConstantOf a ~ f) =>
   (a -> [a] -> [a]) ->
   Term f -> a -> Index f a -> Index f a
-modify f !t0 !v0 !idx = aux [] (Term.singleton t) idx
+modify f !t0 !v0 !idx = modify' (f v) (Term.singleton t) idx
   where
     (!t, !v) = canonicalise (t0, v0) 
 
-    aux [] t Empty =
-      leaf t (f v [])
+modify' :: ([a] -> [a]) -> TermList f -> Index f a -> Index f a
+modify' f !t !idx = aux t idx
+  where
+    aux t Empty =
+      leaf t (f [])
 
-    -- Non-empty prefix
-    aux syms (ConsSym{hd = t@(Var x), rest = ts})
-      idx@Index{prefix = ConsSym{hd = Var y, rest = us}}
-      | x == y =
-        aux (t:syms) ts idx{prefix = us, minSize_ = minSize_ idx-1}
-    aux syms (ConsSym{hd = t@(App f _), rest = ts})
-      idx@Index{prefix = ConsSym{hd = App g _, rest = us}}
-      | f == g =
-        aux (t:syms) ts idx{prefix = us, minSize_ = minSize_ idx-1}
-    aux [] t idx@Index{prefix = Cons{}} =
-      aux [] t (expand idx)
-    aux syms@(_:_) t idx =
-      addPrefix (reverse syms) $ aux [] t idx
-
-    -- Nil prefix
-    aux [] Nil idx =
-      index (f v (here idx)) (fun idx) (var idx)
-    aux [] ConsSym{hd = App f _, rest = u} idx =
+    aux Nil idx =
+      index (f (here idx)) (fun idx) (var idx)
+    aux ConsSym{hd = App f _, rest = u} idx =
       index (here idx)
         (update (symId f) idx' (fun idx))
         (var idx)
       where
-        idx' = aux [] u (fun idx ! symId f)
-    aux [] ConsSym{hd = Var x, rest = u} idx =
+        idx' = aux u (fun idx ! symId f)
+    aux ConsSym{hd = Var x, rest = u} idx =
       index (here idx) (fun idx)
-        (Numbered.modify (var_id x) Empty (aux [] u) (var idx))
-
--- Helper for modify:
--- Take an index with a prefix and pull out the first symbol of the prefix,
--- giving an index which doesn't start with a prefix.
-{-# INLINE expand #-}
-expand :: Index f a -> Index f a
-expand idx@Index{minSize_ = size, prefix = ConsSym{hd = t, rest = ts}} =
-  case t of
-    Var x ->
-      Index {
-        minSize_ = size,
-        prefix = Term.empty,
-        here = [],
-        fun = newArray,
-        var = Numbered.singleton (var_id x) idx { prefix = ts, minSize_ = size - 1 }}
-    App f _ ->
-      Index {
-        minSize_ = size,
-        prefix = Term.empty,
-        here = [],
-        fun = Array.singleton (symId f) idx { prefix = ts, minSize_ = size - 1 },
-        var = Numbered.empty }
+        (Numbered.modify (var_id x) Empty (aux u) (var idx))
 
 -- | Look up a term in the index. Finds all key-value such that the search term
 -- is an instance of the key, and returns an instance of the the value which
@@ -413,7 +349,7 @@ search t binds idx rest =
       | lenList t < minSize idx ->
         rest -- the search term is smaller than any in this index
       | otherwise ->
-        searchLoop binds t prefix here fun var rest
+        searchLoop binds t here fun var rest
 
 -- The main work of 'search' goes on here.
 -- It is carefully tweaked to generate nice code,
@@ -422,29 +358,12 @@ searchLoop ::
   -- Search term and substitution
   Bindings f -> TermList f ->
   -- Contents of the relevant node of the index
-  TermList f -> [a] -> Array (Index f a) -> Numbered (Index f a) ->
+  [a] -> Array (Index f a) -> Numbered (Index f a) ->
   Stack f a -> Stack f a
-searchLoop !_ !_ !_ _ !_ !_ _ | False = undefined
-searchLoop binds t prefix here fun var rest =
+searchLoop !_ !_ _ !_ !_ _ | False = undefined
+searchLoop binds t here fun var rest =
   case t of
     ConsSym{hd = thd, tl = ttl, rest = trest} ->
-      case prefix of
-        ConsSym{hd = phd, tl = ptl, rest = prest} ->
-          -- Check the search term against the prefix.
-          case (thd, phd) of
-            (_, Var x) ->
-              case extendBindings x thd binds of
-                Just binds' ->
-                  searchLoop binds' ttl ptl here fun var rest
-                Nothing ->
-                  rest
-            (App f _, App g _) | f == g ->
-               -- Term and prefix start with same symbol, chop them off.
-               searchLoop binds trest prest here fun var rest
-            _ ->
-              -- Term and prefix don't match.
-              rest
-        _ ->
           -- We've exhausted the prefix, so let's descend into the tree.
           -- Seems to work better to explore the function node first.
           case thd of
@@ -458,15 +377,10 @@ searchLoop binds t prefix here fun var rest =
                 0 -> rest
                 _ -> searchVars thd ttl binds var 0 rest
     _ ->
-      case prefix of
-        Nil ->
           -- The search term matches this node.
           case here of
             [] -> rest
             _ -> Yield here binds rest
-        _ ->
-          -- We've run out of search term - it doesn't match this node.
-          rest
 
 -- Search the variable-labelled edges of a node,
 -- starting with a particular variable.
