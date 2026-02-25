@@ -42,7 +42,7 @@ import qualified Data.PackedSequence as PackedSequence
 import Test.QuickCheck.Gen hiding (sample)
 import Test.QuickCheck.Random
 import Debug.Trace
-import Twee.Generate
+--import Twee.Generate
 import qualified System.Random as Random
 
 ----------------------------------------------------------------------
@@ -803,10 +803,13 @@ instance Pretty HintKind where
 -- Add a new hint.
 {-# INLINEABLE addHint #-}
 addHint :: Function f => Config f -> State f -> Term f -> State f
+{-
 addHint config@Config{..} state@State{..} hint =
   addHint' config state hint UserHint cost
   where
     cost = fromIntegral (len hint - length (vars hint)) * cfg_hint_skel_factor + cfg_hint_skel_cost
+-}
+addHint _ s _ = s
 
 -- Add a new hint, with a specified kind and cost.
 {-# INLINEABLE addHint' #-}
@@ -1019,6 +1022,7 @@ complete1 config@Config{..} state
           (Nothing, state) -> (False, state)
           (Just (info, overlap, _, _), state) ->
             (True, consider config state info overlap)
+      {-
       Just g -> -- random mode
         let (g1, g2) = Random.split g in
         let state' = state { st_random_seed = Just g2 } in
@@ -1032,7 +1036,9 @@ complete1 config@Config{..} state
                 state'' = consider config (maybeMessage state'{st_problem_term = Just cf}) info overlap
                 progress = st_next_active state' /= st_next_active state'' in
             (True, state''{st_problem_term = if progress then st_problem_term state'' else Nothing})
+      -}
 
+{-
 {-# INLINEABLE findCriticalPair #-}
 findCriticalPair :: Function f => Config f -> State f -> QCGen -> Maybe (Info, CriticalPair f, Bool, ConfluenceFailure f)
 findCriticalPair config state g = retry `mplus` random
@@ -1083,6 +1089,7 @@ findCriticalPair config state g = retry `mplus` random
           trace ("Overlap " ++ prettyShow (overlap_eqn o) ++ " was spurious") Nothing -- should be rare
         Just o' ->
           Just (scoreCP config 0 (st_hints state) (overlap_eqn o'), (Info 0 IntSet.empty, makeCriticalPair o, changed, cf))
+-}
 
 -- Return all goal terms. Handles the $equals coding.
 goalTerms :: Function f => State f -> [Term f]

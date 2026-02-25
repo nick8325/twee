@@ -51,7 +51,7 @@ library
     Twee.Constraints
     Twee.CP
     Twee.Equation
-    Twee.Generate
+    --Twee.Generate
     Twee.Index
     Twee.Join
     Twee.KBO

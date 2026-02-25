@@ -243,8 +243,8 @@ termScore Config{..} t =
         [] -> n
         u:us -> size' n u us
     size' n (Cons t ts) us
-      | len t > 1, t `isSubtermOfList` ts || any (t `isSubtermOfList`) us =
-        size' (n+cfg_dupcost+cfg_dupfactor*fromIntegral (len t)) ts us
+      | nontrivial t, t `isSubtermOfList` ts || any (t `isSubtermOfList`) us =
+        size' (n+cfg_dupcost+cfg_dupfactor*1) ts us
     size' n ts xs
       | Cons (App f ws@(Cons a (Cons b us))) vs <- ts,
         not (isVar a),
@@ -257,6 +257,9 @@ termScore Config{..} t =
       size' (n+cfg_varweight) ts us
     size' n (Cons (App f ts) us) vs =
       size' (n+weight f) ts (us:vs)
+
+    nontrivial (App _ (Cons _ _)) = True
+    nontrivial _ = False
 
 ----------------------------------------------------------------------
 -- * Higher-level handling of critical pairs.

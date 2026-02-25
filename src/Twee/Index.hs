@@ -222,6 +222,14 @@ lookup t idx =
 matches :: Term f -> Index f a -> [(Subst f, a)]
 matches t idx = run (search (len t) [t] emptyBindings idx Stop)
 
+len :: Term f -> Int
+len t = aux [t] 0
+  where
+    aux _ !_ | False = undefined
+    aux [] n = n
+    aux (Var _:ts) n = aux ts (n+1)
+    aux (App _ t:ts) n = aux (unpack t ++ ts) (n+1)
+
 -- | Check if a term is present in the index.
 member :: Term f -> Index f a -> Bool
 member t idx = not (Prelude.null (matches t idx))

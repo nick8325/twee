@@ -20,18 +20,17 @@
 #endif
 module Twee.Term(
   -- * Terms
-  Term, Var(..), pattern Var, pattern App, isApp, isVar, singleton, len,
+  Term, Var(..), pattern Var, pattern App, isApp, isVar, singleton,
   -- * Termlists
-  TermList, pattern Nil, pattern Cons, pattern ConsSym, hd, tl, rest,
-  pattern UnsafeCons, pattern UnsafeConsSym, uhd, utl, urest,
-  empty, unpack, lenList,
+  TermList, pattern Nil, pattern Cons,
+  empty, unpack,
   -- * Building terms
   Build(..),
   Builder,
   build, buildList,
   con, app, var,
   -- * Access to subterms
-  children, properSubterms, subtermsList, subterms, reverseSubtermsList, reverseSubterms, occurs, isSubtermOf, isSubtermOfList, at, listAt, atPath, listDrop,
+  children, properSubterms, subtermsList, subterms, reverseSubtermsList, reverseSubterms, occurs, isSubtermOf, isSubtermOfList, atPath,
   -- * Substitutions
   Substitution(..),
   subst,
@@ -56,9 +55,7 @@ module Twee.Term(
   TriangleSubst(..), emptyTriangleSubst,
   close,
   -- * Positions in terms
-  positionToPath, pathToPosition,
-  replacePosition,
-  replacePositionSub,
+  replacePath,
   replacePathSub,
   replace,
   -- * Miscellaneous functions
@@ -686,6 +683,10 @@ replacePosition n !x = aux n
         app f (aux (n-1) ts) `mappend` builder u
       | otherwise =
         builder t `mappend` aux (n-len t) u
+
+{-# INLINE replacePath #-}
+replacePath :: (Build a, BuildFun a ~ f) => [Int] -> a -> TermList f -> Builder f
+replacePath n x ts@(Cons t Nil) = replacePosition (pathToPosition t n) x ts
 
 -- | Replace the term at a given position in a term with a different term, while
 -- simultaneously applying a substitution. Useful for building critical pairs.

@@ -288,7 +288,7 @@ ruleResult t (r0, sub) = build (replace (lhs r) (rhs r) (singleton t))
 ruleProof :: Function f => Term f -> (Rule f, Subst f) -> Derivation f
 ruleProof t (r0, sub)
   | t == lhs r = ruleDerivation r
-  | len t < len (lhs r) = Proof.Refl t
+  -- | len t < len (lhs r) = Proof.Refl t
   where
     r = subst sub r0
 ruleProof (App f ts) rule =
@@ -462,12 +462,11 @@ reductionProof1 t ps = red t (Proof.Refl t) ps
 -- Helpers for result1 and reductionProof1.
 ruleResult1 :: HasCallStack => Term f -> (Rule f, Subst f, [Int]) -> Term f
 ruleResult1 t (r0, sub, p)
-  | t `at` n == lhs r =
-    build (replacePosition n (rhs r) (singleton t))
+  | t `atPath` p == lhs r =
+    build (replacePath p (rhs r) (singleton t))
   | otherwise = error "ruleResult1: selected subterm is not equal to lhs of rule"
   where
     r = subst sub r0
-    n = pathToPosition t p
 
 ruleProof1 :: Function f => Term f -> (Rule f, Subst f, [Int]) -> Derivation f
 ruleProof1 t (r0, sub, p)
@@ -482,12 +481,11 @@ type Strategy1 f = Term f -> [(Rule f, Subst f, [Int])]
 
 -- | Apply a strategy anywhere in a term.
 anywhere1 :: Strategy1 f -> Strategy1 f
-anywhere1 strat t =
-  stamp "anywhere1 (whnf)"
-  [ (r, sub, p ++ p')
-  | n <- reverse [0..len t-1], -- innermost
-    let p = positionToPath t n,
-    (r, sub, p') <- strat (t `at` n) ]
+anywhere1 strat t = there t ++ strat t
+  where
+    there Var{} = []
+    there (App _ ts) = concat (zipWith inner [0..] (unpack ts))
+    inner i u = [(r, sub, i:p) | (r, sub, p) <- anywhere1 strat u]
 
 -- | Apply a basic strategy to a term.
 basic :: Strategy f -> Strategy1 f
@@ -576,6 +574,7 @@ hasUNFRandom strat t =
     _ <- [1..5] ]
 
 hasUNFSimple :: Function f => Strategy1 f -> Term f -> Reduction1 f -> UNF f
+{-
 hasUNFSimple strat t0 r0 = magic t0 r0
   where
     normSteps t = normaliseWith1 (const True) strat t
@@ -621,8 +620,11 @@ hasUNFSimple strat t0 r0 = magic t0 r0
     criticalOverlap (Var _) _ = False
     criticalOverlap App{} [] = True
     criticalOverlap t (p:ps) = criticalOverlap (unpack (children t) !! p) ps
+-}
+hasUNFSimple = undefined
 
 hasUNF :: (HasCallStack, Function f) => Strategy1 f -> Term f -> Reduction1 f -> UNF f
+{-
 hasUNF strat t0 r0 =
   let res = magic t0 r0
   in stamp (case res of { UniqueNormalForm{} -> "hasUNF.UNF"; HasCriticalPair{} -> "hasUNF.CP" }) res
@@ -789,7 +791,10 @@ hasUNF strat t0 r0 =
     rematch r pos t = sub
       where
         Just sub = match (lhs r) (t `atPath` pos)
+-}
+hasUNF = undefined
 
+{-
 -- Given a path in a term which is below a variable, find the variable
 -- and the part of the path below the variable
 decomposePath (Var x) ps = (x, ps)
@@ -825,6 +830,7 @@ track Rule{lhs = lhs, rhs = rhs} [] pt =
   in
     ([positionToPath lhs n ++ p | n <- varPos x lhs],
      [positionToPath rhs n ++ p | n <- varPos x rhs])
+-}
 
 {-
 hasUNFSlow :: Function f => Strategy1 f -> Term f -> UNF f
