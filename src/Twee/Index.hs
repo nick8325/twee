@@ -211,24 +211,16 @@ modify' f !t !idx = aux t idx
 -- makes the search term exactly equal to the key.
 {-# INLINE lookup #-}
 lookup :: (Has a b, Symbolic b, Has b (TermOf b)) => TermOf b -> Index (ConstantOf b) a -> [b]
-lookup t idx = lookupList (Term.singleton t) idx
-
-{-# INLINEABLE lookupList #-}
-lookupList :: (Has a b, Symbolic b, Has b (TermOf b)) => TermListOf b -> Index (ConstantOf b) a -> [b]
-lookupList t idx =
+lookup t idx =
   [ subst sub (the x)
-  | (sub, x) <- matchesList t idx ]
+  | (sub, x) <- matches t idx ]
 
 -- | Look up a term in the index. Like 'lookup', but returns the exact value
 -- that was inserted into the index, not an instance. Also returns a substitution
 -- which when applied to the value gives you the matching instance.
 {-# INLINE matches #-}
 matches :: Term f -> Index f a -> [(Subst f, a)]
-matches t idx = matchesList (Term.singleton t) idx
-
-matchesList :: TermList f -> Index f a -> [(Subst f, a)]
-matchesList t idx =
-  run (search t emptyBindings idx Stop)
+matches t idx = run (search (len t) [t] emptyBindings idx Stop)
 
 -- | Check if a term is present in the index.
 member :: Term f -> Index f a -> Bool
@@ -305,10 +297,11 @@ data Stack f a =
   -- This stack frame represents a search of the variable edges of a
   -- node, starting at a particular variable.
   Frame {
+    frame_len :: {-# UNPACK #-} !Int,
     -- The term which should match the variable
     frame_term    :: {-# UNPACK #-} !(Term f),
     -- The remainder of the search term
-    frame_terms   :: {-# UNPACK #-} !(TermList f),
+    frame_terms   :: {-# UNPACK #-} ![Term f],
     -- The current substitution
     frame_bind    :: {-# UNPACK #-} !(Bindings f),
     -- The list of variable edges
@@ -334,49 +327,50 @@ run stack = stamp "index lookup" (run1 stack)
   where
     run1 Stop = []
     run1 Frame{..} =
-      run1 (searchVars frame_term frame_terms frame_bind frame_indexes frame_var frame_rest)
+      run1 (searchVars frame_len frame_term frame_terms frame_bind frame_indexes frame_var frame_rest)
     run1 Yield{..} =
       map (toSubst yield_binds,) yield_found ++ run yield_rest
 
 -- Search starting with a given substitution.
 {-# INLINE search #-}
-search :: TermList f -> Bindings f -> Index f a -> Stack f a -> Stack f a
-search !_ !_ !_ _ | False = undefined
-search t binds idx rest =
+search :: Int -> [Term f] -> Bindings f -> Index f a -> Stack f a -> Stack f a
+search !_ !_ !_ !_ _ | False = undefined
+search n t binds idx rest =
   case idx of
     Empty -> rest
     Index{..}
-      | lenList t < minSize idx ->
+      | n < minSize idx ->
         rest -- the search term is smaller than any in this index
       | otherwise ->
-        searchLoop binds t here fun var rest
+        searchLoop binds n t here fun var rest
 
 -- The main work of 'search' goes on here.
 -- It is carefully tweaked to generate nice code,
 -- in particular casing on each term list exactly once.
 searchLoop ::
   -- Search term and substitution
-  Bindings f -> TermList f ->
+  Bindings f -> Int -> [Term f] ->
   -- Contents of the relevant node of the index
   [a] -> Array (Index f a) -> Numbered (Index f a) ->
   Stack f a -> Stack f a
-searchLoop !_ !_ _ !_ !_ _ | False = undefined
-searchLoop binds t here fun var rest =
+searchLoop !_ !_ !_ _ !_ !_ _ | False = undefined
+searchLoop binds n t here fun var rest =
   case t of
-    ConsSym{hd = thd, tl = ttl, rest = trest} ->
+    thd:ttl ->
+          let trest = unpack (children thd) ++ ttl in
           -- We've exhausted the prefix, so let's descend into the tree.
           -- Seems to work better to explore the function node first.
           case thd of
             App f _ | idx@Index{} <- fun ! symId f ->
               -- Avoid creating a frame unnecessarily.
               case Numbered.size var of
-                0 -> search trest binds idx rest
-                _ -> search trest binds idx $! Frame thd ttl binds var 0 rest
+                0 -> search (n-1) trest binds idx rest
+                _ -> search (n-1) trest binds idx $! Frame n thd ttl binds var 0 rest
             _ -> -- no function match
               case Numbered.size var of
                 0 -> rest
-                _ -> searchVars thd ttl binds var 0 rest
-    _ ->
+                _ -> searchVars n thd ttl binds var 0 rest
+    [] ->
           -- The search term matches this node.
           case here of
             [] -> rest
@@ -386,20 +380,20 @@ searchLoop binds t here fun var rest =
 -- starting with a particular variable.
 searchVars ::
   -- Term (with head separate) and substitution
-  Term f -> TermList f -> Bindings f ->
+  Int -> Term f -> [Term f] -> Bindings f ->
   -- Variable edges and starting variable
   Numbered (Index f a) -> Int ->
   Stack f a -> Stack f a
-searchVars !_ !_ !_ !_ !_ _ | False = undefined
-searchVars t ts binds var start rest
+searchVars !_ !_ !_ !_ !_ !_ _ | False = undefined
+searchVars n t ts binds var start rest
   | start >= Numbered.size var = rest
   | otherwise =
     let (x, idx) = var Numbered.! start in
     case extendBindings (V x) t binds of
       Just binds' ->
-        search ts binds' idx $!
+        search (n-len t) ts binds' idx $!
         if start + 1 == Numbered.size var then rest
-        else Frame t ts binds var (start+1) rest
+        else Frame n t ts binds var (start+1) rest
       Nothing ->
-        searchVars t ts binds var (start+1) rest
+        searchVars n t ts binds var (start+1) rest
 
