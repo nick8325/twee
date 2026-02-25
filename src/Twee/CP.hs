@@ -22,7 +22,7 @@ import Data.Int
 --import Debug.Trace
 
 -- | The set of positions at which a term can have critical overlaps.
-data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
+data Positions f = NilP | ConsP ![Int] !(Positions f)
 type PositionsOf a = Positions (ConstantOf a)
 -- | Like Positions but for an equation (one set of positions per term).
 data Positions2 f = ForwardsPos !(Positions f) | BothPos !(Positions f) !(Positions f)
@@ -32,14 +32,23 @@ instance Show (Positions f) where
 
 -- | Calculate the set of positions for a term.
 positions :: Term f -> Positions f
-positions t = aux 0 Set.empty (singleton t)
+positions t = fromList (snd (term [] Set.empty t))
   where
     -- Consider only general superpositions.
-    aux !_ !_ Nil = NilP
-    aux n m (Cons (Var _) t) = aux (n+1) m t
-    aux n m ConsSym{hd = t@App{}, rest = u}
-      | t `Set.member` m = aux (n+1) m u
-      | otherwise = ConsP n (aux (n+1) (Set.insert t m) u)
+    term :: [Int] -> Set.Set (Term f) -> Term f -> (Set.Set (Term f), [[Int]])
+    term _ m Var{} = (m, [])
+    term p m t@(App _ ts)
+      | t `Set.member` m = list 0 p m ts
+      | otherwise = fmap (reverse p:) $ list 0 p (Set.insert t m) ts
+
+    list :: Int -> [Int] -> Set.Set (Term f) -> TermList f -> (Set.Set (Term f), [[Int]])
+    list !_ !_ !m Nil = (m, [])
+    list n p m (Cons t ts) =
+      let (m1, ps) = term (n:p) m t
+          (m2, qs) = list (n+1) p m1 ts
+      in (m2, ps ++ qs)
+
+    fromList = foldr ConsP NilP
 
 -- | Calculate the set of positions for a rule.
 positionsRule :: Rule f -> Positions2 f
@@ -50,7 +59,7 @@ positionsRule rule
   | otherwise = BothPos (positions (lhs rule)) (positions (rhs rule))
 
 {-# INLINE positionsChurch #-}
-positionsChurch :: Positions f -> ChurchList Int
+positionsChurch :: Positions f -> ChurchList [Int]
 positionsChurch posns =
   ChurchList $ \c n ->
     let
@@ -77,7 +86,7 @@ data Overlap a f =
 
 data How =
   How {
-    how_pos  :: {-# UNPACK #-} !Int,
+    how_pos  :: ![Int],
     how_dir1 :: !Direction,
     how_dir2 :: !Direction }
   deriving (Eq, Ord, Show)
@@ -89,24 +98,14 @@ direct rule Forwards = rule
 direct rule Backwards = backwards rule
 
 instance Serialize How where
-  put = put . packHow
-    where
-      packHow :: How -> Int32
-      packHow How{..} =
-        fromIntegral $
-        fromEnum how_dir1 +
-        fromEnum how_dir2 `shiftL` 1 +
-        how_pos `shiftL` 2
+  put How{..} = do
+    put (fromIntegral (fromEnum how_dir1 + fromEnum how_dir2 `shiftL` 1) :: Int8)
+    put how_pos
 
-  get = fmap unpackHow get
-    where
-      unpackHow :: Int32 -> How
-      unpackHow n0 =
-        let n = fromIntegral n0 in
-        How {
-          how_dir1 = toEnum (n .&. 1),
-          how_dir2 = toEnum ((n `shiftR` 1) .&. 1),
-          how_pos  = n `shiftR` 2 }
+  get = do
+    n <- fromIntegral <$> (get :: Get Int8)
+    pos <- get
+    return How { how_dir1 = toEnum (n .&. 1), how_dir2 = toEnum ((n `shiftR` 1) .&. 1), how_pos = pos }
 
 -- | Represents the depth of a critical pair.
 newtype Depth = Depth Int deriving (Eq, Ord, Num, Real, Enum, Integral, Show)
@@ -160,7 +159,7 @@ overlapAt how@(How _ d1 d2) x1 x2 r1 r2 =
 {-# INLINE overlapAt' #-}
 overlapAt' :: How -> a -> a -> Equation f -> Equation f -> Maybe (Overlap a f)
 overlapAt' how@How{how_pos = n} r1 r2 (!outer :=: (!outer')) (!inner :=: (!inner')) = do
-  let t = outer `at` n
+  let t = outer `atPath` n
   sub <- unifyTri inner t
   let
     -- Make sure to keep in sync with overlapProof
@@ -188,9 +187,9 @@ simplifyOverlap idx overlap@Overlap{overlap_eqn = lhs :=: rhs, ..}
     rhs' = simplify idx rhs
 
 -- Put these in separate functions to avoid code blowup
-buildReplacePositionSub :: TriangleSubst f -> Int -> TermList f -> TermList f -> Term f
+buildReplacePositionSub :: TriangleSubst f -> [Int] -> TermList f -> TermList f -> Term f
 buildReplacePositionSub !sub !n !inner' !outer =
-  build (replacePositionSub sub n inner' outer)
+  build (replacePathSub sub n inner' outer)
 
 termSubst :: TriangleSubst f -> Term f -> Term f
 termSubst sub t = build (Term.subst sub t)
@@ -368,7 +367,7 @@ makeCriticalPair Overlap{..} =
     Just leftSub = match (lhs left) overlap_top
     Just rightSub = match (lhs right) inner
 
-    path = positionToPath (lhs left) (how_pos overlap_how)
+    path = how_pos overlap_how
     inner = overlap_top `atPath` path
 
     proof =

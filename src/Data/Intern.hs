@@ -21,8 +21,13 @@ type Intern a = (Typeable a, Ord a)
 newtype Sym a = MkSym Int32
   deriving (Eq, Ord)
 
+{-
 instance Show a => Show (Sym a) where
   show = show . unintern
+-}
+
+instance Show (Sym a) where
+  show (MkSym n) = "s" ++ show n
 
 -- | The unique ID of a symbol.
 symId :: Sym a -> Int

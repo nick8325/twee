@@ -1077,7 +1077,7 @@ findCriticalPair config state g = retry `mplus` random
       -}
       trace ("Term " ++ prettyShow (cf_term cf) ++ " has critical pair (" ++ prettyShow r1 ++ ", " ++ prettyShow r2 ++ ", " ++ show n ++ ")") $
       let r2' = renameAvoiding r1 r2 in
-      let Just o = overlapAt (How n Forwards Forwards) r1 r2' r1 r2' in
+      let Just o = overlapAt (How (positionToPath (lhs r1) n) Forwards Forwards) r1 r2' r1 r2' in
       case simplifyOverlap (index_all (st_rules state)) o of
         Nothing ->
           trace ("Overlap " ++ prettyShow (overlap_eqn o) ++ " was spurious") Nothing -- should be rare

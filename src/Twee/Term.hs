@@ -59,6 +59,7 @@ module Twee.Term(
   positionToPath, pathToPosition,
   replacePosition,
   replacePositionSub,
+  replacePathSub,
   replace,
   -- * Miscellaneous functions
   bound, boundList, boundLists, mapFun, mapFunList, (<<)) where
@@ -539,15 +540,15 @@ unpack t = unfoldr op t
     op Nil = Nothing
     op (Cons t ts) = Just (t, ts)
 
-instance (Intern f, Show f) => Show (Term f) where
+instance Show (Term f) where
   show (Var x) = show x
   show (App f Nil) = show f
   show (App f ts) = show f ++ "(" ++ intercalate "," (map show (unpack ts)) ++ ")"
 
-instance (Intern f, Show f) => Show (TermList f) where
+instance Show (TermList f) where
   show = show . unpack
 
-instance (Intern f, Show f) => Show (Subst f) where
+instance Show (Subst f) where
   show subst =
     show
       [ (i, t)
@@ -704,6 +705,10 @@ replacePositionSub sub n !x = aux n
 
     outside t = substList sub t
 
+{-# INLINE replacePathSub #-}
+replacePathSub :: (Substitution sub, SubstFun sub ~ f) => sub -> [Int] -> TermList f -> TermList f -> Builder f
+replacePathSub sub n x ts@(Cons t Nil) = replacePositionSub sub (pathToPosition t n) x ts
+
 -- | Convert a position in a term, expressed as a single number, into a path.
 positionToPath :: Term f -> Int -> [Int]
 positionToPath t n = term t n
@@ -723,7 +728,7 @@ pathToPosition t ns = term 0 t ns
     term k _ [] = k
     term k t (n:ns) = list (k+1) (children t) n ns
 
-    list _ Nil _ _ = error "bad path"
+    list _ Nil _ _ = error ("bad path: " ++ show ns ++ " " ++ show t)
     list k (Cons t _) 0 ns = term k t ns
     list k (Cons t u) n ns =
       list (k+len t) u (n-1) ns
