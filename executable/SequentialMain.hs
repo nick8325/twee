@@ -1178,9 +1178,9 @@ main = do
   stampM (intern "twee") . join . parseCommandLineWithExtraArgs
     ["--no-conjunctive-conjectures", "--no-split"]
 #ifdef VERSION_twee
-    "Twee, an equational theorem prover" . version ("twee version " ++ VERSION_twee) $
+    "Twee, the wonderful equation engine" . version ("twee version " ++ VERSION_twee) $
 #else
-    "Twee, an equational theorem prover" . version "twee development version" $
+    "Twee, the wonderful equation engine" . version "twee development version" $
 #endif
       globalFlags *> parseMainFlags *>
       -- hack: get --quiet and --no-proof options to appear before --tstp
