@@ -61,6 +61,7 @@ library
     Twee.Rule
     Twee.Rule.Index
     Twee.Term
+    Twee.Term.Flat
     Twee.Task
     Twee.Utils
     Twee.Term.Core

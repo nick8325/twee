@@ -1,26 +1,45 @@
-{-# LANGUAGE TypeFamilies, BangPatterns, PatternSynonyms, ViewPatterns, CPP #-}
+-- | Terms and substitutions.
+--
+-- Terms in twee are represented as arrays rather than as an algebraic data
+-- type. This module defines pattern synonyms ('App', 'Var', 'Cons', 'Nil')
+-- which means that pattern matching on terms works just as normal.
+-- The pattern synonyms can not be used to create new terms; for that you
+-- have to use a builder interface ('Build').
+--
+-- This module also provides:
+--
+--   * pattern synonyms for iterating through a term one symbol at a time
+--     ('ConsSym');
+--   * substitutions ('Substitution', 'Subst', 'subst');
+--   * unification ('unify') and matching ('match');
+--   * miscellaneous useful functions on terms.
+{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables, CPP, DefaultSignatures #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
 #ifdef USE_LLVM
 {-# OPTIONS_GHC -fllvm #-}
 #endif
-module Twee.Term(
+module Twee.Term.Flat(
   -- * Terms
-  Term, Var(..), pattern Var, pattern App, isApp, isVar, singleton, unsingleton, len,
-  flatten, toFlat, fromFlat,
+  Term, Var(..), pattern Var, pattern App, isApp, isVar, singleton, len,
   -- * Termlists
   TermList, pattern Nil, pattern Cons, pattern ConsSym, hd, tl, rest,
-  empty, pack, unpack, lenList,
-  flattenList, toFlatList, fromFlatList,
+  pattern UnsafeCons, pattern UnsafeConsSym, uhd, utl, urest,
+  empty, unpack, lenList,
+  -- * Building terms
+  Build(..),
+  Builder,
+  build, buildList,
+  con, app, var,
   -- * Access to subterms
-  children, properSubterms, subtermsList, subterms, reverseSubtermsList, reverseSubterms, occurs, isSubtermOf, isSubtermOfList, at, listAt, atPath,
+  children, properSubterms, subtermsList, subterms, reverseSubtermsList, reverseSubterms, occurs, isSubtermOf, isSubtermOfList, at, listAt, atPath, listDrop,
   -- * Substitutions
   Substitution(..),
   subst,
   Subst(..),
   -- ** Constructing and querying substitutions
-  emptySubst, listToSubst, substToList,
-  lookup,
-  extend,
+  emptySubst, listToSubst, substToList, substToList',
+  lookup, lookupList,
+  extend, extendList, unsafeExtendList,
   retract,
   -- ** Other operations on substitutions
   foldSubst, allSubst, substDomain,
@@ -44,154 +63,84 @@ module Twee.Term(
   -- * Miscellaneous functions
   bound, boundList, boundLists, mapFun, mapFunList, (<<)) where
 
-import qualified Twee.Term.Flat as Flat
-import qualified Twee.Term.Core as Flat
-import Twee.Term.Flat(Var(..), (<<))
-import Data.Intern(Sym)
-import qualified Data.IntMap.Strict(IntMap)
-import qualified Data.IntMap.Strict as IntMap
+import Prelude hiding (lookup)
+import Twee.Term.Core hiding (F)
+import qualified Twee.Term.Core as Core
+import Data.List hiding (lookup, find, singleton)
 import Data.Maybe
+#if __GLASGOW_HASKELL__ < 804
+import Data.Semigroup(Semigroup(..))
+#endif
+import Data.IntMap.Strict(IntMap)
+import qualified Data.IntMap.Strict as IntMap
+import Control.Arrow((&&&))
+import Twee.Utils
+import Data.Intern
+import GHC.Stack
 
 --------------------------------------------------------------------------------
--- * Lists of terms
+-- * A type class for builders
 --------------------------------------------------------------------------------
 
-data TermList f =
-    Nil
-  | ConsVar {-# UNPACK #-} !Var (TermList f)
-  | ConsApp {-# UNPACK #-} !(Sym f) (TermList f) (TermList f)
-  | AppendFlatList {-# UNPACK #-} !(Flat.TermList f) (TermList f) -- first argument must be non-empty
+-- | Instances of 'Build' can be turned into terms using 'build' or 'buildList',
+-- and turned into term builders using 'builder'. Has instances for terms,
+-- termlists, builders, and Haskell lists.
+class Build a where
+  -- | The underlying type of function symbols.
+  type BuildFun a
+  -- | Convert a value into a 'Builder'.
+  builder :: a -> Builder (BuildFun a)
 
-{-# INLINE appendFlatList #-}
-appendFlatList :: Flat.TermList f -> TermList f -> TermList f
-appendFlatList Flat.Nil ts = ts
-appendFlatList ts us = AppendFlatList ts us
+instance Build (Builder f) where
+  type BuildFun (Builder f) = f
+  builder = id
 
-{-# COMPLETE Cons, Nil #-}
-{-# COMPLETE ConsSym, Nil #-}
-pattern Cons :: Term f -> TermList f -> TermList f
-pattern Cons t ts <- (patHead -> Just (t, ts, _)) where
-  Cons (Flat t) ts = appendFlatList (Flat.singleton t) ts
-  Cons (Var x) ts = ConsVar x ts
-  Cons (App f ts) us = ConsApp f ts us
-
-pattern ConsSym :: Term f -> TermList f -> TermList f -> TermList f
-pattern ConsSym{hd, tl, rest} <- (patHead -> Just (hd, tl, rest))
-
-{-# INLINE patHead #-}
-patHead :: TermList f -> Maybe (Term f, TermList f, TermList f)
-patHead Nil = Nothing
-patHead (AppendFlatList t ts) =
-  let (t, us, vs) = Flat.unsafePatHead (Flat.singleton t) in
-  Just (Flat t, appendFlatList us ts, appendFlatList vs ts)
-patHead (ConsVar x ts) =
-  Just (Var x, ts, ts)
-patHead (ConsApp f ts us) =
-  Just (App f ts, us, ts <> us) -- TODO check performance
-
-instance Semigroup (TermList f) where
-  Nil <> ts = ts
-  ConsVar x ts <> us = ConsVar x (ts <> us)
-  ConsApp f ts us <> vs = ConsApp f ts (us <> vs)
-  AppendFlatList t ts <> us = AppendFlatList t (ts <> us)
-
-instance Monoid (TermList f) where
-  mempty = Nil
-
-lenList :: TermList f -> Int
-lenList t = aux 0 [t]
-  where
-    aux !_ !_ | False = undefined
-    aux n [] = n
-    aux n (Nil:ts) = aux n ts
-    aux n (AppendFlatList t u:ts) = aux (n+Flat.lenList t) (u:ts)
-    aux n (ConsVar _ t:ts) = aux (n+1) (t:ts)
-    aux n (ConsApp _ t u:ts) = aux (n+1) (t:u:ts)
-
---------------------------------------------------------------------------------
--- * Terms
---------------------------------------------------------------------------------
-
-data Term f =
-    Flat {-# UNPACK #-} !(Flat.Term f)
-  | VarTerm {-# UNPACK #-} !Var
-  | AppTerm {-# UNPACK #-} !(Sym f) (TermList f)
-
-{-# COMPLETE Var, App #-}
-pattern Var :: Var -> Term f
-pattern Var x <- (patVar -> Just x)
-  where
-    Var x = VarTerm x
-
-pattern App :: Sym f -> TermList f -> Term f
-pattern App f ts <- (patApp -> Just (f, ts))
-  where
-    App f ts = AppTerm f ts
-
-{-# INLINE patVar #-}
-patVar :: Term f -> Maybe Var
-patVar (VarTerm x) = Just x
-patVar (Flat (Flat.Var x)) = Just x
-patVar _ = Nothing
-
-{-# INLINE patApp #-}
-patApp :: Term f -> Maybe (Sym f, TermList f)
-patApp (AppTerm f ts) = Just (f, ts)
-patApp (Flat (Flat.App f ts)) = Just (f, fromFlatList ts)
-patApp _ = Nothing
-
-singleton :: Term f -> TermList f
-singleton t = Cons t Nil
-
-unsingleton :: TermList f -> Term f
-unsingleton (Cons t Nil) = t
-unsingleton Nil = error "unsingleton: not a singleton term"
-
-len :: Term f -> Int
-len t = lenList (singleton t)
-
---------------------------------------------------------------------------------
--- * Conversion to and from flat-terms
---------------------------------------------------------------------------------
-
-instance Flat.Build (TermList f) where
-  type BuildFun (TermList f) = f
-  builder Nil = mempty
-  builder (ConsVar x ts) = Flat.var x `mappend` Flat.builder ts
-  builder (ConsApp f ts us) = Flat.app f (Flat.builder ts) `mappend` Flat.builder us
-  builder (AppendFlatList ts us) = Flat.builder ts `mappend` Flat.builder us
-
-instance Flat.Build (Term f) where
+instance Build (Term f) where
   type BuildFun (Term f) = f
-  builder (Flat t) = Flat.builder t
-  builder (VarTerm x) = Flat.var x
-  builder (AppTerm f ts) = Flat.app f (Flat.builder ts)
+  builder = emitTermList . singleton
 
-toFlatList :: TermList f -> Flat.TermList f
-toFlatList (AppendFlatList t Nil) = t
-toFlatList t = Flat.buildTermList (lenList t) (Flat.builder t)
+instance Build (TermList f) where
+  type BuildFun (TermList f) = f
+  builder = emitTermList
 
-fromFlatList :: Flat.TermList f -> TermList f
-fromFlatList t = appendFlatList t Nil
+instance Build a => Build [a] where
+  type BuildFun [a] = BuildFun a
+  {-# INLINE builder #-}
+  builder = mconcat . map builder
 
-toFlat :: Term f -> Flat.Term f
-toFlat (Flat t) = t
-toFlat t =
-  case Flat.buildTermList (len t) (Flat.builder t) of
-    Flat.Cons u Flat.Nil -> u
+-- | Build a term. The given builder must produce exactly one term.
+{-# INLINE build #-}
+build :: Build a => a -> Term (BuildFun a)
+build x =
+  case buildList x of
+    Cons t Nil -> t
 
-fromFlat :: Flat.Term f -> Term f
-fromFlat = Flat
+-- | Build a termlist.
+{-# INLINE buildList #-}
+buildList :: Build a => a -> TermList (BuildFun a)
+buildList x = buildTermList 16 (builder x)
 
-flatten :: Term f -> Term f
-flatten = fromFlat . toFlat
+-- | Build a constant (a function with no arguments).
+{-# INLINE con #-}
+con :: Sym f -> Builder f
+con x = emitApp x mempty
 
-flattenList :: TermList f -> TermList f
-flattenList = fromFlatList . toFlatList
+-- | Build a function application.
+{-# INLINE app #-}
+app :: Build a => Sym (BuildFun a) -> a -> Builder (BuildFun a)
+app f ts = emitApp f (builder ts)
+
+-- | Build a variable.
+var :: Var -> Builder f
+var = emitVar
 
 --------------------------------------------------------------------------------
 -- Functions for substitutions.
 --------------------------------------------------------------------------------
+
+{-# INLINE substToList' #-}
+substToList' :: Subst f -> [(Var, TermList f)]
+substToList' (Subst sub) = [(V x, t) | (x, t) <- IntMap.toList sub]
 
 -- | Convert a substitution to a list of bindings.
 {-# INLINE substToList #-}
@@ -201,12 +150,12 @@ substToList sub =
 
 -- | Fold a function over a substitution.
 {-# INLINE foldSubst #-}
-foldSubst :: (Var -> Term f -> b -> b) -> b -> Subst f -> b
-foldSubst op e !sub = foldr (uncurry op) e (substToList sub)
+foldSubst :: (Var -> TermList f -> b -> b) -> b -> Subst f -> b
+foldSubst op e !sub = foldr (uncurry op) e (substToList' sub)
 
 -- | Check if all bindings of a substitution satisfy a given property.
 {-# INLINE allSubst #-}
-allSubst :: (Var -> Term f -> Bool) -> Subst f -> Bool
+allSubst :: (Var -> TermList f -> Bool) -> Subst f -> Bool
 allSubst p = foldSubst (\x t y -> p x t && y) True
 
 -- | Compute the set of variables bound by a substitution.
@@ -221,46 +170,46 @@ substDomain (Subst sub) = map V (IntMap.keys sub)
 -- | A class for values which act as substitutions.
 --
 -- Instances include 'Subst' as well as functions from variables to terms.
-class Flat.Substitution s => Substitution s where
+class Substitution s where
   -- | The underlying type of function symbols.
   type SubstFun s
 
   -- | Apply the substitution to a variable.
-  evalSubst :: s -> Var -> Term (SubstFun s)
-
-  -- | Apply the substitution to a term.
-  {-# INLINE subst #-}
-  subst :: s -> Term (SubstFun s) -> Term (SubstFun s)
-  subst sub t = aux t
-    where
-      aux (Var x) = evalSubst sub x
-      aux (App f ts) = App f (substList sub ts)
+  evalSubst :: s -> Var -> Builder (SubstFun s)
 
   -- | Apply the substitution to a termlist.
   {-# INLINE substList #-}
-  substList :: s -> TermList (SubstFun s) -> TermList (SubstFun s)
+  substList :: s -> TermList (SubstFun s) -> Builder (SubstFun s)
   substList sub ts = aux ts
     where
-      aux Nil = Nil
-      aux (ConsVar x ts) = Cons (evalSubst sub x) ts
-      aux (ConsApp f ts us) = ConsApp f (aux ts) (aux us)
+      aux Nil = mempty
+      aux (Cons (Var x) ts) = evalSubst sub x <> aux ts
+      aux (Cons (App f ts) us) = app f (aux ts) <> aux us
 
-instance (v ~ Var, a ~ Term f) => Substitution (v -> a) where
-  type SubstFun (v -> a) = a
+instance (Build a, v ~ Var) => Substitution (v -> a) where
+  type SubstFun (v -> a) = BuildFun a
 
   {-# INLINE evalSubst #-}
-  evalSubst sub x = sub x
+  evalSubst sub x = builder (sub x)
 
 instance Substitution (Subst f) where
   type SubstFun (Subst f) = f
 
   {-# INLINE evalSubst #-}
-  evalSubst sub x = fromMaybe (Var x) (lookup x sub)
+  evalSubst sub x =
+    case lookupList x sub of
+      Nothing -> var x
+      Just ts -> builder ts
+
+-- | Apply a substitution to a term.
+{-# INLINE subst #-}
+subst :: Substitution s => s -> Term (SubstFun s) -> Builder (SubstFun s)
+subst sub t = substList sub (singleton t)
 
 -- | A substitution which maps variables to terms of type @'Term' f@.
 newtype Subst f =
   Subst {
-    unSubst :: IntMap (Term f) }
+    unSubst :: IntMap (TermList f) }
   deriving (Eq, Ord)
 
 -- | Return the highest-number variable in a substitution plus 1.
@@ -270,15 +219,15 @@ substSize (Subst sub)
   | IntMap.null sub = 0
   | otherwise = fst (IntMap.findMax sub) + 1
 
--- | Look up a variable in a substitution.
-{-# INLINE lookup #-}
-lookup :: Var -> Subst f -> Maybe (Term f)
-lookup x (Subst sub) = IntMap.lookup (var_id x) sub
+-- | Look up a variable in a substitution, returning a termlist.
+{-# INLINE lookupList #-}
+lookupList :: Var -> Subst f -> Maybe (TermList f)
+lookupList x (Subst sub) = IntMap.lookup (var_id x) sub
 
--- | Add a new binding to a substitution.
-{-# INLINE extend #-}
-extend :: Var -> Term f -> Subst f -> Maybe (Subst f)
-extend x !t (Subst sub) =
+-- | Add a new binding to a substitution, giving a termlist.
+{-# INLINE extendList #-}
+extendList :: Var -> TermList f -> Subst f -> Maybe (Subst f)
+extendList x !t (Subst sub) =
   case IntMap.lookup (var_id x) sub of
     Nothing -> Just $! Subst (IntMap.insert (var_id x) t sub)
     Just u
@@ -289,6 +238,12 @@ extend x !t (Subst sub) =
 {-# INLINE retract #-}
 retract :: Var -> Subst f -> Subst f
 retract x (Subst sub) = Subst (IntMap.delete (var_id x) sub)
+
+-- | Add a new binding to a substitution.
+-- Overwrites any existing binding.
+{-# INLINE unsafeExtendList #-}
+unsafeExtendList :: Var -> TermList f -> Subst f -> Subst f
+unsafeExtendList x !t (Subst sub) = Subst (IntMap.insert (var_id x) t sub)
 
 -- | Check if two substitutions are compatible (they do not send the same
 -- variable to different terms).
@@ -316,8 +271,12 @@ idempotent !sub = allSubst (\_ t -> sub `idempotentOn` t) sub
 
 -- | Check if a substitution has no effect on a given term.
 {-# INLINE idempotentOn #-}
-idempotentOn :: Subst f -> Term f -> Bool
-idempotentOn !sub t = [isNothing (lookupList x sub) | Var x <- subterms t]
+idempotentOn :: Subst f -> TermList f -> Bool
+idempotentOn !sub = aux
+  where
+    aux Nil = True
+    aux ConsSym{hd = App{}, rest = t} = aux t
+    aux (Cons (Var x) t) = isNothing (lookupList x sub) && aux t
 
 -- | Iterate a triangle substitution to make it idempotent.
 close :: TriangleSubst f -> Subst f
@@ -326,25 +285,30 @@ close (Triangle sub)
   | otherwise      = close (Triangle (compose sub sub))
   where
     compose (Subst !sub1) !sub2 =
-      Subst (IntMap.map (subst sub2) sub1)
+      Subst (IntMap.map (buildList . substList sub2) sub1)
 
 -- | Return a substitution which renames the variables of a list of terms to put
 -- them in a canonical order.
 canonicalise :: [TermList f] -> Subst f
 canonicalise [] = emptySubst
-canonicalise (t:ts) = loop emptySubst 0 t ts
+canonicalise (t:ts) = loop emptySubst vars t ts
   where
     (V m, V n) = boundLists (t:ts)
+    vars =
+      buildTermList (n-m+2) $
+        -- Produces two variables when the term is ground
+        -- (n = minBound, m = maxBound), which is OK.
+        mconcat [emitVar (V x) | x <- [0..n-m+1]]
 
     loop !_ !_ !_ !_ | never = undefined
     loop sub _ Nil [] = sub
     loop sub Nil _ _ = sub
-    loop sub n Nil (t:ts) = loop sub n t ts
-    loop sub n ConsSym{hd = App{}, rest = t} ts = loop sub n t ts
-    loop sub n (Cons (Var x) t) ts =
-      case extend x (Var (V n)) sub of
-        Just sub -> loop sub (n+1) t ts
-        Nothing  -> loop sub n t ts
+    loop sub vs Nil (t:ts) = loop sub vs t ts
+    loop sub vs ConsSym{hd = App{}, rest = t} ts = loop sub vs t ts
+    loop sub vs0@(Cons v vs) (Cons (Var x) t) ts =
+      case extend x v sub of
+        Just sub -> loop sub vs  t ts
+        Nothing  -> loop sub vs0 t ts
 
 -- | The empty substitution.
 emptySubst :: Subst f
@@ -359,8 +323,8 @@ emptyTriangleSubst = Triangle emptySubst
 listToSubst :: [(Var, Term f)] -> Maybe (Subst f)
 listToSubst sub = matchList pat t
   where
-    pat = pack (map (Var . fst) sub)
-    t   = pack (map snd sub)
+    pat = buildList (map (var . fst) sub)
+    t   = buildList (map snd sub)
 
 --------------------------------------------------------------------------------
 -- Matching.
@@ -385,7 +349,7 @@ matchList pat t = matchListIn emptySubst pat t
 -- and extends an existing substitution.
 matchListIn :: Subst f -> TermList f -> TermList f -> Maybe (Subst f)
 matchListIn !sub !pat !t
-  | lenList t < lenList pat = Nothing -- TODO check performance
+  | lenList t < lenList pat = Nothing
   | otherwise =
     let 
         loop !sub ConsSym{hd = pat, tl = pats, rest = pats1} !ts = do
@@ -442,30 +406,21 @@ instance Substitution (TriangleSubst f) where
   {-# INLINE evalSubst #-}
   evalSubst (Triangle sub) x =
     case lookupList x sub of
-      Nothing  -> Var x
-      Just t  -> subst (Triangle sub) t
+      Nothing  -> var x
+      Just ts  -> substList (Triangle sub) ts
 
-  -- Redefine subst and substList to get better inlining behaviour
-  {-# INLINE subst #-}
-  subst (Triangle sub) t = aux t
-    where
-      aux (Var x) =
-        case lookupList x sub of
-          Nothing -> Var x
-          Just t -> aux t
-      aux (App f ts) = App f (substList (Triangle sub) ts)
-
+  -- Redefine substList to get better inlining behaviour
   {-# INLINE substList #-}
-  substList sub ts = aux ts
+  substList (Triangle sub) ts = aux ts
     where
-      aux Nil = Nil
-      aux (ConsVar x ts) = Cons (auxVar x) ts
-      aux (ConsApp f ts us) = ConsApp f (aux ts) (aux us)
+      aux Nil = mempty
+      aux (Cons (Var x) ts) = auxVar x <> aux ts
+      aux (Cons (App f ts) us) = app f (aux ts) <> aux us
 
       auxVar x =
-        case lookup x sub of
-          Nothing -> Var x
-          Just t -> subst sub t
+        case lookupList x sub of
+          Nothing -> var x
+          Just ts -> aux ts
 
 -- | Unify two terms.
 unify :: Term f -> Term f -> Maybe (Subst f)
@@ -561,7 +516,7 @@ unifyListTriFrom !t !u (Triangle !sub) =
 -- | The empty termlist.
 {-# NOINLINE empty #-}
 empty :: forall f. TermList f
-empty = Nil
+empty = buildList (mempty :: Builder f)
 
 -- | Index into a term.
 at :: Term f -> Int -> Term f
@@ -599,6 +554,23 @@ instance (Intern f, Show f) => Show (Subst f) where
       | i <- [0..substSize subst-1],
         Just t <- [lookup (V i) subst] ]
 
+-- | Look up a variable in a substitution.
+{-# INLINE lookup #-}
+lookup :: Var -> Subst f -> Maybe (Term f)
+lookup x s = do
+  Cons t Nil <- lookupList x s
+  return t
+
+-- | Add a new binding to a substitution.
+{-# INLINE extend #-}
+extend :: Var -> Term f -> Subst f -> Maybe (Subst f)
+extend x t sub = extendList x (singleton t) sub
+
+-- | Find the length of a term.
+{-# INLINE len #-}
+len :: Term f -> Int
+len = lenList . singleton
+
 -- | Return the lowest- and highest-numbered variables in a term.
 {-# INLINE bound #-}
 bound :: Term f -> (Var, Var)
@@ -622,19 +594,7 @@ boundListFrom (V !ex, V !ey) ts = (V x, V y)
 -- | Check if a variable occurs in a term.
 {-# INLINE occurs #-}
 occurs :: Var -> Term f -> Bool
-occurs x (Flat t) = Flat.occurs x t
-occurs x (Var y) = x == y
-occurs x (App _ ts) = occursList x ts
-
-{-# INLINE occursList #-}
-occursList :: Var -> TermList f -> Bool
-occursList x ts = aux [ts]
-  where
-    aux [] = False
-    aux (Nil:ts) = aux ts
-    aux (ConsVar y t:ts) = x == y || aux (t:ts)
-    aux (ConsApp _ t:ts) = aux (t:ts)
-    aux (AppendFlatTerm t u:ts) = Flat.occursList x t || aux (u:ts)
+occurs x t = occursList x (singleton t)
 
 -- | Find all subterms of a termlist.
 {-# INLINE subtermsList #-}
@@ -652,7 +612,10 @@ subterms = subtermsList . singleton
 -- | Find all subterms of a term, but in reverse order.
 {-# INLINE reverseSubtermsList #-}
 reverseSubtermsList :: TermList f -> [Term f]
-reverseSubtermsList t = reverse . subtermsList
+reverseSubtermsList t =
+  [ t `unsafeListAt` n | n <- [k-1,k-2..0] ]
+  where
+    k = lenList t
 
 {-# INLINE reverseSubterms #-}
 reverseSubterms :: Term f -> [Term f]
@@ -764,3 +727,7 @@ pathToPosition t ns = term 0 t ns
     list k (Cons t _) 0 ns = term k t ns
     list k (Cons t u) n ns =
       list (k+len t) u (n-1) ns
+
+-- | Compare the values of two 'Sym's.
+(<<) :: (Intern f, Ord f) => Sym f -> Sym f -> Bool
+f << g = unintern f < unintern g

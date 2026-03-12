@@ -167,20 +167,20 @@ pattern UnsafeCons t ts <- (unsafePatHead -> (t, _, ts))
 -- > u  = f(x,y)
 -- > us = [x, y, g(z)]
 pattern ConsSym :: Term f -> TermList f -> TermList f -> TermList f
-pattern ConsSym{hd, tl, rest} <- (patHead -> Just (hd, rest, tl))
+pattern ConsSym{hd, tl, rest} <- (patHead -> Just (hd, tl, rest))
 
 -- | Like 'ConsSym', but does not check that the termlist is non-empty. Use only
 -- if you are sure the termlist is non-empty.
 pattern UnsafeConsSym :: Term f -> TermList f -> TermList f -> TermList f
-pattern UnsafeConsSym{uhd, utl, urest} <- (unsafePatHead -> (uhd, urest, utl))
+pattern UnsafeConsSym{uhd, utl, urest} <- (unsafePatHead -> (uhd, utl, urest))
 
 -- A helper for UnsafeCons/UnsafeConsSym.
 {-# INLINE unsafePatHead #-}
 unsafePatHead :: TermList f -> (Term f, TermList f, TermList f)
 unsafePatHead TermList{..} =
   (Term x (TermList low (low+size) array),
-   TermList (low+1) high array,
-   TermList (low+size) high array)
+   TermList (low+size) high array,
+   TermList (low+1) high array)
   where
     !x = indexByteArray array low
     Symbol{..} = toSymbol x
