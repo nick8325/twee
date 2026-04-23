@@ -1,1 +1,1 @@
-packages: ./*.cabal src/twee-lib.cabal
+packages: ./twee.cabal src/twee-lib.cabal
