@@ -830,7 +830,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 flags@MainFlags{..} lat
 #else
         (Just c == maxUnary)
 #endif
-        (isNothing (elemIndex (base c) precedence))
+        (isJust (elemIndex (base c) precedence))
         (fmap negate (elemIndex (base c) precedence))
         (maybeNegate (Map.findWithDefault 0 c funOccs))
     maybeNegate = if flags_flip_ordering then negate else id

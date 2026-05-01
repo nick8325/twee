@@ -57,7 +57,7 @@ variants =
    "--ground-connectedness --complete-subsets",
    "--flip-ordering --lhs-weight 1 --depth-weight 60 --distributivity-heuristic --ground-joining-limit 15",
    "--set-join --lhs-weight 1 --no-flatten-goal --complete-subsets --goal-heuristic",
-   "--kbo-weight0-unary --no-flatten-goal"]
+   "--no-kbo-weight0-unary --kbo-weight0 --no-flatten-goal"]
   -- "--random-mode --random-mode-goal-directed --no-flatten-goal --no-connectedness --no-ground-joining"]
 
 main = do
