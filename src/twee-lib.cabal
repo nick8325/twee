@@ -55,6 +55,7 @@ library
     Twee.Index
     Twee.Join
     Twee.KBO
+    Twee.LPO
     Twee.Pretty
     Twee.Profile
     Twee.Proof
