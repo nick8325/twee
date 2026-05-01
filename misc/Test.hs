@@ -9,7 +9,8 @@ import Test.QuickCheck.All
 import Twee.Pretty
 import Twee.CP
 import Twee.Proof
-import qualified Twee.KBO as Ord
+import qualified Twee.KBO as KBO
+import qualified Twee.LPO as LPO
 import Text.PrettyPrint
 import Twee.Base hiding (F)
 import Twee.Rule
@@ -26,10 +27,19 @@ import GHC.Generics
 import Twee.Utils
 import qualified Data.IntMap as M
 import qualified Twee.Index as Index
+import Data.Intern
+import Text.Printf
 
-data Func = F Int Integer deriving (Eq, Ord, Show, Labelled)
+data Func = Min | Skolem Int | F Int Integer deriving (Eq, Ord)
+
+instance Show Func where
+  show Min = "m"
+  show (Skolem n) = printf "sk%d" n
+  show (F x y) = printf "f%d_%d" x y
 
 instance Pretty Func where
+  pPrint Min = text "m"
+  pPrint (Skolem m) = text "sk" <#> int m
   pPrint (F 3 _) = text "a"
   pPrint (F 4 _) = text "b"
   pPrint (F 5 _) = text "zero"
@@ -40,11 +50,21 @@ instance PrettyTerm Func
 instance Arbitrary (Subst Func) where
   arbitrary = fmap fromJust (fmap listToSubst (liftM2 zip (fmap nub arbitrary) (infiniteListOf arbitrary)))
 instance Arbitrary Func where
-  arbitrary = F <$> choose (0, 2) <*> choose (1, 3)
+  arbitrary =
+    frequency
+      [(10, F <$> choose (0, 2) <*> choose (1, 3)),
+       (2, Skolem <$> choose (0, 2)),
+       (1, return Min)]
 instance Minimal Func where
-  minimal = fun (F 0 1)
-instance Ord.Sized Func where size (F _ n) = n
-instance Ord.Weighted Func where argWeight _ = 1
+  minimal = intern Min
+  skolem n = intern (Skolem n)
+instance KBO.Sized Func where
+  size (F _ n) = n
+  size _ = 1
+instance Weighted Func where
+  weight (F _ n) = fromIntegral n
+  weight _ = 1
+instance KBO.ArgWeighted Func where argWeight _ = 1
 class Arity f where
   arity :: f -> Int
 instance Arity Func where
@@ -56,18 +76,19 @@ instance Arity Func where
   arity (F 5 _) = 0 -- zero
   arity (F 6 _) = 2 -- plus
   arity (F 7 _) = 2 -- times
+  arity _ = 0
 instance EqualsBonus Func
 
 instance Arbitrary Var where arbitrary = fmap V (choose (0, 3))
-instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Fun f) where
-  arbitrary = fmap fun arbitrary
+instance (Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Sym f) where
+  arbitrary = fmap intern arbitrary
 
-instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Term f) where
+instance (Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Term f) where
   arbitrary =
     sized $ \n ->
       oneof $
         [ build <$> var <$> arbitrary ] ++
-        [ do { f <- arbitrary; build <$> app (fun f) <$> vectorOf (arity f) (resize ((n-1) `div` arity f) arbitrary :: Gen (Term f)) } | n > 0 ]
+        [ do { f <- arbitrary; build <$> app (Sym f) <$> vectorOf (arity f) (resize ((n-1) `div` arity f) arbitrary :: Gen (Term f)) } | n > 0 ]
   shrink (App f ts0) =
     ts ++ (build <$> app f <$> shrinkOne ts)
     where
@@ -78,29 +99,29 @@ instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Ter
         [ x:ys | ys <- shrinkOne xs ]
   shrink _ = []
 
-instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (TermList f) where
+instance (Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (TermList f) where
   arbitrary = buildList <$> listOf (arbitrary :: Gen (Term f))
   shrink = map buildList . shrink . unpack
 
 data Pair f = Pair (Term f) (Term f) deriving Show
 
-instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Pair f) where
+instance (Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Pair f) where
   arbitrary = liftM2 Pair arbitrary arbitrary
   shrink (Pair x y) =
     [ Pair x' y  | x' <- shrink x ] ++
     [ Pair x y'  | y' <- shrink y ] ++
     [ Pair x' y' | x' <- shrink x, y' <- shrink y ]
 
-instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Equation f) where
+instance (Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Equation f) where
   arbitrary = do
     Pair t u <- arbitrary
     return (t :=: u)
   shrink (t :=: u) = [t' :=: u' | Pair t' u' <- shrink (Pair t u)]
 
 instance Ordered Func where
-  lessIn = Ord.lessIn
-  lessEq = Ord.lessEq
-  lessEqSkolem = Ord.lessEqSkolem
+  lessIn = LPO.lessIn
+  lessEq = LPO.lessEq
+  lessEqSkolem = LPO.lessEqSkolem
 
 instance Function f => Arbitrary (Model f) where
   arbitrary = fmap (modelFromOrder . map Variable . nub) arbitrary
@@ -122,6 +143,33 @@ prop_1 model (Pair t u) sub =
       counterexample ("Res:   " ++ show (lessIn model (subst sub u') (subst sub t'))) $
       not (reducesInModel model r sub) || isJust (lessIn model (subst sub u') (subst sub t'))
 -}
+
+prop_LPO_eq_Basic :: Pair Func -> Property
+prop_LPO_eq_Basic (Pair t u) =
+  minimal `notElem` Twee.Base.funs t ==>
+  LPO.lessEq t u === LPO.lessEqBasic t u
+  where
+
+prop_erase :: Term Func -> [Var] -> Bool
+prop_erase t xs =
+  erase xs t `lessEq` t
+
+prop_skolem :: Pair Func -> Property
+prop_skolem (Pair t u) =
+  skolemFree t && skolemFree u ==>
+  lessEqSkolem t u === lessEq (skolemise t) (skolemise u)
+  where
+    skolemFree t = all (not . isSkolem) (Twee.Base.funs t)
+    isSkolem (Sym (Skolem _)) = True
+    isSkolem _ = False
+
+prop_lessIn_trivial :: Pair Func -> Property
+prop_lessIn_trivial (Pair t u) =
+  lessIn (modelFromOrder []) t u === lessEq' t u
+  where
+    lessEq' t u
+      | lessEq t u = Just (if isJust (unify t u) then Nonstrict else Strict)
+      | otherwise = Nothing
 
 prop_2 :: Model Func -> Pair Func -> Bool
 prop_2 model (Pair t u) =
@@ -157,7 +205,7 @@ prop_index ts u =
     ts' = map canonicalise ts
 
 newtype Terms f = Terms [Term f] deriving Show
-instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Terms f) where
+instance (Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Terms f) where
   arbitrary = Terms <$> arbitrary
   shrink (Terms ts) =
     map Terms $
@@ -167,7 +215,7 @@ instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Ter
 newtype IndexOps f = IndexOps [IndexOp f] deriving Show
 data IndexOp f = Add (Term f) | Delete (Term f) deriving Show
 
-instance (Labelled f, Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (IndexOps f) where
+instance (Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (IndexOps f) where
   arbitrary =
     sized $ \n -> IndexOps <$> take n <$> arbOps []
     where
@@ -238,7 +286,7 @@ prop_canonorder3 :: Equation Func -> Property
 prop_canonorder3 eq =
   let eq' = order eq in
   counterexample (show eq) $
-  Ord.size (eqn_lhs eq') >= Ord.size (eqn_rhs eq')
+  KBO.size (eqn_lhs eq') >= KBO.size (eqn_rhs eq')
 
 --t :: Term Func
 --t = build (app (fun (F 0)) [app (fun (F 1)) [var (V 0), var (V 1)], var (V 2)])
@@ -247,31 +295,31 @@ prop_canonorder3 eq =
 -- then refine it to a more efficient version
 nestf :: Func -> Term Func -> Int
 nestf f _ | arity f == 0 = 0
-nestf f t = hnest (fun f) t 0 0
+nestf f t = hnest (Sym f) t 0 0
   where
     hnest _ (Var _) c a = max c a
-    hnest _ (App _ Empty) c a = max c a
+    hnest _ (App _ Nil) c a = max c a
     hnest f (App g ts) c a
       | f == g = maximum [hnest f t (c+1) a | t <- unpack ts]
       | otherwise = maximum [hnest f t 0 (max c a) | t <- unpack ts]
 
 -- a simpler version, to illustrate the meaning
 nestf1 :: Func -> Term Func -> Int
-nestf1 f t = hnest (fun f) t 0
+nestf1 f t = hnest (Sym f) t 0
   where
     hnest _ (Var _) c = c
-    hnest _ (App _ Empty) c = c
+    hnest _ (App _ Nil) c = c
     hnest f (App g ts) c
       | f == g = maximum [hnest f t (c+1) | t <- unpack ts]
       | otherwise = max c (maximum [hnest f t 0 | t <- unpack ts])
 
 -- a more efficient version
 nestf2 :: Func -> Term Func -> Int
-nestf2 f t = hnest (fun f) (singleton t) 0 0
+nestf2 f t = hnest (Sym f) (singleton t) 0 0
   where
-    hnest _ Empty c a = max c a
+    hnest _ Nil c a = max c a
     hnest f (Cons (Var _) ts) c a = hnest f ts c a
-    hnest f (Cons (App _ Empty) ts) c a = hnest f ts c a
+    hnest f (Cons (App _ Nil) ts) c a = hnest f ts c a
     hnest f (Cons (App g ts) us) c a
       | f == g = 
         let a' = hnest f ts (c+1) a
@@ -284,11 +332,11 @@ nestf2 f t = hnest (fun f) (singleton t) 0 0
 nestf3 :: Term Func -> M.IntMap Int
 nestf3 t = hnest 0 0 M.empty (singleton t)
   where
-    hnest f c as Empty = M.insertWith max f c as
+    hnest f c as Nil = M.insertWith max f c as
     hnest f c as (Cons (Var _) ts) = hnest f c as ts
-    hnest f c as (Cons (App _ Empty) ts) = hnest f c as ts
+    hnest f c as (Cons (App _ Nil) ts) = hnest f c as ts
     hnest f c as (Cons (App g ts) us) =
-      let as' = hnest (fun_id g) (if f == fun_id g then c+1 else 1) as ts
+      let as' = hnest (symId g) (if f == symId g then c+1 else 1) as ts
       in hnest f c as' us
 
 prop_nest_1 :: Func -> Term Func -> Property
@@ -300,22 +348,22 @@ prop_nest_2 f t = withMaxSuccess 1000000 $ nestf f t === nestf2 f t
 prop_nest_3 :: Func -> Term Func -> Property
 prop_nest_3 f t =
   withMaxSuccess 1000000 $
-    nestf f t === M.findWithDefault 0 (fun_id (fun f)) (nestf3 t)
+    nestf f t === M.findWithDefault 0 (symId (Sym f)) (nestf3 t)
 
 prop_nests :: Func -> TermList Func -> Property
 prop_nests f ts =
   withMaxSuccess 1000000 $
     maximum (0:map (nestf f) (unpack ts)) ===
-    M.findWithDefault 0 (fun_id (fun f)) (nests ts)
+    M.findWithDefault 0 (symId (Sym f)) (nests ts)
 
 return []
 main = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000000 })
 
-a = con (fun (F 3 1))
-b = con (fun (F 4 2))
-zero = con (fun (F 5 1))
-plus t u = app (fun (F 6 1)) [t, u]
-times t u = app (fun (F 7 1)) [t, u]
+a = con (Sym (F 3 1))
+b = con (Sym (F 4 2))
+zero = con (Sym (F 5 1))
+plus t u = app (Sym (F 6 1)) [t, u]
+times t u = app (Sym (F 7 1)) [t, u]
 x = var (V 0)
 y = var (V 1)
 
