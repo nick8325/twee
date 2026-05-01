@@ -43,6 +43,11 @@ flag parallel
   default: False
   manual: True
 
+flag lpo
+  description: Use LPO instead of KBO.
+  default: False
+  manual: True
+
 common executable-stuff
   hs-source-dirs:      executable
   default-language:    Haskell2010
@@ -62,6 +67,9 @@ common executable-stuff
 
   if flag(static-cxx)
     ghc-options: -pgml misc/static-libstdc++
+
+  if flag(lpo)
+    cpp-options: -DUSE_LPO
 
 executable twee
   import: executable-stuff

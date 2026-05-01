@@ -18,6 +18,9 @@ import qualified Twee.CP as CP
 import Data.Ord
 import qualified Data.Map.Strict as Map
 import qualified Twee.KBO as KBO
+#ifdef USE_LPO
+import qualified Twee.LPO as LPO
+#endif
 import Data.List.Split
 import Data.List
 import Data.Maybe
@@ -474,10 +477,17 @@ instance Minimal Constant where
   minimal = Sym Minimal
   skolem = Sym . Skolem
 
+#ifdef USE_LPO
+instance Ordered Constant where
+  lessEq t u = LPO.lessEq t u
+  lessIn model t u = LPO.lessIn model t u
+  lessEqSkolem t u = LPO.lessEqSkolem t u
+#else
 instance Ordered Constant where
   lessEq t u = KBO.lessEq t u
   lessIn model t u = KBO.lessIn model t u
   lessEqSkolem t u = KBO.lessEqSkolem t u
+#endif
 
 instance EqualsBonus Constant where
   hasEqualsBonus Minimal = False
@@ -815,7 +825,11 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 flags@MainFlags{..} lat
     prec c =
       Precedence
         (isType c)
+#ifdef USE_LPO
+        False
+#else
         (Just c == maxUnary)
+#endif
         (isNothing (elemIndex (base c) precedence))
         (fmap negate (elemIndex (base c) precedence))
         (maybeNegate (Map.findWithDefault 0 c funOccs))
