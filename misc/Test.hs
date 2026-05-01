@@ -150,6 +150,10 @@ prop_LPO_eq_Basic (Pair t u) =
   LPO.lessEq t u === LPO.lessEqBasic t u
   where
 
+prop_subterm :: Term Func -> Property
+prop_subterm t =
+  Test.QuickCheck.conjoin [lessEq u t | u <- Twee.Base.subterms t]
+
 prop_erase :: Term Func -> [Var] -> Bool
 prop_erase t xs =
   erase xs t `lessEq` t
