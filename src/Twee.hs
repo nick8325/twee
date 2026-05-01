@@ -1046,13 +1046,7 @@ findCriticalPair config state g = retry `mplus` random
       where
         pickBest =
           listToMaybe . map snd . sortBy (comparing fst) . take (cfg_random_mode_best_of config) . catMaybes
-        randoms = unGen (sequence [resize n test | n <- sizes]) g1 0
-
-    (g1, g2) = Random.split g
-    allRules = IntMap.elems (st_active_set state)
-    Depth maxDepth = maximum (map the allRules)
-    chosenDepth = unGen (choose (0, maxDepth)) g2 0
-    chosenRules = concatMap activeRules (filter (\r -> the r <= Depth chosenDepth) allRules)
+        randoms = unGen (sequence [resize n test | n <- sizes]) g 0
 
     test = do
       !(t, rs) <- gen
@@ -1062,14 +1056,14 @@ findCriticalPair config state g = retry `mplus` random
 
     gen =
       if cfg_random_mode_goal_directed config then
-        generateGoalTerm (goalTerms state) chosenRules
+        generateGoalTerm (goalTerms state) (Index.elems (index_all (st_rules state)))
       else do
         t <- generateTerm lhss
         r <- normaliseWith1Random (const True) strat t
         return (t, r)
 
     strat = basic (rewrite reducesSkolem (index_all (st_rules state)))
-    lhss = map lhs chosenRules
+    lhss = map lhs (Index.elems (index_all (st_rules state)))
 
     toOverlap _ UniqueNormalForm{} = Nothing
     toOverlap changed (HasCriticalPair r1 (r2, n) cf) =
@@ -1088,21 +1082,7 @@ findCriticalPair config state g = retry `mplus` random
         Nothing ->
           trace ("Overlap " ++ prettyShow (overlap_eqn o) ++ " was spurious") Nothing -- should be rare
         Just o' ->
-          Just (scoreCP config 0 (st_hints state) (overlap_eqn o'), (combineInfo (findInfo r1) (findInfo r2), makeCriticalPair o, changed, cf))
-
-    findInfo r =
-      case [active_info active | active <- allRules, canonicalise r `elem` map canonicalise (activeRules active)] of
-        (x:_) -> x
-        [] -> error $ unlines $
-          ["missing info",
-           prettyShow r,
-           show (r `elem` Index.elems (index_all (st_rules state)))]
-    combineInfo i1 i2 =
-      Info {
-        -- XXX factor out depth calculation
-        info_depth = succ (max (info_depth i1) (info_depth i2)),
-        info_max = IntSet.union (info_max i1) (info_max i2) }
-
+          Just (scoreCP config 0 (st_hints state) (overlap_eqn o'), (Info 0 IntSet.empty, makeCriticalPair o, changed, cf))
 
 -- Return all goal terms. Handles the $equals coding.
 goalTerms :: Function f => State f -> [Term f]
