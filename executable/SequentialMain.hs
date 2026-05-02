@@ -826,7 +826,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 flags@MainFlags{..} lat
       Precedence
         (isType c)
 #ifdef USE_LPO
-        False
+        (SequentialMain.isEquals c || isIfeq c)
 #else
         (Just c == maxUnary)
 #endif
