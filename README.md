@@ -15,7 +15,7 @@ If you really want the latest unstable version, run
 
 Afterwards, run `twee nameofproblem.p`. The problem should be in TPTP
 format (http://www.tptp.org). You can find a few examples in the
-`tests` directory. All axioms and conjectures must be equations, but
+`examples` directory. All axioms and conjectures must be equations, but
 you can freely use quantifiers. If it succeeds in proving your
 problem, twee will print a human-readable proof.
 
