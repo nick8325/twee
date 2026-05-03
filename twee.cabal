@@ -9,7 +9,7 @@ author:              Nick Smallbone
 maintainer:          nicsma@chalmers.se
 category:            Theorem Provers
 build-type:          Simple
-extra-source-files:  README.md tests/*.p misc/*.hs misc/*.pl misc/static-libstdc++
+extra-source-files:  README.md examples/*.p misc/*.hs misc/*.pl misc/static-libstdc++
 description:
    Twee is an experimental equational theorem prover based on
    Knuth-Bendix completion.
@@ -85,11 +85,17 @@ Test-Suite twee-test
     type: exitcode-stdio-1.0
     Default-language: Haskell2010
     hs-source-dirs:
-        misc
-    main-is: Test.hs
-    build-depends: base < 5, QuickCheck, twee-lib == 2.6.1, containers, pretty
+        test
+    main-is: Main.hs
+    build-depends: base < 5, QuickCheck, twee-lib == 2.6.1, containers, pretty, tasty, tasty-quickcheck
+    other-modules:
+        Common
+        Index
+        Nest
+        Ordering
+        TermOrder
+        Terms
     ghc-options:
       -threaded
-      -rtsopts
       -feager-blackholing
-      -with-rtsopts=-N4
+      -with-rtsopts=-N
