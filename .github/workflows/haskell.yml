@@ -1,0 +1,49 @@
+# CI configuration for GitHub
+
+on:
+  - push
+  - pull_request
+
+name: build
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: haskell-actions/setup@v2
+        id: setup
+
+      # Dependency caching
+      - name: Configure the build
+        run: |
+          cabal configure --enable-tests --enable-benchmarks --disable-documentation --upgrade-dependencies
+          cabal build all --dry-run
+
+      - name: Restore cached dependencies
+        uses: actions/cache/restore@v5
+        id: cache
+        env:
+          key: ${{ runner.os }}-ghc-${{ steps.setup.outputs.ghc-version }}-cabal-${{ steps.setup.outputs.cabal-version }}
+        with:
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ env.key }}-plan-${{ hashFiles('**/plan.json') }}
+          restore-keys: ${{ env.key }}-
+
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cabal build all --only-dependencies
+
+      - name: Save cached dependencies
+        uses: actions/cache/save@v5
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+      # End dependency caching
+
+      - name: Build project
+        run: cabal build
+
+      - name: Run tests
+        run: cabal test
