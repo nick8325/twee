@@ -51,7 +51,7 @@ variants :: [[String]]
 variants =
   map words
   ["--lhs-weight 1 --flip-ordering --normalise-queue-percent 10 --cp-renormalise-threshold 10 --complete-subsets --ground-joining-incomplete-limit 15",
-   "--no-flatten-goal --ground-joining-incomplete-limit 15 --ground-connectedness",
+   "--no-flatten-goal --ground-joining-incomplete-limit 15 --ground-connectedness --normalise-queue-percent 10 --cp-renormalise-threshold 10",
    "--flatten --complete-subsets",
    "--lhs-weight 9 --flip-ordering --complete-subsets --normalise-queue-percent 10 --cp-renormalise-threshold 10",
    "--ground-connectedness --complete-subsets",
