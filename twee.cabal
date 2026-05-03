@@ -2,7 +2,7 @@ cabal-version:       2.2
 name:                twee
 version:             2.6.1
 synopsis:            An equational theorem prover
-homepage:            http://github.com/nick8325/twee
+homepage:            https://github.com/nick8325/twee
 license:             BSD-3-Clause
 license-file:        LICENSE
 author:              Nick Smallbone
@@ -20,7 +20,7 @@ description:
    fail to terminate if they are false.
    .
    The input problem should be in TPTP format (see
-   http://www.tptp.org). You can use types and quantifiers, but apart
+   https://www.tptp.org). You can use types and quantifiers, but apart
    from that the problem must be equational.
 
 source-repository head
