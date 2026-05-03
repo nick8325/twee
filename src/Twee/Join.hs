@@ -220,7 +220,7 @@ groundJoinFrom config@Config{..} ticks eqns idx model ctx cp@CriticalPair{cp_eqn
         _ -> normaliseWith (const True) (rewrite (ok t u m) (index_all idx)) t
     ok t u m rule sub =
       case cp_top of
-        Just top | cfg_use_connectedness_in_ground_joining ->
+        Just _top | cfg_use_connectedness_in_ground_joining ->
           reducesWith lessEqSkolemModel rule sub &&
           unorient rule `simplerThan` (t :=: u)
         _ ->

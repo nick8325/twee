@@ -65,7 +65,6 @@ module Twee.Term(
 
 import Prelude hiding (lookup)
 import Twee.Term.Core hiding (F)
-import qualified Twee.Term.Core as Core
 import Data.List hiding (lookup, find, singleton)
 import Data.Maybe
 #if __GLASGOW_HASKELL__ < 804
@@ -73,7 +72,6 @@ import Data.Semigroup(Semigroup(..))
 #endif
 import Data.IntMap.Strict(IntMap)
 import qualified Data.IntMap.Strict as IntMap
-import Control.Arrow((&&&))
 import Twee.Utils
 import Data.Intern
 import GHC.Stack

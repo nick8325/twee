@@ -41,7 +41,7 @@ import Data.PackedSequence(PackedSequence)
 import qualified Data.PackedSequence as PackedSequence
 import Test.QuickCheck.Gen hiding (sample)
 import Test.QuickCheck.Random
-import Debug.Trace
+--import Debug.Trace
 import Twee.Generate
 import qualified System.Random as Random
 
@@ -133,7 +133,7 @@ defaultConfig =
 scoreCP :: Function f => Config f -> Depth -> Hints f -> Equation f -> Float
 scoreCP config@Config{..} d hints eqn =
   let s1 = score cfg_cp_config d (scoreTerm config hints) eqn
-      s2 = score cfg_cp_config d (scoreTerm config (Hints [] Index.empty 0)) eqn
+      -- s2 = score cfg_cp_config d (scoreTerm config (Hints [] Index.empty 0)) eqn
   {-
   in if s1 /= s2 then trace ("used hint for " ++ prettyShow eqn) (trace (prettyShow eqn ++ " => " ++ prettyShow (bothSides (applyHints hints) eqn)) s1) else s1
   -}
@@ -141,7 +141,7 @@ scoreCP config@Config{..} d hints eqn =
 
 {-# INLINE scoreTerm #-}
 scoreTerm :: Function f => Config f -> Hints f -> Term f -> Float
-scoreTerm config@Config{..} hints t = termScore cfg_cp_config (applyHints hints t)
+scoreTerm Config{..} hints t = termScore cfg_cp_config (applyHints hints t)
 
 -- | Does this configuration run the prover in a complete mode?
 configIsComplete :: Config f -> Bool
@@ -848,9 +848,10 @@ addHintRulesPairs config rule state =
 
 {-# INLINEABLE addHintRulePairs #-}
 addHintRulePairs :: Function f => Config f -> Rule f -> Active f -> State f -> State f
-addHintRulePairs config rule active state =
+addHintRulePairs _config _rule _active state =
   state
-  -- foldl' considerOverlap state (overlaps (Index.empty :: Index f (Rule f)) [makeActive rule] active)
+  {-
+  foldl' considerOverlap state (overlaps (Index.empty :: Index f (Rule f)) [makeActive rule] active)
     where
       -- hack: need to turn the turn into an Active to invoke 'overlaps'
       makeActive rule = Active 0 (Info 0 IntSet.empty) rule Nothing (rule_proof rule) (modelFromOrder []) (positionsRule rule)
@@ -885,6 +886,7 @@ addHintRulePairs config rule active state =
           u' = norm u
           st = scoreTerm config (st_hints state) t'
           su = scoreTerm config (st_hints state) u'
+  -}
 
 
 {-# INLINEABLE addHintHintsPairs #-}
@@ -1020,7 +1022,7 @@ complete1 config@Config{..} state
           (Just (info, overlap, _, _), state) ->
             (True, consider config state info overlap)
       Just g -> -- random mode
-        let (g1, g2) = Random.split g in
+        let (g1, g2) = Random.splitGen g in
         let state' = state { st_random_seed = Just g2 } in
         case findCriticalPair config state' g1 of
           Nothing -> (True, state'{st_problem_term = Nothing})

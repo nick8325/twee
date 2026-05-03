@@ -1,12 +1,12 @@
 -- | Critical pair generation.
 {-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards, OverloadedStrings, TypeFamilies, GeneralizedNewtypeDeriving #-}
+{-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
 module Twee.CP where
 
 import qualified Twee.Term as Term
 import Twee.Base
 import Twee.Rule
 import Twee.Index(Index)
-import qualified Twee.Index as Index
 import qualified Data.Set as Set
 import Control.Monad
 import Data.List hiding (singleton)
@@ -224,7 +224,7 @@ defaultConfig =
 -- and variables have weight cfg_varweight.
 {-# INLINE score #-}
 score :: Function f => Config -> Depth -> (Term f -> Float) -> Equation f -> Float
-score config@Config{..} depth termScore (l :=: r) =
+score Config{..} depth termScore (l :=: r) =
   fromIntegral depth * cfg_depthweight +
   (m + n) * cfg_rhsweight +
   max m n * (cfg_lhsweight - cfg_rhsweight)

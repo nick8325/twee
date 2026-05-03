@@ -22,13 +22,10 @@ import Twee.Proof(Derivation, Proof)
 import Data.Tuple
 import Twee.Profile
 import Data.MemoUgly
-import Debug.Trace
-import Twee.Pretty
-import Data.Function
+--import Debug.Trace
 import Control.Arrow((***))
 import GHC.Stack
 import Test.QuickCheck hiding (Function, subterms, Fun)
-import Twee.Profile
 import Test.QuickCheck.Gen
 import Data.Semigroup
 import qualified Data.List.NonEmpty as NonEmpty
@@ -630,7 +627,7 @@ hasUNF strat t0 r0 =
     trace _ x = x
     --normFirstStep t = trace (prettyShow (t, take 1 $ anywhere1 strat t)) $ head (head (anywhere1 strat t))
     normSteps t = normaliseWith1 (const True) strat t
-    normStepsVia r t = r `trans1` normSteps (result1 t r)
+    --normStepsVia r t = r `trans1` normSteps (result1 t r)
     norm =
       memo $ \t ->
         stamp "hasUNF.norm" $
@@ -662,7 +659,7 @@ hasUNF strat t0 r0 =
     -- precondition: normR t r1 /= normR t r2
     --conflict, conflict' :: Term f -> Reduction1 f -> Term f -> Reduction1 f -> Term f -> UNF f
     conflict t rs1 u rs2 v = stamp "conflict" (conflict' t rs1 u rs2 v)
-    conflict' t (r1:rs1) u (r2:rs2) v
+    conflict' t (r1:_rs1) _u (r2:_rs2) _v
       | trace "" $
         trace ("Conflicting term: " ++ prettyShow t) $
         trace ("Rule 1: " ++ prettyShow r1) $

@@ -84,12 +84,13 @@ library
     ghc-prim,
     primitive >= 0.7.1.0,
     uglymemo,
-    random,
+    random >= 1.3,
     bytestring,
     cereal,
-    QuickCheck
+    QuickCheck,
+    deepseq >= 1.4.0.0
   hs-source-dirs:      .
-  ghc-options:         -W -fno-warn-incomplete-patterns -fno-warn-dodgy-imports -fno-warn-x-partial
+  ghc-options:         -W -fno-warn-incomplete-patterns -fno-warn-dodgy-imports
   default-language:    Haskell2010
   default-extensions:  TypeOperators
 

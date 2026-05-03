@@ -7,7 +7,7 @@ import Data.Char
 import Data.Either
 import Twee hiding (message)
 import Twee.Base hiding (char, lookup, vars, ground)
-import qualified Twee.Base as Twee
+--import qualified Twee.Base as Twee
 import Twee.Rule(lhs, rhs, unorient)
 import Twee.Equation
 import qualified Twee.Proof as Proof
@@ -835,10 +835,12 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 flags@MainFlags{..} lat
         (maybeNegate (Map.findWithDefault 0 c funOccs))
     maybeNegate = if flags_flip_ordering then negate else id
     funOccs = funsOcc prob
+#ifndef USE_LPO
     maxUnary =
       case filter (\(f, _) -> arity f == 1 && not (isType f)) (Map.toList funOccs) of
         [] -> Nothing
         xs -> Just (fst (maximumBy (comparing snd) xs))
+#endif
 
     -- Translate everything to Twee.
     toTerm t = tweeTerm flags horn ctx prec t
@@ -871,9 +873,9 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 flags@MainFlags{..} lat
 
   -- Compute CP scoring heuristic
   let
+    {-
     goalNests = nests (map goal_eqn goals)
     goalOccs = occs (map goal_eqn goals)
-    {-
     score depth hints eqn
       | flags_goal_heuristic =
         scoreCP cpConfig depth hints eqn *

@@ -4,14 +4,9 @@
 module Twee.LPO(lessEqBasic, lessEq, lessIn, lessEqSkolem) where
 
 import Twee.Base hiding (lessEq, lessIn, lessEqSkolem)
-import Twee.Equation
 import Twee.Constraints hiding (lessEq, lessIn, lessEqSkolem)
-import qualified Data.Map.Strict as Map
-import Data.Map.Strict(Map)
 import Data.Maybe
 import Control.Monad
-import Twee.Utils
-import Data.Intern
 
 lessEqSkolem :: Function f => Term f -> Term f -> Bool
 lessEqSkolem (App f Nil) _ | f == minimal = True
@@ -45,7 +40,7 @@ lessEqBasic t u = eqModErasure t u || lessBasic t u
 
 lessBasic :: Function f => Term f -> Term f -> Bool
 lessBasic (App f Nil) (App g _) | f == minimal && g /= minimal = True
-lessBasic (Var x) (Var y) = False
+lessBasic (Var _) (Var _) = False
 lessBasic (Var x) (App _ ts) = x `elem` vars ts
 lessBasic t@(App f ts) u@(App g us)
   | or [lessEqBasic t u' | u' <- unpack us] = True
@@ -85,7 +80,7 @@ lessIn model t u
   | Just a <- fromTerm t,
     Just b <- fromTerm u,
     Just s <- lessEqInModel model a b = Just s
-lessIn model _ (Var _) = Nothing
+lessIn _ _ (Var _) = Nothing
 lessIn model (Var x) t
   | any isJust [lessEqInModel model (Variable x) a | a <- catMaybes (map fromTerm (subterms t))] = Just Strict
   | otherwise = Nothing

@@ -7,7 +7,7 @@ import Twee.Rule
 import Data.Maybe
 import Twee.Profile
 import Twee.Utils
-import Debug.Trace
+--import Debug.Trace
 
 type Pat f = Term f
 type LHS f = Term f
@@ -31,7 +31,7 @@ gen n lhss p sub =
   [ (1, return sub) ] ++
   -- commit to top-level function...
   [ (n, genList (reduce n (length ps)) lhss ps sub)
-  | App f psl <- [p]
+  | App _f psl <- [p]
   , let ps = unpack psl
   ] ++
   -- ...or use a LHS for inspiration
