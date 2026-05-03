@@ -24,7 +24,7 @@ newtype Sym a = MkSym Int32
   deriving (Eq, Ord)
 
 instance Show a => Show (Sym a) where
-  show = show . unintern
+  showsPrec n = showsPrec n . unintern
 
 -- | The unique ID of a symbol.
 symId :: Sym a -> Int
