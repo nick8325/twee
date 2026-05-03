@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards, DeriveAnyClass, RankNTypes, ApplicativeDo #-}
+{-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards, DeriveAnyClass, RankNTypes, ApplicativeDo, DeriveGeneric #-}
 {-# OPTIONS_GHC -flate-specialise #-}
 module SequentialMain(main) where
 
@@ -42,6 +42,8 @@ import qualified Data.Intern as Intern
 import System.Console.ANSI
 import Data.Symbol
 import Twee.Profile
+import GHC.Generics
+import Data.Serialize
 
 data MainFlags =
   MainFlags {
@@ -432,10 +434,10 @@ data Constant =
     con_weight  :: !Integer,
     con_fweight :: {-# UNPACK #-} !Float,
     con_bonus   :: !Bool }
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Generic, Serialize)
 
 data Precedence = Precedence !Bool !Bool !Bool !(Maybe Int) !Int
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Generic, Serialize)
 
 instance KBO.Sized Constant where
   size Minimal = 1

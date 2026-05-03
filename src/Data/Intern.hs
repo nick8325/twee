@@ -5,17 +5,19 @@ module Data.Intern(Intern, Sym, pattern Sym, intern, unintern, unsafeMkSym, symI
 
 import Data.IORef
 import System.IO.Unsafe
-import qualified Data.Map.Strict as Map
-import Data.Map.Strict(Map)
+import qualified Data.HashMap.Strict as HashMap
+import Data.HashMap.Strict(HashMap)
 import qualified Data.DynamicArray as DynamicArray
 import Data.DynamicArray(Array)
 import Data.Typeable
 import GHC.Exts
 import GHC.Int
 import Unsafe.Coerce
+import Data.Serialize
+import Data.ByteString(ByteString)
 
 -- | Type class constraints for a value to be internable.
-type Intern a = (Typeable a, Ord a)
+type Intern a = (Typeable a, Ord a, Serialize a)
 
 -- | An interned value of type @a@.
 newtype Sym a = MkSym Int32
@@ -38,18 +40,16 @@ unsafeMkSym = MkSym . fromIntegral
 -- The global cache of interned values.
 {-# NOINLINE cachesRef #-}
 cachesRef :: IORef Caches
-cachesRef = unsafePerformIO (newIORef (Caches 0 Map.empty DynamicArray.newArray))
+cachesRef = unsafePerformIO (newIORef (Caches 0 HashMap.empty DynamicArray.newArray))
 
 data Caches =
   Caches {
     -- The next id number to assign.
     caches_nextId :: {-# UNPACK #-} !Int32,
     -- A map from values to IDs.
-    caches_from   :: !(Map TypeRep (Cache Any)),
+    caches_from   :: !(HashMap TypeRep (HashMap ByteString Int32)),
     -- The reverse map from IDs to values.
     caches_to     :: !(Array Any) }
-
-type Cache a = Map a Int32
 
 atomicModifyCaches :: (Caches -> (Caches, a)) -> IO a
 atomicModifyCaches f = do
@@ -68,13 +68,6 @@ atomicModifyCaches f = do
     then (caches', True)
     else (cachesNow, False)
   if ok then return x else atomicModifyCaches f
-
--- Versions of unsafeCoerce with slightly more type checking
-toAnyCache :: Cache a -> Cache Any
-toAnyCache = unsafeCoerce
-
-fromAnyCache :: Cache Any -> Cache a
-fromAnyCache = unsafeCoerce
 
 toAny :: a -> Any
 toAny = unsafeCoerce
@@ -101,25 +94,25 @@ intern x =
         return x
 
   where
+    !key = encode x
     ty = typeOf x
 
     tryFind :: Caches -> Maybe (Sym a)
     tryFind Caches{..} =
-      MkSym <$> (Map.lookup ty caches_from >>= Map.lookup x . fromAnyCache)
+      MkSym <$> (HashMap.lookup ty caches_from >>= HashMap.lookup key)
 
     insert :: Caches -> (Caches, Sym a)
     insert caches@Caches{..} =
       if n < 0 then error "label overflow" else
       (caches {
          caches_nextId = n+1,
-         caches_from = Map.insert ty (toAnyCache (Map.insert x n cache)) caches_from,
+         caches_from = HashMap.insert ty (HashMap.insert key n cache) caches_from,
          caches_to = DynamicArray.updateWithDefault undefined (fromIntegral n) (toAny x) caches_to },
        MkSym n)
       where
         n = caches_nextId
         cache =
-          fromAnyCache $
-          Map.findWithDefault Map.empty ty caches_from
+          HashMap.findWithDefault HashMap.empty ty caches_from
 
 -- | Recover the underlying value from a 'Sym'.
 unintern :: Sym a -> a

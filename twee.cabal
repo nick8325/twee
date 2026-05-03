@@ -48,7 +48,8 @@ common executable-stuff
                        split,
                        jukebox >= 0.5.9,
                        ansi-terminal >= 0.9,
-                       symbol
+                       symbol,
+                       cereal
   other-modules:       SequentialMain
   ghc-options:         -W -fno-warn-incomplete-patterns
 
