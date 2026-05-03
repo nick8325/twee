@@ -215,8 +215,11 @@ modelToLiterals (Model m) = go (sortBy (comparing snd) (Map.toList m))
         rel = if i == j then LessEq else Less
 
 modelFromOrder :: (Minimal f, Ord f) => [Atom f] -> Model f
-modelFromOrder xs =
-  Model (Map.fromList [(x, (i, i)) | (x, i) <- zip xs [0..]])
+modelFromOrder xs = modelFromOrder' [[x] | x <- xs]
+
+modelFromOrder' :: (Minimal f, Ord f) => [[Atom f]] -> Model f
+modelFromOrder' xss =
+  Model (Map.fromList [(x, (i, j)) | (xs, i) <- zip xss [0..], (x, j) <- zip xs [0..]])
 
 weakenModel :: Model f -> [Model f]
 weakenModel (Model m) =
