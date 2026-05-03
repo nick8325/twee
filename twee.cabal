@@ -1,6 +1,6 @@
 cabal-version:       2.2
 name:                twee
-version:             2.6.1
+version:             2.6.2
 synopsis:            An equational theorem prover
 homepage:            https://github.com/nick8325/twee
 license:             BSD-3-Clause
@@ -42,7 +42,7 @@ common executable-stuff
   hs-source-dirs:      executable
   default-language:    Haskell2010
   build-depends:       base < 5,
-                       twee-lib == 2.6.1,
+                       twee-lib == 2.6.2,
                        containers,
                        pretty,
                        split,
@@ -79,7 +79,7 @@ Test-Suite twee-test
     hs-source-dirs:
         test
     main-is: Main.hs
-    build-depends: base < 5, QuickCheck, twee-lib == 2.6.1, containers, pretty, tasty, tasty-quickcheck
+    build-depends: base < 5, QuickCheck, twee-lib == 2.6.2, containers, pretty, tasty, tasty-quickcheck
     other-modules:
         Common
         Index
