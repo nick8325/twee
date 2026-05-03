@@ -9,7 +9,7 @@ author:              Nick Smallbone
 maintainer:          nicsma@chalmers.se
 category:            Theorem Provers
 build-type:          Simple
-extra-source-files:  README.md examples/*.p misc/*.hs misc/*.pl misc/static-libstdc++
+extra-source-files:  README.md examples/*.p misc/*.hs misc/*.pl
 description:
    Twee is an experimental equational theorem prover based on
    Knuth-Bendix completion.
@@ -30,11 +30,6 @@ source-repository head
 
 flag static
   description: Build a static binary.
-  default: False
-  manual: True
-
-flag static-cxx
-  description: Build a binary which statically links against libstdc++.
   default: False
   manual: True
 
@@ -59,9 +54,6 @@ common executable-stuff
 
   if flag(static)
     ghc-options: -optl -static
-
-  if flag(static-cxx)
-    ghc-options: -pgml misc/static-libstdc++
 
 executable twee
   import: executable-stuff
