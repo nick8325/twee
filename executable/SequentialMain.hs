@@ -16,6 +16,7 @@ import qualified Twee.Join as Join
 import Twee.Utils
 import qualified Twee.CP as CP
 import Data.Ord
+import Data.Map(Map)
 import qualified Data.Map.Strict as Map
 import qualified Twee.KBO as KBO
 #ifdef USE_LPO
@@ -26,6 +27,7 @@ import Data.List
 import Data.Maybe
 import Jukebox.Options
 import Jukebox.Toolbox
+import qualified Jukebox.Name as Jukebox
 import Jukebox.Name hiding (lhs, rhs, label)
 import qualified Jukebox.Form as Jukebox
 import Jukebox.Form hiding ((:=:), Var, Symbolic(..), Term, Axiom, size, Subst, subst)
@@ -422,8 +424,10 @@ data Constant =
   Hint Int Float |
   Constant {
     con_prec    :: {-# UNPACK #-} !Precedence,
-    con_id      :: {-# UNPACK #-} !Jukebox.Function,
+    con_id      :: {-# UNPACK #-} !Int,
+    con_name    :: {-# UNPACK #-} !String,
     con_arity   :: {-# UNPACK #-} !Int,
+    con_label   :: !(Maybe String),
     con_size    :: !Integer,
     con_weight  :: !Integer,
     con_fweight :: {-# UNPACK #-} !Float,
@@ -454,7 +458,7 @@ instance Pretty Constant where
   pPrint Minimal = text "?"
   pPrint (Skolem n) = text ("sk" ++ show n)
   pPrint (Hint n _) = text ("hint" ++ show n)
-  pPrint Constant{..} = text (removePostfix (base con_id))
+  pPrint Constant{..} = text (removePostfix con_name)
     where
       removePostfix ('_':x:xs) | con_arity == 1 = x:xs
       removePostfix xs = xs
@@ -464,9 +468,9 @@ instance PrettyTerm Constant where
   termStyle Skolem{} = uncurried
   termStyle Hint{} = uncurried
   termStyle Constant{..}
-    | hasLabel "type_tag" con_id = invisible
-    | "_" `isPrefixOf` base con_id && con_arity == 1 = postfix
-    | any isAlphaNum (base con_id) = uncurried
+    | con_label == Just "type_tag" = invisible
+    | "_" `isPrefixOf` con_name && con_arity == 1 = postfix
+    | any isAlphaNum con_name = uncurried
     | otherwise =
       case con_arity of
         1 -> prefix
@@ -494,18 +498,13 @@ instance EqualsBonus Constant where
   hasEqualsBonus Skolem{} = False
   hasEqualsBonus Hint{} = False
   hasEqualsBonus c = con_bonus c
-  isEquals Minimal = False
-  isEquals Skolem{} = False
-  isEquals Hint{} = False
-  isEquals c = SequentialMain.isEquals (con_id c)
-  isTrue Minimal = False
-  isTrue Skolem{} = False
-  isTrue Hint{} = False
-  isTrue c = SequentialMain.isTrue (con_id c)
-  isFalse Minimal = False
-  isFalse Skolem{} = False
-  isFalse Hint{} = False
-  isFalse c = SequentialMain.isFalse (con_id c)
+
+  isEquals Constant{..} = con_label == Just "equals" && con_arity == 2
+  isEquals _ = False
+  isTrue Constant{..} = con_label == Just "true" && con_arity == 0
+  isTrue _ = False
+  isFalse Constant{..} = con_label == Just "false" && con_arity == 0
+  isFalse _ = False
 
 data TweeContext =
   TweeContext {
@@ -514,7 +513,9 @@ data TweeContext =
     ctx_true    :: Jukebox.Function,
     ctx_false   :: Jukebox.Function,
     ctx_equals  :: Jukebox.Function,
-    ctx_type    :: Type }
+    ctx_type    :: Type,
+    ctx_funs    :: Map Int Jukebox.Function,
+    ctx_ids     :: Map Jukebox.Function Int }
 
 -- Convert back and forth between Twee and Jukebox.
 tweeConstant :: MainFlags -> HornFlags -> TweeContext -> Precedence -> Jukebox.Function -> Constant
@@ -523,7 +524,9 @@ tweeConstant MainFlags{..} flags TweeContext{..} prec fun
   | otherwise =
     Constant {
       con_prec = prec,
-      con_id = fun,
+      con_id = Map.findWithDefault (error (show (fun, ctx_ids))) fun ctx_ids,
+      con_name = base (name fun),
+      con_label = Jukebox.label (name fun),
       con_arity = Jukebox.arity fun,
       con_size = if flags_kbo_weight0 && Jukebox.arity fun >= 2 then 0 else if flags_kbo_weight0_unary && isInv then 0 else 1,
       con_weight = 1,
@@ -532,7 +535,7 @@ tweeConstant MainFlags{..} flags TweeContext{..} prec fun
   where
     bonus fun =
       (isIfeq fun && encoding flags /= Asymmetric2) ||
-      SequentialMain.isEquals fun
+      (Jukebox.label (name fun) == Just "equals" && Jukebox.arity fun == 2)
     isInv =
       case prec of
         Precedence _ x _ _ _ -> x
@@ -545,27 +548,15 @@ isIfeq :: Jukebox.Function -> Bool
 isIfeq fun =
   hasLabel "ifeq" (name fun)
 
-isEquals :: Jukebox.Function -> Bool
-isEquals fun =
-  hasLabel "equals" (name fun) && Jukebox.arity fun == 2
-
-isTrue :: Jukebox.Function -> Bool
-isTrue fun =
-  hasLabel "true" (name fun) && Jukebox.arity fun == 0
-
-isFalse :: Jukebox.Function -> Bool
-isFalse fun =
-  hasLabel "false" (name fun) && Jukebox.arity fun == 0
-
 jukeboxFunction :: TweeContext -> Constant -> Jukebox.Function
-jukeboxFunction _ Constant{..} = con_id
+jukeboxFunction TweeContext{..} Constant{..} = Map.findWithDefault undefined con_id ctx_funs
 jukeboxFunction TweeContext{..} Minimal = ctx_minimal
 
-tweeTerm :: MainFlags -> HornFlags -> TweeContext -> (Jukebox.Function -> Precedence) -> Jukebox.Term -> Term Constant
-tweeTerm flags horn ctx prec t = build (tm t)
+tweeTerm :: MainFlags -> HornFlags -> TweeContext -> (Jukebox.Variable -> Int) -> (Jukebox.Function -> Precedence) -> Jukebox.Term -> Term Constant
+tweeTerm flags horn ctx varNum prec t = build (tm t)
   where
-    tm (Jukebox.Var (x ::: _)) =
-      var (V (Intern.symId (Intern.intern x)))
+    tm (Jukebox.Var x) =
+      var (V (varNum x))
     tm (f :@: ts) =
       app (Sym (tweeConstant flags horn ctx (prec f) f)) (map tm ts)
 
@@ -591,13 +582,17 @@ makeContext hints prob = run (hints, prob) $ \(_, prob) -> do
   false   <- newFunction (withLabel "false" (name "false")) [] ty
   equals  <- newFunction (withLabel "equals" (name "equals")) [ty, ty] ty
 
+  let allFuns = usort $ [minimal, true, false, equals] ++ Jukebox.functions (hints, prob)
+
   return TweeContext {
     ctx_var = var,
     ctx_minimal = minimal,
     ctx_true = true,
     ctx_false = false,
     ctx_equals = equals,
-    ctx_type = ty }
+    ctx_type = ty,
+    ctx_funs = Map.fromList (zip [0..] allFuns),
+    ctx_ids = Map.fromList (zip allFuns [0..]) }
 
 flattenGoals :: Int -> Bool -> Bool -> Bool -> [Jukebox.Term] -> Problem Clause -> Problem Clause
 flattenGoals backwardsGoal flattenNonGround flattenAll full hints prob =
@@ -800,7 +795,6 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 flags@MainFlags{..} lat
     obligs2
       | flags_distributivity_heuristic = addDistributivityHeuristic hints obligs1
       | otherwise = obligs1
-    ctx = makeContext hints obligs2
     lowercaseSkolem x
       | hasLabel "skolem" x =
         withRenamer x $ \s i ->
@@ -808,7 +802,9 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 flags@MainFlags{..} lat
             Renaming xss xs ->
               Renaming (map (map toLower) xss) (map toLower xs)
       | otherwise = x
-    (hints', prob) = prettyNames (mapName lowercaseSkolem (hints, addNarrowing flags_equals_transformation ctx obligs2))
+    (hints', prettyObligs) = prettyNames (mapName lowercaseSkolem (hints, obligs2))
+    ctx = makeContext hints' prettyObligs
+    prob = addNarrowing flags_equals_transformation ctx prettyObligs
 
   (unsortedAxioms0, goals0) <-
     case identifyProblem ctx prob of
@@ -826,7 +822,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 flags@MainFlags{..} lat
       Precedence
         (isType c)
 #ifdef USE_LPO
-        (SequentialMain.isEquals c || isIfeq c)
+        ((hasLabel "equals" c && Jukebox.arity c == 2) || isIfeq c)
 #else
         (Just c == maxUnary)
 #endif
@@ -843,8 +839,16 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 flags@MainFlags{..} lat
 #endif
 
     -- Translate everything to Twee.
-    toTerm t = tweeTerm flags horn ctx prec t
-    toEquation (t, u) = canonicalise (toTerm t :=: toTerm u)
+    toTerm var t = tweeTerm flags horn ctx var prec t
+    varNums :: Jukebox.Symbolic a => a -> Jukebox.Variable -> Int
+    varNums t = \x -> Map.findWithDefault undefined x ids
+      where
+        xs = usort (vars t)
+        ids = Map.fromList (zip xs [0..])
+    toEquation (t, u) =
+      canonicalise (toTerm var t :=: toTerm var u)
+      where
+        var = varNums (t, u)
 
     axiomCompare ax1 ax2
       | isEquality ax1' && not (isEquality ax2') = GT
@@ -895,7 +899,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 flags@MainFlags{..} lat
     config = config0 { cfg_eliminate_axioms = if flags_flatten_regeneralise then defs else [] }
 
   let
-    withHints = foldl' (addHint config) (initialState config) (map toTerm hints')
+    withHints = foldl' (addHint config) (initialState config) [toTerm (varNums h) h | h <- hints']
     withGoals = foldl' (addGoal config) withHints goals
     withAxioms = foldl' (addAxiom config) withGoals axioms
     withBackwardsGoal = foldn rewriteGoalsBackwards withAxioms flags_backwards_goal
