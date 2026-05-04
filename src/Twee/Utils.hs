@@ -13,6 +13,7 @@ import GHC.Types
 import Data.Bits
 import System.Random
 import Data.Serialize
+import qualified Data.Set as Set
 --import Test.QuickCheck hiding ((.&.))
 
 repeatM :: Monad m => m a -> m [a]
@@ -47,6 +48,15 @@ sortBy' f = map snd . sortBy (comparing fst) . map (\x -> (f x, x))
 
 usortBy' :: Ord b => (a -> b) -> [a] -> [a]
 usortBy' f = map snd . usortBy (comparing fst) . map (\x -> (f x, x))
+
+-- Like usort but preserves order
+fastNub :: Ord a => [a] -> [a]
+fastNub xs = collect Set.empty xs
+  where
+    collect _ [] = []
+    collect seen (x:xs)
+      | x `Set.member` seen = collect seen xs
+      | otherwise = x:collect (Set.insert x seen) xs
 
 orElse :: Ordering -> Ordering -> Ordering
 EQ `orElse` x = x

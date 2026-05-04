@@ -7,7 +7,7 @@ import Twee.Utils
 import Data.Map(Map)
 import qualified Data.Map.Strict as Map
 import Data.IntMap(IntMap)
-import qualified Data.IntMap.Strict as IntMap
+import qualified Data.IntMap.Lazy as IntMap
 import Data.Serialize hiding (label)
 import Data.Int
 
@@ -17,12 +17,13 @@ data Labels a =
     valueMap :: IntMap a }
 
 labels :: Ord a => [a] -> Labels a
-labels xs =
+labels = labels' . fastNub
+
+labels' :: Ord a => [a] -> Labels a
+labels' xs =
   Labels {
-    labelMap = Map.fromList (zip ys [0..]),
-    valueMap = IntMap.fromList (zip [0..] ys) }
-  where
-    ys = usort xs
+    labelMap = Map.fromList (zip xs [0..]),
+    valueMap = IntMap.fromList (zip [0..] xs) }
 
 label :: Ord a => a -> Labels a -> Int32
 label x labels =
@@ -36,7 +37,7 @@ putLabels :: Putter a -> Putter (Labels a)
 putLabels put labels = putListOf put (IntMap.elems (valueMap labels))
 
 getLabels :: Ord a => Get a -> Get (Labels a)
-getLabels get = labels <$> getListOf get
+getLabels get = labels' <$> getListOf get
 
 putWithLabels :: (Ord a, Serialize a) => [a] -> (Labels a -> Putter b) -> Putter b
 putWithLabels xs putter x = do
