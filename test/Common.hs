@@ -1,22 +1,24 @@
 -- Common code used by the rest of the tests.
 
-{-# LANGUAGE FlexibleInstances, ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances, ScopedTypeVariables, DeriveGeneric, DeriveAnyClass #-}
 module Common where
 
+import Data.Intern
 import Twee.Base
 import Twee.Constraints
 import Twee.Equation
 import Twee.Utils
 import qualified Twee.KBO as KBO
 import Control.Monad
-import Data.Intern
+import Data.Hashable
 import Data.List
 import Data.Maybe
 import Data.Typeable
+import GHC.Generics
 import Test.QuickCheck hiding (Function)
 import Text.Printf
 
-data Func = Min | Skolem Int | F Int Integer deriving (Eq, Ord)
+data Func = Min | Skolem Int | F Int Integer deriving (Eq, Ord, Generic, Hashable)
 
 instance Show Func where
   show Min = "m"
@@ -66,10 +68,10 @@ instance Arity Func where
 instance EqualsBonus Func
 
 instance Arbitrary Var where arbitrary = fmap V (choose (0, 3))
-instance (Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Sym f) where
+instance (Hashable f, Eq f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Sym f) where
   arbitrary = fmap intern arbitrary
 
-instance (Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Term f) where
+instance (Hashable f, Eq f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Term f) where
   arbitrary =
     sized $ \n ->
       oneof $
@@ -85,20 +87,20 @@ instance (Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Term f) where
         [ x:ys | ys <- shrinkOne xs ]
   shrink _ = []
 
-instance (Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (TermList f) where
+instance (Hashable f, Eq f, Typeable f, Arbitrary f, Arity f) => Arbitrary (TermList f) where
   arbitrary = buildList <$> listOf (arbitrary :: Gen (Term f))
   shrink = map buildList . shrink . unpack
 
 data Pair f = Pair (Term f) (Term f) deriving Show
 
-instance (Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Pair f) where
+instance (Hashable f, Eq f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Pair f) where
   arbitrary = liftM2 Pair arbitrary arbitrary
   shrink (Pair x y) =
     [ Pair x' y  | x' <- shrink x ] ++
     [ Pair x y'  | y' <- shrink y ] ++
     [ Pair x' y' | x' <- shrink x, y' <- shrink y ]
 
-instance (Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Equation f) where
+instance (Hashable f, Eq f, Typeable f, Arbitrary f, Arity f) => Arbitrary (Equation f) where
   arbitrary = do
     Pair t u <- arbitrary
     return (t :=: u)

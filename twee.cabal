@@ -80,7 +80,7 @@ Test-Suite twee-test
     hs-source-dirs:
         test
     main-is: Main.hs
-    build-depends: base < 5, QuickCheck, twee-lib == 2.6.2, containers, pretty, tasty, tasty-quickcheck
+    build-depends: base < 5, QuickCheck, twee-lib == 2.6.2, containers, pretty, tasty, tasty-quickcheck, hashable
     other-modules:
         Common
         Index

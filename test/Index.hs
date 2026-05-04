@@ -6,6 +6,7 @@ module Index(tests) where
 import Common
 import Twee.Base
 import qualified Twee.Index as Index
+import Data.Hashable
 import Data.List
 import Data.Maybe
 import Data.Typeable
@@ -15,7 +16,7 @@ import Test.Tasty.QuickCheck
 newtype IndexOps f = IndexOps [IndexOp f] deriving Show
 data IndexOp f = Add (Term f) | Delete (Term f) deriving Show
 
-instance (Ord f, Typeable f, Arbitrary f, Arity f) => Arbitrary (IndexOps f) where
+instance (Hashable f, Eq f, Typeable f, Arbitrary f, Arity f) => Arbitrary (IndexOps f) where
   arbitrary =
     sized $ \n -> IndexOps <$> take n <$> arbOps []
     where
