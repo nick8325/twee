@@ -13,7 +13,7 @@
 --   * substitutions ('Substitution', 'Subst', 'subst');
 --   * unification ('unify') and matching ('match');
 --   * miscellaneous useful functions on terms.
-{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables, CPP, DefaultSignatures #-}
+{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables, CPP, DefaultSignatures, GeneralizedNewtypeDeriving #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
 #ifdef USE_LLVM
 {-# OPTIONS_GHC -fllvm #-}
@@ -75,6 +75,8 @@ import qualified Data.IntMap.Strict as IntMap
 import Twee.Utils
 import Data.Intern
 import GHC.Stack
+import qualified Data.Serialize as Serialize
+import Data.Serialize(Serialize)
 
 --------------------------------------------------------------------------------
 -- * A type class for builders
@@ -208,7 +210,7 @@ subst sub t = substList sub (singleton t)
 newtype Subst f =
   Subst {
     unSubst :: IntMap (TermList f) }
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Serialize)
 
 -- | Return the highest-number variable in a substitution plus 1.
 {-# INLINE substSize #-}
@@ -506,6 +508,34 @@ unifyListTriFrom !t !u (Triangle !sub) =
               Nothing -> Just ()
               Just u  -> occurs sub x u
     occurs _ _ _ = Just ()
+
+--------------------------------------------------------------------------------
+-- Serialisation.
+--------------------------------------------------------------------------------
+
+instance (Intern f, Serialize f) => Serialize (TermList f) where
+  put = Serialize.put . unpack
+  get = buildList <$> Serialize.getListOf getBuilder
+
+instance (Intern f, Serialize f) => Serialize (Term f) where
+  put (Var x) = do
+    Serialize.put False
+    Serialize.put x
+  put (App f ts) = do
+    Serialize.put True
+    Serialize.put f
+    Serialize.put ts
+  get = build <$> getBuilder
+
+getBuilder :: forall f. (Intern f, Serialize f) => Serialize.Get (Builder f)
+getBuilder = do
+  kind <- Serialize.get :: Serialize.Get Bool -- False = Var, True = App
+  case kind of
+    False -> var . V <$> Serialize.get
+    True -> do
+      f <- Serialize.get :: Serialize.Get (Sym f)
+      args <- Serialize.getListOf getBuilder
+      return (app f args)
 
 --------------------------------------------------------------------------------
 -- Miscellaneous stuff.

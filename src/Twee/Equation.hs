@@ -1,9 +1,11 @@
 -- | Equations.
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies, DeriveAnyClass, DeriveGeneric #-}
 module Twee.Equation where
 
 import Twee.Base
 import Control.Monad
+import GHC.Generics
+import Data.Serialize(Serialize)
 
 --------------------------------------------------------------------------------
 -- * Equations.
@@ -13,7 +15,7 @@ data Equation f =
   (:=:) {
     eqn_lhs :: {-# UNPACK #-} !(Term f),
     eqn_rhs :: {-# UNPACK #-} !(Term f) }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, Serialize)
 type EquationOf a = Equation (ConstantOf a)
 
 instance Symbolic (Equation f) where

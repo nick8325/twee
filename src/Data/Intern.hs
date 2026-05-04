@@ -14,6 +14,7 @@ import GHC.Exts
 import GHC.Int
 import Unsafe.Coerce
 import Data.Hashable
+import Data.Serialize
 
 -- | Type class constraints for a value to be internable.
 type Intern a = (Typeable a, Eq a, Hashable a)
@@ -145,3 +146,8 @@ uninternWorker n# =
 pattern Sym :: Intern a => a -> Sym a
 pattern Sym x <- (unintern -> x) where
   Sym x = intern x
+
+-- Serialise a Sym as the underlying value, because it needs to be interned on deserialisation.
+instance (Intern a, Serialize a) => Serialize (Sym a) where
+  put = put . unintern
+  get = intern <$> get

@@ -1,5 +1,5 @@
 -- | Equational proofs which are checked for correctedness.
-{-# LANGUAGE TypeFamilies, PatternGuards, RecordWildCards, ScopedTypeVariables, OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies, PatternGuards, RecordWildCards, ScopedTypeVariables, OverloadedStrings, DeriveGeneric, DeriveAnyClass #-}
 module Twee.Proof(
   -- * Constructing proofs
   Proof, Derivation(..), Axiom(..),
@@ -33,6 +33,9 @@ import qualified Data.IntMap.Strict as IntMap
 import Control.Monad.Trans.State.Strict
 import Data.Graph
 import Twee.Profile
+import Data.Serialize(Serialize)
+import qualified Data.Serialize as Serialize
+import GHC.Generics
 
 ----------------------------------------------------------------------
 -- Equational proofs. Only valid proofs can be constructed.
@@ -78,7 +81,7 @@ data Axiom f =
     axiom_name :: !String,
     -- | The equation which the axiom asserts.
     axiom_eqn :: !(Equation f) }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, Serialize)
 
 -- | Checks a 'Derivation' and, if it is correct, returns a
 -- certified 'Proof'.
@@ -166,6 +169,10 @@ instance (Intern f, PrettyTerm f) => Pretty (Axiom f) where
   pPrint Axiom{..} =
     text "axiom" <#>
     pPrintTuple [pPrint axiom_number, text axiom_name, pPrint axiom_eqn]
+
+instance (Function f, Intern f, Serialize f) => Serialize (Proof f) where
+  put = Serialize.put . derivation
+  get = certify <$> Serialize.get
 
 foldLemmas :: (Intern f, PrettyTerm f) => (Map (Proof f) a -> Derivation f -> a) -> [Derivation f] -> Map (Proof f) a
 foldLemmas op ds =
@@ -498,7 +505,7 @@ data Presentation f =
     pres_lemmas :: [Proof f],
     -- | The goals proved.
     pres_goals  :: [ProvedGoal f] }
-  deriving Show
+  deriving (Show, Generic, Serialize)
 
 -- Note: only the pg_proof field should be trusted!
 -- The remaining fields are for information only.
@@ -517,7 +524,7 @@ data ProvedGoal f =
     -- and pg_witness_hint is the empty substitution.
     pg_goal_hint    :: Equation f,
     pg_witness_hint :: Subst f }
-  deriving Show
+  deriving (Show, Generic, Serialize)
 
 -- | Construct a @ProvedGoal@.
 provedGoal :: Int -> String -> Proof f -> ProvedGoal f
@@ -1000,3 +1007,62 @@ maybeDecodeGoal Config{..} ProvedGoal{..}
       | Cong eq [p1', p2'] <- p, isEquals eq =
         cont (p1 `trans` p1') (p2 `trans` p2') ps
     cont _ _ _ = Nothing
+
+----------------------------------------------------------------------
+-- Serialisation of derivations.
+----------------------------------------------------------------------
+
+-- The main problem is how to preserve sharing of lemmas.
+-- We do that by sending the lemmas separately as a list, then
+-- just identifying them by number when they are used.
+-- We do the same for axioms because why not.
+
+instance (Function f, Intern f, Serialize f) => Serialize (Derivation f) where
+  put d = do
+    Serialize.put axioms
+    Serialize.put (map (serializeDerivation axiomsMap lemmasMap . derivation) lemmas)
+    Serialize.put (serializeDerivation axiomsMap lemmasMap d)
+    where
+      axioms = usort (concatMap usedAxioms (d:map derivation lemmas))
+      lemmas = allLemmas [d]
+      axiomsMap = Map.fromList (zip axioms [0..])
+      lemmasMap = Map.fromList (zip lemmas [0..])
+
+  get = do
+    axioms <- Serialize.get
+    lemmas <- Serialize.get
+    let axiomsMap = Map.fromList (zip [0..] axioms)
+    let
+      lemmasMap = Map.fromList (zip [0..] lemmas)
+      lemmasMap' = fmap (certify . unserializeDerivation axiomsMap lemmasMap') lemmasMap
+    unserializeDerivation axiomsMap lemmasMap' <$> Serialize.get
+
+-- A derivation in which lemmas/axioms are identified by number.
+data SerializedDerivation f =
+    SUseLemma Int (Subst f)
+  | SUseAxiom Int (Subst f)
+  | SRefl (Term f)
+  | SSymm (SerializedDerivation f)
+  | STrans (SerializedDerivation f) (SerializedDerivation f)
+  | SCong (Sym f) [SerializedDerivation f]
+  deriving (Eq, Ord, Generic, Serialize)
+
+serializeDerivation :: Ord f => Map (Axiom f) Int -> Map (Proof f) Int -> Derivation f -> SerializedDerivation f
+serializeDerivation axioms lemmas = s
+  where
+    s (UseLemma lem sub) = SUseLemma (Map.findWithDefault undefined lem lemmas) sub
+    s (UseAxiom ax sub) = SUseAxiom (Map.findWithDefault undefined ax axioms) sub
+    s (Refl t) = SRefl t
+    s (Symm p) = SSymm (s p)
+    s (Trans p q) = STrans (s p) (s q)
+    s (Cong f ps) = SCong f (map s ps)
+
+unserializeDerivation :: Ord f => Map Int (Axiom f) -> Map Int (Proof f) -> SerializedDerivation f -> Derivation f
+unserializeDerivation axioms lemmas = u
+  where
+    u (SUseLemma lem sub) = UseLemma (Map.findWithDefault undefined lem lemmas) sub
+    u (SUseAxiom ax sub) = UseAxiom (Map.findWithDefault undefined ax axioms) sub
+    u (SRefl t) = Refl t
+    u (SSymm p) = Symm (u p)
+    u (STrans p q) = Trans (u p) (u q)
+    u (SCong f ps) = Cong f (map u ps)

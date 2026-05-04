@@ -26,6 +26,7 @@ import GHC.ST hiding (liftST)
 import Data.Ord
 import Twee.Profile
 import Data.Intern
+import Data.Serialize(Serialize)
 
 --------------------------------------------------------------------------------
 -- Symbols. A symbol is a single function or variable in a flatterm.
@@ -202,7 +203,7 @@ newtype Var =
     -- | The variable's number.
     -- Don't use huge variable numbers:
     -- they will be truncated to 32 bits when stored in a term.
-    var_id :: Int } deriving (Eq, Ord, Enum)
+    var_id :: Int } deriving (Eq, Ord, Enum, Serialize)
 instance Show Var where
   show x = "x" ++ show (var_id x)
 
