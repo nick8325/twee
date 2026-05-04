@@ -43,7 +43,7 @@ import System.Console.ANSI
 import Data.Symbol
 import Twee.Profile
 import GHC.Generics
-import Data.Serialize
+import Data.Hashable
 
 data MainFlags =
   MainFlags {
@@ -434,10 +434,10 @@ data Constant =
     con_weight  :: !Integer,
     con_fweight :: {-# UNPACK #-} !Float,
     con_bonus   :: !Bool }
-  deriving (Eq, Ord, Generic, Serialize)
+  deriving (Eq, Ord, Generic, Hashable)
 
 data Precedence = Precedence !Bool !Bool !Bool !(Maybe Int) !Int
-  deriving (Eq, Ord, Generic, Serialize)
+  deriving (Eq, Ord, Generic, Hashable)
 
 instance KBO.Sized Constant where
   size Minimal = 1

@@ -13,11 +13,10 @@ import Data.Typeable
 import GHC.Exts
 import GHC.Int
 import Unsafe.Coerce
-import Data.Serialize
-import Data.ByteString(ByteString)
+import Data.Hashable
 
 -- | Type class constraints for a value to be internable.
-type Intern a = (Typeable a, Ord a, Serialize a)
+type Intern a = (Typeable a, Eq a, Hashable a)
 
 -- | An interned value of type @a@.
 newtype Sym a = MkSym Int32
@@ -47,7 +46,7 @@ data Caches =
     -- The next id number to assign.
     caches_nextId :: {-# UNPACK #-} !Int32,
     -- A map from values to IDs.
-    caches_from   :: !(HashMap TypeRep (HashMap ByteString Int32)),
+    caches_from   :: !(HashMap TypeRep (HashMap Any Int32)),
     -- The reverse map from IDs to values.
     caches_to     :: !(Array Any) }
 
@@ -69,6 +68,13 @@ atomicModifyCaches f = do
     else (cachesNow, False)
   if ok then return x else atomicModifyCaches f
 
+-- Versions of unsafeCoerce with slightly more type checking
+toAnyCache :: HashMap a Int32 -> HashMap Any Int32
+toAnyCache = unsafeCoerce
+
+fromAnyCache :: HashMap Any Int32 -> HashMap a Int32
+fromAnyCache = unsafeCoerce
+
 toAny :: a -> Any
 toAny = unsafeCoerce
 
@@ -79,6 +85,7 @@ fromAny = unsafeCoerce
 {-# NOINLINE intern #-}
 intern :: forall a. Intern a => a -> Sym a
 intern x =
+  hash x `seq`
   unsafeDupablePerformIO $ do
     -- Common case: symbol is already interned.
     caches <- readIORef cachesRef
@@ -94,24 +101,24 @@ intern x =
         return x
 
   where
-    !key = encode x
     ty = typeOf x
 
     tryFind :: Caches -> Maybe (Sym a)
     tryFind Caches{..} =
-      MkSym <$> (HashMap.lookup ty caches_from >>= HashMap.lookup key)
+      MkSym <$> (HashMap.lookup ty caches_from >>= HashMap.lookup x . fromAnyCache)
 
     insert :: Caches -> (Caches, Sym a)
     insert caches@Caches{..} =
       if n < 0 then error "label overflow" else
       (caches {
          caches_nextId = n+1,
-         caches_from = HashMap.insert ty (HashMap.insert key n cache) caches_from,
+         caches_from = HashMap.insert ty (toAnyCache (HashMap.insert x n cache)) caches_from,
          caches_to = DynamicArray.updateWithDefault undefined (fromIntegral n) (toAny x) caches_to },
        MkSym n)
       where
         n = caches_nextId
         cache =
+          fromAnyCache $
           HashMap.findWithDefault HashMap.empty ty caches_from
 
 -- | Recover the underlying value from a 'Sym'.

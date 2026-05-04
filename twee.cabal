@@ -49,7 +49,7 @@ common executable-stuff
                        jukebox >= 0.5.9,
                        ansi-terminal >= 0.9,
                        symbol,
-                       cereal
+                       hashable
   other-modules:       SequentialMain
   ghc-options:         -W -fno-warn-incomplete-patterns
 
