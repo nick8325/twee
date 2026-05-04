@@ -1,7 +1,7 @@
 -- | Useful operations on terms and similar. Also re-exports some generally
 -- useful modules such as 'Twee.Term' and 'Twee.Pretty'.
 
-{-# LANGUAGE TypeFamilies, FlexibleInstances, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ConstraintKinds, RecordWildCards, BangPatterns, PatternSynonyms #-}
+{-# LANGUAGE TypeFamilies, FlexibleInstances, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ConstraintKinds, RecordWildCards, BangPatterns, PatternSynonyms, RankNTypes, ScopedTypeVariables #-}
 module Twee.Base(
   -- * Re-exported functionality
   module Twee.Term, module Twee.Pretty,
@@ -32,6 +32,9 @@ import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
 import Data.Serialize
 import Data.Intern
+import Data.Reflection
+import Data.Labels
+import Data.Typeable
 
 -- | Represents a unique identifier (e.g., for a rule).
 newtype Id = Id { unId :: Int32 }

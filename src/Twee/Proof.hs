@@ -1,5 +1,5 @@
--- | Equational proofs which are checked for correctedness.
-{-# LANGUAGE TypeFamilies, PatternGuards, RecordWildCards, ScopedTypeVariables, OverloadedStrings, DeriveGeneric, DeriveAnyClass #-}
+-- | Equational proofs which are checked for correctness.
+{-# LANGUAGE TypeFamilies, PatternGuards, RecordWildCards, ScopedTypeVariables, OverloadedStrings, DeriveGeneric, DeriveAnyClass, StandaloneDeriving, FlexibleContexts, UndecidableInstances #-}
 module Twee.Proof(
   -- * Constructing proofs
   Proof, Derivation(..), Axiom(..),
@@ -36,6 +36,9 @@ import Twee.Profile
 import Data.Serialize(Serialize)
 import qualified Data.Serialize as Serialize
 import GHC.Generics
+import Data.Int
+import Data.Labels
+import Data.Reflection
 
 ----------------------------------------------------------------------
 -- Equational proofs. Only valid proofs can be constructed.
@@ -81,7 +84,8 @@ data Axiom f =
     axiom_name :: !String,
     -- | The equation which the axiom asserts.
     axiom_eqn :: !(Equation f) }
-  deriving (Eq, Ord, Show, Generic, Serialize)
+  deriving (Eq, Ord, Show, Generic)
+deriving instance WithFunctionLabels f => Serialize (Axiom f)
 
 -- | Checks a 'Derivation' and, if it is correct, returns a
 -- certified 'Proof'.
@@ -170,7 +174,7 @@ instance (Intern f, PrettyTerm f) => Pretty (Axiom f) where
     text "axiom" <#>
     pPrintTuple [pPrint axiom_number, text axiom_name, pPrint axiom_eqn]
 
-instance (Function f, Intern f, Serialize f) => Serialize (Proof f) where
+instance (Function f, Serialize f) => Serialize (Proof f) where
   put = Serialize.put . derivation
   get = certify <$> Serialize.get
 
@@ -505,7 +509,7 @@ data Presentation f =
     pres_lemmas :: [Proof f],
     -- | The goals proved.
     pres_goals  :: [ProvedGoal f] }
-  deriving (Show, Generic, Serialize)
+  deriving (Show, Generic)
 
 -- Note: only the pg_proof field should be trusted!
 -- The remaining fields are for information only.
@@ -524,7 +528,8 @@ data ProvedGoal f =
     -- and pg_witness_hint is the empty substitution.
     pg_goal_hint    :: Equation f,
     pg_witness_hint :: Subst f }
-  deriving (Show, Generic, Serialize)
+  deriving (Show, Generic)
+deriving instance (WithFunctionLabels f, Function f, Serialize f) => Serialize (ProvedGoal f)
 
 -- | Construct a @ProvedGoal@.
 provedGoal :: Int -> String -> Proof f -> ProvedGoal f
@@ -1015,54 +1020,85 @@ maybeDecodeGoal Config{..} ProvedGoal{..}
 -- The main problem is how to preserve sharing of lemmas.
 -- We do that by sending the lemmas separately as a list, then
 -- just identifying them by number when they are used.
--- We do the same for axioms because why not.
+-- We do the same for axioms and function symbols.
 
-instance (Function f, Intern f, Serialize f) => Serialize (Derivation f) where
-  put d = do
+instance (Function f, Serialize f) => Serialize (Derivation f) where
+  put = putDerivations . return
+  get = head <$> getDerivations
+
+putDerivations :: (Function f, Serialize f) => [Derivation f] -> Serialize.Put
+putDerivations ds = do
+  Serialize.put functions
+  give functions $ do
     Serialize.put axioms
-    Serialize.put (map (serializeDerivation axiomsMap lemmasMap . derivation) lemmas)
-    Serialize.put (serializeDerivation axiomsMap lemmasMap d)
-    where
-      axioms = usort (concatMap usedAxioms (d:map derivation lemmas))
-      lemmas = allLemmas [d]
-      axiomsMap = Map.fromList (zip axioms [0..])
-      lemmasMap = Map.fromList (zip lemmas [0..])
+    Serialize.put (map (toSerializedDerivation axioms lemmas . derivation) lemmaList)
+    Serialize.put (map (toSerializedDerivation axioms lemmas) ds)
+  where
+    functions = labels (concatMap (funs . axiom_eqn) axiomList ++ concatMap funs (map derivation lemmaList ++ ds))
+    axiomList = concatMap usedAxioms (map derivation lemmaList ++ ds)
+    axioms = labels axiomList
+    lemmaList = allLemmas ds
+    lemmas = labels lemmaList
 
-  get = do
+getDerivations :: forall f. (Function f, Serialize f) => Serialize.Get [Derivation f]
+getDerivations = do
+  functions <- Serialize.get :: Serialize.Get (Labels (Sym f))
+  give functions $ do
     axioms <- Serialize.get
-    lemmas <- Serialize.get
-    let axiomsMap = Map.fromList (zip [0..] axioms)
-    let
-      lemmasMap = Map.fromList (zip [0..] lemmas)
-      lemmasMap' = fmap (certify . unserializeDerivation axiomsMap lemmasMap') lemmasMap
-    unserializeDerivation axiomsMap lemmasMap' <$> Serialize.get
+    slemmas <- Serialize.get
+    let lemmas = mapLabels (certify . fromSerializedDerivation axioms lemmas) slemmas
+    map (fromSerializedDerivation axioms lemmas) <$> Serialize.get
 
--- A derivation in which lemmas/axioms are identified by number.
 data SerializedDerivation f =
-    SUseLemma Int (Subst f)
-  | SUseAxiom Int (Subst f)
+    SUseLemma Int32 (Subst f)
+  | SUseAxiom Int32 (Subst f)
   | SRefl (Term f)
   | SSymm (SerializedDerivation f)
   | STrans (SerializedDerivation f) (SerializedDerivation f)
-  | SCong (Sym f) [SerializedDerivation f]
-  deriving (Eq, Ord, Generic, Serialize)
+  | SCong (Sym f) [SerializedDerivation f] deriving (Eq, Ord, Generic)
+deriving instance (WithFunctionLabels f, Intern f, Serialize f) => Serialize (SerializedDerivation f)
 
-serializeDerivation :: Ord f => Map (Axiom f) Int -> Map (Proof f) Int -> Derivation f -> SerializedDerivation f
-serializeDerivation axioms lemmas = s
+toSerializedDerivation :: WithFunctionLabels f => Labels (Axiom f) -> Labels (Proof f) -> Derivation f -> SerializedDerivation f
+toSerializedDerivation axioms lemmas = toS
   where
-    s (UseLemma lem sub) = SUseLemma (Map.findWithDefault undefined lem lemmas) sub
-    s (UseAxiom ax sub) = SUseAxiom (Map.findWithDefault undefined ax axioms) sub
-    s (Refl t) = SRefl t
-    s (Symm p) = SSymm (s p)
-    s (Trans p q) = STrans (s p) (s q)
-    s (Cong f ps) = SCong f (map s ps)
+    toS (UseLemma lem sub) = SUseLemma (label lem lemmas) sub
+    toS (UseAxiom ax sub) = SUseAxiom (label ax axioms) sub
+    toS (Refl t) = SRefl t
+    toS (Symm p) = SSymm (toS p)
+    toS (Trans p q) = STrans (toS p) (toS q)
+    toS (Cong f ps) = SCong f (map toS ps)
 
-unserializeDerivation :: Ord f => Map Int (Axiom f) -> Map Int (Proof f) -> SerializedDerivation f -> Derivation f
-unserializeDerivation axioms lemmas = u
+fromSerializedDerivation :: WithFunctionLabels f => Labels (Axiom f) -> Labels (Proof f) -> SerializedDerivation f -> Derivation f
+fromSerializedDerivation axioms lemmas = fromS
   where
-    u (SUseLemma lem sub) = UseLemma (Map.findWithDefault undefined lem lemmas) sub
-    u (SUseAxiom ax sub) = UseAxiom (Map.findWithDefault undefined ax axioms) sub
-    u (SRefl t) = Refl t
-    u (SSymm p) = Symm (u p)
-    u (STrans p q) = Trans (u p) (u q)
-    u (SCong f ps) = Cong f (map u ps)
+    fromS (SUseLemma lem sub) = UseLemma (value lem lemmas) sub
+    fromS (SUseAxiom ax sub) = UseAxiom (value ax axioms) sub
+    fromS (SRefl t) = Refl t
+    fromS (SSymm p) = Symm (fromS p)
+    fromS (STrans p q) = Trans (fromS p) (fromS q)
+    fromS (SCong f ps) = Cong f (map fromS ps)
+
+instance (Function f, Serialize f) => Serialize (Presentation f) where
+  put pres@Presentation{..} = putWithLabels funcs (\l -> give l putPresentation) pres
+    where
+      funcs = concatMap (funs . axiom_eqn) pres_axioms ++ concatMap (funs . pg_goal_hint) pres_goals ++ concatMap (funs . pg_witness_hint) pres_goals
+  get = getWithLabels (\l -> give (l :: Labels (Sym f)) getPresentation)
+
+putPresentation :: (WithFunctionLabels f, Function f, Serialize f) => Presentation f -> Serialize.Put
+putPresentation Presentation{..} = do
+  Serialize.put pres_axioms
+  Serialize.put (length pres_lemmas)
+  putDerivations (map derivation (pres_lemmas ++ map pg_proof pres_goals))
+  Serialize.put [(pg_number, pg_name, pg_goal_hint, pg_witness_hint) | ProvedGoal{..} <- pres_goals]
+
+getPresentation :: (WithFunctionLabels f, Function f, Serialize f) => Serialize.Get (Presentation f)
+getPresentation = do
+  axioms <- Serialize.get
+  lemmaCount <- Serialize.get
+  lemmasAndGoals <- getDerivations
+  let (lemmas, goalProofs) = splitAt lemmaCount lemmasAndGoals
+  goals <- Serialize.get
+  return Presentation {
+    pres_axioms = axioms,
+    pres_lemmas = map certify lemmas,
+    pres_goals = [ProvedGoal number name (certify proof) goal_hint witness_hint | ((number, name, goal_hint, witness_hint), proof) <- zip goals goalProofs] }

@@ -73,6 +73,7 @@ library
     Data.Heap
     Data.Numbered
     Data.PackedSequence
+    Data.Labels
 
   build-depends:
     -- base >= 4.11 for Semigroup in Prelude
@@ -90,7 +91,8 @@ library
     QuickCheck,
     deepseq >= 1.4.0.0,
     unordered-containers,
-    hashable
+    hashable,
+    reflection
   hs-source-dirs:      .
   ghc-options:         -W -fno-warn-incomplete-patterns -fno-warn-dodgy-imports
   default-language:    Haskell2010

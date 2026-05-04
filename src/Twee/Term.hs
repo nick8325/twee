@@ -1,4 +1,4 @@
--- | Terms and substitutions.
+-- | Terms and substitutions
 --
 -- Terms in twee are represented as arrays rather than as an algebraic data
 -- type. This module defines pattern synonyms ('App', 'Var', 'Cons', 'Nil')
@@ -13,7 +13,7 @@
 --   * substitutions ('Substitution', 'Subst', 'subst');
 --   * unification ('unify') and matching ('match');
 --   * miscellaneous useful functions on terms.
-{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables, CPP, DefaultSignatures, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables, CPP, DefaultSignatures, TypeApplications, FlexibleContexts, UndecidableInstances, ConstraintKinds #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
 #ifdef USE_LLVM
 {-# OPTIONS_GHC -fllvm #-}
@@ -61,10 +61,12 @@ module Twee.Term(
   replacePositionSub,
   replace,
   -- * Miscellaneous functions
+  WithFunctionLabels,
   bound, boundList, boundLists, mapFun, mapFunList, (<<)) where
 
 import Prelude hiding (lookup)
 import Twee.Term.Core hiding (F)
+import Data.Labels
 import Data.List hiding (lookup, find, singleton)
 import Data.Maybe
 #if __GLASGOW_HASKELL__ < 804
@@ -77,6 +79,8 @@ import Data.Intern
 import GHC.Stack
 import qualified Data.Serialize as Serialize
 import Data.Serialize(Serialize)
+import Data.Int
+import Data.Reflection
 
 --------------------------------------------------------------------------------
 -- * A type class for builders
@@ -210,7 +214,7 @@ subst sub t = substList sub (singleton t)
 newtype Subst f =
   Subst {
     unSubst :: IntMap (TermList f) }
-  deriving (Eq, Ord, Serialize)
+  deriving (Eq, Ord)
 
 -- | Return the highest-number variable in a substitution plus 1.
 {-# INLINE substSize #-}
@@ -513,29 +517,37 @@ unifyListTriFrom !t !u (Triangle !sub) =
 -- Serialisation.
 --------------------------------------------------------------------------------
 
-instance (Intern f, Serialize f) => Serialize (TermList f) where
+type WithFunctionLabels f = Given (Labels (Sym f))
+
+instance WithFunctionLabels f => Serialize (TermList f) where
   put = Serialize.put . unpack
-  get = buildList <$> Serialize.getListOf getBuilder
+  get = buildList <$> getTermList
 
-instance (Intern f, Serialize f) => Serialize (Term f) where
-  put (Var x) = do
-    Serialize.put False
-    Serialize.put x
+type SerializedSymbol = Either Var Int32
+
+instance WithFunctionLabels f => Serialize (Term f) where
+  put (Var x) = Serialize.put (Left x :: SerializedSymbol)
   put (App f ts) = do
-    Serialize.put True
-    Serialize.put f
+    Serialize.put (Right (label f given) :: SerializedSymbol)
     Serialize.put ts
-  get = build <$> getBuilder
 
-getBuilder :: forall f. (Intern f, Serialize f) => Serialize.Get (Builder f)
-getBuilder = do
-  kind <- Serialize.get :: Serialize.Get Bool -- False = Var, True = App
-  case kind of
-    False -> var . V <$> Serialize.get
-    True -> do
-      f <- Serialize.get :: Serialize.Get (Sym f)
-      args <- Serialize.getListOf getBuilder
-      return (app f args)
+  get = build <$> getTerm
+
+getTermList :: WithFunctionLabels f => Serialize.Get (Builder f)
+getTermList = mconcat <$> Serialize.getListOf getTerm
+
+getTerm :: WithFunctionLabels f => Serialize.Get (Builder f)
+getTerm = do
+  val <- Serialize.get :: Serialize.Get SerializedSymbol
+  case val of
+    Left x -> return (var x)
+    Right fid -> do
+      ts <- getTermList
+      return (app (value fid given) ts)
+
+instance WithFunctionLabels f => Serialize (Subst f) where
+  put = Serialize.put . substToList
+  get = fromJust . listToSubst <$> Serialize.get
 
 --------------------------------------------------------------------------------
 -- Miscellaneous stuff.

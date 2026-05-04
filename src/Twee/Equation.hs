@@ -1,5 +1,5 @@
 -- | Equations.
-{-# LANGUAGE TypeFamilies, DeriveAnyClass, DeriveGeneric #-}
+{-# LANGUAGE TypeFamilies, DeriveAnyClass, DeriveGeneric, FlexibleContexts, UndecidableInstances, StandaloneDeriving #-}
 module Twee.Equation where
 
 import Twee.Base
@@ -15,7 +15,9 @@ data Equation f =
   (:=:) {
     eqn_lhs :: {-# UNPACK #-} !(Term f),
     eqn_rhs :: {-# UNPACK #-} !(Term f) }
-  deriving (Eq, Ord, Show, Generic, Serialize)
+  deriving (Eq, Ord, Show, Generic)
+deriving instance WithFunctionLabels f => Serialize (Equation f)
+
 type EquationOf a = Equation (ConstantOf a)
 
 instance Symbolic (Equation f) where
