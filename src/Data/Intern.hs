@@ -1,6 +1,6 @@
 -- | Interning, annotating values with unique IDs.
 
-{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash, RoleAnnotations, CPP, PatternSynonyms, ViewPatterns, ConstraintKinds #-}
+{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash, RoleAnnotations, CPP, PatternSynonyms, ViewPatterns, ConstraintKinds, GeneralizedNewtypeDeriving #-}
 module Data.Intern(Intern, Sym, pattern Sym, intern, unintern, unsafeMkSym, symId) where
 
 import Data.IORef
@@ -20,7 +20,7 @@ type Intern a = (Typeable a, Eq a, Hashable a)
 
 -- | An interned value of type @a@.
 newtype Sym a = MkSym Int32
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Hashable)
 
 instance Show a => Show (Sym a) where
   showsPrec n = showsPrec n . unintern
