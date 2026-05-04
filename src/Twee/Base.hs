@@ -32,9 +32,6 @@ import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
 import Data.Serialize
 import Data.Intern
-import Data.Reflection
-import Data.Labels
-import Data.Typeable
 
 -- | Represents a unique identifier (e.g., for a rule).
 newtype Id = Id { unId :: Int32 }
