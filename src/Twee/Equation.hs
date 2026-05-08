@@ -5,7 +5,6 @@ module Twee.Equation where
 import Twee.Base
 import Control.Monad
 import GHC.Generics
-import Data.Serialize(Serialize)
 import Data.SerializeSharing
 import Data.Hashable
 

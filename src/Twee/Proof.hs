@@ -33,7 +33,6 @@ import qualified Data.IntMap.Strict as IntMap
 import Control.Monad.Trans.State.Strict
 import Data.Graph
 import Twee.Profile
-import Data.Serialize(Serialize)
 import qualified Data.Serialize as Serialize
 import GHC.Generics
 import Data.SerializeSharing
