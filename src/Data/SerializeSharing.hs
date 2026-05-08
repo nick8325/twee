@@ -11,13 +11,14 @@ import qualified Data.HashMap.Strict as HashMap
 import Data.HashMap.Strict(HashMap)
 import System.IO.Unsafe
 import Data.IORef
-import Data.Int
 import Data.Reflection
 import Data.Maybe
 import GHC.Generics
 import Data.Hashable
 import Control.Parallel
 import Control.Monad
+import Data.Bits
+import Twee.Utils
 
 type WithSharing = Given (IORef Store)
 
@@ -29,7 +30,7 @@ getWithSharing = withStore
 
 newtype Shared a = Shared { getShared :: a }
 
-data SharedEncoding a = New a | Old Int32 deriving (Generic, Serialize)
+data SharedEncoding a = New a | Old CompactWord deriving (Generic, Serialize)
 
 unsafeLiftIO :: Monad m => IO a -> m a
 unsafeLiftIO act = do
@@ -41,7 +42,7 @@ instance (WithSharing, Typeable a, Eq a, Hashable a, Serialize a) => Serialize (
     mkey <- unsafeLiftIO (lookupValue x)
     case mkey of
       Just key ->
-        put (Old key :: SharedEncoding a)
+        put (Old (Compact key) :: SharedEncoding a)
       Nothing -> do
         put (New x :: SharedEncoding a)
         unsafeLiftIO (addValue x)
@@ -52,7 +53,7 @@ instance (WithSharing, Typeable a, Eq a, Hashable a, Serialize a) => Serialize (
       New x -> do
         unsafeLiftIO (addValue x)
         return x
-      Old n ->
+      Old (Compact n) ->
         unsafeLiftIO (lookupKey n)
 
 data Store =
@@ -79,7 +80,7 @@ withStore x = unsafePerformIO $ do { store <- newIORef empty; return (give store
   where
     empty = Store IntMap.empty HashMap.empty 0
 
-lookupValue :: (WithSharing, Eq a, Hashable a, Typeable a) => a -> IO (Maybe Int32)
+lookupValue :: (WithSharing, Eq a, Hashable a, Typeable a) => a -> IO (Maybe Word)
 lookupValue x = do
   let value = Value x
   Store{..} <- readIORef given
@@ -95,7 +96,7 @@ addValue x = do
     store_values = HashMap.insert value store_next_key store_values,
     store_next_key = store_next_key + 1 }
 
-lookupKey :: (WithSharing, Typeable a) => Int32 -> IO a
+lookupKey :: (WithSharing, Typeable a) => Word -> IO a
 lookupKey key = do
   Store{..} <- readIORef given
   case IntMap.lookup (fromIntegral key) store_keys of

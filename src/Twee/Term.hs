@@ -518,8 +518,8 @@ unifyListTriFrom !t !u (Triangle !sub) =
 --------------------------------------------------------------------------------
 
 instance (WithSharing, Intern f, Serialize f) => Serialize (TermList f) where
-  put = Serialize.put . unpack
-  get = buildList <$> getTermList
+  put t = putCompactList Serialize.put (unpack t)
+  get = buildList <$> getCompactList getTerm
 
 type SerializedTerm f = Either Var (Sym f, TermList f)
 
@@ -527,9 +527,6 @@ instance (WithSharing, Intern f, Serialize f) => Serialize (Term f) where
   put (Var x) = Serialize.put (Left x :: SerializedTerm f)
   put (App f ts) = Serialize.put (Right (f, ts) :: SerializedTerm f)
   get = build <$> getTerm
-
-getTermList :: (WithSharing, Intern f, Serialize f) => Serialize.Get (Builder f)
-getTermList = mconcat <$> Serialize.getListOf getTerm
 
 getTerm :: forall f. (WithSharing, Intern f, Serialize f) => Serialize.Get (Builder f)
 getTerm = do
@@ -539,8 +536,12 @@ getTerm = do
     Right (f, ts) -> return (app f ts)
 
 instance (WithSharing, Intern f, Serialize f) => Serialize (Subst f) where
-  put = Serialize.put . substToList
-  get = fromJust . listToSubst <$> Serialize.get
+  put = putCompactList Serialize.put . substToList
+  get = fromJust . listToSubst <$> getCompactList Serialize.get
+
+instance Serialize Var where
+  put (V x) = Serialize.put (Compact (fromIntegral x))
+  get = V . fromIntegral . getCompactWord <$> Serialize.get
 
 --------------------------------------------------------------------------------
 -- Miscellaneous stuff.

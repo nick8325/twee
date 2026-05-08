@@ -1,6 +1,6 @@
 -- | Miscellaneous utility functions.
 
-{-# LANGUAGE CPP, MagicHash, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE CPP, MagicHash, GeneralizedNewtypeDeriving, BangPatterns #-}
 module Twee.Utils where
 
 import Control.Arrow((&&&))
@@ -15,6 +15,7 @@ import System.Random
 import Data.Serialize
 import qualified Data.Set as Set
 --import Test.QuickCheck hiding ((.&.))
+import Control.Monad
 
 repeatM :: Monad m => m a -> m [a]
 repeatM = sequence . repeat
@@ -230,3 +231,34 @@ instance Serialize U16 where
 {-# INLINE never #-}
 never :: Bool
 never = False
+
+-- An integer which is serialised in a space-efficient way.
+newtype CompactWord = Compact { getCompactWord :: Word } deriving Show
+
+instance Serialize CompactWord where
+  put (Compact n) = putCompact n
+  get = Compact <$> getCompact 0 0
+
+putCompact :: Word -> Put
+putCompact n
+  | n <= 128 =
+    putWord8 (fromIntegral (clearBit n 7))
+  | otherwise = do
+    putWord8 (fromIntegral n .&. 0x7f)
+    putCompact (n `shiftR` 7)
+
+getCompact :: Int -> Word -> Get Word
+getCompact !k !n = do
+  x <- getWord8
+  let !n' = n + fromIntegral (x `shiftL` k)
+  if testBit x 7 then getCompact (k+7) n' else return n'
+
+putCompactList :: Putter a -> Putter [a]
+putCompactList putter xs = do
+  put (Compact (fromIntegral (length xs)))
+  mapM_ putter xs
+
+getCompactList :: Get a -> Get [a]
+getCompactList getter = do
+  Compact len <- get
+  replicateM (fromIntegral len) getter
