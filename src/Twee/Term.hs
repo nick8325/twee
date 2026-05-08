@@ -76,7 +76,7 @@ import Twee.Utils
 import Data.Intern
 import GHC.Stack
 import qualified Data.Serialize as Serialize
-import Data.SerializeSharing
+import Data.Serialize.Sharing
 import Data.Hashable
 
 --------------------------------------------------------------------------------

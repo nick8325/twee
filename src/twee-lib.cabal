@@ -66,7 +66,7 @@ library
     Twee.Utils
     Twee.Term.Core
     Data.Intern
-    Data.SerializeSharing
+    Data.Serialize.Sharing
   other-modules:
     Data.BatchedQueue
     Data.ChurchList

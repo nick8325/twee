@@ -35,7 +35,7 @@ import Data.Graph
 import Twee.Profile
 import qualified Data.Serialize as Serialize
 import GHC.Generics
-import Data.SerializeSharing
+import Data.Serialize.Sharing
 import Data.Hashable
 
 ----------------------------------------------------------------------

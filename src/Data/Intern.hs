@@ -15,7 +15,7 @@ import GHC.Int
 import Unsafe.Coerce
 import Data.Hashable
 import Data.Serialize
-import Data.SerializeSharing
+import Data.Serialize.Sharing
 
 -- | Type class constraints for a value to be internable.
 type Intern a = (Typeable a, Eq a, Hashable a)
