@@ -17,7 +17,6 @@ import GHC.Generics
 import Data.Hashable
 import Control.Parallel
 import Control.Monad
-import Data.Bits
 import Twee.Utils
 
 type WithSharing = Given (IORef Store)
