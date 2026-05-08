@@ -1,5 +1,5 @@
 -- | Equations.
-{-# LANGUAGE DeriveAnyClass, DeriveGeneric, UndecidableInstances, StandaloneDeriving #-}
+{-# LANGUAGE DeriveAnyClass, UndecidableInstances #-}
 module Twee.Equation where
 
 import Twee.Base

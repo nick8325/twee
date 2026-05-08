@@ -13,7 +13,7 @@
 --   * substitutions ('Substitution', 'Subst', 'subst');
 --   * unification ('unify') and matching ('match');
 --   * miscellaneous useful functions on terms.
-{-# LANGUAGE PatternSynonyms, ViewPatterns, OverloadedStrings, CPP, DefaultSignatures, TypeApplications, UndecidableInstances, ConstraintKinds, StandaloneDeriving, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PatternSynonyms, ViewPatterns, OverloadedStrings, CPP, DefaultSignatures, TypeApplications, UndecidableInstances, ConstraintKinds, GeneralizedNewtypeDeriving #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
 #ifdef USE_LLVM
 {-# OPTIONS_GHC -fllvm #-}
