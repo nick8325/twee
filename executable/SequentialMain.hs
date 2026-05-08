@@ -45,6 +45,8 @@ import Twee.Profile
 import GHC.Generics
 import Data.Hashable
 import Data.Serialize
+import Data.Serialize.Sharing
+import qualified Data.ByteString as BS
 
 data MainFlags =
   MainFlags {
@@ -69,7 +71,8 @@ data MainFlags =
     flags_kbo_weight0 :: Bool,
     flags_kbo_weight0_unary :: Bool,
     flags_goal_heuristic :: Bool,
-    flags_funweight :: Float }
+    flags_funweight :: Float,
+    flags_dump_proof :: Maybe FilePath }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags = do
@@ -170,6 +173,12 @@ parseMainFlags = do
     expert $
     inGroup "Critical pair weighting heuristics" $
     flag "fun-weight" ["Weight given to function symbols"] 1 argNum
+  flags_dump_proof <-
+    expert $
+    inGroup "Debugging flags" $
+    flag "dump-proof"
+      ["Dump a binary proof to this file (off by default)."]
+      Nothing (Just <$> argFile)
 
   return MainFlags{..}
 
@@ -990,6 +999,11 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 flags@MainFlags{..} lat
         | otherwise =
           cfg_proof_presentation config
       pres = present cfg_present [] $ map (eliminateDefinitionsFromGoal defs) $ solutions state
+
+    case flags_dump_proof of
+      Nothing -> return ()
+      Just dumpProofFile ->
+        BS.writeFile dumpProofFile (withSharing encode pres)
 
     sayTrace ""
     forM_ (pres_axioms pres) $ \p ->
