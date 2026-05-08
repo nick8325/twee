@@ -1,5 +1,5 @@
 -- | Critical pair generation.
-{-# LANGUAGE BangPatterns, FlexibleContexts, ScopedTypeVariables, MultiParamTypeClasses, RecordWildCards, OverloadedStrings, TypeFamilies, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses, OverloadedStrings, GeneralizedNewtypeDeriving #-}
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
 module Twee.CP where
 

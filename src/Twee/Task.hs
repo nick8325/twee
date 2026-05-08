@@ -1,5 +1,4 @@
 -- | A module which can run housekeeping tasks every so often.
-{-# LANGUAGE RecordWildCards #-}
 module Twee.Task(Task, newTask, checkTask) where
 
 import System.CPUTime

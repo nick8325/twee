@@ -1,5 +1,5 @@
 -- | The main prover loop.
-{-# LANGUAGE RecordWildCards, MultiParamTypeClasses, GADTs, BangPatterns, OverloadedStrings, ScopedTypeVariables, GeneralizedNewtypeDeriving, PatternGuards, TypeFamilies, FlexibleInstances, RankNTypes, TupleSections #-}
+{-# LANGUAGE MultiParamTypeClasses, GADTs, OverloadedStrings, GeneralizedNewtypeDeriving, FlexibleInstances, RankNTypes, TupleSections #-}
 module Twee where
 
 import Twee.Base

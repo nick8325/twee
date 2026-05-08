@@ -1,5 +1,4 @@
 -- | A queue where entries can be added in batches and stored compactly.
-{-# LANGUAGE TypeFamilies, RecordWildCards, FlexibleContexts, ScopedTypeVariables #-}
 module Data.BatchedQueue(
   Queue, Batch(..), StandardBatch, unbatch, empty, insert, removeMin, removeMinFilter, mapMaybe, toBatches, toList, size) where
 

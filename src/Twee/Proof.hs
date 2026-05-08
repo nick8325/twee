@@ -1,5 +1,5 @@
 -- | Equational proofs which are checked for correctness.
-{-# LANGUAGE TypeFamilies, PatternGuards, RecordWildCards, ScopedTypeVariables, OverloadedStrings, DeriveGeneric, DeriveAnyClass, StandaloneDeriving, FlexibleContexts, UndecidableInstances #-}
+{-# LANGUAGE OverloadedStrings, DeriveGeneric, DeriveAnyClass, StandaloneDeriving, UndecidableInstances #-}
 module Twee.Proof(
   -- * Constructing proofs
   Proof, Derivation(..), Axiom(..),

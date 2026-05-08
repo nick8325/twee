@@ -1,6 +1,5 @@
 -- | An implementation of Knuth-Bendix ordering.
 
-{-# LANGUAGE PatternGuards, BangPatterns #-}
 module Twee.KBO(lessEq, lessIn, lessEqSkolem, Sized(..), ArgWeighted(..)) where
 
 import Twee.Base hiding (lessEq, lessIn, lessEqSkolem)

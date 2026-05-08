@@ -5,7 +5,7 @@
 -- the search term is an instance of the key, and return the corresponding
 -- values.
 
-{-# LANGUAGE BangPatterns, RecordWildCards, OverloadedStrings, FlexibleContexts, CPP, TupleSections, TypeFamilies #-}
+{-# LANGUAGE OverloadedStrings, CPP, TupleSections #-}
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}

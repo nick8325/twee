@@ -1,6 +1,5 @@
 -- | An implementation of lexicographic path ordering.
 
-{-# LANGUAGE PatternGuards, BangPatterns #-}
 module Twee.LPO(lessEqBasic, lessEq, lessIn, lessEqSkolem) where
 
 import Twee.Base hiding (lessEq, lessIn, lessEqSkolem)

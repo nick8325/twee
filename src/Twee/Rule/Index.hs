@@ -1,4 +1,3 @@
-{-# LANGUAGE RecordWildCards, ScopedTypeVariables, FlexibleContexts, TypeFamilies #-}
 module Twee.Rule.Index(
   RuleIndex(..),
   empty, insert, delete,

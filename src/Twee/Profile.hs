@@ -1,5 +1,5 @@
 -- Basic support for profiling.
-{-# LANGUAGE BangPatterns, RecordWildCards, CPP, OverloadedStrings #-}
+{-# LANGUAGE CPP, OverloadedStrings #-}
 module Twee.Profile(stamp, stampWith, stampM, stampGen, stampGen', profile) where
 
 #ifdef PROFILE

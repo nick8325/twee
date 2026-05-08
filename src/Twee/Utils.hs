@@ -1,6 +1,6 @@
 -- | Miscellaneous utility functions.
 
-{-# LANGUAGE CPP, MagicHash, GeneralizedNewtypeDeriving, BangPatterns #-}
+{-# LANGUAGE CPP, MagicHash, GeneralizedNewtypeDeriving #-}
 module Twee.Utils where
 
 import Control.Arrow((&&&))

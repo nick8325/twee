@@ -97,7 +97,14 @@ library
   hs-source-dirs:      .
   ghc-options:         -W -fno-warn-incomplete-patterns -fno-warn-dodgy-imports
   default-language:    Haskell2010
-  default-extensions:  TypeOperators
+  default-extensions:
+    BangPatterns
+    FlexibleContexts
+    PatternGuards
+    RecordWildCards
+    ScopedTypeVariables
+    TypeFamilies
+    TypeOperators
 
   if flag(llvm)
     cpp-options: -DUSE_LLVM

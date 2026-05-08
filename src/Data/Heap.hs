@@ -1,6 +1,5 @@
 -- | Skew heaps.
 
-{-# LANGUAGE BangPatterns, ScopedTypeVariables #-}
 module Data.Heap(
   Heap, empty, singleton, insert, removeMin, union, mapMaybe, size, toList) where
 

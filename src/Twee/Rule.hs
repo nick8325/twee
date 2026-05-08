@@ -1,5 +1,5 @@
 -- | Term rewriting.
-{-# LANGUAGE TypeFamilies, FlexibleContexts, RecordWildCards, BangPatterns, OverloadedStrings, MultiParamTypeClasses, ScopedTypeVariables, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings, MultiParamTypeClasses, GeneralizedNewtypeDeriving #-}
 module Twee.Rule where
 
 import Twee.Base

@@ -2,8 +2,8 @@
 -- This module contains all the low-level icky bits
 -- and provides primitives for building higher-level stuff.
 {-# LANGUAGE CPP, PatternSynonyms, ViewPatterns,
-    MagicHash, UnboxedTuples, BangPatterns,
-    RankNTypes, RecordWildCards, GeneralizedNewtypeDeriving,
+    MagicHash, UnboxedTuples,
+    RankNTypes, GeneralizedNewtypeDeriving,
     OverloadedStrings, RoleAnnotations #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
 #ifdef USE_LLVM

@@ -1,7 +1,7 @@
 -- | Useful operations on terms and similar. Also re-exports some generally
 -- useful modules such as 'Twee.Term' and 'Twee.Pretty'.
 
-{-# LANGUAGE TypeFamilies, FlexibleInstances, UndecidableInstances, DeriveFunctor, DefaultSignatures, FlexibleContexts, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ConstraintKinds, RecordWildCards, BangPatterns, PatternSynonyms, RankNTypes, ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances, UndecidableInstances, DeriveFunctor, DefaultSignatures, TypeOperators, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ConstraintKinds, PatternSynonyms, RankNTypes #-}
 module Twee.Base(
   -- * Re-exported functionality
   module Twee.Term, module Twee.Pretty,

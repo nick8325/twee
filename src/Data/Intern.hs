@@ -1,6 +1,6 @@
 -- | Interning, annotating values with unique IDs.
 
-{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash, RoleAnnotations, CPP, PatternSynonyms, ViewPatterns, ConstraintKinds, GeneralizedNewtypeDeriving, FlexibleContexts, UndecidableInstances #-}
+{-# LANGUAGE MagicHash, RoleAnnotations, CPP, PatternSynonyms, ViewPatterns, ConstraintKinds, GeneralizedNewtypeDeriving, UndecidableInstances #-}
 module Data.Intern(Intern, Sym, pattern Sym, intern, unintern, unsafeMkSym, symId) where
 
 import Data.IORef

@@ -1,6 +1,6 @@
 -- | Support for sharing in Data.Serialize.
 
-{-# LANGUAGE ConstraintKinds, FlexibleContexts, FlexibleInstances, UndecidableInstances, GADTs, DeriveGeneric, DeriveAnyClass, BangPatterns, RecordWildCards, RankNTypes, ScopedTypeVariables #-}
+{-# LANGUAGE ConstraintKinds, FlexibleInstances, UndecidableInstances, GADTs, DeriveGeneric, DeriveAnyClass, RankNTypes #-}
 module Data.Serialize.Sharing(Serialize, WithSharing, withSharing, Shared(..)) where
 
 import Data.Serialize

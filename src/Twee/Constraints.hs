@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts, UndecidableInstances, RecordWildCards #-}
+{-# LANGUAGE UndecidableInstances #-}
 -- | Solving constraints on variable ordering.
 module Twee.Constraints where
 

@@ -1,7 +1,6 @@
 -- | A bounds-checked version of 'Data.Primitive.ByteArray'.
 -- See that module for documentation.
 
-{-# LANGUAGE ScopedTypeVariables #-}
 module Data.Primitive.ByteArray.Checked(
   module Data.Primitive.ByteArray,
   module Data.Primitive.ByteArray.Checked) where
