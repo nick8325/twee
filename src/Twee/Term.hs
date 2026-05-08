@@ -13,7 +13,7 @@
 --   * substitutions ('Substitution', 'Subst', 'subst');
 --   * unification ('unify') and matching ('match');
 --   * miscellaneous useful functions on terms.
-{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables, CPP, DefaultSignatures, TypeApplications, FlexibleContexts, UndecidableInstances, ConstraintKinds #-}
+{-# LANGUAGE BangPatterns, PatternSynonyms, ViewPatterns, TypeFamilies, OverloadedStrings, ScopedTypeVariables, CPP, DefaultSignatures, TypeApplications, FlexibleContexts, UndecidableInstances, ConstraintKinds, StandaloneDeriving, GeneralizedNewtypeDeriving #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
 #ifdef USE_LLVM
 {-# OPTIONS_GHC -fllvm #-}
@@ -61,12 +61,10 @@ module Twee.Term(
   replacePositionSub,
   replace,
   -- * Miscellaneous functions
-  WithFunctionLabels,
   bound, boundList, boundLists, mapFun, mapFunList, (<<)) where
 
 import Prelude hiding (lookup)
 import Twee.Term.Core hiding (F)
-import Data.Labels
 import Data.List hiding (lookup, find, singleton)
 import Data.Maybe
 #if __GLASGOW_HASKELL__ < 804
@@ -79,8 +77,8 @@ import Data.Intern
 import GHC.Stack
 import qualified Data.Serialize as Serialize
 import Data.Serialize(Serialize)
-import Data.Int
-import Data.Reflection
+import Data.SerializeSharing
+import Data.Hashable
 
 --------------------------------------------------------------------------------
 -- * A type class for builders
@@ -215,6 +213,8 @@ newtype Subst f =
   Subst {
     unSubst :: IntMap (TermList f) }
   deriving (Eq, Ord)
+instance Hashable (Subst f) where
+  hashWithSalt s = hashWithSalt s . substToList
 
 -- | Return the highest-number variable in a substitution plus 1.
 {-# INLINE substSize #-}
@@ -355,7 +355,7 @@ matchListIn :: Subst f -> TermList f -> TermList f -> Maybe (Subst f)
 matchListIn !sub !pat !t
   | lenList t < lenList pat = Nothing
   | otherwise =
-    let 
+    let
         loop !sub ConsSym{hd = pat, tl = pats, rest = pats1} !ts = do
           ConsSym{hd = t, tl = ts, rest = ts1} <- Just ts
           case (pat, t) of
@@ -517,35 +517,28 @@ unifyListTriFrom !t !u (Triangle !sub) =
 -- Serialisation.
 --------------------------------------------------------------------------------
 
-type WithFunctionLabels f = Given (Labels (Sym f))
-
-instance WithFunctionLabels f => Serialize (TermList f) where
+instance (WithSharing, Intern f, Serialize f) => Serialize (TermList f) where
   put = Serialize.put . unpack
   get = buildList <$> getTermList
 
-type SerializedSymbol = Either Var Int32
+type SerializedTerm f = Either Var (Sym f, TermList f)
 
-instance WithFunctionLabels f => Serialize (Term f) where
-  put (Var x) = Serialize.put (Left x :: SerializedSymbol)
-  put (App f ts) = do
-    Serialize.put (Right (label f given) :: SerializedSymbol)
-    Serialize.put ts
-
+instance (WithSharing, Intern f, Serialize f) => Serialize (Term f) where
+  put (Var x) = Serialize.put (Left x :: SerializedTerm f)
+  put (App f ts) = Serialize.put (Right (f, ts) :: SerializedTerm f)
   get = build <$> getTerm
 
-getTermList :: WithFunctionLabels f => Serialize.Get (Builder f)
+getTermList :: (WithSharing, Intern f, Serialize f) => Serialize.Get (Builder f)
 getTermList = mconcat <$> Serialize.getListOf getTerm
 
-getTerm :: WithFunctionLabels f => Serialize.Get (Builder f)
+getTerm :: forall f. (WithSharing, Intern f, Serialize f) => Serialize.Get (Builder f)
 getTerm = do
-  val <- Serialize.get :: Serialize.Get SerializedSymbol
+  val <- Serialize.get :: Serialize.Get (SerializedTerm f)
   case val of
     Left x -> return (var x)
-    Right fid -> do
-      ts <- getTermList
-      return (app (value fid given) ts)
+    Right (f, ts) -> return (app f ts)
 
-instance WithFunctionLabels f => Serialize (Subst f) where
+instance (WithSharing, Intern f, Serialize f) => Serialize (Subst f) where
   put = Serialize.put . substToList
   get = fromJust . listToSubst <$> Serialize.get
 
@@ -771,3 +764,9 @@ pathToPosition t ns = term 0 t ns
 -- | Compare the values of two 'Sym's.
 (<<) :: (Intern f, Ord f) => Sym f -> Sym f -> Bool
 f << g = unintern f < unintern g
+
+instance Hashable (Term f) where
+  hashWithSalt s = hashWithSalt s . singleton
+instance Hashable (TermList f) where
+  hashWithSalt s = hashWithSalt s . map root . subtermsList
+deriving instance Hashable Var

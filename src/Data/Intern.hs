@@ -1,6 +1,6 @@
 -- | Interning, annotating values with unique IDs.
 
-{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash, RoleAnnotations, CPP, PatternSynonyms, ViewPatterns, ConstraintKinds, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RecordWildCards, ScopedTypeVariables, BangPatterns, MagicHash, RoleAnnotations, CPP, PatternSynonyms, ViewPatterns, ConstraintKinds, GeneralizedNewtypeDeriving, FlexibleContexts, UndecidableInstances #-}
 module Data.Intern(Intern, Sym, pattern Sym, intern, unintern, unsafeMkSym, symId) where
 
 import Data.IORef
@@ -15,6 +15,7 @@ import GHC.Int
 import Unsafe.Coerce
 import Data.Hashable
 import Data.Serialize
+import Data.SerializeSharing
 
 -- | Type class constraints for a value to be internable.
 type Intern a = (Typeable a, Eq a, Hashable a)
@@ -148,6 +149,6 @@ pattern Sym x <- (unintern -> x) where
   Sym x = intern x
 
 -- Serialise a Sym as the underlying value, because it needs to be interned on deserialisation.
-instance (Intern a, Serialize a) => Serialize (Sym a) where
-  put = put . unintern
-  get = intern <$> get
+instance (WithSharing, Intern a, Serialize a) => Serialize (Sym a) where
+  put = put . Shared . unintern
+  get = intern . getShared <$> get

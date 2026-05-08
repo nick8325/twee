@@ -66,6 +66,7 @@ library
     Twee.Utils
     Twee.Term.Core
     Data.Intern
+    Data.SerializeSharing
   other-modules:
     Data.BatchedQueue
     Data.ChurchList
@@ -73,7 +74,6 @@ library
     Data.Heap
     Data.Numbered
     Data.PackedSequence
-    Data.Labels
 
   build-depends:
     -- base >= 4.11 for Semigroup in Prelude
@@ -92,7 +92,8 @@ library
     deepseq >= 1.4.0.0,
     unordered-containers,
     hashable,
-    reflection
+    reflection,
+    parallel
   hs-source-dirs:      .
   ghc-options:         -W -fno-warn-incomplete-patterns -fno-warn-dodgy-imports
   default-language:    Haskell2010

@@ -6,6 +6,8 @@ import Twee.Base
 import Control.Monad
 import GHC.Generics
 import Data.Serialize(Serialize)
+import Data.SerializeSharing
+import Data.Hashable
 
 --------------------------------------------------------------------------------
 -- * Equations.
@@ -15,8 +17,8 @@ data Equation f =
   (:=:) {
     eqn_lhs :: {-# UNPACK #-} !(Term f),
     eqn_rhs :: {-# UNPACK #-} !(Term f) }
-  deriving (Eq, Ord, Show, Generic)
-deriving instance WithFunctionLabels f => Serialize (Equation f)
+  deriving (Eq, Ord, Show, Generic, Hashable)
+deriving instance (WithSharing, Intern f, Serialize f) => Serialize (Equation f)
 
 type EquationOf a = Equation (ConstantOf a)
 
