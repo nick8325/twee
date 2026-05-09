@@ -33,8 +33,8 @@ import qualified Data.IntMap.Strict as IntMap
 import Control.Monad.Trans.State.Strict
 import Data.Graph
 import Twee.Profile
-import qualified Data.Serialize.Sharing as Serialize
-import Data.Serialize.Sharing(Serialize, Shared(..))
+import qualified Data.Binary.Sharing as Binary
+import Data.Binary.Sharing(Binary, Shared(..))
 import GHC.Generics
 import Data.Hashable
 
@@ -69,7 +69,7 @@ data Derivation f =
     -- Parallel, i.e., takes a function symbol and one derivation for each
     -- argument of that function.
   | Cong {-# UNPACK #-} !(Sym f) ![Derivation f]
-  deriving (Eq, Show, Generic, Hashable, Serialize)
+  deriving (Eq, Show, Generic, Hashable, Binary)
 
 --  | An axiom, which comes without proof.
 data Axiom f =
@@ -173,15 +173,15 @@ instance (Intern f, PrettyTerm f) => Pretty (Axiom f) where
     text "axiom" <#>
     pPrintTuple [pPrint axiom_number, text axiom_name, pPrint axiom_eqn]
 
-instance (Intern f, Serialize f) => Serialize (Axiom f) where
-  put Axiom{..} = Serialize.put (Shared (axiom_number, axiom_name, axiom_eqn))
+instance (Intern f, Binary f) => Binary (Axiom f) where
+  put Axiom{..} = Binary.put (Shared (axiom_number, axiom_name, axiom_eqn))
   get = do
-    Shared (num, name, eqn) <- Serialize.get
+    Shared (num, name, eqn) <- Binary.get
     return (Axiom num name eqn)
 
-instance (Intern f, Serialize f) => Serialize (Proof f) where
-  put = Serialize.put . Shared . derivation
-  get = certify . getShared <$> Serialize.get
+instance (Intern f, Binary f) => Binary (Proof f) where
+  put = Binary.put . Shared . derivation
+  get = certify . getShared <$> Binary.get
 
 foldLemmas :: (Intern f, PrettyTerm f) => (Map (Proof f) a -> Derivation f -> a) -> [Derivation f] -> Map (Proof f) a
 foldLemmas op ds =
@@ -514,7 +514,7 @@ data Presentation f =
     pres_lemmas :: [Proof f],
     -- | The goals proved.
     pres_goals  :: [ProvedGoal f] }
-  deriving (Show, Generic, Serialize)
+  deriving (Show, Generic, Binary)
 
 -- Note: only the pg_proof field should be trusted!
 -- The remaining fields are for information only.
@@ -533,7 +533,7 @@ data ProvedGoal f =
     -- and pg_witness_hint is the empty substitution.
     pg_goal_hint    :: Equation f,
     pg_witness_hint :: Subst f }
-  deriving (Show, Generic, Serialize)
+  deriving (Show, Generic, Binary)
 
 -- | Construct a @ProvedGoal@.
 provedGoal :: Int -> String -> Proof f -> ProvedGoal f

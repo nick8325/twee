@@ -5,15 +5,15 @@ module Serial(tests) where
 
 import Test.Tasty
 import Test.Tasty.QuickCheck
-import Data.Serialize.Sharing
+import Data.Binary.Sharing
 import Data.Intern
 import GHC.Generics
 import Data.Hashable
-import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BS
 import Data.Int
 
 data Tree = Leaf Int8 | Node Tree Tree | SharedNode (Shared Tree) | SymNode (Sym Tree)
-  deriving (Eq, Show, Generic, Serialize)
+  deriving (Eq, Show, Generic, Binary)
 instance Hashable Tree where
   hashWithSalt s (Leaf x) = hashWithSalt s (0 :: Int, x)  
   hashWithSalt s (Node t u) = hashWithSalt s (1 :: Int, t, u)
@@ -47,7 +47,7 @@ prop_tree_serialise t =
   t === t'
   where
     serial = encode t
-    Right t' = decode serial
+    t' = decode serial
 
 tests :: TestTree
 tests =

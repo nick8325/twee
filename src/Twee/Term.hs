@@ -75,7 +75,7 @@ import qualified Data.IntMap.Strict as IntMap
 import Twee.Utils
 import Data.Intern
 import GHC.Stack
-import Data.Serialize.Sharing
+import Data.Binary.Sharing
 import Data.Hashable
 
 --------------------------------------------------------------------------------
@@ -515,29 +515,29 @@ unifyListTriFrom !t !u (Triangle !sub) =
 -- Serialisation.
 --------------------------------------------------------------------------------
 
-instance (Intern f, Serialize f) => Serialize (TermList f) where
+instance (Intern f, Binary f) => Binary (TermList f) where
   put t = put (unpack t)
   get = buildList <$> getList getTerm
 
-type SerializedTerm f = Either Var (Sym f, TermList f)
+type BinarydTerm f = Either Var (Sym f, TermList f)
 
-instance (Intern f, Serialize f) => Serialize (Term f) where
-  put (Var x) = put (Left x :: SerializedTerm f)
-  put (App f ts) = put (Right (f, ts) :: SerializedTerm f)
+instance (Intern f, Binary f) => Binary (Term f) where
+  put (Var x) = put (Left x :: BinarydTerm f)
+  put (App f ts) = put (Right (f, ts) :: BinarydTerm f)
   get = build <$> getTerm
 
-getTerm :: forall f. (Intern f, Serialize f) => Get (Builder f)
+getTerm :: forall f. (Intern f, Binary f) => Get (Builder f)
 getTerm = do
-  val <- get :: Get (SerializedTerm f)
+  val <- get :: Get (BinarydTerm f)
   case val of
     Left x -> return (var x)
     Right (f, ts) -> return (app f ts)
 
-instance (Intern f, Serialize f) => Serialize (Subst f) where
+instance (Intern f, Binary f) => Binary (Subst f) where
   put = put . substToList
   get = fromJust . listToSubst <$> get
 
-deriving instance Serialize Var
+deriving instance Binary Var
 
 --------------------------------------------------------------------------------
 -- Miscellaneous stuff.

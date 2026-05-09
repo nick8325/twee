@@ -13,7 +13,7 @@ import Data.Maybe
 import Data.Typeable
 import Test.Tasty
 import Test.Tasty.QuickCheck
-import Data.Serialize.Sharing
+import Data.Binary.Sharing
 
 newtype IndexOps f = IndexOps [IndexOp f] deriving Show
 data IndexOp f = Add (Term f) | Delete (Term f) deriving Show
@@ -62,7 +62,7 @@ prop_index_serialise ts =
     idx, idx' :: Index Func (Term Func)
     idx = foldr (\t -> Index.insert t t) Index.empty ts
     serial = encode idx
-    Right idx' = decode serial
+    idx' = decode serial
 
 tests :: TestTree
 tests =

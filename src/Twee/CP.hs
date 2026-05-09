@@ -17,15 +17,15 @@ import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof(Derivation, congPath)
 import Data.Bits
-import Data.Serialize.Sharing
-import qualified Data.Serialize as Cereal
+import Data.Binary.Sharing
+import qualified Data.Binary as Cereal
 import Data.Int
 --import Debug.Trace
 import GHC.Generics
 
 -- | The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
-instance Serialize (Positions f) where
+instance Binary (Positions f) where
   put = put . unfoldr op
     where
       op NilP = Nothing
@@ -34,7 +34,7 @@ instance Serialize (Positions f) where
 
 type PositionsOf a = Positions (ConstantOf a)
 -- | Like Positions but for an equation (one set of positions per term).
-data Positions2 f = ForwardsPos !(Positions f) | BothPos !(Positions f) !(Positions f) deriving (Generic, Serialize)
+data Positions2 f = ForwardsPos !(Positions f) | BothPos !(Positions f) !(Positions f) deriving (Generic, Binary)
 
 instance Show (Positions f) where
   show = show . ChurchList.toList . positionsChurch
@@ -82,7 +82,7 @@ data Overlap a f =
     overlap_top   :: {-# UNPACK #-} !(Term f),
     -- | The critical pair itself.
     overlap_eqn   :: {-# UNPACK #-} !(Equation f) }
-  deriving (Show, Generic, Serialize)
+  deriving (Show, Generic, Binary)
 
 data How =
   How {
@@ -91,13 +91,13 @@ data How =
     how_dir2 :: !Direction }
   deriving (Eq, Ord, Show)
 
-data Direction = Forwards | Backwards deriving (Eq, Ord, Enum, Show, Generic, Serialize)
+data Direction = Forwards | Backwards deriving (Eq, Ord, Enum, Show, Generic, Binary)
 
 direct :: Rule f -> Direction -> Rule f
 direct rule Forwards = rule
 direct rule Backwards = backwards rule
 
-instance Cereal.Serialize How where
+instance Cereal.Binary How where
   put = Cereal.put . packHow
     where
       packHow :: How -> Int32
@@ -117,12 +117,12 @@ instance Cereal.Serialize How where
           how_dir2 = toEnum ((n `shiftR` 1) .&. 1),
           how_pos  = n `shiftR` 2 }
 
-instance Serialize How where
-  put = liftPutter Cereal.put
+instance Binary How where
+  put = liftPut . Cereal.put
   get = liftGet Cereal.get
 
 -- | Represents the depth of a critical pair.
-newtype Depth = Depth { getDepth :: Int } deriving (Eq, Ord, Show, Generic, Serialize)
+newtype Depth = Depth { getDepth :: Int } deriving (Eq, Ord, Show, Generic, Binary)
 
 -- | Compute all overlaps of a rule with a set of rules.
 {-# INLINEABLE overlaps #-}

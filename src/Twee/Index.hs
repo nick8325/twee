@@ -40,7 +40,7 @@ import qualified Data.Numbered as Numbered
 import qualified Data.IntMap.Strict as IntMap
 import Twee.Profile
 import Data.Intern
-import Data.Serialize.Sharing
+import Data.Binary.Sharing
 import GHC.Generics
 
 -- The term index in this module is a _perfect discrimination tree_.
@@ -497,7 +497,7 @@ searchVars t ts binds var start rest
 
 -- When serialising, we must change the 'fun' array to index by function and not function number.
 data  SIndex f a = SIndex Int (TermList f) [a] [(Sym f, Index f a)] (Numbered (Index f a)) | SEmpty
-  deriving (Generic, Serialize)
+  deriving (Generic, Binary)
 
 toSerialised :: Index f a -> SIndex f a
 toSerialised Empty = SEmpty
@@ -511,6 +511,6 @@ fromSerialised (SIndex minSize prefix here funs vars) = Index minSize prefix her
   where
     funs' = foldr (uncurry Array.update) newArray [(symId f, idx) | (f, idx) <- funs]
 
-instance (Intern f, Serialize f, Serialize a) => Serialize (Index f a) where
+instance (Intern f, Binary f, Binary a) => Binary (Index f a) where
   put = put . toSerialised
   get = fromSerialised <$> get

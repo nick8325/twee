@@ -5,7 +5,7 @@ module Twee.Equation where
 import Twee.Base
 import Control.Monad
 import GHC.Generics
-import Data.Serialize.Sharing
+import Data.Binary.Sharing
 import Data.Hashable
 
 --------------------------------------------------------------------------------
@@ -16,7 +16,7 @@ data Equation f =
   (:=:) {
     eqn_lhs :: {-# UNPACK #-} !(Term f),
     eqn_rhs :: {-# UNPACK #-} !(Term f) }
-  deriving (Eq, Ord, Show, Generic, Hashable, Serialize)
+  deriving (Eq, Ord, Show, Generic, Hashable, Binary)
 
 type EquationOf a = Equation (ConstantOf a)
 

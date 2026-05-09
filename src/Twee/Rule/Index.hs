@@ -10,13 +10,13 @@ import Twee.Rule
 import Twee.Index hiding (insert, delete, empty)
 import qualified Twee.Index as Index
 import GHC.Generics
-import Data.Serialize.Sharing(Serialize)
+import Data.Binary.Sharing(Binary)
 
 data RuleIndex f a =
   RuleIndex {
     index_oriented :: !(Index f a),
     index_all      :: !(Index f a) }
-  deriving (Show, Generic, Serialize)
+  deriving (Show, Generic, Binary)
 
 empty :: RuleIndex f a
 empty = RuleIndex Index.empty Index.empty

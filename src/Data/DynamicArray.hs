@@ -10,7 +10,7 @@ import qualified Data.Primitive.SmallArray as P
 #endif
 import Control.Monad.ST
 import Data.List
-import Data.Serialize.Sharing
+import Data.Binary.Sharing
 import GHC.Generics
 
 -- | A type which has a default value.
@@ -24,7 +24,7 @@ data Array a =
     arrayStart    :: {-# UNPACK #-} !Int,
     -- | The contents of the array.
     arrayContents :: {-# UNPACK #-} !(P.SmallArray a) }
-  deriving (Generic, Serialize)
+  deriving (Generic, Binary)
 
 arraySize :: Array a -> Int
 arraySize = P.sizeofSmallArray . arrayContents

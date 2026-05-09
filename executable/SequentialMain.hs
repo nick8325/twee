@@ -44,8 +44,8 @@ import Data.Symbol
 import Twee.Profile
 import GHC.Generics
 import Data.Hashable
-import Data.Serialize.Sharing
-import qualified Data.ByteString as BS
+import Data.Binary.Sharing
+import qualified Data.ByteString.Lazy as BS
 
 data MainFlags =
   MainFlags {
@@ -450,10 +450,10 @@ data Constant =
     con_weight  :: !Integer,
     con_fweight :: {-# UNPACK #-} !Float,
     con_bonus   :: !Bool }
-  deriving (Eq, Ord, Generic, Hashable, Serialize)
+  deriving (Eq, Ord, Generic, Hashable, Binary)
 
 data Precedence = Precedence !Bool !Bool !Bool !(Maybe Int) !Int
-  deriving (Eq, Ord, Generic, Hashable, Serialize)
+  deriving (Eq, Ord, Generic, Hashable, Binary)
 
 instance KBO.Sized Constant where
   size Minimal = 1

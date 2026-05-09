@@ -1,8 +1,10 @@
--- | A serialisation library with support for sharing. Built on top of cereal.
+-- | A serialisation library with support for sharing. Built on top of binary.
 
 {-# LANGUAGE ConstraintKinds, GADTs, DerivingVia, TypeSynonymInstances, FlexibleInstances, DefaultSignatures, DeriveAnyClass, DeriveFunctor, TupleSections #-}
-module Data.Serialize.Sharing(Serialize(..), Shared(..), Putter, Put, PutM, encode, runPut, liftPutter, liftPut, unliftPut, Get, decode, runGet, liftGet, unliftGet, putList, getList, putWord8, getWord8, putInt8, getInt8, putIntegral, getIntegral, ReadShowSerialize(..)) where
-import qualified Data.Serialize as S
+module Data.Binary.Sharing(Binary(..), Shared(..), Put, PutM, encode, runPut, liftPut, unliftPut, Get, decode, runGet, liftGet, unliftGet, putList, getList, putWord8, getWord8, putInt8, getInt8, putIntegral, getIntegral, ReadShowBinary(..)) where
+import qualified Data.Binary as S
+import qualified Data.Binary.Get as S
+import qualified Data.Binary.Put as S
 import Data.Typeable
 import qualified Data.HashMap.Strict as HashMap
 import Data.HashMap.Strict(HashMap)
@@ -14,7 +16,8 @@ import Data.Bits
 import Data.Word
 import Data.Int
 import Data.Char
-import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BS
+import qualified Data.ByteString as BSS
 import Control.Monad.Trans.State.Strict hiding (get, put)
 import qualified Control.Monad.Trans.State.Strict as State
 import qualified Data.Primitive.SmallArray as SmallArray
@@ -31,7 +34,7 @@ import qualified Data.HashSet as HashSet
 -- The idea is that both serialisation and deserialisation maintain a
 -- store of shared values we have already seen (each associated with an
 -- ID). When we emit a value we have already seen, we instead just emit
--- its ID. This is handled in the "Serialize (Shared a)" instance.
+-- its ID. This is handled in the "Binary (Shared a)" instance.
 ----------------------------------------------------------------------
 
 -- | A serialiser.
@@ -46,7 +49,6 @@ instance Monad PutM where
       (x, store) <- unPutM mx store
       unPutM (f x) store
 type Put = PutM ()
-type Putter a = a -> Put
 
 instance Semigroup Put where
   mx <> my = do { mx; my }
@@ -58,15 +60,11 @@ instance Monoid Put where
 liftStatePut :: State Store a -> PutM a
 liftStatePut act = PutM $ \store -> return (runState act store)
 
--- | Lift a cereal serialiser into Put.
+-- | Lift a binary serialiser into Put.
 liftPut :: S.PutM a -> PutM a
 liftPut putter = PutM $ \store -> (, store) <$> putter
 
--- | Lift a cereal Putter into 'Put'.
-liftPutter :: S.Putter a -> Putter a
-liftPutter putter x = liftPut (putter x)
-
--- | Convert a 'Put' back into a cereal serialiser.
+-- | Convert a 'Put' back into a binary serialiser.
 unliftPut :: PutM a -> S.PutM a
 unliftPut (PutM putter) = fst <$> putter emptyStore
 
@@ -75,7 +73,7 @@ runPut :: Put -> BS.ByteString
 runPut = S.runPut . unliftPut
 
 -- | Serialise a value.
-encode :: Serialize a => a -> BS.ByteString
+encode :: Binary a => a -> BS.ByteString
 encode = runPut . put
 
 -- | A deserialiser.
@@ -93,20 +91,20 @@ instance Monad Get where
 liftStateGet :: State Store a -> Get a
 liftStateGet act = Get $ \store -> return (runState act store)
 
--- | Lift a cereal serialiser into Get.
+-- | Lift a binary serialiser into Get.
 liftGet :: S.Get a -> Get a
 liftGet getter = Get $ \store -> (, store) <$> getter
 
--- | Convert a 'Get' back into a cereal serialiser.
+-- | Convert a 'Get' back into a binary serialiser.
 unliftGet :: Get a -> S.Get a
 unliftGet (Get getter) = fst <$> getter emptyStore
 
 -- | Deserialise a value.
-runGet :: Get a -> BS.ByteString -> Either String a
+runGet :: Get a -> BS.ByteString -> a
 runGet = S.runGet . unliftGet
 
 -- | Deserialise a value.
-decode :: Serialize a => BS.ByteString -> Either String a
+decode :: Binary a => BS.ByteString -> a
 decode = runGet get
 
 ----------------------------------------------------------------------
@@ -125,7 +123,7 @@ newtype Shared a = Shared { getShared :: a } deriving (Eq, Show)
 -- it and emit it as a 'Let'; if it reoccurs, we emit a 'Ref' to the existing ID.
 data SharedEncoding a = Let Key a | Ref Key
 
-instance Serialize a => Serialize (SharedEncoding a) where
+instance Binary a => Binary (SharedEncoding a) where
   put (Let key x) = do
     put (key `unsafeShiftL` 1)
     put x
@@ -142,7 +140,7 @@ instance Serialize a => Serialize (SharedEncoding a) where
       True -> -- Ref
         return (Ref key)
 
-instance (Typeable a, Eq a, Hashable a, Serialize a) => Serialize (Shared a) where
+instance (Typeable a, Eq a, Hashable a, Binary a) => Binary (Shared a) where
   put (Shared x) = do
     mkey <- liftStatePut (lookupValue x)
     case mkey of
@@ -228,9 +226,9 @@ lookupKey key = do
 -- Primitive serialisers.
 ----------------------------------------------------------------------
 
-putWord8 = liftPutter S.putWord8
+putWord8 = liftPut . S.putWord8
 getWord8 = liftGet S.getWord8
-putInt8 = liftPutter S.putInt8
+putInt8 = liftPut . S.putInt8
 getInt8 = liftGet S.getInt8
 
 putIntegral :: (Integral a, Bits a) => a -> Put
@@ -256,7 +254,7 @@ getIntegral' !k !n = do
 -- quickCheck (withNumTests 1000000 (withMaxSize 100000 (\x -> runGet getIntegral (runPut (putIntegral (x :: Int))) === Right x)))
 -- TODO: add to test suite
 
-putList :: Putter a -> Putter [a]
+putList :: (a -> Put) -> [a] -> Put
 putList putter xs = do
   put (length xs)
   mapM_ putter xs
@@ -270,74 +268,75 @@ getList getter = do
 -- A class for serialisation/deserialisation.
 ----------------------------------------------------------------------
 
-class Serialize a where
-  put :: Putter a
+class Binary a where
+  put :: a -> Put
   get :: Get a
 
-  default put :: (Generic a, GSerialize (Rep a)) => Putter a
+  default put :: (Generic a, GBinary (Rep a)) => a -> Put
   put x = gput (from x)
 
-  default get :: (Generic a, GSerialize (Rep a)) => Get a
+  default get :: (Generic a, GBinary (Rep a)) => Get a
   get = to <$> gget
 
-instance Serialize Int where { put = putIntegral; get = getIntegral }
-instance Serialize Int8 where { put = putInt8; get = getInt8 }
-instance Serialize Int16 where { put = putIntegral; get = getIntegral }
-instance Serialize Int32 where { put = putIntegral; get = getIntegral }
-instance Serialize Int64 where { put = putIntegral; get = getIntegral }
-instance Serialize Word where { put = putIntegral; get = getIntegral }
-instance Serialize Word8 where { put = putWord8; get = getWord8 }
-instance Serialize Word16 where { put = putIntegral; get = getIntegral }
-instance Serialize Word32 where { put = putIntegral; get = getIntegral }
-instance Serialize Word64 where { put = putIntegral; get = getIntegral }
-instance Serialize Integer where { put = putIntegral; get = getIntegral }
-instance Serialize Char where { put = putIntegral . ord; get = chr <$> getIntegral }
-instance Serialize BS.ByteString where { put = liftPutter S.put; get = liftGet S.get }
-instance Serialize Float where { put = liftPutter S.put; get = liftGet S.get }
-instance Serialize Double where { put = liftPutter S.put; get = liftGet S.get }
-deriving instance Serialize Bool
-deriving instance Serialize ()
-deriving instance (Serialize a, Serialize b) => Serialize (a, b)
-deriving instance (Serialize a, Serialize b, Serialize c) => Serialize (a, b, c)
-deriving instance (Serialize a, Serialize b, Serialize c, Serialize d) => Serialize (a, b, c, d)
-deriving instance (Serialize a, Serialize b, Serialize c, Serialize d, Serialize e) => Serialize (a, b, c, d, e)
-deriving instance Serialize a => Serialize (Maybe a)
-deriving instance (Serialize a, Serialize b) => Serialize (Either a b)
-instance Serialize a => Serialize (SmallArray.SmallArray a) where
+instance Binary Int where { put = putIntegral; get = getIntegral }
+instance Binary Int8 where { put = putInt8; get = getInt8 }
+instance Binary Int16 where { put = putIntegral; get = getIntegral }
+instance Binary Int32 where { put = putIntegral; get = getIntegral }
+instance Binary Int64 where { put = putIntegral; get = getIntegral }
+instance Binary Word where { put = putIntegral; get = getIntegral }
+instance Binary Word8 where { put = putWord8; get = getWord8 }
+instance Binary Word16 where { put = putIntegral; get = getIntegral }
+instance Binary Word32 where { put = putIntegral; get = getIntegral }
+instance Binary Word64 where { put = putIntegral; get = getIntegral }
+instance Binary Integer where { put = putIntegral; get = getIntegral }
+instance Binary Char where { put = putIntegral . ord; get = chr <$> getIntegral }
+instance Binary BS.ByteString where { put = liftPut . S.put; get = liftGet S.get }
+instance Binary BSS.ByteString where { put = liftPut . S.put; get = liftGet S.get }
+instance Binary Float where { put = liftPut. S.put; get = liftGet S.get }
+instance Binary Double where { put = liftPut . S.put; get = liftGet S.get }
+deriving instance Binary Bool
+deriving instance Binary ()
+deriving instance (Binary a, Binary b) => Binary (a, b)
+deriving instance (Binary a, Binary b, Binary c) => Binary (a, b, c)
+deriving instance (Binary a, Binary b, Binary c, Binary d) => Binary (a, b, c, d)
+deriving instance (Binary a, Binary b, Binary c, Binary d, Binary e) => Binary (a, b, c, d, e)
+deriving instance Binary a => Binary (Maybe a)
+deriving instance (Binary a, Binary b) => Binary (Either a b)
+instance Binary a => Binary (SmallArray.SmallArray a) where
   put = put . Foldable.toList
   get = SmallArray.smallArrayFromList <$> get
 
 -- | Serialise a value via read/show.
-newtype ReadShowSerialize a = ReadShowSerialize { getReadShowSerialize :: a }
-instance (Show a, Read a) => Serialize (ReadShowSerialize a) where
-  put = put . show . getReadShowSerialize
-  get = ReadShowSerialize . read <$> get
+newtype ReadShowBinary a = ReadShowBinary { getReadShowBinary :: a }
+instance (Show a, Read a) => Binary (ReadShowBinary a) where
+  put = put . show . getReadShowBinary
+  get = ReadShowBinary . read <$> get
 
-instance Serialize a => Serialize [a] where
+instance Binary a => Binary [a] where
   put = putList put
   get = getList get
 
-instance (Serialize k, Serialize v, Ord k) => Serialize (Map.Map k v) where
+instance (Binary k, Binary v, Ord k) => Binary (Map.Map k v) where
   put = put . Map.toList
   get = Map.fromList <$> get
 
-instance (Serialize k, Serialize v, Hashable k) => Serialize (HashMap k v) where
+instance (Binary k, Binary v, Hashable k) => Binary (HashMap k v) where
   put = put . HashMap.toList
   get = HashMap.fromList <$> get
 
-instance Serialize v => Serialize (IntMap.IntMap v) where
+instance Binary v => Binary (IntMap.IntMap v) where
   put = put . IntMap.toList
   get = IntMap.fromList <$> get
 
-instance (Serialize k, Ord k) => Serialize (Set.Set k) where
+instance (Binary k, Ord k) => Binary (Set.Set k) where
   put = put . Set.toList
   get = Set.fromList <$> get
 
-instance (Serialize k, Hashable k) => Serialize (HashSet.HashSet k) where
+instance (Binary k, Hashable k) => Binary (HashSet.HashSet k) where
   put = put . HashSet.toList
   get = HashSet.fromList <$> get
 
-instance Serialize IntSet.IntSet where
+instance Binary IntSet.IntSet where
   put = put . IntSet.toList
   get = IntSet.fromList <$> get
 
@@ -345,8 +344,8 @@ instance Serialize IntSet.IntSet where
 -- Generic instances.
 ----------------------------------------------------------------------
 
-class GSerialize f where
-  gput :: Putter (f a)
+class GBinary f where
+  gput :: f a -> Put
   gget :: Get (f a)
 
   gconstructors :: proxy (f a) -> Int
@@ -355,20 +354,20 @@ class GSerialize f where
   gconstructor :: f a -> Int
   gconstructor _ = 0
 
-  gputConstructor :: Putter (f a)
+  gputConstructor :: f a -> Put
   gputConstructor = gput
 
   ggetConstructor :: Int -> Get (f a)
   ggetConstructor 0 = gget
   ggetConstructor _ = error "ggetConstructor: out of bounds"
 
-instance (GSerialize f, GSerialize g) => GSerialize (f :*: g) where
+instance (GBinary f, GBinary g) => GBinary (f :*: g) where
   gput (x :*: y) = do
     gput x
     gput y
   gget = liftM2 (:*:) gget gget
 
-instance (GSerialize f, GSerialize g) => GSerialize (f :+: g) where
+instance (GBinary f, GBinary g) => GBinary (f :+: g) where
   gput x = do
     put (gconstructor x)
     gputConstructor x
@@ -392,7 +391,7 @@ instance (GSerialize f, GSerialize g) => GSerialize (f :+: g) where
     where
       m = gconstructors (Proxy :: Proxy (f a))
 
-instance GSerialize f => GSerialize (M1 i c f) where
+instance GBinary f => GBinary (M1 i c f) where
   gput (M1 x) = gput x
   gget = M1 <$> gget
   gconstructors _ = gconstructors (Proxy :: Proxy (f a))
@@ -400,15 +399,15 @@ instance GSerialize f => GSerialize (M1 i c f) where
   gputConstructor (M1 x) = gputConstructor x
   ggetConstructor n = M1 <$> ggetConstructor n
 
-instance Serialize a => GSerialize (K1 i a) where
+instance Binary a => GBinary (K1 i a) where
   gput (K1 x) = put x
   gget = K1 <$> get
 
-instance GSerialize U1 where
+instance GBinary U1 where
   gput U1 = return ()
   gget = return U1
 
-instance GSerialize V1 where
+instance GBinary V1 where
   gput _ = error "gput: void"
   gget = error "gget: void"
   gconstructors _ = 0

@@ -30,13 +30,13 @@ import Data.Int
 import Data.List hiding (singleton)
 import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
-import Data.Serialize.Sharing
-import qualified Data.Serialize as Cereal
+import Data.Binary.Sharing
+import qualified Data.Binary as Cereal
 import Data.Intern
 
 -- | Represents a unique identifier (e.g., for a rule).
 newtype Id = Id { unId :: Int32 }
-  deriving (Eq, Ord, Show, Enum, Bounded, Num, Real, Integral, Serialize, Cereal.Serialize)
+  deriving (Eq, Ord, Show, Enum, Bounded, Num, Real, Integral, Binary, Cereal.Binary)
 
 instance Pretty Id where
   pPrint = text . show . unId

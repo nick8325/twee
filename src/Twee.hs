@@ -45,7 +45,7 @@ import Test.QuickCheck.Random
 import Twee.Generate
 import qualified System.Random as Random
 import GHC.Generics
-import Data.Serialize.Sharing
+import Data.Binary.Sharing
 
 ----------------------------------------------------------------------
 -- * Configuration and prover state.
@@ -97,9 +97,9 @@ data State f =
     st_not_complete   :: !IntSet,
     st_complete       :: !(Index f (Rule f)),
     st_messages_rev   :: ![Message f],
-    st_random_seed    :: Maybe (ReadShowSerialize QCGen),
+    st_random_seed    :: Maybe (ReadShowBinary QCGen),
     st_problem_term   :: Maybe (ConfluenceFailure f) }
-  deriving (Generic, Serialize)
+  deriving (Generic, Binary)
 
 -- | The default prover configuration.
 defaultConfig :: Function f => Config f
@@ -180,7 +180,7 @@ initialState Config{..} =
     st_random_seed =
       case cfg_random_mode of
         False -> Nothing
-        True -> Just (ReadShowSerialize (mkQCGen 12345)),
+        True -> Just (ReadShowBinary (mkQCGen 12345)),
     st_problem_term = Nothing }
 
 ----------------------------------------------------------------------
@@ -207,7 +207,7 @@ data Message f =
   | Status !Int
     -- | New problem term discovered.
   | NewProblemTerm !(ConfluenceFailure f)
-  deriving (Generic, Serialize)
+  deriving (Generic, Binary)
 
 instance Function f => Pretty (Message f) where
   pPrint (NewActive mscore rule) =
@@ -284,7 +284,7 @@ data Passive =
     passive_rule1 :: {-# UNPACK #-} !Id,
     passive_rule2 :: {-# UNPACK #-} !Id,
     passive_how   :: !How }
-  deriving (Eq, Generic, Serialize)
+  deriving (Eq, Generic, Binary)
 
 instance Ord Passive where
   compare = comparing f
@@ -301,9 +301,9 @@ data Batch =
     batch_rule      :: {-# UNPACK #-} !Id,
     batch_best      :: {-# UNPACK #-} !Passive,
     batch_rest      :: {-# UNPACK #-} !(PackedSequence (Float, Id, How)) }
-  deriving (Eq, Generic, Serialize)
+  deriving (Eq, Generic, Binary)
 
-data BatchKind = Rule1 | Rule2 deriving (Eq, Generic, Serialize)
+data BatchKind = Rule1 | Rule2 deriving (Eq, Generic, Binary)
 
 instance Queue.Batch Batch where
   type Label Batch = Id
@@ -443,7 +443,7 @@ data Active f =
     -- A model in which the rule is false (used when reorienting)
     active_model :: !(Model f),
     active_positions :: !(Positions2 f) }
-  deriving (Generic, Serialize)
+  deriving (Generic, Binary)
 
 active_cp :: Active f -> CriticalPair f
 active_cp Active{..} =
@@ -466,7 +466,7 @@ data Info =
   Info {
     info_depth :: {-# UNPACK #-} !Depth,
     info_max   :: !IntSet }
-  deriving (Generic, Serialize)
+  deriving (Generic, Binary)
 
 instance Eq (Active f) where
   (==) = (==) `on` active_id
@@ -699,7 +699,7 @@ data Goal f =
     goal_expanded_rhs :: Map (Term f) (Derivation f),
     goal_lhs          :: Map (Term f) (Term f, Reduction f),
     goal_rhs          :: Map (Term f) (Term f, Reduction f) }
-  deriving (Show, Generic, Serialize)
+  deriving (Show, Generic, Binary)
 
 -- Add a new goal.
 {-# INLINEABLE addGoal #-}
@@ -800,9 +800,9 @@ data Hints f =
     -- also contains hints formed through CPs
     hints_index :: !(Index f (Rule f)),
     hints_next   :: !Int }
-  deriving (Generic, Serialize)
+  deriving (Generic, Binary)
 
-data HintKind = UserHint | DerivedHint deriving (Eq, Show, Generic, Serialize)
+data HintKind = UserHint | DerivedHint deriving (Eq, Show, Generic, Binary)
 
 instance Pretty HintKind where
   pPrint UserHint = text "show"
@@ -1029,9 +1029,9 @@ complete1 config@Config{..} state
           (Nothing, state) -> (False, state)
           (Just (info, overlap, _, _), state) ->
             (True, consider config state info overlap)
-      Just (ReadShowSerialize g) -> -- random mode
+      Just (ReadShowBinary g) -> -- random mode
         let (g1, g2) = Random.splitGen g in
-        let state' = state { st_random_seed = Just (ReadShowSerialize g2) } in
+        let state' = state { st_random_seed = Just (ReadShowBinary g2) } in
         case findCriticalPair config state' g1 of
           Nothing -> (True, state'{st_problem_term = Nothing})
           Just (info, overlap, changed, cf) ->

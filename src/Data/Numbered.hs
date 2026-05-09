@@ -13,8 +13,8 @@ import Data.Primitive.ByteArray
 import Data.Primitive.SmallArray
 import Data.Int
 import Data.Maybe
-import qualified Data.Serialize.Sharing as Serialize
-import Data.Serialize.Sharing(Serialize)
+import qualified Data.Binary.Sharing as Binary
+import Data.Binary.Sharing(Binary)
 
 -- | An array of key-value pairs.
 data Numbered a =
@@ -24,9 +24,9 @@ data Numbered a =
 
 instance Show a => Show (Numbered a) where show = show . toList
 
-instance Serialize a => Serialize (Numbered a) where
-  put = Serialize.put . toList
-  get = fromList <$> Serialize.get
+instance Binary a => Binary (Numbered a) where
+  put = Binary.put . toList
+  get = fromList <$> Binary.get
 
 -- | An empty array.
 empty :: Numbered a

@@ -14,7 +14,7 @@ import Data.Bits
 import System.Random
 import qualified Data.Set as Set
 --import Test.QuickCheck hiding ((.&.))
-import Data.Serialize.Sharing
+import Data.Binary.Sharing
 
 repeatM :: Monad m => m a -> m [a]
 repeatM = sequence . repeat
@@ -154,7 +154,7 @@ reservoir k =
 
 data Sample a = Sample Integer [(Integer, Int)] [a]
 -- TODO serialise properly
-instance Serialize a => Serialize (Sample a) where
+instance Binary a => Binary (Sample a) where
   put _ = put ()
   get = do
     () <- get

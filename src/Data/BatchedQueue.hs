@@ -8,12 +8,12 @@ import Data.List(unfoldr, sort, foldl')
 import qualified Data.Maybe
 import Data.PackedSequence(PackedSequence)
 import qualified Data.PackedSequence as PackedSequence
-import qualified Data.Serialize as Cereal
-import Data.Serialize.Sharing
+import qualified Data.Binary as Cereal
+import Data.Binary.Sharing
 import Data.Ord
 
 -- | A queue of batches.
-newtype Queue a = Queue (Heap.Heap (Best a)) deriving Serialize
+newtype Queue a = Queue (Heap.Heap (Best a)) deriving Binary
 
 -- | The type of batches must be a member of this class.
 class Ord (Entry a) => Batch a where
@@ -48,7 +48,7 @@ class Ord (Entry a) => Batch a where
   type Label a = ()
 
 -- A newtype wrapper for batches which compares the smallest entry.
-newtype Best a = Best { unBest :: a } deriving Serialize
+newtype Best a = Best { unBest :: a } deriving Binary
 instance Batch a => Eq (Best a) where x == y = compare x y == EQ
 instance Batch a => Ord (Best a) where
   {-# INLINEABLE compare #-}
@@ -131,7 +131,7 @@ instance Ord a => Eq (StandardBatch a) where
 instance Ord a => Ord (StandardBatch a) where
   compare = comparing batch_best
 
-instance (Ord a, Cereal.Serialize a) => Batch (StandardBatch a) where
+instance (Ord a, Cereal.Binary a) => Batch (StandardBatch a) where
   type Label (StandardBatch a) = ()
   type Entry (StandardBatch a) = a
 

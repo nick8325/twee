@@ -31,7 +31,7 @@ import Data.Semigroup
 import qualified Data.List.NonEmpty as NonEmpty
 import Test.QuickCheck.Random
 import GHC.Generics
-import Data.Serialize.Sharing
+import Data.Binary.Sharing
 
 --------------------------------------------------------------------------------
 -- * Rewrite rules.
@@ -55,7 +55,7 @@ data Rule f =
     lhs :: {-# UNPACK #-} !(Term f),
     -- | The right-hand side of the rule.
     rhs :: {-# UNPACK #-} !(Term f) }
-  deriving (Show, Generic, Serialize)
+  deriving (Show, Generic, Binary)
 instance Eq (Rule f) where
   x == y = compare x y == EQ
 instance Ord (Rule f) where
@@ -93,7 +93,7 @@ data Orientation f =
   | Permutative [(Term f, Term f)]
     -- | An unoriented rule.
   | Unoriented
-  deriving (Show, Generic, Serialize)
+  deriving (Show, Generic, Binary)
 
 instance Eq (Orientation f) where _ == _ = True
 instance Ord (Orientation f) where compare _ _ = EQ
@@ -543,7 +543,7 @@ data ConfluenceFailure f =
     cf_right :: Reduction1 f,
     cf_orig_term :: Term f,
     cf_orig_left :: Reduction1 f }
-  deriving (Generic, Serialize)
+  deriving (Generic, Binary)
 
 cf_left_term, cf_right_term :: ConfluenceFailure f -> Term f
 cf_left_term ConfluenceFailure{..} = result1 cf_term cf_left

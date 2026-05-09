@@ -19,9 +19,9 @@ import Test.QuickCheck.Gen(unGen)
 import Test.QuickCheck.Random(mkQCGen)
 import Data.Intern
 import GHC.Generics
-import Data.Serialize.Sharing
+import Data.Binary.Sharing
 
-data Atom f = Constant (Sym f) | Variable Var deriving (Show, Eq, Ord, Generic, Serialize)
+data Atom f = Constant (Sym f) | Variable Var deriving (Show, Eq, Ord, Generic, Binary)
 
 {-# INLINE atoms #-}
 atoms :: Term f -> [Atom f]
@@ -190,7 +190,7 @@ addTerm (Constant f) b
 addTerm _ b = b
 
 newtype Model f = Model (Map (Atom f) (Int, Int))
-  deriving (Eq, Ord, Show, Generic, Serialize)
+  deriving (Eq, Ord, Show, Generic, Binary)
 -- Representation: map from atom to (major, minor)
 -- x <  y if major x < major y
 -- x <= y if major x = major y and minor x < minor y
