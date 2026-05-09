@@ -5,7 +5,7 @@
 -- the search term is an instance of the key, and return the corresponding
 -- values.
 
-{-# LANGUAGE OverloadedStrings, CPP, TupleSections #-}
+{-# LANGUAGE OverloadedStrings, CPP, TupleSections, DeriveAnyClass #-}
 -- We get some bogus warnings because of pattern synonyms.
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
@@ -40,6 +40,8 @@ import qualified Data.Numbered as Numbered
 import qualified Data.IntMap.Strict as IntMap
 import Twee.Profile
 import Data.Intern
+import Data.Serialize.Sharing
+import GHC.Generics
 
 -- The term index in this module is a _perfect discrimination tree_.
 -- This is a trie whose keys are terms, represented as flat lists of symbols
@@ -489,3 +491,26 @@ searchVars t ts binds var start rest
       Nothing ->
         searchVars t ts binds var (start+1) rest
 
+----------------------------------------------------------------------
+-- Serialisation.
+----------------------------------------------------------------------
+
+-- When serialising, we must change the 'fun' array to index by function and not function number.
+data  SIndex f a = SIndex Int (TermList f) [a] [(Sym f, Index f a)] (Numbered (Index f a)) | SEmpty
+  deriving (Generic, Serialize)
+
+toSerialised :: Index f a -> SIndex f a
+toSerialised Empty = SEmpty
+toSerialised (Index minSize prefix here funs vars) = SIndex minSize prefix here funs' vars
+  where
+    funs' = [(unsafeMkSym f, idx) | (f, idx) <- Array.toList funs, not (null idx)]
+
+fromSerialised :: SIndex f a -> Index f a
+fromSerialised SEmpty = Empty
+fromSerialised (SIndex minSize prefix here funs vars) = Index minSize prefix here funs' vars
+  where
+    funs' = foldr (uncurry Array.update) newArray [(symId f, idx) | (f, idx) <- funs]
+
+instance (Intern f, Serialize f, Serialize a) => Serialize (Index f a) where
+  put = put . toSerialised
+  get = fromSerialised <$> get

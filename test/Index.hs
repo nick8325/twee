@@ -5,6 +5,7 @@ module Index(tests) where
 
 import Common
 import Twee.Base
+import Twee.Index(Index)
 import qualified Twee.Index as Index
 import Data.Hashable
 import Data.List
@@ -12,6 +13,7 @@ import Data.Maybe
 import Data.Typeable
 import Test.Tasty
 import Test.Tasty.QuickCheck
+import Data.Serialize.Sharing
 
 newtype IndexOps f = IndexOps [IndexOp f] deriving Show
 data IndexOp f = Add (Term f) | Delete (Term f) deriving Show
@@ -49,9 +51,23 @@ prop_index_invariant (IndexOps ops) =
     applyIndex (Add t) = Index.insert t t
     applyIndex (Delete t) = Index.delete t t
 
+prop_index_serialise :: [Term Func] -> Property
+prop_index_serialise ts =
+  counterexample (show idx) $
+  counterexample (show serial) $
+  counterexample (show idx') $
+  Index.elems idx === Index.elems idx' .&&.
+  serial === encode idx'
+  where
+    idx, idx' :: Index Func (Term Func)
+    idx = foldr (\t -> Index.insert t t) Index.empty ts
+    serial = encode idx
+    Right idx' = decode serial
+
 tests :: TestTree
 tests =
   localOption (QuickCheckTests 100000) $
   testGroup "Term indexing"
     [testProperty "Invariant holds" prop_index_invariant,
-     testProperty "Inserted terms are found" prop_index_insert]
+     testProperty "Inserted terms are found" prop_index_insert,
+     testProperty "Serialisation round trip" prop_index_serialise]

@@ -1,5 +1,5 @@
 -- | Equations.
-{-# LANGUAGE DeriveAnyClass, UndecidableInstances #-}
+{-# LANGUAGE DeriveAnyClass #-}
 module Twee.Equation where
 
 import Twee.Base
@@ -16,8 +16,7 @@ data Equation f =
   (:=:) {
     eqn_lhs :: {-# UNPACK #-} !(Term f),
     eqn_rhs :: {-# UNPACK #-} !(Term f) }
-  deriving (Eq, Ord, Show, Generic, Hashable)
-deriving instance (WithSharing, Intern f, Serialize f) => Serialize (Equation f)
+  deriving (Eq, Ord, Show, Generic, Hashable, Serialize)
 
 type EquationOf a = Equation (ConstantOf a)
 

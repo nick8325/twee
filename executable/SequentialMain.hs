@@ -1,6 +1,6 @@
 {-# LANGUAGE CPP, RecordWildCards, FlexibleInstances, PatternGuards, DeriveAnyClass, RankNTypes, ApplicativeDo, DeriveGeneric #-}
 {-# OPTIONS_GHC -flate-specialise #-}
-module SequentialMain(main) where
+module SequentialMain(main, Constant(..)) where
 
 import Control.Monad
 import Data.Char
@@ -44,7 +44,6 @@ import Data.Symbol
 import Twee.Profile
 import GHC.Generics
 import Data.Hashable
-import Data.Serialize
 import Data.Serialize.Sharing
 import qualified Data.ByteString as BS
 
@@ -72,7 +71,8 @@ data MainFlags =
     flags_kbo_weight0_unary :: Bool,
     flags_goal_heuristic :: Bool,
     flags_funweight :: Float,
-    flags_dump_proof :: Maybe FilePath }
+    flags_dump_proof :: Maybe FilePath,
+    flags_dump_state :: Maybe FilePath }
 
 parseMainFlags :: OptionParser MainFlags
 parseMainFlags = do
@@ -178,6 +178,12 @@ parseMainFlags = do
     inGroup "Debugging flags" $
     flag "dump-proof"
       ["Dump a binary proof to this file (off by default)."]
+      Nothing (Just <$> argFile)
+  flags_dump_state <-
+    expert $
+    inGroup "Debugging flags" $
+    flag "dump-state"
+      ["Dump prover state to this file on termination (off by default)."]
       Nothing (Just <$> argFile)
 
   return MainFlags{..}
@@ -991,6 +997,11 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 flags@MainFlags{..} lat
   state <- complete output config withBackwardsGoal
   line
 
+  case flags_dump_state of
+    Nothing -> return ()
+    Just dumpStateFile ->
+      BS.writeFile dumpStateFile (encode state)
+
   when (solved state && flags_proof) $ later $ do
     let
       cfg_present
@@ -1003,7 +1014,7 @@ runTwee globals (TSTPFlags tstp) horn precedence config0 flags@MainFlags{..} lat
     case flags_dump_proof of
       Nothing -> return ()
       Just dumpProofFile ->
-        BS.writeFile dumpProofFile (withSharing encode pres)
+        BS.writeFile dumpProofFile (encode pres)
 
     sayTrace ""
     forM_ (pres_axioms pres) $ \p ->

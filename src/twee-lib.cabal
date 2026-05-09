@@ -91,9 +91,7 @@ library
     QuickCheck,
     deepseq >= 1.4.0.0,
     unordered-containers,
-    hashable,
-    reflection,
-    parallel
+    hashable
   hs-source-dirs:      .
   ghc-options:         -W -fno-warn-incomplete-patterns -fno-warn-dodgy-imports
   default-language:    Haskell2010

@@ -1,14 +1,18 @@
 -- | Skew heaps.
 
+{-# LANGUAGE DeriveAnyClass #-}
 module Data.Heap(
   Heap, empty, singleton, insert, removeMin, union, mapMaybe, size, toList) where
+
+import Data.Serialize.Sharing
+import GHC.Generics
 
 -- | A heap.
 
 -- N.B.: arguments are not strict so code has to take care
 -- to force stuff appropriately.
 -- The Int field is the size of the heap.
-data Heap a = Nil | Node {-# UNPACK #-} !Int a (Heap a) (Heap a) deriving Show
+data Heap a = Nil | Node {-# UNPACK #-} !Int a (Heap a) (Heap a) deriving (Show, Generic, Serialize)
 
 -- | Take the union of two heaps.
 {-# INLINEABLE union #-}

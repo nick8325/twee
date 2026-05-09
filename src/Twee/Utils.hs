@@ -1,6 +1,6 @@
 -- | Miscellaneous utility functions.
 
-{-# LANGUAGE CPP, MagicHash, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE CPP, MagicHash #-}
 module Twee.Utils where
 
 import Control.Arrow((&&&))
@@ -12,10 +12,9 @@ import GHC.Prim
 import GHC.Types
 import Data.Bits
 import System.Random
-import Data.Serialize
 import qualified Data.Set as Set
 --import Test.QuickCheck hiding ((.&.))
-import Control.Monad
+import Data.Serialize.Sharing
 
 repeatM :: Monad m => m a -> m [a]
 repeatM = sequence . repeat
@@ -154,6 +153,12 @@ reservoir k =
     prefix = [0..k-1]
 
 data Sample a = Sample Integer [(Integer, Int)] [a]
+-- TODO serialise properly
+instance Serialize a => Serialize (Sample a) where
+  put _ = put ()
+  get = do
+    () <- get
+    return (emptySample 10)
 
 emptySample :: Int -> Sample a
 emptySample k = Sample 0 (reservoir k) []
@@ -190,75 +195,9 @@ foldn :: (a -> a) -> a -> Int -> a
 foldn _ e 0 = e
 foldn op e n | n > 0 = op (foldn op e (n-1))
 
-newtype U8 = U8 Int deriving (Eq, Ord, Num, Real, Enum, Integral)
-
--- Untested!
-instance Serialize U8 where
-  put (U8 n)
-    | n < 0x80 = putWord8 (fromIntegral n)
-    | n < 0x4000 = do
-      putWord16be (fromIntegral n + 0x8000)
-    | otherwise = do
-      putWord32be (fromIntegral n + 0xc0000000)
-  get = do
-    x <- lookAhead getWord8
-    if x < 0x80 then fromIntegral <$> getWord8
-    else if x < 0xc0 then do
-      n <- getWord16be
-      return (fromIntegral (n - 0x8000))
-    else do
-      n <- getWord32be
-      return (fromIntegral (n - 0xc0000000))
-
--- Untested!
-newtype U16 = U16 Int deriving (Eq, Ord, Num, Real, Enum, Integral)
-instance Serialize U16 where
-  put (U16 n)
-    | n < 0x8000 = do
-      putWord16be (fromIntegral n)
-    | otherwise = do
-      putWord32be (fromIntegral n + 0x80000000)
-  get = do
-    x <- lookAhead getWord8
-    if x < 0x80 then fromIntegral <$> getWord16be
-    else do
-      n <- getWord32be
-      return (fromIntegral (n - 0x80000000))
-
 -- Can be used to write strictness annotations e.g.
 -- f !_ !_ | never = undefined
 -- which otherwise trigger a spurious warning from GHC.
 {-# INLINE never #-}
 never :: Bool
 never = False
-
--- An integer which is serialised in a space-efficient way.
-newtype CompactWord = Compact { getCompactWord :: Word } deriving Show
-
-instance Serialize CompactWord where
-  put (Compact n) = putCompact n
-  get = Compact <$> getCompact 0 0
-
-putCompact :: Word -> Put
-putCompact n
-  | n <= 128 =
-    putWord8 (fromIntegral (clearBit n 7))
-  | otherwise = do
-    putWord8 (fromIntegral n .&. 0x7f)
-    putCompact (n `shiftR` 7)
-
-getCompact :: Int -> Word -> Get Word
-getCompact !k !n = do
-  x <- getWord8
-  let !n' = n + fromIntegral (x `shiftL` k)
-  if testBit x 7 then getCompact (k+7) n' else return n'
-
-putCompactList :: Putter a -> Putter [a]
-putCompactList putter xs = do
-  put (Compact (fromIntegral (length xs)))
-  mapM_ putter xs
-
-getCompactList :: Get a -> Get [a]
-getCompactList getter = do
-  Compact len <- get
-  replicateM (fromIntegral len) getter

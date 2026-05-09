@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass #-}
 module Twee.Rule.Index(
   RuleIndex(..),
   empty, insert, delete,
@@ -8,12 +9,14 @@ import Twee.Base hiding (lookup, empty)
 import Twee.Rule
 import Twee.Index hiding (insert, delete, empty)
 import qualified Twee.Index as Index
+import GHC.Generics
+import Data.Serialize.Sharing(Serialize)
 
 data RuleIndex f a =
   RuleIndex {
     index_oriented :: !(Index f a),
     index_all      :: !(Index f a) }
-  deriving Show
+  deriving (Show, Generic, Serialize)
 
 empty :: RuleIndex f a
 empty = RuleIndex Index.empty Index.empty

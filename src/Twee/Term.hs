@@ -13,7 +13,7 @@
 --   * substitutions ('Substitution', 'Subst', 'subst');
 --   * unification ('unify') and matching ('match');
 --   * miscellaneous useful functions on terms.
-{-# LANGUAGE PatternSynonyms, ViewPatterns, OverloadedStrings, CPP, DefaultSignatures, TypeApplications, UndecidableInstances, ConstraintKinds, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PatternSynonyms, ViewPatterns, OverloadedStrings, CPP, DefaultSignatures, TypeApplications, GeneralizedNewtypeDeriving #-}
 {-# OPTIONS_GHC -O2 -fmax-worker-args=100 #-}
 #ifdef USE_LLVM
 {-# OPTIONS_GHC -fllvm #-}
@@ -75,7 +75,6 @@ import qualified Data.IntMap.Strict as IntMap
 import Twee.Utils
 import Data.Intern
 import GHC.Stack
-import qualified Data.Serialize as Serialize
 import Data.Serialize.Sharing
 import Data.Hashable
 
@@ -516,31 +515,29 @@ unifyListTriFrom !t !u (Triangle !sub) =
 -- Serialisation.
 --------------------------------------------------------------------------------
 
-instance (WithSharing, Intern f, Serialize f) => Serialize (TermList f) where
-  put t = putCompactList Serialize.put (unpack t)
-  get = buildList <$> getCompactList getTerm
+instance (Intern f, Serialize f) => Serialize (TermList f) where
+  put t = put (unpack t)
+  get = buildList <$> getList getTerm
 
 type SerializedTerm f = Either Var (Sym f, TermList f)
 
-instance (WithSharing, Intern f, Serialize f) => Serialize (Term f) where
-  put (Var x) = Serialize.put (Left x :: SerializedTerm f)
-  put (App f ts) = Serialize.put (Right (f, ts) :: SerializedTerm f)
+instance (Intern f, Serialize f) => Serialize (Term f) where
+  put (Var x) = put (Left x :: SerializedTerm f)
+  put (App f ts) = put (Right (f, ts) :: SerializedTerm f)
   get = build <$> getTerm
 
-getTerm :: forall f. (WithSharing, Intern f, Serialize f) => Serialize.Get (Builder f)
+getTerm :: forall f. (Intern f, Serialize f) => Get (Builder f)
 getTerm = do
-  val <- Serialize.get :: Serialize.Get (SerializedTerm f)
+  val <- get :: Get (SerializedTerm f)
   case val of
     Left x -> return (var x)
     Right (f, ts) -> return (app f ts)
 
-instance (WithSharing, Intern f, Serialize f) => Serialize (Subst f) where
-  put = putCompactList Serialize.put . substToList
-  get = fromJust . listToSubst <$> getCompactList Serialize.get
+instance (Intern f, Serialize f) => Serialize (Subst f) where
+  put = put . substToList
+  get = fromJust . listToSubst <$> get
 
-instance Serialize Var where
-  put (V x) = Serialize.put (Compact (fromIntegral x))
-  get = V . fromIntegral . getCompactWord <$> Serialize.get
+deriving instance Serialize Var
 
 --------------------------------------------------------------------------------
 -- Miscellaneous stuff.

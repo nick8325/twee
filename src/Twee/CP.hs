@@ -1,5 +1,5 @@
 -- | Critical pair generation.
-{-# LANGUAGE MultiParamTypeClasses, OverloadedStrings, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses, OverloadedStrings, DeriveAnyClass #-}
 {-# OPTIONS_GHC -fno-warn-overlapping-patterns #-}
 module Twee.CP where
 
@@ -17,15 +17,24 @@ import Twee.Equation
 import qualified Twee.Proof as Proof
 import Twee.Proof(Derivation, congPath)
 import Data.Bits
-import Data.Serialize
+import Data.Serialize.Sharing
+import qualified Data.Serialize as Cereal
 import Data.Int
 --import Debug.Trace
+import GHC.Generics
 
 -- | The set of positions at which a term can have critical overlaps.
 data Positions f = NilP | ConsP {-# UNPACK #-} !Int !(Positions f)
+instance Serialize (Positions f) where
+  put = put . unfoldr op
+    where
+      op NilP = Nothing
+      op (ConsP x xs) = Just (x, xs)
+  get = foldr ConsP NilP <$> (get :: Get [Int])
+
 type PositionsOf a = Positions (ConstantOf a)
 -- | Like Positions but for an equation (one set of positions per term).
-data Positions2 f = ForwardsPos !(Positions f) | BothPos !(Positions f) !(Positions f)
+data Positions2 f = ForwardsPos !(Positions f) | BothPos !(Positions f) !(Positions f) deriving (Generic, Serialize)
 
 instance Show (Positions f) where
   show = show . ChurchList.toList . positionsChurch
@@ -73,7 +82,7 @@ data Overlap a f =
     overlap_top   :: {-# UNPACK #-} !(Term f),
     -- | The critical pair itself.
     overlap_eqn   :: {-# UNPACK #-} !(Equation f) }
-  deriving Show
+  deriving (Show, Generic, Serialize)
 
 data How =
   How {
@@ -82,14 +91,14 @@ data How =
     how_dir2 :: !Direction }
   deriving (Eq, Ord, Show)
 
-data Direction = Forwards | Backwards deriving (Eq, Ord, Enum, Show)
+data Direction = Forwards | Backwards deriving (Eq, Ord, Enum, Show, Generic, Serialize)
 
 direct :: Rule f -> Direction -> Rule f
 direct rule Forwards = rule
 direct rule Backwards = backwards rule
 
-instance Serialize How where
-  put = put . packHow
+instance Cereal.Serialize How where
+  put = Cereal.put . packHow
     where
       packHow :: How -> Int32
       packHow How{..} =
@@ -98,7 +107,7 @@ instance Serialize How where
         fromEnum how_dir2 `shiftL` 1 +
         how_pos `shiftL` 2
 
-  get = fmap unpackHow get
+  get = fmap unpackHow Cereal.get
     where
       unpackHow :: Int32 -> How
       unpackHow n0 =
@@ -108,8 +117,12 @@ instance Serialize How where
           how_dir2 = toEnum ((n `shiftR` 1) .&. 1),
           how_pos  = n `shiftR` 2 }
 
+instance Serialize How where
+  put = liftPutter Cereal.put
+  get = liftGet Cereal.get
+
 -- | Represents the depth of a critical pair.
-newtype Depth = Depth Int deriving (Eq, Ord, Num, Real, Enum, Integral, Show)
+newtype Depth = Depth { getDepth :: Int } deriving (Eq, Ord, Show, Generic, Serialize)
 
 -- | Compute all overlaps of a rule with a set of rules.
 {-# INLINEABLE overlaps #-}
@@ -225,7 +238,7 @@ defaultConfig =
 {-# INLINE score #-}
 score :: Function f => Config -> Depth -> (Term f -> Float) -> Equation f -> Float
 score Config{..} depth termScore (l :=: r) =
-  fromIntegral depth * cfg_depthweight +
+  fromIntegral (getDepth depth) * cfg_depthweight +
   (m + n) * cfg_rhsweight +
   max m n * (cfg_lhsweight - cfg_rhsweight)
   where

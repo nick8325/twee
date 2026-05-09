@@ -1,17 +1,20 @@
 -- | Sequences which are stored compactly in memory
 -- by serialising their contents as a @ByteString@.
+{-# LANGUAGE DeriveAnyClass #-}
 module Data.PackedSequence(PackedSequence, empty, null, size, fromList, toList, uncons) where
 
 import Prelude hiding (null)
 import Data.Serialize
+import qualified Data.Serialize.Sharing as Sharing
 import Data.ByteString(ByteString)
 import qualified Data.ByteString as BS
 import Data.List(unfoldr)
+import GHC.Generics
 
 -- | A sequence, stored in a serialised form
 data PackedSequence a =
   Seq {-# UNPACK #-} !Int {-# UNPACK #-} !ByteString
-  deriving Eq
+  deriving (Eq, Generic, Sharing.Serialize)
 
 -- | An empty sequence.
 empty :: PackedSequence a

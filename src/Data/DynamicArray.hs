@@ -1,6 +1,6 @@
 -- | Zero-indexed dynamic arrays, optimised for lookup.
 -- Modification is slow. Uninitialised indices have a default value.
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, DeriveAnyClass #-}
 module Data.DynamicArray where
 
 #ifdef BOUNDS_CHECKS
@@ -10,6 +10,8 @@ import qualified Data.Primitive.SmallArray as P
 #endif
 import Control.Monad.ST
 import Data.List
+import Data.Serialize.Sharing
+import GHC.Generics
 
 -- | A type which has a default value.
 class Default a where
@@ -22,6 +24,7 @@ data Array a =
     arrayStart    :: {-# UNPACK #-} !Int,
     -- | The contents of the array.
     arrayContents :: {-# UNPACK #-} !(P.SmallArray a) }
+  deriving (Generic, Serialize)
 
 arraySize :: Array a -> Int
 arraySize = P.sizeofSmallArray . arrayContents

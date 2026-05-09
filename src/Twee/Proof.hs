@@ -1,5 +1,5 @@
 -- | Equational proofs which are checked for correctness.
-{-# LANGUAGE OverloadedStrings, DeriveAnyClass, UndecidableInstances #-}
+{-# LANGUAGE OverloadedStrings, DeriveAnyClass #-}
 module Twee.Proof(
   -- * Constructing proofs
   Proof, Derivation(..), Axiom(..),
@@ -33,9 +33,9 @@ import qualified Data.IntMap.Strict as IntMap
 import Control.Monad.Trans.State.Strict
 import Data.Graph
 import Twee.Profile
-import qualified Data.Serialize as Serialize
+import qualified Data.Serialize.Sharing as Serialize
+import Data.Serialize.Sharing(Serialize, Shared(..))
 import GHC.Generics
-import Data.Serialize.Sharing
 import Data.Hashable
 
 ----------------------------------------------------------------------
@@ -69,8 +69,7 @@ data Derivation f =
     -- Parallel, i.e., takes a function symbol and one derivation for each
     -- argument of that function.
   | Cong {-# UNPACK #-} !(Sym f) ![Derivation f]
-  deriving (Eq, Show, Generic, Hashable)
-deriving instance (WithSharing, Function f, Serialize f) => Serialize (Derivation f)
+  deriving (Eq, Show, Generic, Hashable, Serialize)
 
 --  | An axiom, which comes without proof.
 data Axiom f =
@@ -92,11 +91,11 @@ data Axiom f =
 
 -- This is the trusted core of the module.
 {-# INLINEABLE certify #-}
-certify :: Function f => Derivation f -> Proof f
+certify :: Derivation f -> Proof f
 certify p =
   stamp "certify proof" $
   case check p of
-    Nothing -> error ("Invalid proof created!\n" ++ prettyShow p)
+    Nothing -> error "Invalid proof created!"
     Just eqn -> Proof eqn p
   where
     check (UseLemma proof sub) =
@@ -174,13 +173,13 @@ instance (Intern f, PrettyTerm f) => Pretty (Axiom f) where
     text "axiom" <#>
     pPrintTuple [pPrint axiom_number, text axiom_name, pPrint axiom_eqn]
 
-instance (WithSharing, Function f, Serialize f) => Serialize (Axiom f) where
+instance (Intern f, Serialize f) => Serialize (Axiom f) where
   put Axiom{..} = Serialize.put (Shared (axiom_number, axiom_name, axiom_eqn))
   get = do
     Shared (num, name, eqn) <- Serialize.get
     return (Axiom num name eqn)
 
-instance (WithSharing, Function f, Serialize f) => Serialize (Proof f) where
+instance (Intern f, Serialize f) => Serialize (Proof f) where
   put = Serialize.put . Shared . derivation
   get = certify . getShared <$> Serialize.get
 
@@ -515,8 +514,7 @@ data Presentation f =
     pres_lemmas :: [Proof f],
     -- | The goals proved.
     pres_goals  :: [ProvedGoal f] }
-  deriving (Show, Generic)
-deriving instance (WithSharing, Function f, Serialize f) => Serialize (Presentation f)
+  deriving (Show, Generic, Serialize)
 
 -- Note: only the pg_proof field should be trusted!
 -- The remaining fields are for information only.
@@ -535,8 +533,7 @@ data ProvedGoal f =
     -- and pg_witness_hint is the empty substitution.
     pg_goal_hint    :: Equation f,
     pg_witness_hint :: Subst f }
-  deriving (Show, Generic)
-deriving instance (WithSharing, Function f, Serialize f) => Serialize (ProvedGoal f)
+  deriving (Show, Generic, Serialize)
 
 -- | Construct a @ProvedGoal@.
 provedGoal :: Int -> String -> Proof f -> ProvedGoal f

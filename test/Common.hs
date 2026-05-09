@@ -17,8 +17,9 @@ import Data.Typeable
 import GHC.Generics
 import Test.QuickCheck hiding (Function)
 import Text.Printf
+import Data.Serialize.Sharing
 
-data Func = Min | Skolem Int | F Int Integer deriving (Eq, Ord, Generic, Hashable)
+data Func = Min | Skolem Int | F Int Integer deriving (Eq, Ord, Generic, Hashable, Serialize)
 
 instance Show Func where
   show Min = "m"
