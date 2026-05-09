@@ -67,7 +67,6 @@ library
     Twee.Term.Core
     Data.Intern
     Data.Binary.Sharing
-  other-modules:
     Data.BatchedQueue
     Data.ChurchList
     Data.DynamicArray
