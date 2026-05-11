@@ -1,5 +1,5 @@
 -- | The main prover loop.
-{-# LANGUAGE MultiParamTypeClasses, GADTs, OverloadedStrings, GeneralizedNewtypeDeriving, FlexibleInstances, RankNTypes, TupleSections, DeriveAnyClass #-}
+{-# LANGUAGE MultiParamTypeClasses, GADTs, OverloadedStrings, GeneralizedNewtypeDeriving, FlexibleInstances, RankNTypes, TupleSections, DeriveAnyClass, CPP #-}
 module Twee where
 
 import Twee.Base
@@ -370,7 +370,9 @@ simplifyPassive config@Config{..} state@State{..} passive = do
       r2 = overlap_rule2 overlap
   return passive {
     passive_score =
+#ifndef USE_LPO
       passive_score passive `min`
+#endif
       -- XXX factor out depth calculation
       scoreCP config (Depth (succ (getDepth (the r1) `max` getDepth (the r2)))) st_hints (overlap_eqn overlap) }
 
@@ -401,9 +403,10 @@ enqueue state rule passives =
 --
 --   * removing any orphans from the head of the queue
 --   * ignoring CPs that are too big
+--   * putting back any CPs whose score got bigger since they were enqueued
 {-# INLINEABLE dequeue #-}
 dequeue :: Function f => Config f -> State f -> (Maybe (Info, CriticalPair f, Active f, Active f), State f)
-dequeue Config{..} state@State{..} =
+dequeue config@Config{..} state@State{..} =
   case deq 0 st_queue of
     -- Explicitly make the queue empty, in case it e.g. contained a
     -- lot of orphans
@@ -419,8 +422,13 @@ dequeue Config{..} state@State{..} =
         Just (overlap@Overlap{overlap_eqn = t :=: u, overlap_rule1 = rule1, overlap_rule2 = rule2})
           | fromMaybe True (cfg_accept_term <*> pure t),
             fromMaybe True (cfg_accept_term <*> pure u),
-            cp <- makeCriticalPair overlap ->
-              return ((combineInfo (active_info rule1) (active_info rule2), cp, rule1, rule2), n+1, queue)
+            cp <- makeCriticalPair overlap,
+            Just newPassive <- simplifyPassive config state passive ->
+              if passive_score newPassive <= passive_score passive then
+                return ((combineInfo (active_info rule1) (active_info rule2), cp, rule1, rule2), n+1, queue)
+              else
+                deq (n+1) (Queue.insert (passive_rule1 newPassive) [newPassive] queue)
+
         _ -> deq (n+1) queue
 
     combineInfo i1 i2 =
