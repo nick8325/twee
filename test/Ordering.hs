@@ -45,6 +45,10 @@ prop_order_simplerThan :: Equation Func -> Equation Func -> Bool
 prop_order_simplerThan eq1 eq2 =
   eq1 `simplerThan` eq2 || eq2 `simplerThan` eq1 || order eq1 == order eq2
 
+prop_order_swap :: Equation Func -> Property
+prop_order_swap (t :=: u) =
+  order (t :=: u) === order (u :=: t)
+
 prop_order_rearrange :: Equation Func -> Property
 prop_order_rearrange eq@(t :=: u) =
   let vs = usort (vars eq) in
@@ -75,6 +79,7 @@ tests =
     testProperty "simplerThan irreflexive" prop_simplerThan_irreflexive,
     testProperty "simplerThan antisymmetric" prop_simplerThan_antisymmetric,
     testProperty "order/simplerThan trichotomogy" prop_order_simplerThan,
+    testProperty "order invariant under swap" prop_order_swap,
     testProperty "order invariant under rearrangement" prop_order_rearrange,
     testProperty "order respects size" prop_order_size,
     testProperty "order respects term order of erase terms" prop_order_erase ]
