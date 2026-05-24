@@ -1,3 +1,5 @@
+**This repository has moved to https://codeberg.org/nick8325/twee!**
+
 This is twee, an equational theorem prover.
 
 The version in this git repository is likely to be unstable!
